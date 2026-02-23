@@ -4,6 +4,8 @@ import numpy as np
 import soundfile as sf
 from .processor import Processor
 
+import pyloudnorm as pyln
+
 class Track:
     def __init__(self, name: str, path: str, track_type: str = "speech", start_sec: float = 0.0, pan: float = 0.0):
         self.name = name
@@ -14,6 +16,7 @@ class Track:
         self.signal = None
         self.sr = None
         self.processors: List[Processor] = []
+        self.loudness = None # Integrated LUFS
         
     def add_processor(self, processor: Processor):
         self.processors.append(processor)
@@ -31,17 +34,18 @@ class Track:
             raise FileNotFoundError(f"Track file not found: {self.path}")
             
         data, sr = sf.read(self.path)
-        if sr != target_sr:
-            # Note: For production, we should resample here!
-            # For now, let's just use it and warn.
-            print(f"Warning: {self.name} has SR {sr}, expected {target_sr}")
-            
-        self.sr = sr
-        # Mono mix
+        # Mix to mono for processing
         if len(data.shape) > 1:
-            data = data.mean(axis=1)
+            data_mono = data.mean(axis=1)
+        else:
+            data_mono = data
             
-        self.signal = mx.array(data)
+        # Analysis
+        meter = pyln.Meter(sr)
+        self.loudness = meter.integrated_loudness(data_mono)
+        
+        self.sr = sr
+        self.signal = mx.array(data_mono)
         return self.signal
 
 import os # Need to import os in the file

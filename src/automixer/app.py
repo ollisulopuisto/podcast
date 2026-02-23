@@ -198,19 +198,16 @@ class AutomixerApp(App):
             with TabPane("2. Signal Chain"):
                 with Horizontal():
                     with Vertical(classes="chain_box"):
-                        yield Label("SPEECH BUS (Serial Compression)", classes="chain_header")
+                        yield Label("SPEECH BUS (Auto-Gain)", classes="chain_header")
                         with Horizontal(classes="dsp_row"):
                             yield Checkbox("High-Pass", value=True, id="speech_hp_enable")
-                            yield Input(value="80", id="speech_hp_freq", classes="dsp_input")
-                            yield Label("Hz")
+                            yield Label(" (80Hz Sub-cut)", classes="dsp_label")
                         with Horizontal(classes="dsp_row"):
                             yield Checkbox("Peak Tamer", value=True, id="speech_peak_enable")
-                            yield Input(value="-12", id="speech_peak_thresh", classes="dsp_input")
-                            yield Label("dB (2:1 Fast)")
+                            yield Label(" (Intelligent)", classes="dsp_label")
                         with Horizontal(classes="dsp_row"):
                             yield Checkbox("Leveler", value=True, id="speech_lev_enable")
-                            yield Input(value="-22", id="speech_lev_thresh", classes="dsp_input")
-                            yield Label("dB (1.5:1 Slow)")
+                            yield Label(" (Auto-Reference)", classes="dsp_label")
                     
                     with Vertical(classes="chain_box"):
                         yield Label("MUSIC BUS (Spectral Carve)", classes="chain_header")
@@ -324,53 +321,40 @@ class AutomixerApp(App):
             list_view.append(ListItem(Label(f"Pause at {s//60:.0f}:{s%60:05.2f}")))
         self.log_system(f"Found {len(self.spots)} potential ad spots.")
 
-    def sync_config_from_ui(self):
-        """Map UI state back to the config object for the Mixer."""
-        # Speech Bus
-        s_bus = self.config["buses"]["speech"]
-        s_bus["hp_enabled"] = self.query_one("#speech_hp_enable", Checkbox).value
-        s_bus["hp_freq"] = float(self.query_one("#speech_hp_freq", Input).value)
-        s_bus["peak_enabled"] = self.query_one("#speech_peak_enable", Checkbox).value
-        s_bus["peak_threshold"] = float(self.query_one("#speech_peak_thresh", Input).value)
-        s_bus["lev_enabled"] = self.query_one("#speech_lev_enable", Checkbox).value
-        s_bus["lev_threshold"] = float(self.query_one("#speech_lev_thresh", Input).value)
-        
-        # Music Bus
-        m_bus = self.config["buses"]["music"]
-        m_bus["hp_enabled"] = self.query_one("#music_hp_enable", Checkbox).value
-        m_bus["hp_freq"] = float(self.query_one("#music_hp_freq", Input).value)
-        m_bus["carve_enabled"] = self.query_one("#music_carve_enable", Checkbox).value
-        m_bus["carve_strength"] = float(self.query_one("#music_carve_strength", Input).value)
-        m_bus["duck_enabled"] = self.query_one("#music_duck_enable", Checkbox).value
-        m_bus["duck_threshold"] = float(self.query_one("#music_duck_thresh", Input).value)
-
-        # Build actual processor list for Mixer
-        processed_buses = {"speech": {"processors": []}, "music": {"processors": []}}
-        if s_bus["hp_enabled"]:
-            processed_buses["speech"]["processors"].append({"type": "highpass", "freq": s_bus["hp_freq"]})
-        
-        # Serial Compression Stage 1: Fast Peak Taming (2.0 ratio, 30ms window)
-        if s_bus["peak_enabled"]:
-            processed_buses["speech"]["processors"].append({
-                "type": "compressor", 
-                "threshold": s_bus["peak_threshold"], 
-                "ratio": 2.0, 
-                "window": 0.03
-            })
+        def sync_config_from_ui(self):
+            """Map UI state back to the config object for the Mixer."""
+            # Speech Bus
+            s_bus = self.config["buses"]["speech"]
+            s_bus["hp_enabled"] = self.query_one("#speech_hp_enable", Checkbox).value
+            s_bus["peak_enabled"] = self.query_one("#speech_peak_enable", Checkbox).value
+            s_bus["lev_enabled"] = self.query_one("#speech_lev_enable", Checkbox).value
             
-        # Serial Compression Stage 2: Slow Leveling (1.5 ratio, 300ms window)
-        if s_bus["lev_enabled"]:
-            processed_buses["speech"]["processors"].append({
-                "type": "compressor", 
-                "threshold": s_bus["lev_threshold"], 
-                "ratio": 1.5, 
-                "window": 0.3
-            })
-        
-        if m_bus["hp_enabled"]:
-            processed_buses["music"]["processors"].append({"type": "highpass", "freq": m_bus["hp_freq"]})
+            # Music Bus
+            m_bus = self.config["buses"]["music"]
+            m_bus["hp_enabled"] = self.query_one("#music_hp_enable", Checkbox).value
+            m_bus["hp_freq"] = float(self.query_one("#music_hp_freq", Input).value)
+            m_bus["carve_enabled"] = self.query_one("#music_carve_enable", Checkbox).value
+            m_bus["carve_strength"] = float(self.query_one("#music_carve_strength", Input).value)
+            m_bus["duck_enabled"] = self.query_one("#music_duck_enable", Checkbox).value
+            m_bus["duck_threshold"] = float(self.query_one("#music_duck_thresh", Input).value)
+    
+            # Build actual processor list for Mixer
+            processed_buses = {"speech": {"processors": []}, "music": {"processors": []}}
             
-        self.config["buses"] = processed_buses
+            # Note: cli_mix.py now handles the internal thresholds for Speech
+            # based on these boolean flags. We pass them as config keys.
+            processed_buses["speech"]["hp_enabled"] = s_bus["hp_enabled"]
+            processed_buses["speech"]["peak_enabled"] = s_bus["peak_enabled"]
+            processed_buses["speech"]["lev_enabled"] = s_bus["lev_enabled"]
+            
+            if s_bus["hp_enabled"]:
+                processed_buses["speech"]["processors"].append({"type": "highpass", "freq": 80})
+            
+            if m_bus["hp_enabled"]:
+                processed_buses["music"]["processors"].append({"type": "highpass", "freq": m_bus["hp_freq"]})
+                
+            self.config["buses"] = processed_buses
+    
         self.config["target_lufs"] = float(self.query_one("#target_lufs", Input).value)
         self.config["output_path"] = self.query_one("#output_path", Input).value
         

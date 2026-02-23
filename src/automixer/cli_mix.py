@@ -8,7 +8,8 @@ import pyloudnorm as pyln
 from src.automixer.domain.track import Track
 from src.automixer.domain.bus import Bus
 from src.automixer.domain.processor import (
-    DuckingProcessor, GainProcessor, HighPassProcessor, CompressorProcessor, SpectralCarverProcessor
+    DuckingProcessor, GainProcessor, HighPassProcessor, CompressorProcessor, 
+    SpectralCarverProcessor, LimiterProcessor
 )
 
 from concurrent.futures import ThreadPoolExecutor
@@ -44,18 +45,18 @@ class Mixer:
                 print(f"[{val}%] {msg}")
 
         project = self.config.get("project", "My Podcast")
-        update_progress(5, f"Mixing {project}...")
+        update_progress(5, f"Analyzing tracks for {project}...")
         
         speech_bus = Bus("speech")
         music_bus = Bus("music")
         
-        # 1. Parallel Track Loading
+        # 1. Parallel Track Loading & Initial Analysis
         tracks_to_load = []
         for t_cfg in self.config.get("tracks", []):
             t = Track(t_cfg["name"], t_cfg["path"], t_cfg["type"])
             tracks_to_load.append(t)
             
-        update_progress(10, f"Loading {len(tracks_to_load)} tracks in parallel...")
+        update_progress(10, f"Loading and profiling {len(tracks_to_load)} tracks...")
         with ThreadPoolExecutor() as executor:
             list(executor.map(lambda t: t.load(self.sr), tracks_to_load))
             
@@ -67,99 +68,101 @@ class Mixer:
             elif t.type == "music":
                 music_bus.add_track(t)
 
-        # 0. Apply delicate panning to speakers
-        update_progress(25, "Setting up panning...")
+        # 2. Intelligent Auto-Thresholding & Gain Normalization
+        update_progress(20, "Auto-configuring channel strips...")
+        reference_lufs = -23.0 # Internal mixing reference
+        buses_cfg = self.config.get("buses", {})
+        speech_cfg = buses_cfg.get("speech", {})
+        
+        for t in speech_track_list:
+            # A. Bring track to internal reference gain
+            gain_offset = reference_lufs - t.loudness
+            t.add_processor(GainProcessor(gain_db=gain_offset))
+            
+            # B. Auto-configure compressors relative to reference
+            if speech_cfg.get("peak_enabled", True):
+                # Peak Tamer: Catch outliers above the body
+                t.add_processor(CompressorProcessor(threshold_db=-15, ratio=2.5, window_sec=0.03))
+            
+            if speech_cfg.get("lev_enabled", True):
+                # Leveler: Ride the body consistently
+                t.add_processor(CompressorProcessor(threshold_db=-26, ratio=1.5, window_sec=0.3))
+
+        # Music Track Balancing
+        for t in music_bus.tracks:
+            # Music sits at -30 LUFS as a bed (balanced against -23 voices)
+            music_target = -30.0
+            t.add_processor(GainProcessor(gain_db=music_target - t.loudness))
+
+        # 3. Apply delicate panning to speakers
+        update_progress(30, "Applying spatial separation...")
         if len(speech_track_list) > 1:
             pan_range = 0.2
             step = pan_range / (len(speech_track_list) - 1)
             for i, t in enumerate(speech_track_list):
                 t.pan = - (pan_range / 2) + (i * step)
 
-        # 1. Add processors
-        buses_cfg = self.config.get("buses", {})
-        
-        # Speech: Add processors to EACH track individually (Channel Strip approach)
-        speech_cfg = buses_cfg.get("speech", {})
-        for t in speech_bus.tracks:
-            for p_cfg in speech_cfg.get("processors", []):
-                proc = self._create_processor(p_cfg)
-                if proc:
-                    t.add_processor(proc)
-                    
-        # Music: Add processors to the bus (summed processing)
-        music_cfg = buses_cfg.get("music", {})
-        for p_cfg in music_cfg.get("processors", []):
-            proc = self._create_processor(p_cfg)
-            if proc:
-                music_bus.add_processor(proc)
-
-        # 2. Parallel Bus Processing
-        update_progress(40, "Processing buses (EQ/Compression)...")
+        # 4. Parallel Bus Processing
+        update_progress(40, "Processing channel strips (EQ/Auto-Compression)...")
         ad_spot = self.config.get("ad_spot", 0.0)
         ad_duration = self.config.get("ad_duration", 30.0)
         
         def speech_cb(p, msg):
-            # Speech bus is 40% -> 50%
-            update_progress(40 + int(p * 10), f"Speech: {msg}")
-            
+            update_progress(40 + int(p * 15), f"Speech: {msg}")
         def music_cb(p, msg):
-            # Music bus is 50% -> 60%
-            update_progress(50 + int(p * 10), f"Music: {msg}")
+            update_progress(55 + int(p * 5), f"Music: {msg}")
 
         with ThreadPoolExecutor() as executor:
             speech_future = executor.submit(speech_bus.process, self.sr, ad_spot=ad_spot, ad_duration=ad_duration, progress_callback=speech_cb)
             music_future = executor.submit(music_bus.process, self.sr, progress_callback=music_cb)
-            
             speech_sig = speech_future.result()
             music_sig = music_future.result()
         
-        # 3. Dynamic Sidechain Processing (requires speech_sig)
-        update_progress(60, "Applying dynamic ducking & spectral carving...")
+        # 5. Cross-Bus Dynamic Processing
+        update_progress(65, "Applying Spectral Carving & Sidechain...")
+        # We need a mono trigger for ducking/carving
         speech_mono_trigger = mx.mean(speech_sig, axis=-1)
         
-        # Spectral Carving
-        if self.config.get("buses", {}).get("music", {}).get("carve_enabled", False):
+        if self.config.get("buses", {}).get("music", {}).get("carve_enabled", True):
             strength = self.config.get("buses", {}).get("music", {}).get("carve_strength", 0.5)
             carver = SpectralCarverProcessor(trigger_signal=speech_mono_trigger, strength=strength)
-            
-            def carve_cb(p):
-                # Carving is 60% -> 75%
-                update_progress(60 + int(p * 15), "Spectral Carving (GPU)...")
-                
-            music_sig = carver.process(music_sig, self.sr, progress_callback=carve_cb)
+            music_sig = carver.process(music_sig, self.sr, progress_callback=lambda p: update_progress(65 + int(p * 10), "Spectral Carving (GPU)..."))
 
         # Sidechain Ducking
         duck_cfg = self.config.get("buses", {}).get("music", {})
         if duck_cfg.get("duck_enabled", True):
             thresh = duck_cfg.get("duck_threshold", -30)
-            update_progress(75, "Applying Sidechain Ducking (GPU)...")
             ducker = DuckingProcessor(trigger_signal=speech_mono_trigger, threshold_db=thresh, ratio=8.0)
             music_sig = ducker.process(music_sig, self.sr)
-        
-        # 4. Master Sum & Normalize
-        update_progress(80, "Summing master...")
+
+        # 6. Final Master Limiter
+        update_progress(80, "Summing and Final Mastering...")
         max_len = max(speech_sig.shape[0], music_sig.shape[0])
         speech_sig = mx.pad(speech_sig, [(0, max_len - speech_sig.shape[0]), (0, 0)])
         music_sig = mx.pad(music_sig, [(0, max_len - music_sig.shape[0]), (0, 0)])
         
-        final_mix_mx = speech_sig + (music_sig * 0.4)
+        # Initial Sum
+        final_mix_mx = speech_sig + music_sig
         
-        update_progress(90, "Normalizing to target LUFS...")
+        # Calculate Makeup Gain to hit target LUFS
         final_mix_np = np.array(final_mix_mx)
-        target_lufs = self.config.get("target_lufs", -16.0)
-        
         meter = pyln.Meter(self.sr)
-        loudness = meter.integrated_loudness(final_mix_np)
-        normalized_mix = pyln.normalize.loudness(final_mix_np, loudness, target_lufs)
+        current_loudness = meter.integrated_loudness(final_mix_np)
+        target_lufs = self.config.get("target_lufs", -16.0)
+        makeup_gain_db = target_lufs - current_loudness
         
-        peak = np.max(np.abs(normalized_mix))
-        if peak > 0.99:
-            normalized_mix /= (peak + 0.01)
-            
-        update_progress(95, "Saving 24-bit WAV file...")
+        update_progress(90, f"Final Limiting to {target_lufs} LUFS...")
+        # Apply Makeup Gain
+        final_mix_mx = final_mix_mx * (10**(makeup_gain_db / 20))
+        
+        # Brickwall Limiter to prevent clipping while hitting the loudness target
+        limiter = LimiterProcessor(threshold_db=-1.0)
+        master_output = limiter.process(final_mix_mx, self.sr)
+        
+        update_progress(95, "Exporting 24-bit WAV...")
         output_path = self.config.get("output_path", "final_mix.wav")
-        sf.write(output_path, normalized_mix, self.sr, subtype='PCM_24')
-        update_progress(100, f"Done! Saved to {output_path}")
+        sf.write(output_path, np.array(master_output), self.sr, subtype='PCM_24')
+        update_progress(100, f"✅ Production Ready: {output_path}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

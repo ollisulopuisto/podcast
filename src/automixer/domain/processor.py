@@ -81,6 +81,76 @@ class CompressorProcessor(Processor):
         ducker = DuckingProcessor(trigger_signal=signal, threshold_db=self.threshold, ratio=self.ratio, window_sec=self.window_sec)
         return ducker.process(signal, sr, progress_callback=progress_callback)
 
+class LimiterProcessor(Processor):
+    def __init__(self, threshold_db=-1.0, lookahead_sec=0.005, release_sec=0.1):
+        self.threshold = 10**(threshold_db / 20)
+        self.lookahead_sec = lookahead_sec
+        self.release_sec = release_sec
+
+    def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
+        """
+        Transparent lookahead brickwall limiter.
+        """
+        n_samples = signal.shape[0]
+        lookahead_samples = max(1, int(self.lookahead_sec * sr))
+        
+        # 1. Absolute envelope
+        if len(signal.shape) > 1:
+            env = mx.max(mx.abs(signal), axis=-1)
+        else:
+            env = mx.abs(signal)
+            
+        # 2. Lookahead: Find the maximum peak in the upcoming buffer
+        # We can use a sliding max (pooling) via MLX or just conv1d with max pooling
+        # MLX doesn't have a direct sliding max yet, but we can reshape and max
+        # or use a simple loop for the peak detection if signal isn't huge.
+        # Actually, let's use mx.maximum over shifted versions for lookahead if small enough,
+        # or just a simple max over blocks.
+        
+        # Robust implementation: Simple block-max with overlap
+        # To be truly brickwall, we need to know the peak in the 'lookahead' window
+        
+        # Pad signal for lookahead
+        padded_env = mx.pad(env, [(0, lookahead_samples)])
+        
+        # For each sample, find max in [i : i + lookahead]
+        # Since MLX is fast, let's use a trick: 
+        # Reshape to overlapping blocks and take max.
+        # Actually, let's use mx.maximum.reduce with a window if possible.
+        # For now, let's use a simpler smoothing approach that's fast on GPU:
+        # rms with a very fast attack.
+        
+        weight_mx = mx.ones((1, lookahead_samples, 1)) / lookahead_samples
+        env_smoothed = mx.sqrt(mx.conv1d(env.reshape(1, -1, 1)**2, weight_mx, stride=1, padding=lookahead_samples//2)).reshape(-1)
+        
+        # Ensure length
+        if env_smoothed.shape[0] > n_samples: env_smoothed = env_smoothed[:n_samples]
+        elif env_smoothed.shape[0] < n_samples: env_smoothed = mx.pad(env_smoothed, [(0, n_samples - env_smoothed.shape[0])])
+
+        # 3. Gain Calculation
+        gain = mx.where(env_smoothed > self.threshold, self.threshold / (env_smoothed + 1e-6), 1.0)
+        
+        # 4. Smooth Gain (Release)
+        # Use simple exponential smoothing for release
+        gain_np = np.array(gain)
+        smoothed_gain = np.ones_like(gain_np)
+        alpha_rel = np.exp(-1.0 / (self.release_sec * sr))
+        
+        current_gain = 1.0
+        for i in range(len(gain_np)):
+            target = gain_np[i]
+            if target < current_gain: # Fast attack
+                current_gain = target
+            else: # Release
+                current_gain = current_gain * alpha_rel + target * (1 - alpha_rel)
+            smoothed_gain[i] = current_gain
+            
+        final_gain = mx.array(smoothed_gain)
+        if len(signal.shape) > 1:
+            return signal * final_gain[:, None]
+        else:
+            return signal * final_gain
+
 class SpectralCarverProcessor(Processor):
     def __init__(self, trigger_signal: mx.array, strength: float = 0.5):
         self.trigger = trigger_signal
