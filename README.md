@@ -47,11 +47,20 @@ For automated workflows, you can still use the underlying CLI tools:
 
 ---
 
-## 🏗️ Project Architecture
+## 🏗️ Project Architecture & Signal Flow
+For a detailed breakdown of exactly when processing happens, see **[PIPELINE.md](PIPELINE.md)**.
+
 - `src/automixer/domain/`: Core DSP logic (Processors, Buses, Tracks).
 - `src/automixer/analyzer.py`: MLX-based silence detection.
 - `src/automixer/cli_mix.py`: Parallelized mixing engine.
 - `src/automixer/app.py`: Textual-based TUI dashboard.
+
+### **Plugin Parameters**
+You can now control your plugins directly from the TUI. In the **Plugins** tab, use the following format:
+`PluginName: param1=val1, param2=val2; NextPlugin: param=val`
+- Separate multiple parameters with commas.
+- Separate multiple plugins with semicolons.
+- The app will match the name you type against the plugin's filename.
 
 ## 💻 Optimization for Mac
 This project is built from the ground up to leverage:

@@ -191,7 +191,23 @@ class ExternalPluginProcessor(Processor):
             try:
                 self.plugin = pedalboard.load_plugin(self.plugin_path)
                 for name, value in self.parameters.items():
-                    if hasattr(self.plugin, name): setattr(self.plugin, name, value)
+                    # Handle common parameter naming (pedalboard uses snake_case often)
+                    # But AU/VST might use specific names.
+                    if hasattr(self.plugin, name):
+                        setattr(self.plugin, name, value)
+                        print(f"Plugin {os.path.basename(self.plugin_path)}: Set {name}={value}")
+                    else:
+                        # Try to find matching parameter by name
+                        found = False
+                        if hasattr(self.plugin, 'parameters'):
+                            for p_name, p_obj in self.plugin.parameters.items():
+                                if name.lower() == p_name.lower().replace(" ", "_"):
+                                    setattr(self.plugin, p_name, value)
+                                    print(f"Plugin {os.path.basename(self.plugin_path)}: Set {p_name}={value}")
+                                    found = True
+                                    break
+                        if not found:
+                            print(f"Warning: Plugin {os.path.basename(self.plugin_path)} has no parameter '{name}'")
             except Exception as e:
                 print(f"Error loading plugin {self.plugin_path}: {e}")
                 return signal

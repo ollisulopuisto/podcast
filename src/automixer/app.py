@@ -172,10 +172,13 @@ class AutomixerApp(App):
             with TabPane("3. Plugins"):
                 yield Vertical(
                     Input(placeholder="🔍 Search plugins...", id="plugin_search"),
-                    Label("Add to SPEECH tracks (per-track):"),
+                    Label("Add to SPEECH tracks (per-track denoisers, etc):"),
                     SelectionList(id="speech_plugin_list"),
-                    Label("Add to MUSIC bus (summed):"),
+                    Label("Add to MUSIC bus (summed effects):"),
                     SelectionList(id="music_plugin_list"),
+                    Label("Configure Parameters (Optional):"),
+                    Label("Format: PluginName: param1=val1, param2=val2", classes="dsp_step"),
+                    Input(placeholder="e.g. WavesNS1: threshold=0.5", id="plugin_params_input"),
                     Button("Refresh System Scan", id="refresh_plugins_btn")
                 )
 
@@ -304,10 +307,39 @@ class AutomixerApp(App):
         m_bus["duck_threshold"] = float(self.query_one("#music_duck_thresh", Input).value)
         m_bus["plugin_paths"] = list(self.selected_music_plugins)
 
+        # Parse Parameters
+        params_raw = self.query_one("#plugin_params_input", Input).value
+        parsed_params = {} # Mapping of PluginName (lowercase) -> {param: val}
+        if params_raw:
+            for part in params_raw.split(";"):
+                if ":" in part:
+                    p_name, p_vals = part.split(":", 1)
+                    p_name = p_name.strip().lower()
+                    kv_pairs = {}
+                    for kv in p_vals.split(","):
+                        if "=" in kv:
+                            k, v = kv.split("=", 1)
+                            try: kv_pairs[k.strip()] = float(v.strip())
+                            except: kv_pairs[k.strip()] = v.strip()
+                    parsed_params[p_name] = kv_pairs
+
         processed = {"speech": s_bus, "music": m_bus}
-        # Backward compatibility for Mixer processing loop
-        processed["speech"]["processors"] = [{"type": "plugin", "path": p} for p in s_bus["plugin_paths"]]
-        processed["music"]["processors"] = [{"type": "plugin", "path": p} for p in m_bus["plugin_paths"]]
+        
+        def build_proc_list(paths):
+            procs = []
+            for p in paths:
+                p_name = os.path.basename(p).lower()
+                # Find if any key in parsed_params matches p_name partially
+                params = {}
+                for key, val in parsed_params.items():
+                    if key in p_name:
+                        params = val
+                        break
+                procs.append({"type": "plugin", "path": p, "params": params})
+            return procs
+
+        processed["speech"]["processors"] = build_proc_list(s_bus["plugin_paths"])
+        processed["music"]["processors"] = build_proc_list(m_bus["plugin_paths"])
         
         self.config["buses"] = processed
         self.config["target_lufs"] = float(self.query_one("#target_lufs", Input).value)
