@@ -47,7 +47,7 @@ class AutomixerApp(App):
     }
     .dsp_row {
         height: 3;
-        align: middle left;
+        align: left middle;
     }
     .dsp_label {
         width: 15;
@@ -67,12 +67,13 @@ class AutomixerApp(App):
         Binding("r", "refresh", "Refresh Files"),
     ]
 
-    def __init__(self):
+    def __init__(self, work_dir="."):
         super().__init__()
+        self.work_dir = os.path.abspath(work_dir)
         self.config = {
-            "project": "New Podcast",
+            "project": os.path.basename(self.work_dir),
             "target_lufs": -16.0,
-            "output_path": "output.wav",
+            "output_path": os.path.join(self.work_dir, "final_mix.wav"),
             "tracks": [],
             "ad_spot": 0.0,
             "ad_duration": 30.0,
@@ -103,7 +104,7 @@ class AutomixerApp(App):
         with TabbedContent():
             with TabPane("1. Audio Assets"):
                 yield Vertical(
-                    Label("Select audio files in directory:"),
+                    Label(f"Scanning directory: {self.work_dir}"),
                     SelectionList(id="track_selection_list"),
                     Horizontal(
                         Button("🎤 Add as SPEECH", variant="primary", id="mark_speech_btn"),
@@ -161,7 +162,7 @@ class AutomixerApp(App):
                         ),
                         Vertical(
                             Label("Output Filename:"),
-                            Input(value="final_mix.wav", id="output_path"),
+                            Input(value=self.config["output_path"], id="output_path"),
                         ),
                         columns=2
                     ),
@@ -175,19 +176,29 @@ class AutomixerApp(App):
 
     def action_refresh(self):
         extensions = ('.wav', '.mp3', '.flac', '.m4a', '.ogg')
-        self.audio_files = sorted([f for f in os.listdir('.') if f.lower().endswith(extensions)])
+        self.audio_files = sorted([
+            os.path.join(self.work_dir, f) 
+            for f in os.listdir(self.work_dir) 
+            if f.lower().endswith(extensions)
+        ])
+        
         selection_list = self.query_one("#track_selection_list", SelectionList)
         selection_list.clear()
-        for f in self.audio_files:
-            selection_list.add_option(Selection(f, f))
+        for f_path in self.audio_files:
+            f_name = os.path.basename(f_path)
+            selection_list.add_option(Selection(f_name, f_path))
 
     def on_button_pressed(self, event: Button.Pressed):
         if event.button.id in ("mark_speech_btn", "mark_music_btn"):
             role = "speech" if event.button.id == "mark_speech_btn" else "music"
-            selected_files = self.query_one("#track_selection_list", SelectionList).selected
-            for f in selected_files:
-                self.config["tracks"] = [t for t in self.config["tracks"] if t["path"] != f]
-                self.config["tracks"].append({"name": os.path.basename(f), "path": f, "type": role})
+            selected_paths = self.query_one("#track_selection_list", SelectionList).selected
+            for f_path in selected_paths:
+                self.config["tracks"] = [t for t in self.config["tracks"] if t["path"] != f_path]
+                self.config["tracks"].append({
+                    "name": os.path.basename(f_path), 
+                    "path": f_path, 
+                    "type": role
+                })
             self.update_track_roles_display()
         
         elif event.button.id == "analyze_btn":
@@ -308,5 +319,8 @@ class AutomixerApp(App):
         threading.Thread(target=task).start()
 
 if __name__ == "__main__":
-    app = AutomixerApp()
+    import sys
+    # Use the first command line argument as the working directory, or default to current
+    target_dir = sys.argv[1] if len(sys.argv) > 1 else "."
+    app = AutomixerApp(work_dir=target_dir)
     app.run()
