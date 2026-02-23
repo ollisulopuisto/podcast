@@ -16,6 +16,7 @@ from textual.screen import ModalScreen
 
 from src.automixer.analyzer import SpotAnalyzer
 from src.automixer.cli_mix import Mixer
+from src.automixer import __version__
 
 class LogScreen(ModalScreen):
     def compose(self) -> ComposeResult:
@@ -176,7 +177,7 @@ class AutomixerApp(App):
         self.call_after_refresh(populate)
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        yield Header(show_clock=True)
         with TabbedContent():
             with TabPane("1. Audio Assets"):
                 yield Vertical(
