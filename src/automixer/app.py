@@ -294,7 +294,7 @@ class AutomixerApp(App):
     def run_analysis(self):
         speech_tracks = [t for t in self.config["tracks"] if t["type"] == "speech"]
         if not speech_tracks:
-            self.notify("No speech tracks selected.", variant="error")
+            self.notify("No speech tracks selected.", severity="error")
             return
         path = speech_tracks[0]["path"]
         self.log_system(f"Starting analysis of {path} for pauses...")
@@ -307,7 +307,7 @@ class AutomixerApp(App):
                 self.call_from_thread(self.update_spots)
             except Exception as e:
                 self.log_system(f"Analysis Error: {e}")
-                self.call_from_thread(lambda: self.notify(f"Analysis Error: {e}", variant="error"))
+                self.call_from_thread(lambda: self.notify(f"Analysis Error: {e}", severity="error"))
         threading.Thread(target=task).start()
 
     def update_spots(self):
@@ -357,13 +357,13 @@ class AutomixerApp(App):
 
     def run_mix(self):
         if not self.config["tracks"]:
-            self.notify("Add tracks first!", variant="error")
+            self.notify("Add tracks first!", severity="error")
             return
         
         try:
             self.sync_config_from_ui()
         except ValueError:
-            self.notify("Invalid number in signal chain settings", variant="error")
+            self.notify("Invalid number in signal chain settings", severity="error")
             return
 
         progress = self.query_one("#mix_progress", ProgressBar)
