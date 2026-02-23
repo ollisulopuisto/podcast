@@ -8,7 +8,7 @@ from typing import List
 from textual.app import App, ComposeResult
 from textual.widgets import (Header, Footer, TabbedContent, TabPane, 
                              Input, Button, Label, ListView, ListItem, 
-                             Log, SelectionList, Checkbox, Static)
+                             Log, SelectionList, Checkbox, Static, ProgressBar)
 from textual.widgets.selection_list import Selection
 from textual.containers import Vertical, Horizontal, Container, Grid
 from textual.binding import Binding
@@ -33,6 +33,9 @@ class AutomixerApp(App):
     #mix_btn {
         margin: 1 0;
         width: 100%;
+    }
+    #mix_progress {
+        margin-bottom: 1;
     }
     #track_selection_list {
         height: 10;
@@ -167,6 +170,7 @@ class AutomixerApp(App):
             with TabPane("3. Render"):
                 yield Vertical(
                     Button("🚀 RENDER FINAL MIX", variant="success", id="mix_btn"),
+                    ProgressBar(total=100, show_eta=True, id="mix_progress"),
                     Horizontal(
                         Vertical(
                             Label("Target LUFS:"),
@@ -316,13 +320,21 @@ class AutomixerApp(App):
             return
 
         log = self.query_one("#log", Log)
+        progress = self.query_one("#mix_progress", ProgressBar)
         log.clear()
+        progress.progress = 0
         log.write_line("Mixing with serial compression...")
         
+        def progress_callback(val, msg):
+            def update_ui():
+                progress.progress = val
+                log.write_line(f"[{val}%] {msg}")
+            self.call_from_thread(update_ui)
+
         def task():
             try:
                 mixer = Mixer(self.config)
-                mixer.run()
+                mixer.run(progress_callback=progress_callback)
                 self.call_from_thread(lambda: log.write_line("✅ Production Render Complete!"))
                 self.call_from_thread(lambda: self.notify("Mix Ready!"))
             except Exception as e:

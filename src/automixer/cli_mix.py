@@ -36,9 +36,15 @@ class Mixer:
             return GainProcessor(gain_db=p_cfg.get("db", 0.0))
         return None
 
-    def run(self):
+    def run(self, progress_callback=None):
+        def update_progress(val, msg):
+            if progress_callback:
+                progress_callback(val, msg)
+            else:
+                print(f"[{val}%] {msg}")
+
         project = self.config.get("project", "My Podcast")
-        print(f"Mixing {project} (Parallelized)...")
+        update_progress(5, f"Mixing {project}...")
         
         speech_bus = Bus("speech")
         music_bus = Bus("music")
@@ -49,7 +55,7 @@ class Mixer:
             t = Track(t_cfg["name"], t_cfg["path"], t_cfg["type"])
             tracks_to_load.append(t)
             
-        print(f"Loading {len(tracks_to_load)} tracks in parallel...")
+        update_progress(10, f"Loading {len(tracks_to_load)} tracks in parallel...")
         with ThreadPoolExecutor() as executor:
             list(executor.map(lambda t: t.load(self.sr), tracks_to_load))
             
@@ -62,12 +68,12 @@ class Mixer:
                 music_bus.add_track(t)
 
         # 0. Apply delicate panning to speakers
+        update_progress(25, "Setting up panning...")
         if len(speech_track_list) > 1:
             pan_range = 0.2
             step = pan_range / (len(speech_track_list) - 1)
             for i, t in enumerate(speech_track_list):
                 t.pan = - (pan_range / 2) + (i * step)
-                print(f"Panning {t.name} to {t.pan:.2f}")
 
         # 1. Add bus processors
         buses_cfg = self.config.get("buses", {})
@@ -80,7 +86,7 @@ class Mixer:
                         bus.add_processor(proc)
 
         # 2. Parallel Bus Processing
-        print("Processing buses in parallel...")
+        update_progress(40, "Processing buses (EQ/Compression)...")
         ad_spot = self.config.get("ad_spot", 0.0)
         ad_duration = self.config.get("ad_duration", 30.0)
         
@@ -92,13 +98,12 @@ class Mixer:
             music_sig = music_future.result()
         
         # 3. Dynamic Sidechain Processing (requires speech_sig)
-        print("Applying dynamic processing to music...")
+        update_progress(60, "Applying dynamic ducking & spectral carving...")
         speech_mono_trigger = mx.mean(speech_sig, axis=-1)
         
         # Spectral Carving
         if self.config.get("buses", {}).get("music", {}).get("carve_enabled", False):
             strength = self.config.get("buses", {}).get("music", {}).get("carve_strength", 0.5)
-            print(f"Applying Spectral Carving...")
             carver = SpectralCarverProcessor(trigger_signal=speech_mono_trigger, strength=strength)
             music_sig = carver.process(music_sig, self.sr)
 
@@ -106,21 +111,20 @@ class Mixer:
         duck_cfg = self.config.get("buses", {}).get("music", {})
         if duck_cfg.get("duck_enabled", True):
             thresh = duck_cfg.get("duck_threshold", -30)
-            print(f"Applying Sidechain Ducking...")
             ducker = DuckingProcessor(trigger_signal=speech_mono_trigger, threshold_db=thresh, ratio=8.0)
             music_sig = ducker.process(music_sig, self.sr)
         
         # 4. Master Sum & Normalize
-        print("Summing master...")
+        update_progress(80, "Summing master...")
         max_len = max(speech_sig.shape[0], music_sig.shape[0])
         speech_sig = mx.pad(speech_sig, [(0, max_len - speech_sig.shape[0]), (0, 0)])
         music_sig = mx.pad(music_sig, [(0, max_len - music_sig.shape[0]), (0, 0)])
         
         final_mix_mx = speech_sig + (music_sig * 0.4)
         
+        update_progress(90, "Normalizing to target LUFS...")
         final_mix_np = np.array(final_mix_mx)
         target_lufs = self.config.get("target_lufs", -16.0)
-        print(f"Normalizing to {target_lufs} LUFS...")
         
         meter = pyln.Meter(self.sr)
         loudness = meter.integrated_loudness(final_mix_np)
@@ -130,28 +134,10 @@ class Mixer:
         if peak > 0.99:
             normalized_mix /= (peak + 0.01)
             
+        update_progress(95, "Saving 24-bit WAV file...")
         output_path = self.config.get("output_path", "final_mix.wav")
         sf.write(output_path, normalized_mix, self.sr, subtype='PCM_24')
-        print(f"Done! Saved to {output_path}")
-        
-        # 4. LUFS Normalization
-        final_mix_np = np.array(final_mix_mx)
-        target_lufs = self.config.get("target_lufs", -16.0)
-        print(f"Normalizing to {target_lufs} LUFS...")
-        
-        meter = pyln.Meter(self.sr)
-        loudness = meter.integrated_loudness(final_mix_np)
-        normalized_mix = pyln.normalize.loudness(final_mix_np, loudness, target_lufs)
-        
-        # Final Peak Check
-        peak = np.max(np.abs(normalized_mix))
-        if peak > 0.99:
-            print(f"Warning: Clipping detected (peak: {peak:.2f}). Reducing gain.")
-            normalized_mix /= (peak + 0.01)
-            
-        output_path = self.config.get("output_path", "final_mix.wav")
-        sf.write(output_path, normalized_mix, self.sr, subtype='PCM_24')
-        print(f"Done! Saved to {output_path}")
+        update_progress(100, f"Done! Saved to {output_path}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
