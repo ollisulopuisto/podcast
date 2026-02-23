@@ -95,6 +95,8 @@ class AutomixerApp(App):
         self.spots = []
         self.audio_files = []
         self.system_plugins = []
+        self.selected_speech_plugins = set()
+        self.selected_music_plugins = set()
 
     def log_system(self, msg):
         self.log_messages.append(msg)
@@ -169,11 +171,12 @@ class AutomixerApp(App):
 
             with TabPane("3. Plugins"):
                 yield Vertical(
-                    Label("System Plugins (Select to add to SPEECH tracks):"),
+                    Input(placeholder="🔍 Search plugins...", id="plugin_search"),
+                    Label("Add to SPEECH tracks (per-track):"),
                     SelectionList(id="speech_plugin_list"),
-                    Label("System Plugins (Select to add to MUSIC bus):"),
+                    Label("Add to MUSIC bus (summed):"),
                     SelectionList(id="music_plugin_list"),
-                    Button("Refresh Plugin List", id="refresh_plugins_btn")
+                    Button("Refresh System Scan", id="refresh_plugins_btn")
                 )
 
             with TabPane("4. Render"):
@@ -202,12 +205,51 @@ class AutomixerApp(App):
         sl.clear_options()
         for f in self.audio_files: sl.add_option(Selection(os.path.basename(f), f))
 
-    def action_refresh_plugins(self):
+    def action_refresh_plugins(self, filter_text=""):
         self.scan_system_plugins()
-        for id in ["#speech_plugin_list", "#music_plugin_list"]:
-            sl = self.query_one(id, SelectionList)
-            sl.clear_options()
-            for p in self.system_plugins: sl.add_option(Selection(os.path.basename(p), p))
+        filter_text = filter_text.lower()
+        
+        # Update Speech Plugin List
+        sl_speech = self.query_one("#speech_plugin_list", SelectionList)
+        sl_speech.clear_options()
+        for p in self.system_plugins:
+            name = os.path.basename(p)
+            if filter_text in name.lower():
+                sl_speech.add_option(Selection(name, p, p in self.selected_speech_plugins))
+        
+        # Update Music Plugin List
+        sl_music = self.query_one("#music_plugin_list", SelectionList)
+        sl_music.clear_options()
+        for p in self.system_plugins:
+            name = os.path.basename(p)
+            if filter_text in name.lower():
+                sl_music.add_option(Selection(name, p, p in self.selected_music_plugins))
+
+    def on_input_changed(self, event: Input.Changed):
+        if event.input.id == "plugin_search":
+            self.action_refresh_plugins(event.value)
+
+    def on_selection_list_selected_changed(self, event: SelectionList.SelectedChanged):
+        # We need to distinguish which list changed
+        if event.selection_list.id == "speech_plugin_list":
+            # Update the global set based on WHAT IS VISIBLE
+            # Actually, SelectionList.selected gives values of all currently selected
+            # but clearing/re-adding options might mess this up if we aren't careful.
+            # We'll update the global set based on the current selection in the widget.
+            visible_selected = set(event.selection_list.selected)
+            # Add new ones, but don't remove ones that might be hidden by search
+            # This is tricky. Let's do:
+            current_visible_options = {opt.value for opt in event.selection_list._options}
+            # Remove any from global set that are visible but NOT in visible_selected
+            self.selected_speech_plugins -= (current_visible_options - visible_selected)
+            # Add all visible_selected to global set
+            self.selected_speech_plugins |= visible_selected
+            
+        elif event.selection_list.id == "music_plugin_list":
+            visible_selected = set(event.selection_list.selected)
+            current_visible_options = {opt.value for opt in event.selection_list._options}
+            self.selected_music_plugins -= (current_visible_options - visible_selected)
+            self.selected_music_plugins |= visible_selected
 
     def on_button_pressed(self, event: Button.Pressed):
         if event.button.id in ("mark_speech_btn", "mark_music_btn"):
@@ -216,9 +258,10 @@ class AutomixerApp(App):
                 self.config["tracks"] = [t for t in self.config["tracks"] if t["path"] != f]
                 self.config["tracks"].append({"name": os.path.basename(f), "path": f, "type": role})
             self.update_track_roles_display()
-        elif event.button.id == "analyze_btn": self.run_analysis()
         elif event.button.id == "mix_btn": self.run_mix()
-        elif event.button.id == "refresh_plugins_btn": self.action_refresh_plugins()
+        elif event.button.id == "refresh_plugins_btn":
+            self.query_one("#plugin_search", Input).value = ""
+            self.action_refresh_plugins()
 
     def update_track_roles_display(self):
         rl = self.query_one("#track_roles_list", ListView)
@@ -252,14 +295,14 @@ class AutomixerApp(App):
         s_bus["multiband_enabled"] = self.query_one("#speech_multiband_enable", Checkbox).value
         s_bus["peak_enabled"] = self.query_one("#speech_peak_enable", Checkbox).value
         s_bus["lev_enabled"] = self.query_one("#speech_lev_enable", Checkbox).value
-        s_bus["plugin_paths"] = self.query_one("#speech_plugin_list", SelectionList).selected
+        s_bus["plugin_paths"] = list(self.selected_speech_plugins)
         
         m_bus = self.config["buses"]["music"]
         m_bus["carve_enabled"] = self.query_one("#music_carve_enable", Checkbox).value
         m_bus["carve_strength"] = float(self.query_one("#music_carve_strength", Input).value)
         m_bus["duck_enabled"] = self.query_one("#music_duck_enable", Checkbox).value
         m_bus["duck_threshold"] = float(self.query_one("#music_duck_thresh", Input).value)
-        m_bus["plugin_paths"] = self.query_one("#music_plugin_list", SelectionList).selected
+        m_bus["plugin_paths"] = list(self.selected_music_plugins)
 
         processed = {"speech": s_bus, "music": m_bus}
         # Backward compatibility for Mixer processing loop
