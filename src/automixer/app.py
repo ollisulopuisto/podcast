@@ -154,13 +154,11 @@ class AutomixerApp(App):
 
     def log_system(self, msg):
         self.log_messages.append(msg)
-        # Try to update both the render tab log and the debug screen if it exists
         try:
             self.query_one("#log", Log).write_line(msg)
         except:
             pass
         
-        # If debug screen is active
         for screen in self.app.screen_stack:
             if isinstance(screen, LogScreen):
                 try:
@@ -169,10 +167,8 @@ class AutomixerApp(App):
                     pass
 
     def action_toggle_log(self):
-        # Push LogScreen
         ls = LogScreen()
         self.push_screen(ls)
-        # Populate with existing messages
         def populate():
             log_widget = ls.query_one("#debug_log", Log)
             for msg in self.log_messages:
@@ -321,40 +317,37 @@ class AutomixerApp(App):
             list_view.append(ListItem(Label(f"Pause at {s//60:.0f}:{s%60:05.2f}")))
         self.log_system(f"Found {len(self.spots)} potential ad spots.")
 
-        def sync_config_from_ui(self):
-            """Map UI state back to the config object for the Mixer."""
-            # Speech Bus
-            s_bus = self.config["buses"]["speech"]
-            s_bus["hp_enabled"] = self.query_one("#speech_hp_enable", Checkbox).value
-            s_bus["peak_enabled"] = self.query_one("#speech_peak_enable", Checkbox).value
-            s_bus["lev_enabled"] = self.query_one("#speech_lev_enable", Checkbox).value
+    def sync_config_from_ui(self):
+        """Map UI state back to the config object for the Mixer."""
+        # Speech Bus
+        s_bus = self.config["buses"]["speech"]
+        s_bus["hp_enabled"] = self.query_one("#speech_hp_enable", Checkbox).value
+        s_bus["peak_enabled"] = self.query_one("#speech_peak_enable", Checkbox).value
+        s_bus["lev_enabled"] = self.query_one("#speech_lev_enable", Checkbox).value
+        
+        # Music Bus
+        m_bus = self.config["buses"]["music"]
+        m_bus["hp_enabled"] = self.query_one("#music_hp_enable", Checkbox).value
+        m_bus["hp_freq"] = float(self.query_one("#music_hp_freq", Input).value)
+        m_bus["carve_enabled"] = self.query_one("#music_carve_enable", Checkbox).value
+        m_bus["carve_strength"] = float(self.query_one("#music_carve_strength", Input).value)
+        m_bus["duck_enabled"] = self.query_one("#music_duck_enable", Checkbox).value
+        m_bus["duck_threshold"] = float(self.query_one("#music_duck_thresh", Input).value)
+
+        # Build actual processor list for Mixer
+        processed_buses = {"speech": {"processors": []}, "music": {"processors": []}}
+        
+        processed_buses["speech"]["hp_enabled"] = s_bus["hp_enabled"]
+        processed_buses["speech"]["peak_enabled"] = s_bus["peak_enabled"]
+        processed_buses["speech"]["lev_enabled"] = s_bus["lev_enabled"]
+        
+        if s_bus["hp_enabled"]:
+            processed_buses["speech"]["processors"].append({"type": "highpass", "freq": 80})
+        
+        if m_bus["hp_enabled"]:
+            processed_buses["music"]["processors"].append({"type": "highpass", "freq": m_bus["hp_freq"]})
             
-            # Music Bus
-            m_bus = self.config["buses"]["music"]
-            m_bus["hp_enabled"] = self.query_one("#music_hp_enable", Checkbox).value
-            m_bus["hp_freq"] = float(self.query_one("#music_hp_freq", Input).value)
-            m_bus["carve_enabled"] = self.query_one("#music_carve_enable", Checkbox).value
-            m_bus["carve_strength"] = float(self.query_one("#music_carve_strength", Input).value)
-            m_bus["duck_enabled"] = self.query_one("#music_duck_enable", Checkbox).value
-            m_bus["duck_threshold"] = float(self.query_one("#music_duck_thresh", Input).value)
-    
-            # Build actual processor list for Mixer
-            processed_buses = {"speech": {"processors": []}, "music": {"processors": []}}
-            
-            # Note: cli_mix.py now handles the internal thresholds for Speech
-            # based on these boolean flags. We pass them as config keys.
-            processed_buses["speech"]["hp_enabled"] = s_bus["hp_enabled"]
-            processed_buses["speech"]["peak_enabled"] = s_bus["peak_enabled"]
-            processed_buses["speech"]["lev_enabled"] = s_bus["lev_enabled"]
-            
-            if s_bus["hp_enabled"]:
-                processed_buses["speech"]["processors"].append({"type": "highpass", "freq": 80})
-            
-            if m_bus["hp_enabled"]:
-                processed_buses["music"]["processors"].append({"type": "highpass", "freq": m_bus["hp_freq"]})
-                
-            self.config["buses"] = processed_buses
-    
+        self.config["buses"] = processed_buses
         self.config["target_lufs"] = float(self.query_one("#target_lufs", Input).value)
         self.config["output_path"] = self.query_one("#output_path", Input).value
         
