@@ -40,11 +40,13 @@ class Bus:
         
         for i, t in enumerate(self.tracks):
             if progress_callback:
-                progress_callback(0.1 + 0.4 * (i / len(self.tracks)), f"Summing track {t.name}...")
+                progress_callback(0.1 + 0.4 * (i / len(self.tracks)), f"Processing track {t.name}...")
                 
             if t.signal is not None:
+                # 1b. Per-track processing (e.g. individual compression)
+                sig = t.process(sr) # This applies track-level processors
+                
                 offset = int(t.start_sec * sr)
-                sig = t.signal # Mono [length]
                 
                 pan = getattr(t, 'pan', 0.0)
                 left_gain = mx.sqrt(mx.array(0.5 * (1.0 - pan)))

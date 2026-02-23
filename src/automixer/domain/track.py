@@ -13,7 +13,19 @@ class Track:
         self.pan = pan
         self.signal = None
         self.sr = None
+        self.processors: List[Processor] = []
         
+    def add_processor(self, processor: Processor):
+        self.processors.append(processor)
+
+    def process(self, sr: int) -> mx.array:
+        if self.signal is None:
+            return None
+            
+        for p in self.processors:
+            self.signal = p.process(self.signal, sr)
+        return self.signal
+
     def load(self, target_sr=48000):
         if not os.path.exists(self.path):
             raise FileNotFoundError(f"Track file not found: {self.path}")

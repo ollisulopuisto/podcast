@@ -75,15 +75,23 @@ class Mixer:
             for i, t in enumerate(speech_track_list):
                 t.pan = - (pan_range / 2) + (i * step)
 
-        # 1. Add bus processors
+        # 1. Add processors
         buses_cfg = self.config.get("buses", {})
-        for bus_name, bus_cfg in buses_cfg.items():
-            bus = speech_bus if bus_name == "speech" else (music_bus if bus_name == "music" else None)
-            if bus:
-                for p_cfg in bus_cfg.get("processors", []):
-                    proc = self._create_processor(p_cfg)
-                    if proc:
-                        bus.add_processor(proc)
+        
+        # Speech: Add processors to EACH track individually (Channel Strip approach)
+        speech_cfg = buses_cfg.get("speech", {})
+        for t in speech_bus.tracks:
+            for p_cfg in speech_cfg.get("processors", []):
+                proc = self._create_processor(p_cfg)
+                if proc:
+                    t.add_processor(proc)
+                    
+        # Music: Add processors to the bus (summed processing)
+        music_cfg = buses_cfg.get("music", {})
+        for p_cfg in music_cfg.get("processors", []):
+            proc = self._create_processor(p_cfg)
+            if proc:
+                music_bus.add_processor(proc)
 
         # 2. Parallel Bus Processing
         update_progress(40, "Processing buses (EQ/Compression)...")
