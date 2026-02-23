@@ -15,17 +15,31 @@ class Bus:
     def add_processor(self, processor: Processor):
         self.processors.append(processor)
         
-    def process(self, sr: int) -> mx.array:
+    def process(self, sr: int, ad_spot: float = 0.0, ad_duration: float = 30.0) -> mx.array:
         # 1. Sum tracks with offsets
         if not self.tracks:
             return mx.zeros((1,))
             
-        # Compute total duration
+        # Ad insertion: If any speech track is longer than ad_spot, split it
+        # Note: This is a bit complex for a simple bus. Let's do it simple:
+        # Each track after ad_spot gets shifted.
+        
+        # 1a. Identify total duration (with ad)
         max_len = 0
         for t in self.tracks:
             if t.signal is not None:
                 offset_samples = int(t.start_sec * sr)
-                total_len = offset_samples + t.signal.shape[0]
+                orig_len = t.signal.shape[0]
+                
+                # Simple logic: If we have an ad spot, 
+                # we'll create a gap.
+                if ad_spot > 0 and t.type == "speech" and (offset_samples + orig_len) > (ad_spot * sr):
+                    # For a single host file:
+                    # [part1] [30s gap] [part2]
+                    total_len = offset_samples + orig_len + int(ad_duration * sr)
+                else:
+                    total_len = offset_samples + orig_len
+                    
                 if total_len > max_len:
                     max_len = total_len
         
@@ -34,16 +48,27 @@ class Bus:
         for t in self.tracks:
             if t.signal is not None:
                 offset = int(t.start_sec * sr)
-                # Pad to max_len
-                # In MLX, we can't just do `sum_signal[offset:offset+len] += sig` 
-                # because arrays are immutable.
-                # We need to construct the full signal.
+                sig = t.signal
                 
-                # Construct an array of zeros, pad t.signal to match, and sum.
-                # Actually, a more efficient way to "scatter" in MLX:
-                # We'll just pad the front and back of each track to match max_len.
-                padded_sig = mx.pad(t.signal, [(offset, max_len - (offset + t.signal.shape[0]))])
-                sum_signal += padded_sig
+                # Split speech at ad spot
+                if ad_spot > 0 and t.type == "speech" and (offset + sig.shape[0]) > (ad_spot * sr):
+                    ad_spot_samples = int(ad_spot * sr)
+                    # Part before ad
+                    part1_len = ad_spot_samples - offset
+                    if part1_len > 0:
+                        part1 = sig[:part1_len]
+                        padded_part1 = mx.pad(part1, [(offset, max_len - (offset + part1.shape[0]))])
+                        sum_signal += padded_part1
+                    
+                    # Part after ad
+                    part2 = sig[part1_len:]
+                    if part2.shape[0] > 0:
+                        part2_offset = ad_spot_samples + int(ad_duration * sr)
+                        padded_part2 = mx.pad(part2, [(part2_offset, max_len - (part2_offset + part2.shape[0]))])
+                        sum_signal += padded_part2
+                else:
+                    padded_sig = mx.pad(sig, [(offset, max_len - (offset + sig.shape[0]))])
+                    sum_signal += padded_sig
                 
         # 2. Run processors
         for p in self.processors:

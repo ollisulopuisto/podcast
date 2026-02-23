@@ -12,9 +12,12 @@ from src.automixer.domain.processor import (
 )
 
 class Mixer:
-    def __init__(self, config_path):
-        with open(config_path, "r") as f:
-            self.config = yaml.safe_load(f)
+    def __init__(self, config):
+        if isinstance(config, str):
+            with open(config, "r") as f:
+                self.config = yaml.safe_load(f)
+        else:
+            self.config = config
         self.sr = 48000
         
     def _create_processor(self, p_cfg):
@@ -34,15 +37,10 @@ class Mixer:
         speech_bus = Bus("speech")
         music_bus = Bus("music")
         
-        # Add bus processors from config
+        # Add bus processors
         buses_cfg = self.config.get("buses", {})
         for bus_name, bus_cfg in buses_cfg.items():
-            bus = None
-            if bus_name == "speech":
-                bus = speech_bus
-            elif bus_name == "music":
-                bus = music_bus
-                
+            bus = speech_bus if bus_name == "speech" else (music_bus if bus_name == "music" else None)
             if bus:
                 for p_cfg in bus_cfg.get("processors", []):
                     proc = self._create_processor(p_cfg)
@@ -60,10 +58,13 @@ class Mixer:
         
         # 1. Process buses
         print("Processing buses...")
-        speech_sig = speech_bus.process(self.sr)
-        music_sig = music_bus.process(self.sr)
+        ad_spot = self.config.get("ad_spot", 0.0)
+        ad_duration = self.config.get("ad_duration", 30.0)
         
-        # 2. Apply auto-ducking to music bus based on speech
+        speech_sig = speech_bus.process(self.sr, ad_spot=ad_spot, ad_duration=ad_duration)
+        music_sig = music_bus.process(self.sr) # Music doesn't shift by default
+        
+        # 2. Apply auto-ducking to music bus
         print("Applying auto-ducking to music...")
         ducker = DuckingProcessor(trigger_signal=speech_sig, threshold_db=-30, ratio=8.0)
         music_sig = ducker.process(music_sig, self.sr)
