@@ -25,9 +25,14 @@ class AutomixerApp(App):
         margin: 1 0;
     }
     #log {
-        height: 8;
+        height: 1fr;
+        min-height: 5;
         border: solid gray;
         background: $surface;
+    }
+    #mix_btn {
+        margin: 1 0;
+        width: 100%;
     }
     #track_selection_list {
         height: 10;
@@ -161,6 +166,7 @@ class AutomixerApp(App):
 
             with TabPane("3. Render"):
                 yield Vertical(
+                    Button("🚀 RENDER FINAL MIX", variant="success", id="mix_btn"),
                     Horizontal(
                         Vertical(
                             Label("Target LUFS:"),
@@ -172,7 +178,6 @@ class AutomixerApp(App):
                         ),
                         id="render_inputs"
                     ),
-                    Button("🚀 RENDER FINAL MIX", variant="success", id="mix_btn"),
                     Log(id="log"),
                 )
         yield Footer()
