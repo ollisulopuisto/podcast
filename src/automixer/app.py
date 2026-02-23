@@ -12,9 +12,27 @@ from textual.widgets import (Header, Footer, TabbedContent, TabPane,
 from textual.widgets.selection_list import Selection
 from textual.containers import Vertical, Horizontal, Container, Grid
 from textual.binding import Binding
+from textual.screen import ModalScreen
 
 from src.automixer.analyzer import SpotAnalyzer
 from src.automixer.cli_mix import Mixer
+
+class LogScreen(ModalScreen):
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("SYSTEM LOG (Press F12 or Esc to close)", id="log_header"),
+            Log(id="debug_log"),
+            id="log_container"
+        )
+
+    def on_mount(self):
+        # Initialize with current app log history if possible
+        pass
+
+    def action_close(self):
+        self.app.pop_screen()
+
+    BINDINGS = [("f12", "app.pop_screen", "Close Log"), ("escape", "app.pop_screen", "Close Log")]
 
 class AutomixerApp(App):
     CSS = """
@@ -29,6 +47,20 @@ class AutomixerApp(App):
         min-height: 5;
         border: solid gray;
         background: $surface;
+    }
+    #log_container {
+        padding: 2;
+        background: $surface;
+        border: thick $primary;
+        height: 80%;
+        width: 80%;
+    }
+    #log_header {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    #debug_log {
+        height: 1fr;
     }
     #mix_btn {
         margin: 1 0;
@@ -84,11 +116,13 @@ class AutomixerApp(App):
         Binding("q", "quit", "Quit"),
         Binding("ctrl+s", "save", "Save Config"),
         Binding("r", "refresh", "Refresh Files"),
+        Binding("f12", "toggle_log", "System Log"),
     ]
 
     def __init__(self, work_dir="."):
         super().__init__()
         self.work_dir = os.path.abspath(work_dir)
+        self.log_messages = []
         self.config = {
             "project": os.path.basename(self.work_dir),
             "target_lufs": -16.0,
@@ -117,6 +151,33 @@ class AutomixerApp(App):
         }
         self.spots = []
         self.audio_files = []
+
+    def log_system(self, msg):
+        self.log_messages.append(msg)
+        # Try to update both the render tab log and the debug screen if it exists
+        try:
+            self.query_one("#log", Log).write_line(msg)
+        except:
+            pass
+        
+        # If debug screen is active
+        for screen in self.app.screen_stack:
+            if isinstance(screen, LogScreen):
+                try:
+                    screen.query_one("#debug_log", Log).write_line(msg)
+                except:
+                    pass
+
+    def action_toggle_log(self):
+        # Push LogScreen
+        ls = LogScreen()
+        self.push_screen(ls)
+        # Populate with existing messages
+        def populate():
+            log_widget = ls.query_one("#debug_log", Log)
+            for msg in self.log_messages:
+                log_widget.write_line(msg)
+        self.call_after_refresh(populate)
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -197,6 +258,7 @@ class AutomixerApp(App):
 
     def action_refresh(self):
         extensions = ('.wav', '.mp3', '.flac', '.m4a', '.ogg')
+        self.log_system(f"Scanning {self.work_dir} for audio files...")
         self.audio_files = sorted([
             os.path.join(self.work_dir, f) 
             for f in os.listdir(self.work_dir) 
@@ -208,6 +270,7 @@ class AutomixerApp(App):
         for f_path in self.audio_files:
             f_name = os.path.basename(f_path)
             selection_list.add_option(Selection(f_name, f_path))
+        self.log_system(f"Found {len(self.audio_files)} matching files.")
 
     def on_button_pressed(self, event: Button.Pressed):
         if event.button.id in ("mark_speech_btn", "mark_music_btn"):
@@ -241,8 +304,7 @@ class AutomixerApp(App):
             self.notify("No speech tracks selected.", variant="error")
             return
         path = speech_tracks[0]["path"]
-        log = self.query_one("#log", Log)
-        log.write_line(f"Analyzing {path} for pauses...")
+        self.log_system(f"Starting analysis of {path} for pauses...")
         def task():
             try:
                 data, sr = sf.read(path)
@@ -251,6 +313,7 @@ class AutomixerApp(App):
                 self.spots = analyzer.find_spots(data)
                 self.call_from_thread(self.update_spots)
             except Exception as e:
+                self.log_system(f"Analysis Error: {e}")
                 self.call_from_thread(lambda: self.notify(f"Analysis Error: {e}", variant="error"))
         threading.Thread(target=task).start()
 
@@ -259,6 +322,7 @@ class AutomixerApp(App):
         list_view.clear()
         for s in self.spots:
             list_view.append(ListItem(Label(f"Pause at {s//60:.0f}:{s%60:05.2f}")))
+        self.log_system(f"Found {len(self.spots)} potential ad spots.")
 
     def sync_config_from_ui(self):
         """Map UI state back to the config object for the Mixer."""
@@ -325,19 +389,18 @@ class AutomixerApp(App):
             self.notify("Invalid number in signal chain settings", variant="error")
             return
 
-        log = self.query_one("#log", Log)
         progress = self.query_one("#mix_progress", ProgressBar)
         op_label = self.query_one("#current_op_label", Label)
         
-        log.clear()
         progress.progress = 0
         op_label.update("Starting Mixer...")
+        self.log_system("🚀 Starting Production Mix...")
         
         def progress_callback(val, msg):
             def update_ui():
                 progress.progress = val
                 op_label.update(msg)
-                log.write_line(f"[{val}%] {msg}")
+                self.log_system(f"[{val}%] {msg}")
             self.call_from_thread(update_ui)
 
         def task():
@@ -345,13 +408,13 @@ class AutomixerApp(App):
                 mixer = Mixer(self.config)
                 mixer.run(progress_callback=progress_callback)
                 def finish_ui():
-                    log.write_line("✅ Production Render Complete!")
+                    self.log_system("✅ Production Render Complete!")
                     op_label.update("✅ All Done!")
                 self.call_from_thread(finish_ui)
                 self.call_from_thread(lambda: self.notify("Mix Ready!"))
             except Exception as e:
                 def error_ui():
-                    log.write_line(f"❌ Error: {str(e)}")
+                    self.log_system(f"❌ Error: {str(e)}")
                     op_label.update("❌ Error Occurred")
                 self.call_from_thread(error_ui)
         threading.Thread(target=task).start()
