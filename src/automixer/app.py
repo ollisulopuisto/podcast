@@ -37,6 +37,11 @@ class AutomixerApp(App):
     #mix_progress {
         margin-bottom: 1;
     }
+    #current_op_label {
+        text-style: bold;
+        color: $accent;
+        margin: 1 0;
+    }
     #track_selection_list {
         height: 10;
         border: solid $accent;
@@ -170,6 +175,7 @@ class AutomixerApp(App):
             with TabPane("3. Render"):
                 yield Vertical(
                     Button("🚀 RENDER FINAL MIX", variant="success", id="mix_btn"),
+                    Label("Ready", id="current_op_label"),
                     ProgressBar(total=100, show_eta=True, id="mix_progress"),
                     Horizontal(
                         Vertical(
@@ -321,13 +327,16 @@ class AutomixerApp(App):
 
         log = self.query_one("#log", Log)
         progress = self.query_one("#mix_progress", ProgressBar)
+        op_label = self.query_one("#current_op_label", Label)
+        
         log.clear()
         progress.progress = 0
-        log.write_line("Mixing with serial compression...")
+        op_label.update("Starting Mixer...")
         
         def progress_callback(val, msg):
             def update_ui():
                 progress.progress = val
+                op_label.update(msg)
                 log.write_line(f"[{val}%] {msg}")
             self.call_from_thread(update_ui)
 
@@ -335,10 +344,16 @@ class AutomixerApp(App):
             try:
                 mixer = Mixer(self.config)
                 mixer.run(progress_callback=progress_callback)
-                self.call_from_thread(lambda: log.write_line("✅ Production Render Complete!"))
+                def finish_ui():
+                    log.write_line("✅ Production Render Complete!")
+                    op_label.update("✅ All Done!")
+                self.call_from_thread(finish_ui)
                 self.call_from_thread(lambda: self.notify("Mix Ready!"))
             except Exception as e:
-                self.call_from_thread(lambda: log.write_line(f"❌ Error: {str(e)}"))
+                def error_ui():
+                    log.write_line(f"❌ Error: {str(e)}")
+                    op_label.update("❌ Error Occurred")
+                self.call_from_thread(error_ui)
         threading.Thread(target=task).start()
 
 if __name__ == "__main__":
