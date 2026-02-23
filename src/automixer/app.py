@@ -189,7 +189,7 @@ class AutomixerApp(App):
         ])
         
         selection_list = self.query_one("#track_selection_list", SelectionList)
-        selection_list.clear()
+        selection_list.clear_options()
         for f_path in self.audio_files:
             f_name = os.path.basename(f_path)
             selection_list.add_option(Selection(f_name, f_path))
