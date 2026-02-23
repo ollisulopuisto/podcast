@@ -9,7 +9,7 @@ from src.automixer.domain.track import Track
 from src.automixer.domain.bus import Bus
 from src.automixer.domain.processor import (
     DuckingProcessor, GainProcessor, HighPassProcessor, CompressorProcessor, 
-    SpectralCarverProcessor, LimiterProcessor
+    SpectralCarverProcessor, LimiterProcessor, MultibandCompressorProcessor, ExternalPluginProcessor
 )
 
 from concurrent.futures import ThreadPoolExecutor
@@ -35,6 +35,11 @@ class Mixer:
             )
         elif p_type == "gain":
             return GainProcessor(gain_db=p_cfg.get("db", 0.0))
+        elif p_type == "plugin":
+            return ExternalPluginProcessor(
+                plugin_path=p_cfg["path"],
+                parameters=p_cfg.get("params", {})
+            )
         return None
 
     def run(self, progress_callback=None):
@@ -75,24 +80,40 @@ class Mixer:
         speech_cfg = buses_cfg.get("speech", {})
         
         for t in speech_track_list:
-            # A. Bring track to internal reference gain
-            gain_offset = reference_lufs - t.loudness
-            t.add_processor(GainProcessor(gain_db=gain_offset))
-            
-            # B. Auto-configure compressors relative to reference
-            if speech_cfg.get("peak_enabled", True):
-                # Peak Tamer: Catch outliers above the body
-                t.add_processor(CompressorProcessor(threshold_db=-15, ratio=2.5, window_sec=0.03))
-            
-            if speech_cfg.get("lev_enabled", True):
-                # Leveler: Ride the body consistently
-                t.add_processor(CompressorProcessor(threshold_db=-26, ratio=1.5, window_sec=0.3))
+            # 2a. External Plugins first? (Pre-processing)
+            for p_cfg in speech_cfg.get("processors", []):
+                if p_cfg["type"] == "plugin":
+                    t.add_processor(self._create_processor(p_cfg))
+
+            # 2b. High-Pass
+            if speech_cfg.get("hp_enabled", True):
+                t.add_processor(HighPassProcessor(cut_freq=80))
+
+            # 2c. Multiband vs Single Band Dynamics
+            if speech_cfg.get("multiband_enabled", False):
+                t.add_processor(MultibandCompressorProcessor(
+                    peak_enabled=speech_cfg.get("peak_enabled", True),
+                    lev_enabled=speech_cfg.get("lev_enabled", True)
+                ))
+            else:
+                # Normal Auto-Gain
+                gain_offset = reference_lufs - t.loudness
+                t.add_processor(GainProcessor(gain_db=gain_offset))
+                if speech_cfg.get("peak_enabled", True):
+                    t.add_processor(CompressorProcessor(threshold_db=-15, ratio=2.5, window_sec=0.03))
+                if speech_cfg.get("lev_enabled", True):
+                    t.add_processor(CompressorProcessor(threshold_db=-26, ratio=1.5, window_sec=0.3))
 
         # Music Track Balancing
         for t in music_bus.tracks:
-            # Music sits at -30 LUFS as a bed (balanced against -23 voices)
+            # Music sits at -30 LUFS as a bed
             music_target = -30.0
             t.add_processor(GainProcessor(gain_db=music_target - t.loudness))
+            # Music can also have plugins
+            music_cfg = buses_cfg.get("music", {})
+            for p_cfg in music_cfg.get("processors", []):
+                if p_cfg["type"] == "plugin":
+                    t.add_processor(self._create_processor(p_cfg))
 
         # 3. Apply delicate panning to speakers
         update_progress(30, "Applying spatial separation...")

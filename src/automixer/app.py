@@ -199,6 +199,9 @@ class AutomixerApp(App):
                             yield Checkbox("High-Pass", value=True, id="speech_hp_enable")
                             yield Label(" (80Hz Sub-cut)", classes="dsp_label")
                         with Horizontal(classes="dsp_row"):
+                            yield Checkbox("Multiband Mode", value=False, id="speech_multiband_enable")
+                            yield Label(" (3-band dynamic)", classes="dsp_label")
+                        with Horizontal(classes="dsp_row"):
                             yield Checkbox("Peak Tamer", value=True, id="speech_peak_enable")
                             yield Label(" (Intelligent)", classes="dsp_label")
                         with Horizontal(classes="dsp_row"):
@@ -208,10 +211,6 @@ class AutomixerApp(App):
                     with Vertical(classes="chain_box"):
                         yield Label("MUSIC BUS (Spectral Carve)", classes="chain_header")
                         with Horizontal(classes="dsp_row"):
-                            yield Checkbox("High-Pass", value=False, id="music_hp_enable")
-                            yield Input(value="100", id="music_hp_freq", classes="dsp_input")
-                            yield Label("Hz")
-                        with Horizontal(classes="dsp_row"):
                             yield Checkbox("Spectral Carve", value=True, id="music_carve_enable")
                             yield Input(value="0.5", id="music_carve_strength", classes="dsp_input")
                             yield Label("0..1")
@@ -219,6 +218,9 @@ class AutomixerApp(App):
                             yield Checkbox("Auto-Ducking", value=True, id="music_duck_enable")
                             yield Input(value="-30", id="music_duck_thresh", classes="dsp_input")
                             yield Label("dB")
+                        with Horizontal(classes="dsp_row"):
+                            yield Label("AU Plugin Path:", classes="dsp_label")
+                            yield Input(placeholder="/Path/to/Plugin.component", id="music_plugin_path")
                 
                 yield Vertical(
                     Button("🔍 Scan for Natural Ad Break", variant="primary", id="analyze_btn"),
@@ -322,30 +324,37 @@ class AutomixerApp(App):
         # Speech Bus
         s_bus = self.config["buses"]["speech"]
         s_bus["hp_enabled"] = self.query_one("#speech_hp_enable", Checkbox).value
+        s_bus["multiband_enabled"] = self.query_one("#speech_multiband_enable", Checkbox).value
         s_bus["peak_enabled"] = self.query_one("#speech_peak_enable", Checkbox).value
         s_bus["lev_enabled"] = self.query_one("#speech_lev_enable", Checkbox).value
         
         # Music Bus
         m_bus = self.config["buses"]["music"]
-        m_bus["hp_enabled"] = self.query_one("#music_hp_enable", Checkbox).value
-        m_bus["hp_freq"] = float(self.query_one("#music_hp_freq", Input).value)
         m_bus["carve_enabled"] = self.query_one("#music_carve_enable", Checkbox).value
         m_bus["carve_strength"] = float(self.query_one("#music_carve_strength", Input).value)
         m_bus["duck_enabled"] = self.query_one("#music_duck_enable", Checkbox).value
         m_bus["duck_threshold"] = float(self.query_one("#music_duck_thresh", Input).value)
+        m_bus["plugin_path"] = self.query_one("#music_plugin_path", Input).value
 
         # Build actual processor list for Mixer
         processed_buses = {"speech": {"processors": []}, "music": {"processors": []}}
         
         processed_buses["speech"]["hp_enabled"] = s_bus["hp_enabled"]
+        processed_buses["speech"]["multiband_enabled"] = s_bus["multiband_enabled"]
         processed_buses["speech"]["peak_enabled"] = s_bus["peak_enabled"]
         processed_buses["speech"]["lev_enabled"] = s_bus["lev_enabled"]
         
-        if s_bus["hp_enabled"]:
-            processed_buses["speech"]["processors"].append({"type": "highpass", "freq": 80})
+        # Music Bus Configuration
+        processed_buses["music"]["carve_enabled"] = m_bus["carve_enabled"]
+        processed_buses["music"]["carve_strength"] = m_bus["carve_strength"]
+        processed_buses["music"]["duck_enabled"] = m_bus["duck_enabled"]
+        processed_buses["music"]["duck_threshold"] = m_bus["duck_threshold"]
         
-        if m_bus["hp_enabled"]:
-            processed_buses["music"]["processors"].append({"type": "highpass", "freq": m_bus["hp_freq"]})
+        if m_bus["plugin_path"]:
+            processed_buses["music"]["processors"].append({
+                "type": "plugin", 
+                "path": m_bus["plugin_path"]
+            })
             
         self.config["buses"] = processed_buses
         self.config["target_lufs"] = float(self.query_one("#target_lufs", Input).value)
