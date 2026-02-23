@@ -1,62 +1,60 @@
-# Podcast Automixer
+# 🎙️ Podcast Automixer
 
-A modular, MLX-accelerated podcast assembly tool for ARM Macs.
+A modular, high-performance podcast assembly tool optimized for **Apple Silicon (ARM Macs)**. It uses **MLX** for GPU-accelerated signal processing and a parallelized DSP pipeline to deliver a transparent, professional sound.
 
-## Features
-- **Phase 1: Silence Detection**: Uses MLX-accelerated RMS calculation to find potential ad insertion spots (silences).
-- **Phase 2: TUI Selection**: Interactive TUI to pick the best ad spot and save it to a reusable YAML config.
-- **Phase 3: Automated Mix**: Modular signal chain with speech/music buses, auto-ducking, EQ, and -16 LUFS normalization.
-- **MLX Powered**: Leveraging Metal acceleration on Apple Silicon for signal processing.
+## 🚀 Key Features
 
-## Requirements
-- macOS (Apple Silicon recommended)
-- `uv` for Python package management
+### 1. **Phase 1: Intelligent Spotting**
+- **MLX-Accelerated Analysis**: Uses the Metal GPU to perform rapid RMS energy scans of your episode.
+- **Natural Pause Detection**: Automatically identifies silences longer than 0.5s (skipping the first 50% of the episode) to suggest perfect ad insertion points.
 
-## Workflow
+### 2. **Phase 2: Transparent Signal Chain**
+- **Serial Compression**: Replaces a single "heavy" compressor with a two-stage chain:
+  - **Peak Tamer (Fast)**: Catches loud transients with a 30ms window.
+  - **Leveler (Slow)**: Smooths overall volume with a 300ms window for a natural, uncompressed feel.
+- **Spectral Carving (Dynamic PEQ)**: Analyzes the speech spectrum in real-time and carves out those specific frequencies from the music bus using FFT spectral subtraction.
+- **Delicate Stereo Panning**: Automatically applies a subtle (±10%) spatial spread to multiple speakers, improving clarity through psychoacoustic separation.
+- **Sidechain Auto-Ducking**: GPU-accelerated music ducking triggered by the speech bus.
 
-### 1. Find potential ad spots
+### 3. **Phase 3: Parallelized Production**
+- **Multi-Core Loading**: Parallel track I/O using `ThreadPoolExecutor`.
+- **Concurrent Bus Processing**: Speech and Music buses process simultaneously to saturate your CPU/GPU.
+- **LUFS Normalization**: Final render is precisely normalized to **-16.0 LUFS** (ITU-R BS.1770-4) with 24-bit stereo depth.
+
+---
+
+## 🛠️ Usage
+
+### **The Unified TUI (Recommended)**
+The easiest way to use the automixer is via the interactive dashboard:
 ```bash
-uv run python -m src.automixer.cli_analyze episode1.wav spots.txt
-```
-This looks at the episode (skipping the first 50%) and finds silences longer than 0.5s.
-
-### 2. Select the spot via TUI
-```bash
-uv run python -m src.automixer.tui_select spots.txt show_config.yaml
-```
-Use the arrow keys and Enter to select the spot. It will be saved to `show_config.yaml`.
-
-### 3. Run the final mix
-```bash
-uv run python -m src.automixer.cli_mix show_config.yaml
-```
-This performs:
-- Highpass filtering and compression on the speech bus.
-- Auto-ducking of background music whenever speech is detected.
-- LUFS normalization to -16.0.
-
-## Configuration (`show_config.yaml`)
-You can define per-show settings that are reused for every episode.
-```yaml
-project: "My Awesome Show"
-target_lufs: -16.0
-output_path: "final_mixed.wav"
-buses:
-  speech:
-    processors:
-      - type: "highpass"
-        freq: 100
-      - type: "compressor"
-        threshold: -18
-        ratio: 4
-tracks:
-  - name: "Host"
-    path: "episode1.wav"
-    type: "speech"
-  - name: "Theme"
-    path: "intro.wav"
-    type: "music"
+uv run python -m src.automixer.app
 ```
 
-## Modularity
-The signal chain is built using a modular `Processor` pattern. You can easily add more DSP effects in `src/automixer/domain/processor.py`.
+**TUI Workflow:**
+1.  **Audio Assets**: Select files from the current directory and mark them as `SPEECH` or `MUSIC`.
+2.  **Signal Chain**: 
+    - Toggle High-Pass filters (default 80Hz for speech).
+    - Adjust Peak Tamer and Leveler thresholds.
+    - Set the **Spectral Carve** strength (0.5 is recommended for transparency).
+    - Scan for ad breaks and select your preferred spot.
+3.  **Render**: Hit **"RENDER FINAL MIX"** to produce your high-fidelity stereo WAV.
+
+### **Manual CLI Control**
+For automated workflows, you can still use the underlying CLI tools:
+- **Analyze**: `uv run python -m src.automixer.cli_analyze <file> <output_spots>`
+- **Mix**: `uv run python -m src.automixer.cli_mix <config_yaml>`
+
+---
+
+## 🏗️ Project Architecture
+- `src/automixer/domain/`: Core DSP logic (Processors, Buses, Tracks).
+- `src/automixer/analyzer.py`: MLX-based silence detection.
+- `src/automixer/cli_mix.py`: Parallelized mixing engine.
+- `src/automixer/app.py`: Textual-based TUI dashboard.
+
+## 💻 Optimization for Mac
+This project is built from the ground up to leverage:
+- **Metal Performance Shaders**: Via the `mlx` library for FFTs and convolutions.
+- **Accelerate Framework**: High-efficiency math operations on Apple Silicon.
+- **Parallel I/O**: Taking advantage of fast NVMe storage on modern Macs.
