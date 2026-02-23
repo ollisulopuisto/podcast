@@ -59,6 +59,12 @@ class AutomixerApp(App):
         height: 8;
         border: solid $secondary;
     }
+    #render_inputs {
+        height: auto;
+    }
+    #render_inputs > Vertical {
+        width: 50%;
+    }
     """
 
     BINDINGS = [
@@ -155,7 +161,7 @@ class AutomixerApp(App):
 
             with TabPane("3. Render"):
                 yield Vertical(
-                    Grid(
+                    Horizontal(
                         Vertical(
                             Label("Target LUFS:"),
                             Input(value="-16.0", id="target_lufs"),
@@ -164,7 +170,7 @@ class AutomixerApp(App):
                             Label("Output Filename:"),
                             Input(value=self.config["output_path"], id="output_path"),
                         ),
-                        columns=2
+                        id="render_inputs"
                     ),
                     Button("🚀 RENDER FINAL MIX", variant="success", id="mix_btn"),
                     Log(id="log"),
