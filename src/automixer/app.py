@@ -69,7 +69,6 @@ class AutomixerApp(App):
 
     def __init__(self):
         super().__init__()
-        # Initial config with transparent defaults
         self.config = {
             "project": "New Podcast",
             "target_lufs": -16.0,
@@ -81,16 +80,18 @@ class AutomixerApp(App):
                 "speech": {
                     "hp_enabled": True,
                     "hp_freq": 80,
-                    "comp_enabled": True,
-                    "comp_threshold": -18,
-                    "comp_ratio": 3.0
+                    "peak_enabled": True,
+                    "peak_threshold": -12,
+                    "lev_enabled": True,
+                    "lev_threshold": -22
                 },
                 "music": {
                     "hp_enabled": False,
                     "hp_freq": 100,
+                    "carve_enabled": True,
+                    "carve_strength": 0.5,
                     "duck_enabled": True,
-                    "duck_threshold": -30,
-                    "duck_ratio": 8.0
+                    "duck_threshold": -30
                 }
             }
         }
@@ -116,21 +117,22 @@ class AutomixerApp(App):
             with TabPane("2. Signal Chain"):
                 with Horizontal():
                     with Vertical(classes="chain_box"):
-                        yield Label("SPEECH BUS (Mono Sum)", classes="chain_header")
+                        yield Label("SPEECH BUS (Serial Compression)", classes="chain_header")
                         with Horizontal(classes="dsp_row"):
                             yield Checkbox("High-Pass", value=True, id="speech_hp_enable")
                             yield Input(value="80", id="speech_hp_freq", classes="dsp_input")
                             yield Label("Hz")
                         with Horizontal(classes="dsp_row"):
-                            yield Checkbox("Compressor", value=True, id="speech_comp_enable")
-                            yield Input(value="-18", id="speech_comp_thresh", classes="dsp_input")
-                            yield Label("dB")
+                            yield Checkbox("Peak Tamer", value=True, id="speech_peak_enable")
+                            yield Input(value="-12", id="speech_peak_thresh", classes="dsp_input")
+                            yield Label("dB (2:1 Fast)")
                         with Horizontal(classes="dsp_row"):
-                            yield Label("Ratio:", classes="dsp_label")
-                            yield Input(value="3.0", id="speech_comp_ratio", classes="dsp_input")
+                            yield Checkbox("Leveler", value=True, id="speech_lev_enable")
+                            yield Input(value="-22", id="speech_lev_thresh", classes="dsp_input")
+                            yield Label("dB (1.5:1 Slow)")
                     
                     with Vertical(classes="chain_box"):
-                        yield Label("MUSIC BUS (Stereo Sum)", classes="chain_header")
+                        yield Label("MUSIC BUS (Spectral Carve)", classes="chain_header")
                         with Horizontal(classes="dsp_row"):
                             yield Checkbox("High-Pass", value=False, id="music_hp_enable")
                             yield Input(value="100", id="music_hp_freq", classes="dsp_input")
@@ -232,9 +234,10 @@ class AutomixerApp(App):
         s_bus = self.config["buses"]["speech"]
         s_bus["hp_enabled"] = self.query_one("#speech_hp_enable", Checkbox).value
         s_bus["hp_freq"] = float(self.query_one("#speech_hp_freq", Input).value)
-        s_bus["comp_enabled"] = self.query_one("#speech_comp_enable", Checkbox).value
-        s_bus["comp_threshold"] = float(self.query_one("#speech_comp_thresh", Input).value)
-        s_bus["comp_ratio"] = float(self.query_one("#speech_comp_ratio", Input).value)
+        s_bus["peak_enabled"] = self.query_one("#speech_peak_enable", Checkbox).value
+        s_bus["peak_threshold"] = float(self.query_one("#speech_peak_thresh", Input).value)
+        s_bus["lev_enabled"] = self.query_one("#speech_lev_enable", Checkbox).value
+        s_bus["lev_threshold"] = float(self.query_one("#speech_lev_thresh", Input).value)
         
         # Music Bus
         m_bus = self.config["buses"]["music"]
@@ -249,8 +252,24 @@ class AutomixerApp(App):
         processed_buses = {"speech": {"processors": []}, "music": {"processors": []}}
         if s_bus["hp_enabled"]:
             processed_buses["speech"]["processors"].append({"type": "highpass", "freq": s_bus["hp_freq"]})
-        if s_bus["comp_enabled"]:
-            processed_buses["speech"]["processors"].append({"type": "compressor", "threshold": s_bus["comp_threshold"], "ratio": s_bus["comp_ratio"]})
+        
+        # Serial Compression Stage 1: Fast Peak Taming (2.0 ratio, 30ms window)
+        if s_bus["peak_enabled"]:
+            processed_buses["speech"]["processors"].append({
+                "type": "compressor", 
+                "threshold": s_bus["peak_threshold"], 
+                "ratio": 2.0, 
+                "window": 0.03
+            })
+            
+        # Serial Compression Stage 2: Slow Leveling (1.5 ratio, 300ms window)
+        if s_bus["lev_enabled"]:
+            processed_buses["speech"]["processors"].append({
+                "type": "compressor", 
+                "threshold": s_bus["lev_threshold"], 
+                "ratio": 1.5, 
+                "window": 0.3
+            })
         
         if m_bus["hp_enabled"]:
             processed_buses["music"]["processors"].append({"type": "highpass", "freq": m_bus["hp_freq"]})
@@ -276,7 +295,7 @@ class AutomixerApp(App):
 
         log = self.query_one("#log", Log)
         log.clear()
-        log.write_line("Mixing with custom signal chain...")
+        log.write_line("Mixing with serial compression...")
         
         def task():
             try:

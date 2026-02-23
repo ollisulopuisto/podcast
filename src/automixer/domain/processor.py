@@ -22,21 +22,25 @@ class HighPassProcessor(Processor):
     def process(self, signal: mx.array, sr: int) -> mx.array:
         sig_np = np.array(signal)
         sos = sp_signal.butter(10, self.cut_freq, 'hp', fs=sr, output='sos')
-        filtered_np = sp_signal.sosfilt(sos, sig_np)
+        # Process multichannel
+        if len(sig_np.shape) > 1:
+            # Apply along length axis for each channel
+            filtered_np = sp_signal.sosfilt(sos, sig_np, axis=0)
+        else:
+            filtered_np = sp_signal.sosfilt(sos, sig_np)
         return mx.array(filtered_np.astype(np.float32))
 
 class DuckingProcessor(Processor):
-    def __init__(self, trigger_signal: mx.array, threshold_db=-20, ratio=4.0, attack_sec=0.1, release_sec=0.5):
+    def __init__(self, trigger_signal: mx.array, threshold_db=-20, ratio=4.0, window_sec=0.1):
         self.trigger = trigger_signal
         self.threshold = 10**(threshold_db / 20)
         self.ratio = ratio
-        self.attack_sec = attack_sec
-        self.release_sec = release_sec
+        self.window_sec = window_sec
         
     def process(self, signal: mx.array, sr: int) -> mx.array:
         # Simple offline ducking logic using MLX
         trigger_sq = self.trigger**2
-        window_size = int(0.1 * sr) 
+        window_size = max(1, int(self.window_sec * sr))
         weight_mx = mx.ones((1, window_size, 1)) / window_size
         trig_input = trigger_sq.reshape(1, -1, 1)
         
@@ -59,18 +63,22 @@ class DuckingProcessor(Processor):
                                0.0)
         
         gain_env = 10**(reduction_db / 20)
+        # Apply gain env to mono or stereo signal
         if len(signal.shape) > 1:
-            return signal * gain_env.reshape(-1, 1)
+            # Broadcast gain_env: [length] -> [length, channels]
+            # Ducking env is the same for all channels to maintain stereo image
+            return signal * gain_env[:, None]
         else:
             return signal * gain_env
 
 class CompressorProcessor(Processor):
-    def __init__(self, threshold_db=-20, ratio=4.0):
+    def __init__(self, threshold_db=-20, ratio=4.0, window_sec=0.1):
         self.threshold = threshold_db
         self.ratio = ratio
+        self.window_sec = window_sec
         
     def process(self, signal: mx.array, sr: int) -> mx.array:
-        ducker = DuckingProcessor(trigger_signal=signal, threshold_db=self.threshold, ratio=self.ratio)
+        ducker = DuckingProcessor(trigger_signal=signal, threshold_db=self.threshold, ratio=self.ratio, window_sec=self.window_sec)
         return ducker.process(signal, sr)
 
 class SpectralCarverProcessor(Processor):
@@ -138,14 +146,25 @@ class SpectralCarverProcessor(Processor):
             mask = mx.clip(mask, 0.1, 1.0) # Don't kill frequencies completely
             
             # 5. Apply Mask to music FFT (preserve phase)
-            carved_fft = s_fft * mask
-            
-            # 6. iFFT
-            carved_frame = mx.fft.ifft(carved_fft).real
-            
-            # 7. Overlap-Add
-            out_np[start:end] += np.array(carved_frame * window)
-            norm_np[start:end] += np.array(window**2)
+            # Handle multichannel FFT: MLX fft on signal [N, 2] will produce [N, 2] if n_fft is correct
+            # But we are doing frame-by-frame here
+            if len(sig_np.shape) > 1:
+                # sig_np[start:end] is [n_fft, 2]
+                s_frame = mx.array(sig_np[start:end]) * window[:, None]
+                # FFT along axis 0
+                s_fft = mx.fft.fft(s_frame, axis=0)
+                # mask is [n_fft], broadcast to [n_fft, 2]
+                carved_fft = s_fft * mask[:, None]
+                carved_frame = mx.fft.ifft(carved_fft, axis=0).real
+                out_np[start:end] += np.array(carved_frame * window[:, None])
+                norm_np[start:end] += np.array(window[:, None]**2)
+            else:
+                s_frame = mx.array(sig_np[start:end]) * window
+                s_fft = mx.fft.fft(s_frame)
+                carved_fft = s_fft * mask
+                carved_frame = mx.fft.ifft(carved_fft).real
+                out_np[start:end] += np.array(carved_frame * window)
+                norm_np[start:end] += np.array(window**2)
             
         # Avoid division by zero
         norm_np[norm_np < 1e-6] = 1.0

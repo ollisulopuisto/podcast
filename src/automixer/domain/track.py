@@ -5,11 +5,12 @@ import soundfile as sf
 from .processor import Processor
 
 class Track:
-    def __init__(self, name: str, path: str, track_type: str = "speech", start_sec: float = 0.0):
+    def __init__(self, name: str, path: str, track_type: str = "speech", start_sec: float = 0.0, pan: float = 0.0):
         self.name = name
         self.path = path
         self.type = track_type
         self.start_sec = start_sec
+        self.pan = pan
         self.signal = None
         self.sr = None
         
