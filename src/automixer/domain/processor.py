@@ -72,3 +72,81 @@ class CompressorProcessor(Processor):
     def process(self, signal: mx.array, sr: int) -> mx.array:
         ducker = DuckingProcessor(trigger_signal=signal, threshold_db=self.threshold, ratio=self.ratio)
         return ducker.process(signal, sr)
+
+class SpectralCarverProcessor(Processor):
+    def __init__(self, trigger_signal: mx.array, strength: float = 0.5):
+        self.trigger = trigger_signal
+        self.strength = strength # 0.0 (none) to 1.0 (full carving)
+        
+    def process(self, signal: mx.array, sr: int) -> mx.array:
+        """
+        Carve frequencies in 'signal' (music) that are present in 'trigger' (speech).
+        Using STFT/FFT for spectral subtraction approach.
+        """
+        n_fft = 2048
+        hop_length = 512
+        
+        # 1. Ensure signals match length
+        n_orig = signal.shape[0]
+        trigger = self.trigger
+        if trigger.shape[0] < n_orig:
+            trigger = mx.pad(trigger, [(0, n_orig - trigger.shape[0])])
+        elif trigger.shape[0] > n_orig:
+            trigger = trigger[:n_orig]
+            
+        # 2. Windowed STFT - Simple implementation
+        # For a truly transparent sound, we should use a proper STFT.
+        # But for an offline processor, we'll do it in chunks.
+        
+        # MLX stft is not as high-level as librosa. 
+        # Let's use a simpler approach: 
+        # Divide into overlapping frames, apply Hanning window, FFT, modify, iFFT, overlap-add.
+        
+        frames_idx = mx.arange(0, n_orig - n_fft, hop_length)
+        # Window function
+        window = mx.array(np.hanning(n_fft).astype(np.float32))
+        
+        # We'll use numpy for the windowing/overlap-add logic for robustness, 
+        # then MLX for the FFT calculations.
+        
+        sig_np = np.array(signal)
+        trig_np = np.array(trigger)
+        out_np = np.zeros_like(sig_np)
+        norm_np = np.zeros_like(sig_np)
+        
+        # Process in windows
+        for start in range(0, n_orig - n_fft, hop_length):
+            end = start + n_fft
+            
+            # 1. Extract frames
+            s_frame = mx.array(sig_np[start:end]) * window
+            t_frame = mx.array(trig_np[start:end]) * window
+            
+            # 2. FFT
+            s_fft = mx.fft.fft(s_frame)
+            t_fft = mx.fft.fft(t_frame)
+            
+            # 3. Magnitude spectra
+            s_mag = mx.abs(s_fft)
+            t_mag = mx.abs(t_fft)
+            
+            # 4. Create Mask
+            # If t_mag is high, reduce s_mag.
+            # Simple inverse scaling mask
+            t_max = mx.max(t_mag) + 1e-6
+            mask = 1.0 - (self.strength * (t_mag / t_max))
+            mask = mx.clip(mask, 0.1, 1.0) # Don't kill frequencies completely
+            
+            # 5. Apply Mask to music FFT (preserve phase)
+            carved_fft = s_fft * mask
+            
+            # 6. iFFT
+            carved_frame = mx.fft.ifft(carved_fft).real
+            
+            # 7. Overlap-Add
+            out_np[start:end] += np.array(carved_frame * window)
+            norm_np[start:end] += np.array(window**2)
+            
+        # Avoid division by zero
+        norm_np[norm_np < 1e-6] = 1.0
+        return mx.array(out_np / norm_np)

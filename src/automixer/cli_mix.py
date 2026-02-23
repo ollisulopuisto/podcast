@@ -8,7 +8,7 @@ import pyloudnorm as pyln
 from src.automixer.domain.track import Track
 from src.automixer.domain.bus import Bus
 from src.automixer.domain.processor import (
-    DuckingProcessor, GainProcessor, HighPassProcessor, CompressorProcessor
+    DuckingProcessor, GainProcessor, HighPassProcessor, CompressorProcessor, SpectralCarverProcessor
 )
 
 class Mixer:
@@ -64,10 +64,23 @@ class Mixer:
         speech_sig = speech_bus.process(self.sr, ad_spot=ad_spot, ad_duration=ad_duration)
         music_sig = music_bus.process(self.sr) # Music doesn't shift by default
         
-        # 2. Apply auto-ducking to music bus
-        print("Applying auto-ducking to music...")
-        ducker = DuckingProcessor(trigger_signal=speech_sig, threshold_db=-30, ratio=8.0)
-        music_sig = ducker.process(music_sig, self.sr)
+        # 2. Apply auto-ducking and spectral carving to music bus
+        print("Applying dynamic processing to music...")
+        
+        # Spectral Carving (Dynamic PEQ)
+        if self.config.get("buses", {}).get("music", {}).get("carve_enabled", False):
+            strength = self.config.get("buses", {}).get("music", {}).get("carve_strength", 0.5)
+            print(f"Applying Spectral Carving (strength: {strength})...")
+            carver = SpectralCarverProcessor(trigger_signal=speech_sig, strength=strength)
+            music_sig = carver.process(music_sig, self.sr)
+
+        # Standard Auto-Ducking
+        duck_cfg = self.config.get("buses", {}).get("music", {})
+        if duck_cfg.get("duck_enabled", True):
+            thresh = duck_cfg.get("duck_threshold", -30)
+            print(f"Applying Sidechain Ducking (thresh: {thresh}dB)...")
+            ducker = DuckingProcessor(trigger_signal=speech_sig, threshold_db=thresh, ratio=8.0)
+            music_sig = ducker.process(music_sig, self.sr)
         
         # 3. Sum final mix
         print("Summing master...")
