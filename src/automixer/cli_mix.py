@@ -7,7 +7,9 @@ import numpy as np
 import pyloudnorm as pyln
 from src.automixer.domain.track import Track
 from src.automixer.domain.bus import Bus
-from src.automixer.domain.processor import DuckingProcessor
+from src.automixer.domain.processor import (
+    DuckingProcessor, GainProcessor, HighPassProcessor, CompressorProcessor
+)
 
 class Mixer:
     def __init__(self, config_path):
@@ -15,12 +17,37 @@ class Mixer:
             self.config = yaml.safe_load(f)
         self.sr = 48000
         
+    def _create_processor(self, p_cfg):
+        p_type = p_cfg["type"]
+        if p_type == "highpass":
+            return HighPassProcessor(cut_freq=p_cfg.get("freq", 100))
+        elif p_type == "compressor":
+            return CompressorProcessor(threshold_db=p_cfg.get("threshold", -20), ratio=p_cfg.get("ratio", 4.0))
+        elif p_type == "gain":
+            return GainProcessor(gain_db=p_cfg.get("db", 0.0))
+        return None
+
     def run(self):
         project = self.config.get("project", "My Podcast")
         print(f"Mixing {project}...")
         
         speech_bus = Bus("speech")
         music_bus = Bus("music")
+        
+        # Add bus processors from config
+        buses_cfg = self.config.get("buses", {})
+        for bus_name, bus_cfg in buses_cfg.items():
+            bus = None
+            if bus_name == "speech":
+                bus = speech_bus
+            elif bus_name == "music":
+                bus = music_bus
+                
+            if bus:
+                for p_cfg in bus_cfg.get("processors", []):
+                    proc = self._create_processor(p_cfg)
+                    if proc:
+                        bus.add_processor(proc)
         
         # Load tracks
         for t_cfg in self.config.get("tracks", []):
@@ -31,30 +58,25 @@ class Mixer:
             elif t.type == "music":
                 music_bus.add_track(t)
         
-        # 1. Process speech bus
-        print("Processing speech bus...")
+        # 1. Process buses
+        print("Processing buses...")
         speech_sig = speech_bus.process(self.sr)
-        
-        # 2. Process music bus
-        print("Processing music bus...")
         music_sig = music_bus.process(self.sr)
         
-        # 3. Apply auto-ducking to music bus based on speech
-        # We'll add the ducker directly to the music_sig
+        # 2. Apply auto-ducking to music bus based on speech
         print("Applying auto-ducking to music...")
         ducker = DuckingProcessor(trigger_signal=speech_sig, threshold_db=-30, ratio=8.0)
         music_sig = ducker.process(music_sig, self.sr)
         
-        # 4. Sum final mix
+        # 3. Sum final mix
         print("Summing master...")
         max_len = max(speech_sig.shape[0], music_sig.shape[0])
         speech_sig = mx.pad(speech_sig, [(0, max_len - speech_sig.shape[0])])
         music_sig = mx.pad(music_sig, [(0, max_len - music_sig.shape[0])])
         
-        # Combine: speech is 100%, music is background (reduced)
         final_mix_mx = speech_sig + (music_sig * 0.4)
         
-        # 5. LUFS Normalization
+        # 4. LUFS Normalization
         final_mix_np = np.array(final_mix_mx)
         target_lufs = self.config.get("target_lufs", -16.0)
         print(f"Normalizing to {target_lufs} LUFS...")
@@ -70,7 +92,6 @@ class Mixer:
             normalized_mix /= (peak + 0.01)
             
         output_path = self.config.get("output_path", "final_mix.wav")
-        # Save as 24-bit PCM
         sf.write(output_path, normalized_mix, self.sr, subtype='PCM_24')
         print(f"Done! Saved to {output_path}")
 
