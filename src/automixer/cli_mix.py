@@ -90,9 +90,17 @@ class Mixer:
         ad_spot = self.config.get("ad_spot", 0.0)
         ad_duration = self.config.get("ad_duration", 30.0)
         
+        def speech_cb(p, msg):
+            # Speech bus is 40% -> 50%
+            update_progress(40 + int(p * 10), f"Speech: {msg}")
+            
+        def music_cb(p, msg):
+            # Music bus is 50% -> 60%
+            update_progress(50 + int(p * 10), f"Music: {msg}")
+
         with ThreadPoolExecutor() as executor:
-            speech_future = executor.submit(speech_bus.process, self.sr, ad_spot=ad_spot, ad_duration=ad_duration)
-            music_future = executor.submit(music_bus.process, self.sr)
+            speech_future = executor.submit(speech_bus.process, self.sr, ad_spot=ad_spot, ad_duration=ad_duration, progress_callback=speech_cb)
+            music_future = executor.submit(music_bus.process, self.sr, progress_callback=music_cb)
             
             speech_sig = speech_future.result()
             music_sig = music_future.result()
@@ -105,12 +113,18 @@ class Mixer:
         if self.config.get("buses", {}).get("music", {}).get("carve_enabled", False):
             strength = self.config.get("buses", {}).get("music", {}).get("carve_strength", 0.5)
             carver = SpectralCarverProcessor(trigger_signal=speech_mono_trigger, strength=strength)
-            music_sig = carver.process(music_sig, self.sr)
+            
+            def carve_cb(p):
+                # Carving is 60% -> 75%
+                update_progress(60 + int(p * 15), "Spectral Carving (GPU)...")
+                
+            music_sig = carver.process(music_sig, self.sr, progress_callback=carve_cb)
 
         # Sidechain Ducking
         duck_cfg = self.config.get("buses", {}).get("music", {})
         if duck_cfg.get("duck_enabled", True):
             thresh = duck_cfg.get("duck_threshold", -30)
+            update_progress(75, "Applying Sidechain Ducking (GPU)...")
             ducker = DuckingProcessor(trigger_signal=speech_mono_trigger, threshold_db=thresh, ratio=8.0)
             music_sig = ducker.process(music_sig, self.sr)
         

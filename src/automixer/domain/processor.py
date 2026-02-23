@@ -5,21 +5,21 @@ from scipy import signal as sp_signal
 
 class Processor(ABC):
     @abstractmethod
-    def process(self, signal: mx.array, sr: int) -> mx.array:
+    def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
         pass
 
 class GainProcessor(Processor):
     def __init__(self, gain_db: float):
         self.gain = 10**(gain_db / 20)
         
-    def process(self, signal: mx.array, sr: int) -> mx.array:
+    def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
         return signal * self.gain
 
 class HighPassProcessor(Processor):
     def __init__(self, cut_freq=100.0):
         self.cut_freq = cut_freq
         
-    def process(self, signal: mx.array, sr: int) -> mx.array:
+    def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
         sig_np = np.array(signal)
         sos = sp_signal.butter(10, self.cut_freq, 'hp', fs=sr, output='sos')
         # Process multichannel
@@ -37,7 +37,7 @@ class DuckingProcessor(Processor):
         self.ratio = ratio
         self.window_sec = window_sec
         
-    def process(self, signal: mx.array, sr: int) -> mx.array:
+    def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
         # Simple offline ducking logic using MLX
         trigger_sq = self.trigger**2
         window_size = max(1, int(self.window_sec * sr))
@@ -77,16 +77,16 @@ class CompressorProcessor(Processor):
         self.ratio = ratio
         self.window_sec = window_sec
         
-    def process(self, signal: mx.array, sr: int) -> mx.array:
+    def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
         ducker = DuckingProcessor(trigger_signal=signal, threshold_db=self.threshold, ratio=self.ratio, window_sec=self.window_sec)
-        return ducker.process(signal, sr)
+        return ducker.process(signal, sr, progress_callback=progress_callback)
 
 class SpectralCarverProcessor(Processor):
     def __init__(self, trigger_signal: mx.array, strength: float = 0.5):
         self.trigger = trigger_signal
         self.strength = strength # 0.0 (none) to 1.0 (full carving)
         
-    def process(self, signal: mx.array, sr: int) -> mx.array:
+    def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
         """
         Carve frequencies in 'signal' (music) that are present in 'trigger' (speech).
         Using STFT/FFT for spectral subtraction approach.
@@ -102,28 +102,22 @@ class SpectralCarverProcessor(Processor):
         elif trigger.shape[0] > n_orig:
             trigger = trigger[:n_orig]
             
-        # 2. Windowed STFT - Simple implementation
-        # For a truly transparent sound, we should use a proper STFT.
-        # But for an offline processor, we'll do it in chunks.
-        
-        # MLX stft is not as high-level as librosa. 
-        # Let's use a simpler approach: 
-        # Divide into overlapping frames, apply Hanning window, FFT, modify, iFFT, overlap-add.
-        
-        frames_idx = mx.arange(0, n_orig - n_fft, hop_length)
         # Window function
         window = mx.array(np.hanning(n_fft).astype(np.float32))
-        
-        # We'll use numpy for the windowing/overlap-add logic for robustness, 
-        # then MLX for the FFT calculations.
         
         sig_np = np.array(signal)
         trig_np = np.array(trigger)
         out_np = np.zeros_like(sig_np)
         norm_np = np.zeros_like(sig_np)
         
+        starts = list(range(0, n_orig - n_fft, hop_length))
+        total_steps = len(starts)
+        
         # Process in windows
-        for start in range(0, n_orig - n_fft, hop_length):
+        for i, start in enumerate(starts):
+            if progress_callback and i % 50 == 0:
+                progress_callback(i / total_steps)
+                
             end = start + n_fft
             
             # 1. Extract frames
@@ -139,21 +133,14 @@ class SpectralCarverProcessor(Processor):
             t_mag = mx.abs(t_fft)
             
             # 4. Create Mask
-            # If t_mag is high, reduce s_mag.
-            # Simple inverse scaling mask
             t_max = mx.max(t_mag) + 1e-6
             mask = 1.0 - (self.strength * (t_mag / t_max))
-            mask = mx.clip(mask, 0.1, 1.0) # Don't kill frequencies completely
+            mask = mx.clip(mask, 0.1, 1.0)
             
-            # 5. Apply Mask to music FFT (preserve phase)
-            # Handle multichannel FFT: MLX fft on signal [N, 2] will produce [N, 2] if n_fft is correct
-            # But we are doing frame-by-frame here
+            # 5. Apply Mask to music FFT
             if len(sig_np.shape) > 1:
-                # sig_np[start:end] is [n_fft, 2]
                 s_frame = mx.array(sig_np[start:end]) * window[:, None]
-                # FFT along axis 0
                 s_fft = mx.fft.fft(s_frame, axis=0)
-                # mask is [n_fft], broadcast to [n_fft, 2]
                 carved_fft = s_fft * mask[:, None]
                 carved_frame = mx.fft.ifft(carved_fft, axis=0).real
                 out_np[start:end] += np.array(carved_frame * window[:, None])
@@ -166,6 +153,5 @@ class SpectralCarverProcessor(Processor):
                 out_np[start:end] += np.array(carved_frame * window)
                 norm_np[start:end] += np.array(window**2)
             
-        # Avoid division by zero
         norm_np[norm_np < 1e-6] = 1.0
         return mx.array(out_np / norm_np)
