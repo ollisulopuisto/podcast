@@ -70,8 +70,10 @@ class Mixer:
             if t.type == "speech":
                 speech_track_list.append(t)
                 speech_bus.add_track(t)
+                update_progress(15, f"SPEECH '{t.name}': Detected {t.loudness:.2f} LUFS")
             elif t.type == "music":
                 music_bus.add_track(t)
+                update_progress(15, f"MUSIC '{t.name}': Detected {t.loudness:.2f} LUFS")
 
         # 2. Intelligent Auto-Thresholding & Gain Normalization
         update_progress(20, "Auto-configuring channel strips...")
@@ -83,6 +85,7 @@ class Mixer:
             # 2a. External Plugins first? (Pre-processing)
             for p_cfg in speech_cfg.get("processors", []):
                 if p_cfg["type"] == "plugin":
+                    update_progress(22, f"  - Adding plugin: {os.path.basename(p_cfg['path'])} to {t.name}")
                     t.add_processor(self._create_processor(p_cfg))
 
             # 2b. High-Pass

@@ -79,13 +79,18 @@ class LimiterProcessor(Processor):
         target_gain = np.where(peak_env > self.threshold, self.threshold / (peak_env + 1e-6), 1.0)
         smoothed_gain = np.ones_like(target_gain)
         alpha_rel = np.exp(-1.0 / (self.release_sec * sr))
-        current_gain = 1.0
-        for i in range(len(target_gain)):
-            target = target_gain[i]
-            if target < current_gain: current_gain = target
-            else: current_gain = current_gain * alpha_rel + target * (1 - alpha_rel)
-            smoothed_gain[i] = current_gain
-        final_gain = mx.array(smoothed_gain)
+        
+        # 4. Smooth Gain (Vectorized Release)
+        # Using a first-order IIR filter for recovery speed
+        b = [1.0 - alpha_rel]
+        a = [1.0, -alpha_rel]
+        from scipy.signal import lfilter
+        smoothed_gain = lfilter(b, a, target_gain)
+        
+        # Ensure we don't exceed 1.0 gain
+        smoothed_gain = np.clip(smoothed_gain, 0.0, 1.0)
+        
+        final_gain = mx.array(smoothed_gain.astype(np.float32))
         return signal * final_gain[:, None] if len(signal.shape) > 1 else signal * final_gain
 
 class SpectralCarverProcessor(Processor):
@@ -189,27 +194,26 @@ class ExternalPluginProcessor(Processor):
     def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
         if self.plugin is None:
             try:
+                plugin_name = os.path.basename(self.plugin_path)
+                print(f"[PLUGIN] Loading {plugin_name}...")
                 self.plugin = pedalboard.load_plugin(self.plugin_path)
                 for name, value in self.parameters.items():
-                    # Handle common parameter naming (pedalboard uses snake_case often)
-                    # But AU/VST might use specific names.
                     if hasattr(self.plugin, name):
                         setattr(self.plugin, name, value)
-                        print(f"Plugin {os.path.basename(self.plugin_path)}: Set {name}={value}")
+                        print(f"  - Set {name} = {value}")
                     else:
-                        # Try to find matching parameter by name
                         found = False
                         if hasattr(self.plugin, 'parameters'):
                             for p_name, p_obj in self.plugin.parameters.items():
                                 if name.lower() == p_name.lower().replace(" ", "_"):
                                     setattr(self.plugin, p_name, value)
-                                    print(f"Plugin {os.path.basename(self.plugin_path)}: Set {p_name}={value}")
+                                    print(f"  - Set {p_name} = {value}")
                                     found = True
                                     break
                         if not found:
-                            print(f"Warning: Plugin {os.path.basename(self.plugin_path)} has no parameter '{name}'")
+                            print(f"  ! Warning: Parameter '{name}' not found")
             except Exception as e:
-                print(f"Error loading plugin {self.plugin_path}: {e}")
+                print(f"[PLUGIN ERROR] {self.plugin_path}: {e}")
                 return signal
         sig_np = np.array(signal)
         if len(sig_np.shape) > 1: sig_pb = sig_np.T
