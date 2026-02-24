@@ -1,6 +1,6 @@
 [project]
 name = "automixer"
-version = "2026.02.24.2"
+version = "2026.02.24.3"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -12,6 +12,7 @@ dependencies = [
     "pytest>=9.0.2",
     "pyyaml>=6.0.3",
     "scipy>=1.17.1",
+    "sounddevice>=0.5.5",
     "soundfile>=0.13.1",
     "textual>=8.0.0",
 ]
