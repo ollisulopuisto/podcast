@@ -131,16 +131,23 @@ class Mixer:
         ad_spot = self.config.get("ad_spot", 0.0)
         ad_duration = self.config.get("ad_duration", 30.0)
         
-        def speech_cb(p, msg):
-            update_progress(40 + int(p * 15), f"Speech: {msg}")
-        def music_cb(p, msg):
-            update_progress(55 + int(p * 5), f"Music: {msg}")
+        # Parallelize the individual track processing within each bus
+        def process_bus_parallel(bus, ad_spot, ad_duration, msg_prefix):
+            def proc_track(t):
+                update_progress(42, f"[{msg_prefix}] Processing strip: {t.name}...")
+                return t.process(self.sr)
 
-        with ThreadPoolExecutor() as executor:
-            speech_future = executor.submit(speech_bus.process, self.sr, ad_spot=ad_spot, ad_duration=ad_duration, progress_callback=speech_cb)
-            music_future = executor.submit(music_bus.process, self.sr, progress_callback=music_cb)
-            speech_sig = speech_future.result()
-            music_sig = music_future.result()
+            with ThreadPoolExecutor() as bus_executor:
+                # 1. Trigger parallel track processing
+                list(bus_executor.map(proc_track, bus.tracks))
+            # 2. Run the bus summing/leveling
+            return bus.process(self.sr, ad_spot=ad_spot, ad_duration=ad_duration)
+
+        update_progress(45, "Running Speech Engine...")
+        speech_sig = process_bus_parallel(speech_bus, ad_spot, ad_duration, "Speech")
+        
+        update_progress(55, "Running Music Engine...")
+        music_sig = process_bus_parallel(music_bus, 0, 0, "Music")
         
         # 5. Cross-Bus Dynamic Processing
         update_progress(65, "Applying Spectral Carving & Sidechain...")

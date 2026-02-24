@@ -74,24 +74,23 @@ class LimiterProcessor(Processor):
     def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
         n_samples = signal.shape[0]
         lookahead_samples = max(1, int(self.lookahead_sec * sr))
-        env_np = np.array(mx.max(mx.abs(signal), axis=-1)) if len(signal.shape) > 1 else np.array(mx.abs(signal))
-        peak_env = maximum_filter1d(env_np, size=lookahead_samples, origin=-(lookahead_samples // 2))
-        target_gain = np.where(peak_env > self.threshold, self.threshold / (peak_env + 1e-6), 1.0)
-        smoothed_gain = np.ones_like(target_gain)
+        env = mx.max(mx.abs(signal), axis=-1) if len(signal.shape) > 1 else mx.abs(signal)
+        block_size = 5000000 
+        peak_env_parts = []
+        env_np = np.array(env)
+        for start in range(0, n_samples, block_size):
+            end = min(start + block_size, n_samples)
+            seg_end = min(end + lookahead_samples, n_samples)
+            segment = env_np[start : seg_end]
+            p_seg = maximum_filter1d(segment, size=lookahead_samples, origin=-(lookahead_samples // 2))
+            peak_env_parts.append(p_seg[:end-start])
+        peak_env = mx.array(np.concatenate(peak_env_parts))
+        target_gain = mx.where(peak_env > self.threshold, self.threshold / (peak_env + 1e-6), 1.0)
         alpha_rel = np.exp(-1.0 / (self.release_sec * sr))
-        
-        # 4. Smooth Gain (Vectorized Release)
-        # Using a first-order IIR filter for recovery speed
-        b = [1.0 - alpha_rel]
-        a = [1.0, -alpha_rel]
         from scipy.signal import lfilter
-        smoothed_gain = lfilter(b, a, target_gain)
-        
-        # Ensure we don't exceed 1.0 gain
-        smoothed_gain = np.clip(smoothed_gain, 0.0, 1.0)
-        
-        final_gain = mx.array(smoothed_gain.astype(np.float32))
-        return signal * final_gain[:, None] if len(signal.shape) > 1 else signal * final_gain
+        smoothed_gain = lfilter([1.0 - alpha_rel], [1.0, -alpha_rel], np.array(target_gain))
+        smoothed_gain = mx.array(np.clip(smoothed_gain, 0.0, 1.0).astype(np.float32))
+        return signal * smoothed_gain[:, None] if len(signal.shape) > 1 else signal * smoothed_gain
 
 class SpectralCarverProcessor(Processor):
     def __init__(self, trigger_signal: mx.array, strength: float = 0.5):
@@ -105,42 +104,38 @@ class SpectralCarverProcessor(Processor):
         trigger = self.trigger
         if trigger.shape[0] < n_orig: trigger = mx.pad(trigger, [(0, n_orig - trigger.shape[0])])
         elif trigger.shape[0] > n_orig: trigger = trigger[:n_orig]
+        num_windows = (n_orig - n_fft) // hop_length + 1
+        if progress_callback: progress_callback(0.1)
+        idx = mx.arange(n_fft)[None, :] + (mx.arange(num_windows) * hop_length)[:, None]
+        s_windows = signal[idx]
+        t_windows = trigger[idx]
         window = mx.array(np.hanning(n_fft).astype(np.float32))
-        sig_np = np.array(signal)
-        trig_np = np.array(trigger)
-        out_np = np.zeros_like(sig_np)
-        norm_np = np.zeros_like(sig_np)
-        starts = list(range(0, n_orig - n_fft, hop_length))
-        total_steps = len(starts)
-        for i, start in enumerate(starts):
-            if progress_callback and i % 50 == 0: progress_callback(i / total_steps)
+        if len(s_windows.shape) > 2: s_windows = s_windows * window[None, :, None]
+        else: s_windows = s_windows * window[None, :]
+        t_windows = t_windows * window[None, :]
+        if progress_callback: progress_callback(0.3)
+        s_fft = mx.fft.fft(s_windows, axis=1)
+        t_fft = mx.fft.fft(t_windows, axis=1)
+        t_mag = mx.abs(t_fft)
+        t_max = mx.max(t_mag, axis=1, keepdims=True) + 1e-6
+        mask = mx.clip(1.0 - (self.strength * (t_mag / t_max)), 0.1, 1.0)
+        if len(s_windows.shape) > 2: carved_fft = s_fft * mask[:, :, None]
+        else: carved_fft = s_fft * mask
+        if progress_callback: progress_callback(0.6)
+        carved_windows = mx.fft.ifft(carved_fft, axis=1).real
+        if progress_callback: progress_callback(0.8)
+        out_np = np.zeros(signal.shape, dtype=np.float32)
+        carved_np = np.array(carved_windows)
+        window_np = np.array(window)**2
+        norm_np = np.zeros(n_orig, dtype=np.float32)
+        for i in range(num_windows):
+            start = i * hop_length
             end = start + n_fft
-            if len(sig_np.shape) > 1:
-                s_frame = mx.array(sig_np[start:end]) * window[:, None]
-                t_frame = mx.array(trig_np[start:end]) * window
-                s_fft = mx.fft.fft(s_frame, axis=0)
-                t_fft = mx.fft.fft(t_frame)
-                t_mag = mx.abs(t_fft)
-                t_max = mx.max(t_mag) + 1e-6
-                mask = mx.clip(1.0 - (self.strength * (t_mag / t_max)), 0.1, 1.0)
-                carved_fft = s_fft * mask[:, None]
-                carved_frame = mx.fft.ifft(carved_fft, axis=0).real
-                out_np[start:end] += np.array(carved_frame * window[:, None])
-                norm_np[start:end] += np.array(window[:, None]**2)
-            else:
-                s_frame = mx.array(sig_np[start:end]) * window
-                t_frame = mx.array(trig_np[start:end]) * window
-                s_fft = mx.fft.fft(s_frame)
-                t_fft = mx.fft.fft(t_frame)
-                t_mag = mx.abs(t_fft)
-                t_max = mx.max(t_mag) + 1e-6
-                mask = mx.clip(1.0 - (self.strength * (t_mag / t_max)), 0.1, 1.0)
-                carved_fft = s_fft * mask
-                carved_frame = mx.fft.ifft(carved_fft).real
-                out_np[start:end] += np.array(carved_frame * window)
-                norm_np[start:end] += np.array(window**2)
+            out_np[start:end] += carved_np[i]
+            norm_np[start:end] += window_np
         norm_np[norm_np < 1e-6] = 1.0
-        return mx.array(out_np / norm_np)
+        if progress_callback: progress_callback(1.0)
+        return mx.array(out_np / (norm_np[:, None] if len(signal.shape) > 1 else norm_np))
 
 class MultibandCompressorProcessor(Processor):
     def __init__(self, low_mid_freq=250, mid_high_freq=4000, peak_enabled=True, lev_enabled=True):
@@ -157,32 +152,24 @@ class MultibandCompressorProcessor(Processor):
             loudness = meter.integrated_loudness(band_np)
             if np.isnan(loudness) or np.isinf(loudness): return band_sig
         except: return band_sig
-        gain_offset = ref_lufs - loudness
-        gain_offset = np.clip(gain_offset, -20, 20)
+        gain_offset = np.clip(ref_lufs - loudness, -20, 20)
         out = band_sig * (10**(gain_offset / 20))
-        if self.peak_enabled:
-            out = CompressorProcessor(threshold_db=-15, ratio=2.5, window_sec=0.03).process(out, sr)
-        if self.lev_enabled:
-            out = CompressorProcessor(threshold_db=-26, ratio=1.5, window_sec=0.3).process(out, sr)
+        if self.peak_enabled: out = CompressorProcessor(threshold_db=-15, ratio=2.5, window_sec=0.03).process(out, sr)
+        if self.lev_enabled: out = CompressorProcessor(threshold_db=-26, ratio=1.5, window_sec=0.3).process(out, sr)
         return out
 
     def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
         sig_np = np.array(signal)
-        # 2nd order Butterworth for better stability
         sos_low = sp_signal.butter(2, self.low_mid_freq, 'lp', fs=sr, output='sos')
         sos_mid = sp_signal.butter(2, self.mid_high_freq, 'lp', fs=sr, output='sos')
-        
         axis = 0 if len(sig_np.shape) > 1 else -1
-        # Subtract low from signal, then subtract mid from the rest
         low_np = sp_signal.sosfilt(sos_low, sig_np, axis=axis)
         rem = sig_np - low_np
         mid_np = sp_signal.sosfilt(sos_mid, rem, axis=axis)
         high_np = rem - mid_np
-        
         low_proc = self._apply_auto_dynamics(mx.array(low_np.astype(np.float32)), sr)
         mid_proc = self._apply_auto_dynamics(mx.array(mid_np.astype(np.float32)), sr)
         high_proc = self._apply_auto_dynamics(mx.array(high_np.astype(np.float32)), sr)
-        
         return low_proc + mid_proc + high_proc
 
 class ExternalPluginProcessor(Processor):
@@ -210,8 +197,7 @@ class ExternalPluginProcessor(Processor):
                                     print(f"  - Set {p_name} = {value}")
                                     found = True
                                     break
-                        if not found:
-                            print(f"  ! Warning: Parameter '{name}' not found")
+                        if not found: print(f"  ! Warning: Parameter '{name}' not found")
             except Exception as e:
                 print(f"[PLUGIN ERROR] {self.plugin_path}: {e}")
                 return signal
