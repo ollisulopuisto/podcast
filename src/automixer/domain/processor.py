@@ -104,37 +104,44 @@ class SpectralCarverProcessor(Processor):
         trigger = self.trigger
         if trigger.shape[0] < n_orig: trigger = mx.pad(trigger, [(0, n_orig - trigger.shape[0])])
         elif trigger.shape[0] > n_orig: trigger = trigger[:n_orig]
-        num_windows = (n_orig - n_fft) // hop_length + 1
-        if progress_callback: progress_callback(0.1)
-        idx = mx.arange(n_fft)[None, :] + (mx.arange(num_windows) * hop_length)[:, None]
-        s_windows = signal[idx]
-        t_windows = trigger[idx]
-        window = mx.array(np.hanning(n_fft).astype(np.float32))
-        if len(s_windows.shape) > 2: s_windows = s_windows * window[None, :, None]
-        else: s_windows = s_windows * window[None, :]
-        t_windows = t_windows * window[None, :]
-        if progress_callback: progress_callback(0.3)
-        s_fft = mx.fft.fft(s_windows, axis=1)
-        t_fft = mx.fft.fft(t_windows, axis=1)
-        t_mag = mx.abs(t_fft)
-        t_max = mx.max(t_mag, axis=1, keepdims=True) + 1e-6
-        mask = mx.clip(1.0 - (self.strength * (t_mag / t_max)), 0.1, 1.0)
-        if len(s_windows.shape) > 2: carved_fft = s_fft * mask[:, :, None]
-        else: carved_fft = s_fft * mask
-        if progress_callback: progress_callback(0.6)
-        carved_windows = mx.fft.ifft(carved_fft, axis=1).real
-        if progress_callback: progress_callback(0.8)
+        block_samples = 5 * 60 * sr 
         out_np = np.zeros(signal.shape, dtype=np.float32)
-        carved_np = np.array(carved_windows)
-        window_np = np.array(window)**2
         norm_np = np.zeros(n_orig, dtype=np.float32)
-        for i in range(num_windows):
-            start = i * hop_length
-            end = start + n_fft
-            out_np[start:end] += carved_np[i]
-            norm_np[start:end] += window_np
+        window = mx.array(np.hanning(n_fft).astype(np.float32))
+        window_np = np.array(window)**2
+        num_blocks = (n_orig // block_samples) + 1
+        for b in range(num_blocks):
+            b_start = b * block_samples
+            b_end = min(b_start + block_samples, n_orig)
+            if b_start >= n_orig: break
+            seg_end = min(b_end + n_fft, n_orig)
+            s_seg = signal[b_start : seg_end]
+            t_seg = trigger[b_start : seg_end]
+            if s_seg.shape[0] < n_fft: break
+            num_windows = (s_seg.shape[0] - n_fft) // hop_length + 1
+            if num_windows <= 0: continue
+            if progress_callback: progress_callback(b / num_blocks)
+            idx = mx.arange(n_fft)[None, :] + (mx.arange(num_windows) * hop_length)[:, None]
+            s_win = s_seg[idx] 
+            t_win = t_seg[idx]
+            if len(s_win.shape) > 2: s_win = s_win * window[None, :, None]
+            else: s_win = s_win * window[None, :]
+            t_win = t_win * window[None, :]
+            s_fft = mx.fft.fft(s_win, axis=1)
+            t_fft = mx.fft.fft(t_win, axis=1)
+            t_mag = mx.abs(t_fft)
+            t_max = mx.max(t_mag, axis=1, keepdims=True) + 1e-6
+            mask = mx.clip(1.0 - (self.strength * (t_mag / t_max)), 0.1, 1.0)
+            if len(s_win.shape) > 2: carved_fft = s_fft * mask[:, :, None]
+            else: carved_fft = s_fft * mask
+            carved_win = mx.fft.ifft(carved_fft, axis=1).real
+            carved_np = np.array(carved_win)
+            for i in range(num_windows):
+                w_start = b_start + (i * hop_length)
+                w_end = w_start + n_fft
+                out_np[w_start:w_end] += carved_np[i]
+                norm_np[w_start:w_end] += window_np
         norm_np[norm_np < 1e-6] = 1.0
-        if progress_callback: progress_callback(1.0)
         return mx.array(out_np / (norm_np[:, None] if len(signal.shape) > 1 else norm_np))
 
 class MultibandCompressorProcessor(Processor):
