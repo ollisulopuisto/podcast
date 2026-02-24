@@ -109,9 +109,13 @@ class Mixer:
             # Use 0 if loudness is unknown
             l_val = t.loudness if t.loudness is not None else reference_lufs
             
+            # 2a. Pre-processing: De-Smacker (Option 1: Spectral Interpolation style)
+            if speech_cfg.get("desmack_enabled", True):
+                sensitivity = float(speech_cfg.get("desmack_sensitivity", 0.5))
+                t.add_processor(DeSmackProcessor(sensitivity=sensitivity))
+
+            # 2b. External Plugins next
             for p_cfg in speech_cfg.get("processors", []):
-                if p_cfg["type"] == "plugin":
-                    t.add_processor(self._create_processor(p_cfg))
 
             if speech_cfg.get("hp_enabled", True):
                 t.add_processor(HighPassProcessor(cut_freq=80))

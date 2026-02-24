@@ -128,7 +128,10 @@ class AutomixerApp(App):
                 with Horizontal():
                     with Vertical(classes="chain_box"):
                         yield Label("SPEECH BUS", classes="chain_header")
-                        yield Checkbox("High-Pass", value=True, id="speech_hp_enable")
+                        with Horizontal(classes="dsp_row"):
+                            yield Checkbox("De-Smacker", value=True, id="speech_desmack_enable")
+                            yield Input(value="0.5", id="speech_desmack_sensitivity", classes="dsp_input")
+                        yield Checkbox("High-Pass (80Hz)", value=True, id="speech_hp_enable")
                         yield Checkbox("Multiband Mode", value=False, id="speech_multiband_enable")
                         yield Checkbox("Peak Tamer", value=True, id="speech_peak_enable")
                         yield Checkbox("Leveler", value=True, id="speech_lev_enable")
@@ -267,6 +270,8 @@ class AutomixerApp(App):
 
     def sync_config_from_ui(self):
         s_bus = self.config["buses"]["speech"]
+        s_bus["desmack_enabled"] = self.query_one("#speech_desmack_enable", Checkbox).value
+        s_bus["desmack_sensitivity"] = float(self.query_one("#speech_desmack_sensitivity", Input).value)
         s_bus["hp_enabled"] = self.query_one("#speech_hp_enable", Checkbox).value
         s_bus["multiband_enabled"] = self.query_one("#speech_multiband_enable", Checkbox).value
         s_bus["peak_enabled"] = self.query_one("#speech_peak_enable", Checkbox).value
