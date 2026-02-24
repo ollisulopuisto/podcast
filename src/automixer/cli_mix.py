@@ -11,7 +11,8 @@ from src.automixer.domain.track import Track
 from src.automixer.domain.bus import Bus
 from src.automixer.domain.processor import (
     DuckingProcessor, GainProcessor, HighPassProcessor, CompressorProcessor, 
-    SpectralCarverProcessor, LimiterProcessor, MultibandCompressorProcessor, ExternalPluginProcessor
+    SpectralCarverProcessor, LimiterProcessor, MultibandCompressorProcessor, 
+    ExternalPluginProcessor, DeSmackProcessor
 )
 
 from concurrent.futures import ThreadPoolExecutor
@@ -116,6 +117,8 @@ class Mixer:
 
             # 2b. External Plugins next
             for p_cfg in speech_cfg.get("processors", []):
+                if p_cfg["type"] == "plugin":
+                    t.add_processor(self._create_processor(p_cfg))
 
             if speech_cfg.get("hp_enabled", True):
                 t.add_processor(HighPassProcessor(cut_freq=80))
