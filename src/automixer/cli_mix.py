@@ -7,6 +7,8 @@ import soundfile as sf
 import mlx.core as mx
 import numpy as np
 import pyloudnorm as pyln
+import argparse
+import glob
 from src.automixer.domain.track import Track
 from src.automixer.domain.bus import Bus
 from src.automixer.domain.processor import (
@@ -233,3 +235,88 @@ class Mixer:
         else:
             update_progress(100, "✅ Preview Render Ready")
             return master_np
+
+def detect_tracks(paths):
+    music_keywords = ["MUSIC", "THEME", "TUNNARI", "MUSA", "MUSIIKKI", "TUNNUS", "JINGLE"]
+    tracks = []
+    for path in paths:
+        name = os.path.basename(path).upper()
+        is_music = any(kw in name for kw in music_keywords)
+        track_type = "music" if is_music else "speech"
+        tracks.append({
+            "name": os.path.basename(path),
+            "path": path,
+            "type": track_type
+        })
+    return tracks
+
+def main():
+    parser = argparse.ArgumentParser(description="Automixer CLI")
+    parser.add_argument("tracks", nargs="*", help="Audio files to mix (will be auto-detected if --speech/--music not used)")
+    parser.add_argument("--speech", nargs="+", help="Explicitly specify speech tracks")
+    parser.add_argument("--music", nargs="+", help="Explicitly specify music tracks")
+    parser.add_argument("--output", "-o", default="final_mix.wav", help="Output filename")
+    parser.add_argument("--target-lufs", type=float, default=-16.0, help="Target loudness (LUFS)")
+    parser.add_argument("--ad-spot", type=float, default=0.0, help="Ad spot time (seconds)")
+    parser.add_argument("--ad-duration", type=float, default=30.0, help="Ad duration (seconds)")
+    
+    args = parser.parse_args()
+    
+    config_tracks = []
+    
+    if args.speech:
+        for p in args.speech:
+            config_tracks.append({"name": os.path.basename(p), "path": p, "type": "speech"})
+            
+    if args.music:
+        for p in args.music:
+            config_tracks.append({"name": os.path.basename(p), "path": p, "type": "music"})
+            
+    if not args.speech and not args.music:
+        # If no explicit tracks, use positional tracks or all wav files in current dir
+        paths = args.tracks
+        if not paths:
+            paths = glob.glob("*.wav") + glob.glob("*.mp3")
+            
+        config_tracks = detect_tracks(paths)
+        
+    if not config_tracks:
+        print("No tracks found or specified.")
+        return
+
+    # Log detected roles
+    print("Detected Track Roles:")
+    for t in config_tracks:
+        icon = "🎤" if t["type"] == "speech" else "🎵"
+        print(f"  {icon} {t['type'].upper()}: {t['name']}")
+
+    config = {
+        "project": "CLI Mix",
+        "target_lufs": args.target_lufs,
+        "output_path": args.output,
+        "ad_spot": args.ad_spot,
+        "ad_duration": args.ad_duration,
+        "tracks": config_tracks,
+        "buses": {
+            "speech": {
+                "hp_enabled": True,
+                "peak_enabled": True,
+                "lev_enabled": True,
+                "multiband_enabled": False,
+                "desmack_enabled": True,
+                "desmack_sensitivity": 0.5
+            },
+            "music": {
+                "carve_enabled": True,
+                "carve_strength": 0.5,
+                "duck_enabled": True,
+                "duck_threshold": -30
+            }
+        }
+    }
+    
+    mixer = Mixer(config)
+    mixer.run()
+
+if __name__ == "__main__":
+    main()

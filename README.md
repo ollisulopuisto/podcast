@@ -28,8 +28,9 @@ A modular, high-performance podcast assembly tool optimized for **Apple Silicon 
 ### **The Unified TUI (Recommended)**
 The easiest way to use the automixer is via the interactive dashboard:
 ```bash
-uv run python -m src.automixer.app
+autotui
 ```
+*(Or `uv run python -m src.automixer.app` if running from source)*
 
 **TUI Workflow:**
 1.  **Audio Assets**: Select files from the current directory and mark them as `SPEECH` or `MUSIC`.
@@ -40,10 +41,39 @@ uv run python -m src.automixer.app
     - Scan for ad breaks and select your preferred spot.
 3.  **Render**: Hit **"RENDER FINAL MIX"** to produce your high-fidelity stereo WAV.
 
-### **Manual CLI Control**
-For automated workflows, you can still use the underlying CLI tools:
-- **Analyze**: `uv run python -m src.automixer.cli_analyze <file> <output_spots>`
-- **Mix**: `uv run python -m src.automixer.cli_mix <config_yaml>`
+### **The Automixer CLI**
+The `automixer` command provides a powerful, zero-configuration way to mix your podcast. It features **Automatic Track Detection** based on filename keywords.
+
+#### **Zero-Config Mix**
+Run it in a folder containing your audio files, and it will automatically find and classify them:
+```bash
+automixer
+```
+*(Looks for all `.wav` and `.mp3` files in the current directory)*
+
+#### **Auto-Detection Logic**
+Files are classified as **MUSIC** if their filename contains any of these keywords:
+`MUSIC`, `THEME`, `TUNNARI`, `MUSA`, `MUSIIKKI`, `TUNNUS`, `JINGLE`.
+All other audio files are treated as **SPEECH**.
+
+#### **Custom CLI Control**
+Specify tracks and options explicitly:
+```bash
+automixer --speech mic1.wav mic2.wav --music theme_THEME.wav -o episode1.wav --target-lufs -14.0
+```
+
+**Available Options:**
+- `tracks`: Positional arguments for audio files (auto-detected if `--speech`/--music` not used).
+- `--speech`: Explicitly specify speech tracks.
+- `--music`: Explicitly specify music tracks.
+- `--output`, `-o`: Output filename (default: `final_mix.wav`).
+- `--target-lufs`: Target loudness (default: `-16.0`).
+- `--ad-spot`: Ad spot time in seconds.
+- `--ad-duration`: Ad duration in seconds (default: `30.0`).
+
+### **Utility Commands**
+- **Analyze Ad Spots**: `autoanalyze <file> <output_spots>`
+- **Launch TUI**: `autotui`
 
 ---
 

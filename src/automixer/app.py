@@ -321,5 +321,9 @@ class AutomixerApp(App):
             except Exception as e: self.log_system(f"❌ Error: {e}")
         threading.Thread(target=task).start()
 
+def main():
+    app = AutomixerApp(work_dir=sys.argv[1] if len(sys.argv) > 1 else ".")
+    app.run()
+
 if __name__ == "__main__":
-    app = AutomixerApp(work_dir=sys.argv[1] if len(sys.argv) > 1 else "."); app.run()
+    main()
