@@ -173,11 +173,15 @@ class Mixer:
             effective_ad_spot = ad_spot
 
         def process_bus_parallel(bus, a_spot, a_dur, msg_prefix):
-            def proc_track(t):
-                return t.process(self.sr)
-            with ThreadPoolExecutor() as bus_executor:
-                list(bus_executor.map(proc_track, bus.tracks))
-            return bus.process(self.sr, ad_spot=a_spot, ad_duration=a_dur)
+            def p_cb(val, msg):
+                # Map 0-1 to a segment of the overall progress
+                # Speech bus is 40-55, Music bus is 55-65
+                start_p = 40 if msg_prefix == "Speech" else 55
+                end_p = 55 if msg_prefix == "Speech" else 65
+                overall_p = start_p + val * (end_p - start_p)
+                update_progress(overall_p, f"{msg_prefix}: {msg}")
+                
+            return bus.process(self.sr, ad_spot=a_spot, ad_duration=a_dur, progress_callback=p_cb)
 
         update_progress(40, "Engine: Running Speech Bus...")
         speech_sig = process_bus_parallel(speech_bus, effective_ad_spot, ad_duration, "Speech")

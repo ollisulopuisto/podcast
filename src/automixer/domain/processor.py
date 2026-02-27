@@ -5,8 +5,9 @@ from scipy import signal as sp_signal
 from scipy.ndimage import maximum_filter1d, median_filter
 import pyloudnorm as pyln
 from typing import Optional, List
-import pedalboard
+from concurrent.futures import ThreadPoolExecutor
 import os
+import pedalboard
 
 class Processor(ABC):
     @abstractmethod
@@ -41,13 +42,18 @@ class DuckingProcessor(Processor):
     def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
         trigger_sq = self.trigger**2
         window_size = max(1, int(self.window_sec * sr))
-        weight_mx = mx.ones((1, window_size, 1)) / window_size
-        trig_input = trigger_sq.reshape(1, -1, 1)
-        trig_rms_sq = mx.conv1d(trig_input, weight_mx, stride=1, padding=window_size//2)
-        trig_rms = mx.sqrt(trig_rms_sq).reshape(-1)
+        
+        # Fast moving average using cumsum
+        pad_size = window_size // 2
+        trig_padded = mx.pad(trigger_sq, [(pad_size, pad_size)])
+        cs = mx.cumsum(trig_padded)
+        trig_rms_sq = (cs[window_size:] - cs[:-window_size]) / window_size
+        
+        trig_rms = mx.sqrt(trig_rms_sq)
         n_orig = signal.shape[0]
         if trig_rms.shape[0] > n_orig: trig_rms = trig_rms[:n_orig]
         elif trig_rms.shape[0] < n_orig: trig_rms = mx.pad(trig_rms, [(0, n_orig - trig_rms.shape[0])])
+        
         eps = 1e-6
         trig_db = 20 * mx.log10(trig_rms + eps)
         threshold_db_val = 20 * mx.log10(mx.array(self.threshold))
@@ -116,48 +122,86 @@ class SpectralCarverProcessor(Processor):
         n_fft = 2048
         hop_length = 512
         n_orig = signal.shape[0]
+        n_ch = signal.shape[1] if len(signal.shape) > 1 else 1
+        
         trigger = self.trigger
         if trigger.shape[0] < n_orig: trigger = mx.pad(trigger, [(0, n_orig - trigger.shape[0])])
         elif trigger.shape[0] > n_orig: trigger = trigger[:n_orig]
-        block_samples = 5 * 60 * sr 
-        out_np = np.zeros(signal.shape, dtype=np.float32)
-        norm_np = np.zeros(n_orig, dtype=np.float32)
+        
+        # Larger blocks for better GPU utilization, e.g. 10 minutes
+        block_samples = 10 * 60 * sr 
         window = mx.array(np.hanning(n_fft).astype(np.float32))
-        window_np = np.array(window)**2
+        
+        out_signal = mx.zeros(signal.shape)
+        norm_signal = mx.zeros((n_orig,))
+        
         num_blocks = (n_orig // block_samples) + 1
         for b in range(num_blocks):
             b_start = b * block_samples
             b_end = min(b_start + block_samples, n_orig)
             if b_start >= n_orig: break
+            
+            # For overlap-add, we need a bit of buffer at the end of the segment
+            # to handle the last window's tail
             seg_end = min(b_end + n_fft, n_orig)
             s_seg = signal[b_start : seg_end]
             t_seg = trigger[b_start : seg_end]
+            
             if s_seg.shape[0] < n_fft: break
+            
             num_windows = (s_seg.shape[0] - n_fft) // hop_length + 1
             if num_windows <= 0: continue
+            
             if progress_callback: progress_callback(b / num_blocks)
-            idx = mx.arange(n_fft)[None, :] + (mx.arange(num_windows) * hop_length)[:, None]
-            s_win = s_seg[idx] 
-            t_win = t_seg[idx]
-            if len(s_win.shape) > 2: s_win = s_win * window[None, :, None]
+            
+            # Extract windows (using broadcasting/indexing)
+            win_indices = mx.arange(n_fft)[None, :] + (mx.arange(num_windows) * hop_length)[:, None]
+            s_win = s_seg[win_indices] # (num_windows, n_fft, [ch])
+            t_win = t_seg[win_indices] # (num_windows, n_fft)
+            
+            # Apply analysis window
+            if n_ch > 1: s_win = s_win * window[None, :, None]
             else: s_win = s_win * window[None, :]
             t_win = t_win * window[None, :]
+            
+            # FFT
             s_fft = mx.fft.fft(s_win, axis=1)
             t_fft = mx.fft.fft(t_win, axis=1)
+            
+            # Carving mask
             t_mag = mx.abs(t_fft)
             t_max = mx.max(t_mag, axis=1, keepdims=True) + 1e-6
             mask = mx.clip(1.0 - (self.strength * (t_mag / t_max)), 0.1, 1.0)
-            if len(s_win.shape) > 2: carved_fft = s_fft * mask[:, :, None]
+            
+            # Apply mask & IFFT
+            if n_ch > 1: carved_fft = s_fft * mask[:, :, None]
             else: carved_fft = s_fft * mask
             carved_win = mx.fft.ifft(carved_fft, axis=1).real
-            carved_np = np.array(carved_win)
-            for i in range(num_windows):
-                w_start = b_start + (i * hop_length)
-                w_end = w_start + n_fft
-                out_np[w_start:w_end] += carved_np[i]
-                norm_np[w_start:w_end] += window_np
-        norm_np[norm_np < 1e-6] = 1.0
-        return mx.array(out_np / (norm_np[:, None] if len(signal.shape) > 1 else norm_np))
+            
+            # Fast Overlap-Add in MLX using .at[...].add(...)
+            flat_indices = (win_indices + b_start).reshape(-1)
+            
+            if n_ch > 1:
+                # For multi-channel, we need to handle the channel axis
+                # carved_win shape (num_windows, n_fft, n_ch)
+                # out_signal shape (n_orig, n_ch)
+                for ch in range(n_ch):
+                    out_signal_ch = out_signal[:, ch]
+                    out_signal_ch = out_signal_ch.at[flat_indices].add(carved_win[:, :, ch].reshape(-1))
+                    out_signal[:, ch] = out_signal_ch
+            else:
+                out_signal = out_signal.at[flat_indices].add(carved_win.reshape(-1))
+            
+            # Normalize with window contribution
+            # window contribution is sum of window weights at each sample
+            # Since we only applied window once (at analysis), we add 'window' to norm
+            norm_updates = mx.broadcast_to(window[None, :], (num_windows, n_fft)).reshape(-1)
+            norm_signal = norm_signal.at[flat_indices].add(norm_updates)
+
+        # Avoid division by zero
+        norm_signal = mx.maximum(norm_signal, 1e-6)
+        if n_ch > 1: return out_signal / norm_signal[:, None]
+        else: return out_signal / norm_signal
 
 class MultibandCompressorProcessor(Processor):
     def __init__(self, low_mid_freq=250, mid_high_freq=4000, peak_enabled=True, lev_enabled=True):
@@ -185,13 +229,21 @@ class MultibandCompressorProcessor(Processor):
         sos_low = sp_signal.butter(2, self.low_mid_freq, 'lp', fs=sr, output='sos')
         sos_mid = sp_signal.butter(2, self.mid_high_freq, 'lp', fs=sr, output='sos')
         axis = 0 if len(sig_np.shape) > 1 else -1
+        
         low_np = sp_signal.sosfilt(sos_low, sig_np, axis=axis)
         rem = sig_np - low_np
         mid_np = sp_signal.sosfilt(sos_mid, rem, axis=axis)
         high_np = rem - mid_np
-        low_proc = self._apply_auto_dynamics(mx.array(low_np.astype(np.float32)), sr)
-        mid_proc = self._apply_auto_dynamics(mx.array(mid_np.astype(np.float32)), sr)
-        high_proc = self._apply_auto_dynamics(mx.array(high_np.astype(np.float32)), sr)
+        
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            f_low = executor.submit(self._apply_auto_dynamics, mx.array(low_np.astype(np.float32)), sr)
+            f_mid = executor.submit(self._apply_auto_dynamics, mx.array(mid_np.astype(np.float32)), sr)
+            f_high = executor.submit(self._apply_auto_dynamics, mx.array(high_np.astype(np.float32)), sr)
+            
+            low_proc = f_low.result()
+            mid_proc = f_mid.result()
+            high_proc = f_high.result()
+            
         return low_proc + mid_proc + high_proc
 
 class ExternalPluginProcessor(Processor):

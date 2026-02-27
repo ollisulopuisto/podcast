@@ -2,6 +2,7 @@ from typing import List
 import mlx.core as mx
 from .track import Track
 from .processor import Processor
+from concurrent.futures import ThreadPoolExecutor
 
 class Bus:
     def __init__(self, name: str):
@@ -38,14 +39,22 @@ class Bus:
         # Now we produce a STEREO signal: [length, 2]
         sum_signal = mx.zeros((max_len, 2))
         
-        for i, t in enumerate(self.tracks):
-            if progress_callback:
-                progress_callback(0.1 + 0.4 * (i / len(self.tracks)), f"Processing track {t.name}...")
-                
+        # Parallel track processing
+        def proc_track(t):
             if t.signal is not None:
-                # 1b. Per-track processing (e.g. individual compression)
-                sig = t.process(sr) # This applies track-level processors
+                return t.process(sr)
+            return None
+
+        if progress_callback: progress_callback(0.1, f"Parallel processing {len(self.tracks)} tracks in {self.name} bus...")
+        
+        with ThreadPoolExecutor() as executor:
+            processed_signals = list(executor.map(proc_track, self.tracks))
+
+        for i, (t, sig) in enumerate(zip(self.tracks, processed_signals)):
+            if progress_callback:
+                progress_callback(0.1 + 0.4 * (i / len(self.tracks)), f"Mixing track {t.name}...")
                 
+            if sig is not None:
                 offset = int(t.start_sec * sr)
                 
                 pan = getattr(t, 'pan', 0.0)
