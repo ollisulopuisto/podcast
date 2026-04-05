@@ -4,7 +4,7 @@ requires-python = ">=3.13"
 
 [[package]]
 name = "automixer"
-version = "2026.2.24.5"
+version = "2026.4.5.37"
 source = { virtual = "." }
 dependencies = [
     { name = "mlx" },

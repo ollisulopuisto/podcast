@@ -1,6 +1,6 @@
 [project]
 name = "automixer"
-version = "2026.02.24.6"
+version = "2026.4.5.37"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
