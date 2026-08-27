@@ -11,6 +11,7 @@ correct.
 
 import numpy as np
 import pytest
+
 from speechmix import loudness
 
 RATE = 48000

@@ -10,10 +10,10 @@ import time
 
 import numpy as np
 import pytest
+from conftest import needs_ffmpeg
 
 from autoraffkat.audio import mix
 from autoraffkat.model import HOP, AudioSettings
-from conftest import needs_ffmpeg
 
 
 def test_sibling_is_always_wav():
@@ -787,6 +787,7 @@ def test_the_program_trim_moves_the_level_it_is_supposed_to_move():
     """
     import numpy as np
     import pyloudnorm as pyln
+
     from speechmix import chain
 
     rate = 48000
@@ -849,6 +850,7 @@ def test_the_ceiling_belongs_to_the_programme_not_to_one_stem(tmp_path):
     puhujien tasapaino muutu.
     """
     from pedalboard.io import AudioFile
+
     from speechmix import chain
 
     rate, seconds = 48000, 6.0

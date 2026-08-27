@@ -8,6 +8,7 @@ were its owner's, agreeing only 38 % of the time.
 
 import numpy as np
 import pytest
+
 from speechmix import grid
 from speechmix.errors import EmptyResult
 

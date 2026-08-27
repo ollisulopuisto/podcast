@@ -5,32 +5,34 @@ This application allows users to configure tracks, routing, dynamics processing,
 and run analyses or full mix renders interactively from the terminal.
 """
 
+import contextlib
 import os
 import sys
 import threading
-import soundfile as sf
-import sounddevice as sd
+from typing import ClassVar
 
+import sounddevice as sd
+import soundfile as sf
 from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen
 from textual.widgets import (
-    Header,
+    Button,
+    Checkbox,
     Footer,
+    Header,
+    Input,
+    Label,
+    ListItem,
+    ListView,
+    Log,
+    ProgressBar,
+    SelectionList,
     TabbedContent,
     TabPane,
-    Input,
-    Button,
-    Label,
-    ListView,
-    ListItem,
-    Log,
-    SelectionList,
-    Checkbox,
-    ProgressBar,
 )
 from textual.widgets.selection_list import Selection
-from textual.containers import Vertical, Horizontal
-from textual.binding import Binding
-from textual.screen import ModalScreen
 
 from automixer.analyzer import SpotAnalyzer
 from automixer.cli_mix import Mixer
@@ -58,7 +60,6 @@ class LogScreen(ModalScreen):
         """
         Called when the screen is mounted.
         """
-        pass
 
     def action_close(self):
         """
@@ -66,7 +67,7 @@ class LogScreen(ModalScreen):
         """
         self.app.pop_screen()
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         ("f12", "app.pop_screen", "Close Log"),
         ("escape", "app.pop_screen", "Close Log"),
     ]
@@ -103,7 +104,7 @@ class AutomixerApp(App):
     #render_inputs > Vertical { width: 50%; }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[Binding]] = [
         Binding("q", "quit", "Quit"),
         Binding("ctrl+s", "save", "Save Config"),
         Binding("r", "refresh", "Refresh Files"),
@@ -161,16 +162,15 @@ class AutomixerApp(App):
             msg (str): The message to log.
         """
         self.log_messages.append(msg)
-        try:
+        # Kirjoitus ruudulle on kohteliaisuus, ei ehto: widgetiä ei
+        # välttämättä ole vielä olemassa, eikä sen puute saa pudottaa
+        # viestiä `log_messages`-listalta johon se jo meni.
+        with contextlib.suppress(Exception):
             self.query_one("#log", Log).write_line(msg)
-        except Exception:
-            pass
         for screen in self.app.screen_stack:
             if isinstance(screen, LogScreen):
-                try:
+                with contextlib.suppress(Exception):
                     screen.query_one("#debug_log", Log).write_line(msg)
-                except Exception:
-                    pass
 
     def action_toggle_log(self):
         """
@@ -465,7 +465,8 @@ class AutomixerApp(App):
         """
         pl = self.query_one("#preview_list", ListView)
         if pl.index is None:
-            return self.notify("Select a segment first!", severity="error")
+            self.notify("Select a segment first!", severity="error")
+            return
         start_sec = [0, 600, 1200, 1800, 2400, 3000][pl.index]
         self.sync_config_from_ui()
         status = self.query_one("#preview_status_label", Label)
@@ -489,7 +490,8 @@ class AutomixerApp(App):
         """
         speech = [t for t in self.config["tracks"] if t["type"] == "speech"]
         if not speech:
-            return self.notify("No speech tracks!", severity="error")
+            self.notify("No speech tracks!", severity="error")
+            return
         path = speech[0]["path"]
         self.log_system(f"Analyzing {path}...")
 
@@ -584,7 +586,8 @@ class AutomixerApp(App):
         Executes the full mix render process in a background thread.
         """
         if not self.config["tracks"]:
-            return self.notify("Add tracks!", severity="error")
+            self.notify("Add tracks!", severity="error")
+            return
         self.sync_config_from_ui()
         progress = self.query_one("#mix_progress", ProgressBar)
         op_label = self.query_one("#current_op_label", Label)

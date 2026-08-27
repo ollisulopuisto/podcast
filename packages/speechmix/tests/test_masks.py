@@ -5,6 +5,7 @@ Testit ovat kirjastossa, koska koodikin on: se on koko siirron pointti.
 """
 
 import numpy as np
+
 from speechmix import masks
 
 

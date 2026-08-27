@@ -13,6 +13,7 @@ ceiling, and the balance between speakers cannot move.
 
 import numpy as np
 import pytest
+
 from speechmix import ceiling
 from speechmix.errors import Misaligned
 

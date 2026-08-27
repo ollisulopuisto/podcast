@@ -5,8 +5,8 @@ This module provides the SpotAnalyzer class which processes audio arrays to dete
 periods of silence or low volume that are suitable for inserting additional content.
 """
 
-import numpy as np
 import mlx.core as mx
+import numpy as np
 
 
 class SpotAnalyzer:
@@ -51,10 +51,7 @@ class SpotAnalyzer:
             list[float]: A list of timestamps (in seconds) indicating the center of silent spots.
         """
         # Convert to mlx array if it's numpy
-        if isinstance(audio, np.ndarray):
-            audio_mx = mx.array(audio)
-        else:
-            audio_mx = audio
+        audio_mx = mx.array(audio) if isinstance(audio, np.ndarray) else audio
 
         n_samples = audio_mx.shape[0]
         skip_samples = int(n_samples * (self.skip_first_percent / 100))

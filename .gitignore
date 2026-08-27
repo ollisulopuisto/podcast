@@ -1,6 +1,37 @@
-.venv/
+# Yksi ignore-tiedosto työtilalle. Sovelluksen omassa on vain se mikä on
+# sen omaa: `apps/autoraffkat/.gitignore`issa leikkausten ja käsitellyn
+# äänen nimikaavat, `apps/podcast-magic/.gitignore`issa kuvakkeen johdetut
+# muodot. Yleinen Python-roska on täällä, kerran — kolmessa kopiossa se
+# ehti jo erota toisistaan (`*.py[oc]` yhdessä, `*.py[cod]` kahdessa).
+
+# Python
 __pycache__/
-*.pyc
-dist/
+*.py[cod]
+*.egg-info/
+
+# Ympäristöt
+.venv/
+venv/
+
+# Käännöksen tulokset ja niputettavat binäärit
 build/
+dist/
+wheels/
+bin/
+
+# Työkalujen välimuistit
+.pytest_cache/
+.ruff_cache/
+# automixerin äänekkyysvälimuisti syntyy työhakemistoon, ei sovelluksen alle:
+# juuresta ajettu testi kirjoittaa sen tänne.
+.automixer/
+
+# Varmuuskopio- ja väliaikaistiedostot
+*~
+*.bak
+*.backup
+*.swp
+*.swo
+*.tmp
+
 .DS_Store

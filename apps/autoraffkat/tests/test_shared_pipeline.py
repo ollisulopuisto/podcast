@@ -10,10 +10,9 @@ sovellus käyttää **samaa oliota** kuin kirjasto; sisällöltään samanlainen
 kopio hylätään.
 """
 
-from speechmix import envelopes, freshness, masks
-
 from autoraffkat import decide
 from autoraffkat.audio import mix
+from speechmix import envelopes, freshness, masks
 
 
 def test_the_ducking_decision_comes_from_the_library():

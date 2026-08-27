@@ -2,11 +2,11 @@
 name = "speechmix"
 version = "2026.8.27.1"
 description = "Speech-mixing pipeline: samples in, samples out, no session format"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
-    "numpy>=1.26",
-    "scipy>=1.11",
-    "pedalboard>=0.9.22",
+    "numpy>=2.4.2",
+    "scipy>=1.17.1",
+    "pedalboard>=0.9.24",
     "pyloudnorm>=0.2.0",
 ]
 
@@ -16,3 +16,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/speechmix"]
+
+# Sama kuin kolmella sovelluksella. Ilman `testpaths`ia pytest kerää koko
+# hakemiston: `uv run --directory packages/speechmix pytest` löysi
+# `reference/automixer-parallel/tests/` ja kaatui kokoamiseen. Ruff sulkee
+# saman hakemiston pois, eikä toinen portti saa nähdä puuta toisin kuin
+# ensimmäinen.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

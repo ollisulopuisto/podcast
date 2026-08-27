@@ -5,15 +5,16 @@ A track wraps an audio file, loads its contents (either fully or partially for p
 applies its track-specific processors, and tracks loudness and caching.
 """
 
-import os
-import mlx.core as mx
-import numpy as np
-import soundfile as sf
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import List
+
+import mlx.core as mx
+import numpy as np
 import pyloudnorm as pyln
+import soundfile as sf
 
 CACHE_DIR = Path(".automixer/cache")
 
@@ -58,6 +59,7 @@ class Track:
         self.start_sec = start_sec
         self.pan = pan
         self.signal = None
+        self._samples = None
         self.sr = None
         from .processor import Processor
 
@@ -142,12 +144,21 @@ class Track:
             self.signal = p.process(self.signal, sr)
         return self.signal
 
-    def load(self, target_sr=48000, start_time: float = 0.0, duration: float = -1.0):
+    def read(self, start_time: float = 0.0, duration: float = -1.0):
         """
-        Loads the audio data from disk into memory.
+        Reads the audio data from disk into memory, as numpy samples.
+
+        Safe to run in a thread pool -- it touches no mlx.  Call `to_mlx` on
+        the thread that will use the signal afterwards; `load` does both.
+
+        There is no target sample rate, because nothing here resamples.  The
+        signature used to take one and ignore it, and the caller passed the
+        mixer's rate into it -- which reads as a promise that the file is
+        converted, when in fact `self.sr` comes back as whatever the file is.
+        A mismatched rate is the silent kind of bug this codebase collects:
+        the mix renders, and it renders at the wrong speed.
 
         Args:
-            target_sr (int, optional): The target sample rate (currently not resampling). Defaults to 48000.
             start_time (float, optional): Time in seconds to start reading. Defaults to 0.0.
             duration (float, optional): Duration in seconds to read. Negative means full track. Defaults to -1.0.
 
@@ -157,6 +168,7 @@ class Track:
         Raises:
             FileNotFoundError: If the track file does not exist.
         """
+
         if not os.path.exists(self.path):
             raise FileNotFoundError(f"Track file not found: {self.path}")
 
@@ -178,10 +190,7 @@ class Track:
         data, sr = sf.read(self.path, start=start_frame_orig, frames=frames_to_read)
 
         # Mix to mono for processing
-        if len(data.shape) > 1:
-            data_mono = data.mean(axis=1)
-        else:
-            data_mono = data
+        data_mono = data.mean(axis=1) if len(data.shape) > 1 else data
 
         # Analysis (Only if loading full track or if we want local loudness)
         if is_full_load and self.loudness is None:
@@ -190,5 +199,39 @@ class Track:
             self._save_cache()
 
         self.sr = sr
-        self.signal = mx.array(data_mono.astype(np.float32))
+        self._samples = data_mono.astype(np.float32)
+        return self._samples
+
+    def load(self, start_time: float = 0.0, duration: float = -1.0) -> mx.array:
+        """
+        Reads the file and converts it, both on the calling thread.
+
+        Args:
+            start_time (float, optional): Time in seconds to start reading. Defaults to 0.0.
+            duration (float, optional): Duration in seconds to read. Negative means full track. Defaults to -1.0.
+
+        Returns:
+            mx.array: The loaded mono signal array.
+        """
+        self.read(start_time=start_time, duration=duration)
+        return self.to_mlx()
+
+    def to_mlx(self) -> mx.array:
+        """
+        Turns the samples read by `read` into this track's mlx signal.
+
+        Must run on the thread that will use the signal.  mlx's default
+        stream is thread-local, so an `mx.array` built on a worker carries
+        that worker's stream and the first use of it elsewhere raises
+        `RuntimeError: There is no Stream(gpu, 3) in current thread` -- from
+        wherever the signal is next touched, not from the thread that made
+        it.  `read` is separate from this for exactly that reason: the file
+        reading parallelises, the conversion does not.
+
+        Returns:
+            mx.array: The mono signal, or None if nothing has been read.
+        """
+        if self._samples is None:
+            return None
+        self.signal = mx.array(self._samples)
         return self.signal

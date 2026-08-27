@@ -10,6 +10,12 @@
 [tool.uv.workspace]
 members = ["packages/*", "apps/*"]
 
+# Juuren omat testit väittävät, että jäsenet ovat samaa mieltä työkaluista,
+# kirjastorajoista, versionumeroista ja julkaisuputkista. Ne eivät tuo
+# yhtään pakettia, vain lukevat `pyproject.toml`ia — ks. tests/.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 # Lintti on työtilan oma työkalu, ei sovellusten. Se on täällä kahdesta
 # syystä. Ensinnäkin `uv run ruff` etsii ohjelman PATHista jos sitä ei ole
 # ympäristössä: kehityskoneella se löytyy, CI-ajurilla ei, ja lintti kaatui
@@ -17,30 +23,83 @@ members = ["packages/*", "apps/*"]
 # ensimmäisestä päivästä lähtien — sääntöjä ei ole kertaakaan tarkistettu.
 # Toiseksi versio on osa sääntöjä: eri ruff näkee eri virheet, joten
 # kiinnittämätön lintti on portti joka päästää läpi eri asioita eri koneilla.
+# Sama koskee pytestiä: yksi ajuri koko työtilalle. Jäsenen omassa
+# ryhmässä on vain se mitä vain se tarvitsee (httpx, pyinstaller).
 [dependency-groups]
-dev = ["ruff==0.15.8"]
+dev = ["ruff==0.15.8", "pytest>=9.0.2"]
 
+# Yksi lintiasetus koko työtilalle, ja se on tämä. ruff lukee lähintä
+# `[tool.ruff]`-lohkoa, joten sovelluksen omassa `pyproject.toml`issa oleva
+# lohko ei täydennä tätä vaan **korvaa** sen: autoraffkatilla oli oma
+# kopionsa, ja kaksi melkein samanlaista sääntölistaa ajautuu erilleen
+# täsmälleen kuten kolme kopiota ketjusta ajautui. Sovelluskohtainen poikkeus
+# kirjoitetaan alle `per-file-ignores`iin polkuna, ei omana lohkonaan.
 [tool.ruff]
 line-length = 90
-target-version = "py312"
+# Alin tuettu Python, ei se jolla ajetaan. Sama luku kuin jokaisen jäsenen
+# `requires-python`issa — ks. juuren `.python-version`.
+target-version = "py313"
 # Vertailukohdaksi säilytetty rinnakkaistoteutus, jota mikään ei tuo sisään.
 exclude = ["packages/speechmix/reference"]
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "B", "C4", "SIM", "RET", "ARG",
-          "PIE", "PERF", "NPY", "RUF"]
+select = [
+    "E", "W",      # pycodestyle
+    "F",           # pyflakes: määrittelemättömät ja käyttämättömät nimet
+    "I",           # tuontien järjestys
+    "B",           # bugbear: yleiset ansat
+    "C4",          # comprehension-siivous
+    "SIM",         # yksinkertaistukset
+    "RET",         # paluuarvojen haarat
+    "ARG",         # käyttämättömät argumentit
+    "PIE", "PERF", # turhat rakenteet ja hitaat kuviot
+    "NPY",         # numpy-erityiset
+    "RUF",
+]
 ignore = [
+    # Rivin pituus hoidetaan line-lengthillä; E501 kaksoiskappaleena vain
+    # meluaisi kommenteista joissa on mittauslukuja.
     "E501",
+    # Silmukan muuttuja suljetussa funktiossa on tässä koodissa tahallista
+    # (esikatselun piirto, säätimien käsittelijät) ja aina heti kutsuttua.
     "B023",
     # Koodi ja kommentit ovat suomea ja käyttävät typografisia merkkejä
-    # tarkoituksella.
+    # tarkoituksella: «lainausmerkit» ja miinusmerkki mittausluvuissa.
+    # Sekaannusta ei ole, koska nämä eivät ole tunnisteita.
     "RUF001", "RUF002", "RUF003",
-    # `int(round(x))` ei ole turha kun x on numpy-liukuluku.
+    # `int(round(x))` **ei** ole turha kun x on numpy-liukuluku: silloin
+    # round palauttaa numpy-liukuluvun eikä int:iä. ruff ei näe eroa.
     "RUF046",
-    # Suodattava sisäkkäinen silmukka on luettavampi kuin comprehension
-    # koodissa jossa selitys on rivien välissä.
+    # Ehdollinen kerääminen sisäkkäisessä silmukassa on tässä koodissa
+    # luettavampi silmukkana kuin sisäkkäisenä comprehensionina: rivien
+    # välissä on selitykset, ja ne katoaisivat yhteen lausekkeeseen.
     "PERF401",
 ]
 
+# Työtilan omat paketit, jotta tuontien järjestys on sama riippumatta siitä
+# mistä hakemistosta ruff ajetaan. Ilman tätä isort arvaa ensimmäisen
+# osapolun perusteella ja lajittelee saman tiedoston eri tavalla juuresta
+# kuin sovelluksen sisältä ajettuna.
+[tool.ruff.lint.isort]
+known-first-party = ["automixer", "autoraffkat", "podcastmagic", "speechmix"]
+
 [tool.ruff.lint.per-file-ignores]
-"**/tests/*" = ["ARG", "B011", "SIM", "RUF012", "B905"]
+# Testit saavat toistaa itseään ja käyttää pitkiä nimiä: ne ovat
+# dokumentaatiota siinä missä tarkistuksiakin.
+"**/tests/*" = [
+    "ARG",     # tuplat pitävät oikean rajapinnan muodon vaikka eivät käytä
+    "B011",
+    "SIM",
+    # Testituplan luokka-attribuutti on tarkoituksella jaettu lista: se on
+    # kiinteä syöte, ei tila.
+    "RUF012",
+    # Testeissä zip vertaa tarkoituksella eri mittaisia jonoja.
+    "B905",
+]
+# `Processor.process(signal, sr, progress_callback)` on rajapinta, ja jokainen
+# toteutus kirjoittaa sen kokonaan. Useimmat ovat yksi mlx-operaatio, jolla ei
+# ole väliaikoja joista raportoida — mutta nimeä ei voi muuttaa `_`-alkuiseksi,
+# koska kutsujat antavat sen avainsanana (`p.process(sig, sr,
+# progress_callback=cb)`). Vain ARG002 eli metodin argumentti; funktion kuollut
+# argumentti (ARG001) jää kiinni tässäkin tiedostossa.
+"apps/automixer/src/automixer/domain/processor.py" = ["ARG002"]

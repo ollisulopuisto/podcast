@@ -18,13 +18,6 @@ seam and `SHARED-AUDIO.md` for the measurements behind every stage.
 
 ## Working rules
 
-* **Red-green.** The failing test comes first. When a fix is already written,
-  restore the old behaviour and watch the test fail before believing it.
-* **Lint is strict and passes.** `uv run ruff check .` before committing; CI
-  runs it ahead of the tests. Rules that do not fit carry a written reason in
-  `ignore`, never a bare `# noqa`.
-* **CalVer**, `YYYY.M.D.N`, tagged per change.
-* **Numbers in comments.** Every constant that came from a measurement says
-  what was measured. This codebase's bugs are silent — valid output, clean
-  import, no exception, wrong result — and the number is what makes the next
-  reader able to tell.
+Red-green, one pinned linter, CalVer per app, and numbers in the comments —
+**`CLAUDE.md`** carries them, for people and agents alike, and `tests/`
+asserts the ones a machine can check. `CONTRIBUTING.md` has the commands.

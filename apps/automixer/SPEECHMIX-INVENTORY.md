@@ -148,17 +148,54 @@ TUI. None of it belongs in a library that takes samples and returns samples.
 
 ---
 
-## 6. Order to do the swap in
+## 6. Order to do the swap in — and what was done
 
-1. `declick` — pure win, replaces a stage that does nothing.
-2. The ceiling — `chain.limiter` for the master, or `ceiling.programme_ceiling`
-   if automixer ever emits stems. Fixes a real dBTP overshoot.
-3. The compressors — replace the pair with `chain.multiband` + two
-   `chain.compress` stages. This is the one that changes how the output sounds,
-   so it wants an A/B on a real episode.
-4. De-essing and the rider — new stages; the rider needs a speech grid, which
-   automixer does not build yet.
-5. `debleed` — needs the grid too, and needs to run before the plug-in slot.
+Steps 1–3 and the de-esser are **done**: `apps/automixer/src/automixer/domain/shared.py`
+imports the stages from `speechmix.chain`, and `SpeechChainProcessor` calls
+`chain.process` — the same function autoraffkat and podcast-magic run. Six
+hand-rolled stages came out (de-smacker, high-pass, normalising gain, two
+uncapped compressors, and the multiband mode) and one call went in, which
+brings four stages automixer never had: the de-esser, the third compressor,
+the parallel dry/wet mix, and the settle loop onto the target.
 
-Multiband mode is worth disabling before any of it: it is doing measurable harm
-today.
+`LimiterProcessor` and `MultibandCompressorProcessor` are deleted rather than
+left reachable: a stage measured to do harm is not a fallback.
+
+1. ~~`declick`~~ — done. Measured before the swap, on planted lip smacks:
+   **0 samples changed** at sensitivity 0.0, 0.5 and 1.0.
+2. ~~The ceiling~~ — done, `chain.limiter` + `peak_guard` behind it.
+3. ~~The compressors~~ — done, `chain.multiband` + two `chain.compress`
+   stages, each capped at `MAX_GR_DB`. Measured before the swap, one stage
+   with no cap pulled **29.26 dB**.
+4. **De-essing** — done, from `chain.process`. **The rider is not**: it needs a
+   speech grid, and automixer has no microphones to build one from. Passing
+   `speaking=None` makes the library skip it, and `SpeechSettings.rider` is
+   `False` so the skip reads as a decision rather than an oversight.
+5. `debleed` — still open, and still needs the grid.
+
+Not swapped, deliberately: the **plug-in slot**. automixer takes a list per
+track and speechmix takes one, in a child process, with length and lag
+checks. The child process is the part worth having and it is not a rename —
+it wants its own change.
+
+### The A/B, measured
+
+Two 20 s speech tracks 12 dB apart, rendered by both chains on this container:
+
+| | automixer's own | shared chain |
+|---|---|---|
+| integrated loudness | −16.00 LUFS | −16.00 LUFS |
+| sample peak | −1.00 dBFS | −7.02 dBFS |
+| **true peak** | **−0.36 dBTP** — 0.64 dB over its own −1.0 ceiling | **−7.00 dBTP**, under −1.5 |
+| crest factor | 15.3 dB | 12.6 dB |
+| render time | 0.6 s | 2.0 s |
+
+The overshoot is the measurement this whole section opened with, reproduced
+end to end. The crest moving 2.7 dB is the three capped stages engaging where
+automixer's fast stage barely did (0.84 dB of gain reduction, §2).
+
+**The render is 3.3× slower**, and that is the real cost: the library is numpy
+and scipy on the CPU, automixer's stages were mlx on the GPU. On Apple Silicon
+the old path is faster still, so the ratio there is likely worse than this.
+What was bought with it is a de-clicker that fires, a ceiling that holds where
+it says it does, and a tone that does not move with the programme.

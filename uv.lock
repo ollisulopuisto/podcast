@@ -11,7 +11,10 @@ members = [
 ]
 
 [manifest.dependency-groups]
-dev = [{ name = "ruff", specifier = "==0.15.8" }]
+dev = [
+    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "ruff", specifier = "==0.15.8" },
+]
 
 [[package]]
 name = "altgraph"
@@ -62,11 +65,11 @@ dependencies = [
     { name = "pedalboard" },
     { name = "psutil" },
     { name = "pyloudnorm" },
-    { name = "pytest" },
     { name = "pyyaml" },
     { name = "scipy" },
     { name = "sounddevice" },
     { name = "soundfile" },
+    { name = "speechmix" },
     { name = "textual" },
 ]
 
@@ -74,14 +77,14 @@ dependencies = [
 requires-dist = [
     { name = "mlx", specifier = ">=0.30.6" },
     { name = "numpy", specifier = ">=2.4.2" },
-    { name = "pedalboard", specifier = ">=0.9.22" },
+    { name = "pedalboard", specifier = ">=0.9.24" },
     { name = "psutil", specifier = ">=7.2.2" },
     { name = "pyloudnorm", specifier = ">=0.2.0" },
-    { name = "pytest", specifier = ">=9.0.2" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "scipy", specifier = ">=1.17.1" },
     { name = "sounddevice", specifier = ">=0.5.5" },
     { name = "soundfile", specifier = ">=0.13.1" },
+    { name = "speechmix", editable = "packages/speechmix" },
     { name = "textual", specifier = ">=8.0.0" },
 ]
 
@@ -99,11 +102,6 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"] },
 ]
 
-[package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
 [package.dev-dependencies]
 dev = [
     { name = "httpx" },
@@ -113,15 +111,13 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "numpy", specifier = ">=1.26" },
+    { name = "numpy", specifier = ">=2.4.2" },
     { name = "pedalboard", specifier = ">=0.9.24" },
     { name = "pyloudnorm", specifier = ">=0.2.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pywebview", specifier = ">=5.0" },
     { name = "speechmix", editable = "packages/speechmix" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
-provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1357,7 +1353,6 @@ mlx = [
 dev = [
     { name = "httpx" },
     { name = "pyinstaller" },
-    { name = "pytest" },
 ]
 
 [package.metadata]
@@ -1366,7 +1361,7 @@ requires-dist = [
     { name = "faster-whisper", marker = "extra == 'faster'", specifier = ">=1.1.0" },
     { name = "lxml", specifier = ">=5.0" },
     { name = "mlx-whisper", marker = "extra == 'mlx'", specifier = ">=0.4.0" },
-    { name = "numpy", specifier = ">=1.26" },
+    { name = "numpy", specifier = ">=2.4.2" },
     { name = "pywebview", specifier = ">=5.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
@@ -1376,7 +1371,6 @@ provides-extras = ["mlx", "faster"]
 dev = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pyinstaller", specifier = ">=6.0" },
-    { name = "pytest", specifier = ">=8.0" },
 ]
 
 [[package]]
@@ -2030,10 +2024,10 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "pedalboard", specifier = ">=0.9.22" },
+    { name = "numpy", specifier = ">=2.4.2" },
+    { name = "pedalboard", specifier = ">=0.9.24" },
     { name = "pyloudnorm", specifier = ">=0.2.0" },
-    { name = "scipy", specifier = ">=1.11" },
+    { name = "scipy", specifier = ">=1.17.1" },
 ]
 
 [[package]]

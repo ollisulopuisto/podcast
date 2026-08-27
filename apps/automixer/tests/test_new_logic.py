@@ -1,27 +1,32 @@
-import pytest
 import mlx.core as mx
 import numpy as np
+import pytest
 import soundfile as sf
-from automixer.domain.processor import LimiterProcessor, GainProcessor
+
+from automixer.domain import shared
+from automixer.domain.processor import CeilingProcessor, GainProcessor
 from automixer.domain.track import Track
 
 
-def test_limiter_brickwall():
-    sr = 1000
-    duration = 1
-    # Signal with a huge peak at 2.0
-    sig_np = np.ones((duration * sr, 1), dtype=np.float32) * 0.5
-    sig_np[500, 0] = 2.0
+def test_the_ceiling_is_a_brickwall():
+    """Sama väite kuin ennen, mutta vaiheesta joka on oikeasti ketjussa.
+
+    Oli `LimiterProcessor(threshold_db=0.0)`, joka laski näytehuipuista ja
+    on korvattu jaetulla true peak -rajoittimella. Katto on nyt kirjaston
+    `CEILING_DB`, ja se koskee ylinäytteistettyä huippua — joten
+    näytehuipun on jäätävä sen alle, ei osuttava siihen.
+    """
+    sr = 8000
+    sig_np = np.ones((sr, 1), dtype=np.float32) * 0.5
+    sig_np[4000, 0] = 2.0
     signal = mx.array(sig_np)
 
-    limiter = LimiterProcessor(threshold_db=0.0)  # 1.0 peak
-    processed = limiter.process(signal, sr)
+    processed = CeilingProcessor().process(signal, sr)
 
-    # Peak should be exactly 1.0 (or very close)
-    max_peak = mx.max(mx.abs(processed)).item()
-    assert max_peak <= 1.0001
-    # Rest of the signal should still be around 0.5 (or less due to release)
-    # The first sample should definitely be 0.5
+    ceiling = 10 ** (shared.CEILING_DB / 20)
+    assert mx.max(mx.abs(processed)).item() <= ceiling + 1e-4
+    # Huippua kaukana oleva osa jää paikalleen: rajoitin koskee huippuihin,
+    # ei koko tiedostoon. Juuri tämä erotti sen staattisesta vaimennuksesta.
     assert processed[0, 0].item() == pytest.approx(0.5, rel=1e-2)
 
 

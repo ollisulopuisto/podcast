@@ -1,5 +1,6 @@
-import pytest
 import mlx.core as mx
+import pytest
+
 from automixer.domain.processor import DuckingProcessor
 
 

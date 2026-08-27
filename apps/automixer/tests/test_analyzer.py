@@ -1,4 +1,5 @@
 import numpy as np
+
 from automixer.analyzer import SpotAnalyzer
 
 
@@ -7,7 +8,11 @@ def generate_mock_audio(duration_sec, sr, silences):
     silences: list of (start_sec, end_sec)
     """
     n_samples = int(duration_sec * sr)
-    audio = np.random.normal(0, 0.1, n_samples)
+    # Kylvetty generaattori: hiljaisuuden löytyminen on mittaustulos, ja
+    # mittaus joka vaihtaa aineistoa joka ajolla ei erota parannusta
+    # sattumasta.
+    rng = np.random.default_rng(20260827)
+    audio = rng.normal(0, 0.1, n_samples)
     for start, end in silences:
         audio[int(start * sr) : int(end * sr)] = 0.0
     return audio
