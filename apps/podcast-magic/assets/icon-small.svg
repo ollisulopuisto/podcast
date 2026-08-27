@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Sama kuvake pieniin kokoihin (16, 32). Kaaria kaksi ja kahva pois:
+       16 pikselissä kolmas kaari täyttyy umpeen ja kahva katoaa. -->
+  <rect width="1024" height="1024" rx="228" fill="#1e2127"/>
+  <path d="M 620 742 A 306 306 0 0 0 314 436" fill="none" stroke="#6ea8fe" stroke-width="96" stroke-linecap="round"/>
+  <path d="M 830 742 A 516 516 0 0 0 314 226" fill="none" stroke="#6ea8fe" stroke-width="96" stroke-linecap="round"/>
+  <path d="M 314 566
+           C 336 690 360 714 484 736
+           C 360 758 336 782 314 906
+           C 292 782 268 758 144 736
+           C 268 714 292 690 314 566 Z"
+        fill="#ffffff"/>
+</svg>

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Podcast Magic. Sauva ja kaaret, RSS-ikonin asennossa: kaaret aukeavat
+       oikeaan ylänurkkaan ja tähti on siinä nurkassa josta RSS:n piste
+       lähtee. Tasaiset värit, ei liukuvärejä — kuvake pienenee 16 pikseliin
+       asti, ja siinä koossa liukuväri on sotku. -->
+  <rect width="1024" height="1024" rx="228" fill="#1e2127"/>
+
+  <!-- Kaaret: neljännes ympyrää, ulointa myöten. Sama sininen kuin
+       käyttöliittymän korostus. -->
+  <path d="M 570 706 A 230 230 0 0 0 340 476" fill="none" stroke="#6ea8fe" stroke-width="58" stroke-linecap="round"/>
+  <path d="M 700 706 A 360 360 0 0 0 340 346" fill="none" stroke="#6ea8fe" stroke-width="58" stroke-linecap="round"/>
+  <path d="M 830 706 A 490 490 0 0 0 340 216" fill="none" stroke="#6ea8fe" stroke-width="58" stroke-linecap="round"/>
+
+  <!-- Sauva: kahva lähtee tähdestä alas vasemmalle, ulos nurkasta. -->
+  <path d="M 296 750 L 152 894" fill="none" stroke="#e6e8ec" stroke-width="58" stroke-linecap="round"/>
+
+  <!-- Tähti tähtee kahvan päässä: neljä sakaraa, valkoinen. -->
+  <path d="M 340 616
+           C 354 686 368 700 438 706
+           C 368 712 354 726 340 796
+           C 326 726 312 712 242 706
+           C 312 700 326 686 340 616 Z"
+        fill="#ffffff"/>
+</svg>
