@@ -14,9 +14,14 @@ isäntä omistaa asetukset, kirjasto lukee niistä vain sen mitä tarvitsee.
 
 import numpy as np
 
+from .grid import HOP_SEC
+
 #: Ruudukon askel sekunneissa. Sama luku ohjaa kuvan leikkausta ja äänen
-#: vaimennusta, koska molemmat lukevat samaa puheentunnistusta.
-HOP = 0.02
+#: vaimennusta, koska molemmat lukevat samaa puheentunnistusta — ja siksi
+#: se on **yksi olio** eikä kaksi yhtä suurta lukua. Se asuu ``grid``issä,
+#: joka on ruudukon moduuli; tämä nimi jää, koska kolme moduulia ja
+#: molemmat sovellukset tuovat sen täältä.
+HOP = HOP_SEC
 
 
 def runs(values: np.ndarray) -> list[tuple[int, int, int]]:
