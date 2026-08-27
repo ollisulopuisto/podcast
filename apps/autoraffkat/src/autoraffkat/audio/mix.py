@@ -871,6 +871,21 @@ def _run_one(
     # Tiedostoon poltettuna se oli ketjun ainoa peruuttamaton tasopäätös.
     report("duck", READ_SHARE + DEBLEED_SHARE + CHAIN_SHARE)
 
+    # Ketjun tiivistys kirjataan muistiinpanoksi. Se on tähän asti ollut
+    # ainoa vaihe jonka tulos ei näkynyt mistään: tiedosto on kelvollinen ja
+    # oikean mittainen, ja se että rajoitin vei siitä viisitoista desibeliä
+    # crestiä selviää vain kuuntelemalla. Ks. `chain.LIMITER_BUDGET_DB`.
+    who = os.path.basename(job["source"])
+    if not info.reached_target:
+        result.notes.setdefault(job["key"], []).append(
+            f"{who}: tavoitetaso ei osunut, rajoitin {info.limiter_db:.1f} dB"
+        )
+    if info.psr_lu == info.psr_lu and info.psr_lu < chain.PSR_FLOOR_LU:
+        result.notes.setdefault(job["key"], []).append(
+            f"{who}: ylipakattu, PSR {info.psr_lu:.1f} LU "
+            f"(alle {chain.PSR_FLOOR_LU:.0f})"
+        )
+
     limit = int(rate * MAX_LAG_MS / 1000)
     if abs(info.lag) > limit:
         raise MixError(

@@ -619,3 +619,68 @@ def test_the_bands_sum_back_to_the_original():
 
     assert len(parts) == 3
     np.testing.assert_allclose(sum(parts), audio, atol=1e-6)
+
+
+def _spiky(seconds=20.0, rate=RATE):
+    """Puhetta jossa on yksittäisiä huippuja: iso crest, kuten oikea mikki.
+
+    Oikealla materiaalilla mitattu crest on 37–41 dB. Tasainen siniburst ei
+    kelpaa tähän: sen crest on kolme desibeliä, eikä rajoittimella ole silloin
+    mitään tehtävää — eli testi olisi vihreä myös rikkinäisellä ketjulla.
+    """
+    out = speech_like(seconds, rate)[0]
+    for at in np.arange(1.0, seconds - 1.0, 2.5):
+        i = int(at * rate)
+        out[i : i + 40] += np.linspace(0.30, 0.0, 40).astype(np.float32)
+    return out[None, :]
+
+
+def _crest_db(audio):
+    mono = np.asarray(audio).mean(axis=0)
+    peak = 20 * np.log10(float(np.abs(mono).max()) + 1e-12)
+    rms = 20 * np.log10(float(np.sqrt(np.mean(mono**2))) + 1e-12)
+    return peak - rms
+
+
+def test_the_chain_reports_what_the_limiter_did():
+    """Rajoittimen työ ja ylipakkaus näkyviin, koska ne olivat näkymättömiä.
+
+    ``limiter()`` on aina palauttanut suurimman vaimennuksensa, ja
+    ``process`` heitti sen menemään kahdesti (``audio, _ = limiter(...)``).
+    ``peak_to_short_term`` ja ``PSR_FLOOR_LU`` ovat olleet kirjoitettuina
+    siitä asti kun ketju sai rajoittimen, eikä niitä kutsunut mikään.
+
+    Ne ovat juuri se mikä puuttui: mitattuna oikealla mikillä crest putosi
+    37,4 -> 12,8 dB, siitä 15,4 yhdessä rajoitinvaiheessa, eikä yksikään
+    lukema kertonut siitä mitään. Kelvollinen tiedosto, oikea mitta, väärä
+    ääni — tämän projektin tavallisin vikaluokka.
+    """
+    out, info = chain.process(_spiky(), RATE, AudioSettings(), 0.0, True, -14.0, None)
+
+    assert info.limiter_db < 0.0, "rajoitin teki työtä jota ei kirjattu"
+    assert not np.isnan(info.psr_lu), "ylipakkauksen mittaria ei ajettu"
+    assert info.psr_lu == pytest.approx(chain.peak_to_short_term(out, RATE), abs=0.01)
+    assert isinstance(info.reached_target, bool)
+
+
+def test_room_tone_reports_no_limiting():
+    """Tilaääntä ei rajoiteta, joten lukemat ovat nollia eivätkä roskaa."""
+    _, info = chain.process(
+        speech_like(6.0), RATE, AudioSettings(), 0.0, False, -20.0, None
+    )
+    assert info.limiter_db == 0.0
+    assert info.reached_target is True
+    assert np.isnan(info.psr_lu)
+
+
+def test_a_reachable_target_is_still_reached():
+    """``reached_target`` on tosi silloin kun tavoite tosiaan osui."""
+    pyln = pytest.importorskip("pyloudnorm")
+    out, info = chain.process(
+        speech_like(20.0), RATE, AudioSettings(), 0.0, True, -20.0, None
+    )
+    measured = pyln.Meter(RATE).integrated_loudness(
+        np.asarray(out[0], dtype=np.float64)
+    )
+    assert measured == pytest.approx(-20.0, abs=0.5)
+    assert info.reached_target is True

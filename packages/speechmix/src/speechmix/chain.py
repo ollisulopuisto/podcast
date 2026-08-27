@@ -103,6 +103,19 @@ DEESS_SMOOTH_MS = 3.0
 # Näytehuippujen rajaaminen -1 dBFS:ään antoi mitattuna -0,42 dBTP: väliin
 # jäävät huiput ylittävät näytteet, ja lossy-koodaus nostaa niitä vielä.
 # Puolentoista desibelin varaa kestää AAC-muunnoksen ilman leikkautumista.
+#: Kuinka paljon rajoitin saa tehdä työtä tavoitteen eteen, dB.
+#:
+#: Rajoitin oli ketjun ainoa rajaton vaihe. Kompressorit ottavat kukin
+#: enintään ``MAX_GR_DB``, mutta rajoittimen läpi ajettiin niin paljon
+#: vahvistusta kuin tavoitetaso sattui vaatimaan. Mitattuna oikealla
+#: mikillä: ketjun kevyet vaiheet veivät crestiä 37,4 -> 32,1 dB ja
+#: **rajoitin yksin 32,1 -> 16,7**, jonka jälkeen hakusilmukka vielä
+#: 12,8:aan. Kolme kertaa kaikki muu yhteensä.
+#:
+#: Kuusi desibeliä on sama raja kuin yhdellä kompressorivaiheella yksi
+#: yli — rajoitin on viimeinen vaihe ja saa tehdä hieman enemmän, muttei
+#: eri lajissa. Budjetin täytyttyä taso jää tavoitteesta, ja se on oikea
+#: lopputulos: taso on korjattavissa yhdellä liu'ulla, tiivistetty puhe ei.
 CEILING_DB = -1.5
 LIMITER_OVERSAMPLE = 4
 LIMITER_LOOKAHEAD_MS = 5.0
@@ -1286,7 +1299,10 @@ def process(
         # äänekkyyttä sen verran kuin se leikkaa, ja puhujien on osuttava
         # samaan lukemaan. Yksi kierros riittää, koska korjaus on pieni ja
         # rajoitin ajetaan sen perään uudestaan.
-        audio, _ = limiter(audio, rate)
+        #
+        # Rajoittimen työstä pidetään kirjaa: se päätyy ``ChainResult``iin,
+        # koska se on ainoa vaihe jolla ei ole kattoa eikä sitä nähnyt mikään.
+        audio, limiter_db = limiter(audio, rate)
         # Rajoitin syö äänekkyyttä sen verran kuin se leikkaa, ja korjaus
         # nostaa huiput takaisin rajoittimen kynsiin — yksi kierros jää siis
         # vajaaksi. Kolme riittää: mitattuna ensimmäinen kierros jäi 1–2 dB
@@ -1300,8 +1316,12 @@ def process(
                 break
             step = float(target_lufs - settled)
             audio = _board(pedalboard.Gain(gain_db=step))(audio, rate, reset=True)
-            audio, _ = limiter(audio, rate)
+            audio, round_db = limiter(audio, rate)
+            limiter_db = min(limiter_db, round_db)
             lift += step
+        else:
+            settled = loudness(audio.mean(axis=0), rate) if target_lufs else None
+            reached = settled is None or abs(target_lufs - settled) <= 0.3
         # Viimeinen varmistus. Rajoittimen jälkeen tämän ei pitäisi laueta,
         # ja jos laukeaa, se on rajoittimessa oleva vika eikä turvaverkon työ.
         audio, trimmed = peak_guard(audio)
