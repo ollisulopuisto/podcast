@@ -224,3 +224,87 @@ def test_geometry_is_the_spans_and_the_frame_count(mic):
     )
     moved = Track("mic.wav", "A", [Span(5.0, 9.0, 4.0), AWKWARD[1]])
     assert envelopes.geometry(moved, 12345) != envelopes.geometry(mic, 12345)
+
+
+def _head_and_tail_silence(n=1500, first=200, last=1200):
+    """Puhetta keskellä, hiljaisuutta molemmissa päissä."""
+    on = np.zeros(n, dtype=bool)
+    on[first:last] = True
+    return on
+
+
+def test_program_fades_land_in_the_silence():
+    """Häivytys alkaa ohjelman alusta ja on ohi ennen ensimmäistä sanaa."""
+    grid = _Grid(_Lane("a", _head_and_tail_silence()))
+    end = 1500 * envelopes.HOP
+    out = envelopes.program_fades(grid, 0.0, end)
+
+    points = out["a"]
+    assert points[0] == (0.0, envelopes.FADE_FLOOR_DB)
+    head_end = points[1][0]
+    assert points[1][1] == 0.0
+    # 200 askelta * 20 ms = 4,0 s ensimmäiseen sanaan; vartti jää väliin.
+    assert head_end <= 200 * envelopes.HOP - envelopes.FADE_GUARD_SEC
+
+    assert points[-1] == (end, envelopes.FADE_FLOOR_DB)
+    tail_start = points[-2][0]
+    assert points[-2][1] == 0.0
+    assert tail_start >= 1200 * envelopes.HOP + envelopes.FADE_GUARD_SEC
+
+
+def test_program_fades_do_not_step_on_speech():
+    """Puhe heti alusta ja loppuun asti: häivytystä ei kirjoiteta.
+
+    Häivytys saa koskea vain hiljaisuutta ja tilaääntä. Puheen päälle
+    ajettuna se on virhe jota ei kuule vientiä kuuntelematta: tiedosto on
+    kelvollinen, oikean mittainen ja alkaa vaimeana.
+    """
+    grid = _Grid(_Lane("a", np.ones(1500, dtype=bool)))
+    assert envelopes.program_fades(grid, 0.0, 1500 * envelopes.HOP) == {}
+
+
+def test_program_fades_keep_the_ducks():
+    """Vaimennuskäyrä säilyy häivytysten välissä, aikajärjestyksessä."""
+    grid = _Grid(_Lane("a", _head_and_tail_silence()),
+                 _Lane("b", _head_and_tail_silence()))
+    end = 1500 * envelopes.HOP
+    ducks = {"a": [(10.0, 0.0), (10.25, -9.0), (12.0, -9.0), (12.25, 0.0)]}
+    out = envelopes.program_fades(grid, 0.0, end, ducks)
+
+    times = [t for t, _ in out["a"]]
+    assert times == sorted(times)
+    assert (10.25, -9.0) in out["a"]
+    assert "b" in out, "häivytys kuuluu jokaiselle mikille, ei vain vaimennetuille"
+
+
+def test_envelope_outside_the_curve_holds_its_edge():
+    """Käyrän ulkopuolella reunan arvo, ei nolla.
+
+    Vaimennuskäyrä palaa itse nollaan molemmissa päissään, joten sille tämä
+    on sama asia. Häivytykselle ei: sen viimeinen piste on ohjelman lopussa
+    ja alimmillaan, ja nollaksi tulkittuna vienti nostaisi äänen takaisin
+    juuri siinä kohdassa jossa sen pitäisi olla poissa.
+    """
+    fade = [(0.0, -96.0), (1.0, 0.0)]
+    assert envelopes.envelope_at(fade, -1.0) == -96.0
+    assert envelopes.envelope_at([(0.0, 0.0), (1.0, -96.0)], 2.0) == -96.0
+    duck = [(1.0, 0.0), (1.25, -9.0), (2.0, -9.0), (2.25, 0.0)]
+    assert envelopes.envelope_at(duck, 0.0) == 0.0
+    assert envelopes.envelope_at(duck, 9.0) == 0.0
+
+
+def test_program_fades_ignore_the_blip_at_the_grid_edge():
+    """Ruudukon reunan yksittäinen tosi solu ei ole ohjelman ensimmäinen sana.
+
+    Tunnistus antaa vajaassa ensimmäisessä ja viimeisessä ikkunassa yhden
+    solun tosia. Sellaisenaan luettuna puhe alkaa hetkellä nolla ja päättyy
+    ohjelman loppuun, eikä häivytykselle jää tilaa kummassakaan päässä — eli
+    vika ei näy virheenä vaan puuttuvana häivytyksenä.
+    """
+    on = _head_and_tail_silence()
+    on[0] = True
+    on[-1] = True
+    out = envelopes.program_fades(_Grid(_Lane("a", on)), 0.0, 1500 * envelopes.HOP)
+    assert out, "reunan välähdys esti häivytyksen"
+    assert out["a"][0] == (0.0, envelopes.FADE_FLOOR_DB)
+    assert out["a"][-1] == (1500 * envelopes.HOP, envelopes.FADE_FLOOR_DB)

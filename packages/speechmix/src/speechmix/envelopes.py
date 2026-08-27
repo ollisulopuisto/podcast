@@ -27,7 +27,7 @@ Siirretty autoraffkatin ``audio/mix.py``:stä, ei kopioitu.
 
 import numpy as np
 
-from .masks import HOP, duck_masks, runs
+from .masks import HOP, drop_short, duck_masks, runs
 from .timeline import Track
 
 
@@ -75,15 +75,95 @@ def duck_envelopes(grid, settings: object,
             out[name] = points
     return out
 
+#: Ohjelman päiden häivytys. Pituudet ovat leikkauskonventio eivätkä mittaus:
+#: sisääntulo lyhyt, jotta ohjelma alkaa heti, ulostulo pidempi, koska loppuun
+#: kuuluu jäädä aikaa. Vartti on turvaväli puheeseen — häivytys saa koskea vain
+#: hiljaisuutta ja tilaääntä, ja puheentunnistuksen raja on ruudukon askeleen
+#: (20 ms) tarkkuudella, joten se ei kelpaa sellaisenaan reunaksi.
+FADE_IN_SEC = 1.0
+FADE_OUT_SEC = 2.0
+FADE_GUARD_SEC = 0.25
+#: Final Cutin äänenvoimakkuusliu'un pohja.
+FADE_FLOOR_DB = -96.0
+#: Tätä lyhyempää häivytystä ei kirjoiteta: se on naksahdus, ei häivytys.
+FADE_MIN_SEC = 0.1
+#: Tätä lyhyempi puhejakso ei ole ohjelman alku eikä loppu. Ruudukon
+#: ensimmäinen ja viimeinen solu ovat vajaita ikkunoita, ja tunnistus antaa
+#: niissä yhden tai kahden solun tosia — mitattuna molemmissa päissä, sekä
+#: fixtuurilla että jaksolla. Ilman tätä rajaa se yksi 20 ms:n solu on
+#: «ensimmäinen sana», ja häivytys jää kokonaan kirjoittamatta.
+FADE_SPEECH_MIN_SEC = 0.2
+
+
+def program_fades(grid, program_start: float, program_end: float,
+                  ducks: dict | None = None,
+                  fade_in: float = FADE_IN_SEC,
+                  fade_out: float = FADE_OUT_SEC,
+                  guard: float = FADE_GUARD_SEC,
+                  floor_db: float = FADE_FLOOR_DB) -> dict[str, list]:
+    """Häivytys ohjelman päistä, vaimennuskäyriin sulautettuna.
+
+    Häivytys on tasopäätös ketjun **jälkeen**, joten se on automaatiota siinä
+    missä vaimennuskin: sama ``{puhuja: [(aika, dB), …]}`` ja sama emissio
+    Final Cutin keyframeiksi. Erillistä rakennetta ei siis tarvita, ja
+    leikkaaja voi vetää liu'un toiseen kohtaan avaamatta tätä työkalua.
+
+    Rajat luetaan puheentunnistuksesta eikä kellosta: häivytys saa koskea vain
+    hiljaisuutta ja tilaääntä. Puheen päälle ajettuna se on juuri sen
+    lajin vika jota tässä projektissa ei kuule ennen kuin vienti on
+    Final Cutissa — tiedosto on kelvollinen, oikean mittainen, ja ensimmäinen
+    sana on vaimea. Siksi häivytys **lyhenee** mahtuakseen ja jää kokonaan
+    kirjoittamatta jos tilaa ei ole.
+
+    Häivytys kuuluu jokaiselle mikille, myös niille joilla ei ole
+    vaimennuskäyrää: ohjelma häipyy kokonaan tai ei ollenkaan.
+    """
+    speakers = [lane.name for lane in getattr(grid, "speakers", [])]
+    if not speakers or program_end <= program_start:
+        return dict(ducks or {})
+
+    talking = np.zeros_like(np.asarray(grid.speakers[0].on, dtype=bool))
+    for lane in grid.speakers:
+        talking |= np.asarray(lane.on, dtype=bool)
+    said = np.flatnonzero(drop_short(talking, FADE_SPEECH_MIN_SEC))
+    first = program_start + int(said[0]) * HOP if said.size else program_end
+    last = program_start + int(said[-1] + 1) * HOP if said.size else program_start
+
+    head_end = min(program_start + fade_in, first - guard)
+    tail_start = max(program_end - fade_out, last + guard)
+    head = ([(program_start, floor_db), (head_end, 0.0)]
+            if head_end - program_start >= FADE_MIN_SEC else [])
+    tail = ([(tail_start, 0.0), (program_end, floor_db)]
+            if program_end - tail_start >= FADE_MIN_SEC else [])
+    if not head and not tail:
+        return dict(ducks or {})
+
+    out: dict[str, list] = {}
+    for name in speakers:
+        # Vaimennus on aina päiden puheen sisällä, joten pisteet eivät voi
+        # osua päällekkäin — mutta järjestys on silti varmistettava, koska
+        # sekä ``envelope_at`` että ``duck_gain`` olettavat käyrän nousevan.
+        merged = [*head, *(ducks or {}).get(name, []), *tail]
+        out[name] = sorted(merged, key=lambda point: point[0])
+    return out
+
+
 def envelope_at(points: list, when: float) -> float:
     """Käyrän arvo hetkellä ``when``, desibeleinä. Väleissä lineaarinen.
 
-    Käyrän ulkopuolella nolla: vaimennus on paikallinen tapahtuma, ei tila.
+    Käyrän ulkopuolella **reunan arvo**, ei nolla. Vaimennukselle nämä ovat
+    sama asia — se alkaa ja päättyy nollaan, koska se on paikallinen tapahtuma
+    eikä tila — mutta häivytykselle eivät: sen viimeinen piste on ohjelman
+    lopussa ja alimmillaan, ja nollana luettuna vienti kirjoittaisi kuvan
+    reunaan 0 dB:n keyframen ja nostaisi äänen takaisin juuri siinä kohdassa
+    jossa sen pitäisi olla poissa.
     """
     if not points:
         return 0.0
-    if when <= points[0][0] or when >= points[-1][0]:
-        return 0.0
+    if when <= points[0][0]:
+        return float(points[0][1])
+    if when >= points[-1][0]:
+        return float(points[-1][1])
     times = [t for t, _ in points]
     index = np.searchsorted(times, when)
     if index <= 0:
@@ -194,6 +274,11 @@ def duck_gain(track: Track, points: list, low: int, high: int,
         if i1 <= i0:
             continue
         timeline = (np.arange(i0, i1, dtype=np.float64) + low) / rate - base
-        curve = np.interp(timeline, times_db, values_db, left=0.0, right=0.0)
+        # Reunat kuten ``envelope_at``issa: käyrän ulkopuolella sen oma
+        # reuna-arvo. Nollalla nämä kaksi emissiota antaisivat häivytetylle
+        # ohjelmalle eri tuloksen, ja katto laskettaisiin ohjelmasta jota
+        # Final Cut ei soita.
+        curve = np.interp(timeline, times_db, values_db,
+                          left=values_db[0], right=values_db[-1])
         gain[i0:i1] = (10.0 ** (curve / 20.0)).astype(np.float32)
     return gain

@@ -971,3 +971,32 @@ def test_opening_a_bundle_reads_the_xml_inside(scratch_xml, tmp_path):
     assert data["kind"] == "multicam"
     assert not state.load_error
     assert state.xml_path == str(bundle / "Info.fcpxml")
+
+
+@needs_ffmpeg
+def test_the_export_fades_the_programme_in_and_out(scratch_xml):
+    """Ohjelma alkaa ja päättyy häivytykseen, ``FADE_FLOOR_DB``:stä ja siihen.
+
+    Käyrä kirjoitetaan samoiksi ``<adjust-volume>``-keyframeiksi kuin
+    vaimennuskin, joten tämä tarkistaa että pohja tosiaan päätyy tiedostoon:
+    ``envelope_at`` palautti kuvan reunalla nollan, jolloin ensimmäinen ja
+    viimeinen keyframe olivat 0 dB ja häivytys jäi tekemättä juuri niissä
+    kahdessa kohdassa joita varten se on.
+    """
+    from speechmix.envelopes import FADE_FLOOR_DB
+
+    state = AppState(xml_path=str(scratch_xml("multicam.fcpxml")))
+    state.load()
+    while not state.progress.get("ready"):
+        time.sleep(0.05)
+    state.settings.tracks = _multicam_tracks()
+    client = TestClient(create_app(state))
+
+    exported = client.post("/api/export", json={}).json()
+    assert exported.get("ok"), exported
+    xml = pathlib.Path(exported["path"]).read_text(encoding="utf-8")
+
+    floor = f'value="{FADE_FLOOR_DB:g}dB"'
+    assert floor in xml, "häivytyksen pohjaa ei kirjoitettu lainkaan"
+    # Yksi alkuun, yksi loppuun, jokaiselle mikkikulmalle.
+    assert xml.count(floor) >= 2, xml.count(floor)

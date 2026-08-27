@@ -40,6 +40,7 @@ from speechmix.chain import ChainError
 from speechmix.envelopes import (  # noqa: F401  julkinen rajapinta säilyy
     duck_envelopes,
     envelope_at,
+    program_fades,
 )
 from speechmix.freshness import FINGERPRINT_FIELDS, FINGERPRINT_VERSION
 from speechmix.masks import (

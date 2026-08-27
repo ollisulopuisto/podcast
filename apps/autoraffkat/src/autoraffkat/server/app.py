@@ -1330,6 +1330,13 @@ def create_app(state: AppState) -> FastAPI:
                 if (state.settings.audio.duck
                         and state.settings.audio.duck_db < 0 and not ducks):
                     warnings.append(t("export.duck_none"))
+                # Häivytys samaan käyrään: se on tasopäätös ketjun jälkeen
+                # niin kuin vaimennuskin, eikä siksi tarvitse omaa rakennetta
+                # vientiin. Rajat tulevat puheentunnistuksesta, jotta liuku
+                # jää hiljaisuuteen eikä syö ensimmäistä sanaa.
+                ducks = mix.program_fades(
+                    _grid, float(program_start), float(program_end), ducks
+                )
 
                 shots = state.reactions_now(_grid, roles, program_start)
                 if state.settings.globals.reactions and not shots:
