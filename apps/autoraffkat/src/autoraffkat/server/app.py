@@ -1213,7 +1213,10 @@ def create_app(state: AppState) -> FastAPI:
         # sen ottaminen tässä jumitti avauksen ikuisesti. Pyyntö ei palannut,
         # ja koska load() nollaa edistymisen ennen lukkoa, käyttöliittymä jäi
         # lukemaan «verhokäyrät 0/0» loputtomiin.
-        state.xml_path = os.path.abspath(path)
+        # Paketti on hakemisto, ja juuri sen polun sekä pywebview'n dialogi
+        # että Finder palauttavat: .fcpxmld on Finderille tiedosto. Ilman
+        # tätä avaus kaatui «[Errno 21] Is a directory».
+        state.xml_path = pick.resolve(path)
         state.load()
         return _state_json(state)
 

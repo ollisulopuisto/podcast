@@ -1,6 +1,7 @@
 """Koko putki: XML sisään, päätös, XML ulos. Vaatii ffmpegin."""
 
 import os
+import pathlib
 import threading
 import time
 from xml.etree import ElementTree as ET
@@ -943,3 +944,30 @@ def test_every_global_the_interface_shows_can_be_set(scratch_xml):
         if getattr(state.settings.globals, field.name) != wanted:
             missed.append(field.name)
     assert not missed, f"nämä eivät mene käyttöliittymästä läpi: {missed}"
+
+
+@needs_ffmpeg
+def test_opening_a_bundle_reads_the_xml_inside(scratch_xml, tmp_path):
+    """«Avaa XML…» antaa ``.fcpxmld``-paketin polun, joka on hakemisto.
+
+    Finderille paketti on tiedosto, joten sekä pywebview'n dialogi että
+    Finderin oma valintaikkuna palauttavat paketin eivätkä sen sisältöä.
+    Ilman ``pick.resolve``a avaus kaatui virheeseen «[Errno 21] Is a
+    directory» eikä mitään latautunut — polku, jonka käyttäjä valitsi, on
+    juuri se joka ei kelvannut.
+    """
+    first = scratch_xml("sync.fcpxml")
+    inner = scratch_xml("multicam.fcpxml")
+    bundle = tmp_path / "jakso.fcpxmld"
+    bundle.mkdir()
+    inner.rename(bundle / "Info.fcpxml")
+
+    state = AppState(xml_path=str(first))
+    state.load()
+    client = TestClient(create_app(state))
+
+    data = client.post("/api/open", json={"path": str(bundle)}).json()
+
+    assert data["kind"] == "multicam"
+    assert not state.load_error
+    assert state.xml_path == str(bundle / "Info.fcpxml")
