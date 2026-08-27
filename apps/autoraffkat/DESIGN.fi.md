@@ -156,6 +156,27 @@ Häntää lyhyempi vastaus ei saa kuvaa lainkaan — lattia työntää leikkauks
 puhujan jakson yli, ja kuva jää siihen missä on. Se on sama mekanismi kuin
 vahvistusaika, toisesta päästä.
 
+### Ohjelma alkaa ja päättyy laajaan
+
+Aina, eikä se ole säädin. Ensimmäinen kuva kertoo huoneen ja ketä siellä on;
+lähikuvasta alkava ohjelma pudottaa katsojan keskelle kasvoja tietämättä
+tilaa, ja lähikuvaan päättyvä jää roikkumaan.
+
+Kesto on ohjelman oma `min_shot` eikä oma vakionsa — muuten se ajautuisi
+rytmiprofiilien kanssa eri suuntaan, sillä 1,4 s ja 4,5 s tarkoittavat eri
+kuvaa. Kuva jota ei saa jaettua kahteen kelvolliseen on kokonaan laaja;
+ohjelma johon ei mahdu kolmea kuvaa on rehellisesti pelkkää laajaa.
+
+Miksi ei valintana: sen poistaminen on Final Cutissa yksi leikkaus.
+Oletuksen kääntäminen maksaa yhden vedon kerran. Valinta maksaa jokaiselle
+käyttäjälle yhden päätöksen, ja juuri siksi ensimmäisellä ruudulla on
+järjestys eikä luettelo. Sama peruste kuin panoroinnin määrällä, joka ei ole
+liuku.
+
+`_bookend_wide` ajetaan `_force_wide`:n jälkeen, eikä se kumoa asetusta
+`wide_every = 0` — se kytkin koskee **pitkän puheenvuoron** katkaisua, joka
+on eri sääntö.
+
 ### Pitkä puheenvuoro ja reaktiokuvat
 
 Kohdat 1–6 tuottavat oikean kuvan mutta eivät rytmiä: yksinpuhelu antaa yhden

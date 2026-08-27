@@ -468,6 +468,60 @@ def _force_wide(
     return _merge(out)
 
 
+def _bookend_wide(
+    segments: list[Segment], g: Globals, wide_label: str, wide_key: str
+) -> list[Segment]:
+    """Ohjelma alkaa ja päättyy laajaan. Aina, eikä se ole säädin.
+
+    Se on leikkauskonventio eikä makuasia. Ensimmäinen kuva kertoo missä
+    ollaan ja keitä on paikalla; lähikuvasta alkava ohjelma pudottaa
+    katsojan keskelle kasvoja tietämättä huonetta. Viimeinen päästää irti,
+    ja lähikuvaan päättyvä jää roikkumaan.
+
+    Miksi ei valintana: sen poistaminen on Final Cutissa yksi veto, ja
+    juuri se tekee siitä huonon säätimen. Oletuksen kääntäminen maksaa
+    yhden vedon kerran; valinta maksaa jokaiselle käyttäjälle yhden
+    päätöksen, ja päätöksiä on jo se määrä jonka takia ensimmäisellä
+    ruudulla on järjestys eikä luettelo. Sama peruste kuin panoroinnin
+    määrällä, joka ei ole liuku.
+
+    Kesto on ohjelman oma ``min_shot`` eikä oma vakionsa: pään ja hännän
+    kuvat ovat kuvia siinä missä muutkin. Oma luku ajautuisi
+    rytmiprofiilien kanssa eri suuntaan, sillä hektinen 1,4 s ja
+    rauhallinen 4,5 s tarkoittavat eri kuvaa. Sama valinta kuin
+    reaktiokuvien marginaalilla, joka on ``min_shot`` eikä oma vakionsa.
+
+    Jos kuvasta ei saa irrotettua laajaa jättämättä loppuosaa alle
+    minimin, koko kuva on laaja: yksi kunnollinen kuva on parempi kuin
+    kaksi välähdystä. Lyhyellä ohjelmalla se tarkoittaa pelkkää laajaa, ja
+    se on rehellinen vastaus ohjelmalle johon ei mahdu kolmea kuvaa.
+    """
+    if not segments or not wide_key:
+        return segments
+
+    out = list(segments)
+
+    first = out[0]
+    if first.angle != wide_key:
+        if first.duration >= 2 * g.min_shot:
+            head = first.start + g.min_shot
+            out[0] = Segment(first.angle, first.label, head, first.end)
+            out.insert(0, Segment(wide_key, wide_label, first.start, head))
+        else:
+            out[0] = Segment(wide_key, wide_label, first.start, first.end)
+
+    last = out[-1]
+    if last.angle != wide_key:
+        if last.duration >= 2 * g.min_shot:
+            tail = last.end - g.min_shot
+            out[-1] = Segment(last.angle, last.label, last.start, tail)
+            out.append(Segment(wide_key, wide_label, tail, last.end))
+        else:
+            out[-1] = Segment(wide_key, wide_label, last.start, last.end)
+
+    return out
+
+
 def _merge(segments: list[Segment]) -> list[Segment]:
     """Yhdistää peräkkäiset saman kuvan jaksot ja pudottaa tyhjät."""
     merged: list[Segment] = []
@@ -511,6 +565,7 @@ def decide(grid: Grid, g: Globals, marks=None) -> Decision:
     segments = _merge(segments)
     segments = _force_wide(segments, g, WIDE_LABEL, grid.wide_key,
                            grid=grid, marks=marks)
+    segments = _merge(_bookend_wide(segments, g, WIDE_LABEL, grid.wide_key))
 
     # Esikatselua varten: mikä kuva milläkin hetkellä.
     chosen = np.full(grid.n, WIDE, dtype=np.int32)

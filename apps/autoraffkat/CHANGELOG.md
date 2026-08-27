@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [autoraffkat-v2026.8.28.2] - 2026-08-28
+
+### Added
+- **The Programme Always Opens and Closes on the Wide Shot**: `decide._bookend_wide`, run last. The first shot establishes the room and who is in it; a programme opening on a close-up drops the viewer into a face without the space, and one ending on a close-up leaves them hanging.
+  - **Not a setting.** Removing it in Final Cut is one cut, which is precisely the reason it is not an option: flipping a default costs one drag, once, while an option costs every user a decision. Same reasoning as panning having no amount slider.
+  - The length is the programme's own `min_shot`, not a constant of its own — a separate number would drift against the rhythm presets, where 1.4 s and 4.5 s mean different shots. A shot too short to split into two legal ones becomes wide whole, and a programme with no room for three shots is honestly all wide.
+  - It does **not** override `wide_every = 0`. That switch means "never break a long take to the wide", which is a different rule; the tests now read the middle of the cut (`middle()`) so every other rule is measured without the bookends in the way.
+  - The reaction layer cannot undo it, and that turns out to be load-bearing rather than lucky: reaction shots go on a positive lane, over the picture, so they could have covered the opening frames — except `fits` already demands `min_shot` of margin at both edges of the host shot, and a bookend is exactly `min_shot` long. There is now a test saying so, because shrinking that margin would switch off a different feature in silence.
+
 ## [autoraffkat-v2026.8.28.1] - 2026-08-28
 
 Note the tag: **`autoraffkat-v2026.8.28.1`**, not `v2026.8.28.1`. Three apps
