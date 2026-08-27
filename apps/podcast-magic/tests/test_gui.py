@@ -7,23 +7,33 @@ kuin siitä yhdestä paikasta jossa käyttäjä lukee ohjelman nimen.
 
 from __future__ import annotations
 
-from Foundation import NSBundle
+import sys
+
+import pytest
 
 from podcastmagic import gui
+
+# Nipun nimi on macOS:n käsite, ja `Foundation` on olemassa vain siellä.
+# Ohitus on alustan tosiasia eikä puuttuva työkalu: paketointiputki ajaa
+# testit kaikilla kolmella alustalla, ja tämä on niistä yhden asia.
+only_macos = pytest.mark.skipif(sys.platform != "darwin", reason="CFBundleName on macOS:n")
 
 
 def bundle_name() -> str | None:
     """Nimi sieltä mistä macOS sen lukee.
 
-    Ei ohituksia puuttuvan pyobjc:n varalta: `pywebview` on kova riippuvuus ja
-    testit ajetaan macOS:llä, joten ohitus tarkoittaisi vain sitä ettei tämä
-    ole koskaan ajanut.
+    Tuonti on funktion sisällä: `Foundation` tulee pyobjc:n mukana eikä sitä
+    ole muilla alustoilla, ja moduulitason tuonti kaataisi koko tiedoston
+    keräyksen Linuxilla ennen kuin ainoakaan testi ajaa.
     """
+    from Foundation import NSBundle
+
     bundle = NSBundle.mainBundle()
     info = bundle.localizedInfoDictionary() or bundle.infoDictionary()
     return None if info is None else info.get("CFBundleName")
 
 
+@only_macos
 def test_app_is_named_after_the_app_not_the_interpreter():
     gui.name_the_app()
     assert bundle_name() == "Podcast Magic"
