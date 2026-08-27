@@ -19,6 +19,23 @@ dependencies = [
 ]
 
 [project.scripts]
-automixer = "src.automixer.cli_mix:main"
-autoanalyze = "src.automixer.cli_analyze:main"
-autotui = "src.automixer.app:main"
+automixer = "automixer.cli_mix:main"
+autoanalyze = "automixer.cli_analyze:main"
+autotui = "automixer.app:main"
+
+# The importable package is `automixer`, under src/.  Spelled out rather than
+# left to setuptools' auto-discovery so the installed name is the same however
+# it is installed -- that ambiguity is what let `src.automixer` survive: it
+# resolves as a namespace package whenever the checkout root happens to be on
+# sys.path, and fails the moment the package is really installed, which a
+# workspace member is by definition.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/automixer"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
