@@ -239,3 +239,25 @@ def test_without_the_comparison_the_bleed_stays_audible(bleed_session):
     for track in written.tracks:
         audible = [r for r in track.regions if r.elem.get("Muted") is None]
         assert len(audible) == 2, "kynnys jättää vuodon kuuluviin"
+
+
+def test_settings_saved_before_this_change_still_match_their_preset():
+    """Vanha tallennettu asetus ei saa muuttua «omaksi» uuden kentän takia.
+
+    Levyllä olevassa asetuksessa ei ole `dominance`-kenttää lainkaan, joten
+    `from_dict` antaa sille oletuksen. Jos oletus eroaa esivalinnan arvosta,
+    esivalinta lakkaa täsmäämästä ja käyttöliittymä näyttää «oma» — mitään
+    ei ole muuttunut paitsi se mitä ruudulla lukee, ja juuri sellaista
+    hiljaista valhetta vastaan tämä repositorio on kirjoitettu.
+    """
+    saved = {
+        "remote": {"tail": 1.0, "gap": 1.0, "rms": False, "threshold": -35.0},
+        "bleed": {"tail": 0.4, "gap": 0.4, "rms": True, "threshold": -35.0},
+    }
+    for name, raw in saved.items():
+        settings = Settings.from_dict(raw)
+        preset = PRESETS[name]
+        assert settings.dominance == preset.dominance, (
+            f"«{name}» ei enää täsmää: tallennettu {settings.dominance}, "
+            f"esivalinta {preset.dominance}"
+        )

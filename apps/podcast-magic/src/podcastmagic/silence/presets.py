@@ -77,7 +77,12 @@ def _clamp(value: float, low: float, high: float) -> float:
 # asentoon vetää.
 PRESETS: dict[str, Settings] = {
     # Etäjakso: jokaisella oma huone, joten vuotoa ei ole eikä vertailtavaa.
-    "remote": Settings(tail=1.0, gap=1.0, rms=False, threshold=-35.0, dominance=0.0),
+    # `dominance` on silti oletuksessaan eikä nollassa, samasta syystä kuin
+    # `threshold`: molemmat ovat `rms`:n takana, joten kumpikaan ei tee tässä
+    # mitään. Nolla erottaisi tämän oletuksesta, ja vanha levylle tallennettu
+    # «remote» — jossa kenttää ei ole lainkaan — lakkaisi täsmäämästä ja
+    # näkyisi «omana». Mikään ei olisi muuttunut paitsi se mitä ruudulla lukee.
+    "remote": Settings(tail=1.0, gap=1.0, rms=False, threshold=-35.0, dominance=6.0),
     # Sama huone: tässä vertailu raitojen välillä on koko ratkaisu.
     "bleed": Settings(tail=0.4, gap=0.4, rms=True, threshold=-35.0, dominance=6.0),
 }

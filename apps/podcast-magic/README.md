@@ -14,24 +14,51 @@ One window, one session file, two tools — and room for a third.
 * **Nothing is overwritten.** Every run writes a new file next to the source,
   and an existing result becomes `… v2`, never a replacement.
 
-## Install
+## Quick start
+
+macOS, and [uv](https://docs.astral.sh/uv/). Cold clone to a running window:
 
 ```
-uv sync --extra mlx        # Apple Silicon — the fast one
-uv sync --extra faster     # Intel Mac, or a second opinion
-brew install ffmpeg        # audio decoding; bundled in the built app
-```
-
-## Use
-
-```
-uv run podcast-magic                    # find the newest session here
-uv run podcast-magic "episode 8.nhsx"
+git clone https://github.com/ollisulopuisto/podcast
+cd podcast
+brew install ffmpeg
+uv sync --all-packages --extra mlx
 uv run podcast-magic ~/Podcast/episode8/
 ```
 
-The browser opens at `http://127.0.0.1:8741/`. Built as an app it opens its
-own window instead.
+That opens `http://127.0.0.1:8741/` in your browser. Add `--gui` for a
+native window instead.
+
+Three ways to say which session:
+
+```
+uv run podcast-magic                     # newest .nhsx in the current folder
+uv run podcast-magic "episode 8.nhsx"    # this one
+uv run podcast-magic ~/Podcast/episode8/ # newest .nhsx in that folder
+```
+
+### Two things about `uv sync` here
+
+**Run it from the repository root, and pass `--all-packages`.** This app is
+one member of a uv workspace, next to autoraffkat, automixer and the shared
+`packages/speechmix`. That has two consequences worth knowing before they
+confuse you:
+
+* `uv sync --extra mlx` at the root installs **no engine at all** — the extra
+  belongs to a member, not to the workspace, so there is nothing for it to
+  match and nothing is said about it.
+* `uv sync` *inside* `apps/podcast-magic` syncs that one member and
+  **uninstalls the other members'** dependencies from the shared environment.
+
+`uv run podcast-magic` works from anywhere in the tree; only `uv sync` cares
+where you are.
+
+**Pick your engine with the extra.** `--extra mlx` on Apple Silicon,
+`--extra faster` on an Intel Mac. Both together is fine —
+`--extra mlx --extra faster` is what CI installs — and then the engine picker
+in the window has something to pick between.
+
+## Use
 
 The loop:
 

@@ -15,24 +15,51 @@ istuntotiedosto, kaksi työkalua — ja tilaa kolmannelle.
 * **Mitään ei kirjoiteta yli.** Jokainen ajo tekee uuden tiedoston lähteen
   viereen, ja jos sellainen on jo, seuraavasta tulee `… v2`.
 
-## Asennus
+## Pikakäynnistys
+
+macOS ja [uv](https://docs.astral.sh/uv/). Tyhjästä kloonista ikkunaan:
 
 ```
-uv sync --extra mlx        # Apple Silicon — se nopea
-uv sync --extra faster     # Intel-Mac tai toinen mielipide
-brew install ffmpeg        # äänen purku; käännetyssä sovelluksessa mukana
-```
-
-## Käyttö
-
-```
-uv run podcast-magic                    # etsii uusimman istunnon täältä
-uv run podcast-magic "jakso 8.nhsx"
+git clone https://github.com/ollisulopuisto/podcast
+cd podcast
+brew install ffmpeg
+uv sync --all-packages --extra mlx
 uv run podcast-magic ~/Podcast/jakso8/
 ```
 
-Selain avautuu osoitteeseen `http://127.0.0.1:8741/`. Sovellukseksi
-käännettynä ohjelma avaa oman ikkunansa.
+Selain avautuu osoitteeseen `http://127.0.0.1:8741/`. `--gui` avaa selaimen
+sijaan natiivin ikkunan.
+
+Istunnon voi antaa kolmella tavalla:
+
+```
+uv run podcast-magic                    # uusin .nhsx tästä kansiosta
+uv run podcast-magic "jakso 8.nhsx"     # tämä
+uv run podcast-magic ~/Podcast/jakso8/  # uusin .nhsx tuosta kansiosta
+```
+
+### Kaksi asiaa `uv sync`istä
+
+**Aja se työtilan juuressa ja anna `--all-packages`.** Tämä sovellus on yksi
+työtilan jäsen autoraffkatin, automixerin ja jaetun `packages/speechmix`in
+rinnalla, ja siitä seuraa kaksi asiaa jotka on parempi tietää etukäteen kuin
+ihmetellä jälkikäteen:
+
+* `uv sync --extra mlx` juuressa ei asenna **yhtään moottoria** — lisä kuuluu
+  jäsenelle eikä työtilalle, joten sillä ei ole mitään mihin osua eikä siitä
+  sanota mitään.
+* `uv sync` **`apps/podcast-magic`in sisällä** synkronoi vain sen jäsenen ja
+  **poistaa muiden jäsenten** riippuvuudet yhteisestä ympäristöstä.
+
+`uv run podcast-magic` toimii mistä tahansa puun kohdasta; vain `uv sync`
+välittää siitä missä seisot.
+
+**Moottori valitaan lisällä.** `--extra mlx` Apple Siliconilla, `--extra
+faster` Intel-Macilla. Molemmat yhtä aikaa käy myös — `--extra mlx --extra
+faster` on se mitä CI asentaa — ja silloin ikkunan moottorivalitsimessa on
+mistä valita.
+
+## Käyttö
 
 Työjärjestys:
 
