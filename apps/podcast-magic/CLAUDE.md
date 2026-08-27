@@ -163,6 +163,78 @@ toisin päin: hännän lisääminen ensin sulkisi tauot pituuteen
 * **Mallien painoja ei paketoida.** `large-v3-turbo` on gigatavun luokkaa;
   se ladataan ensimmäisellä ajolla ja jää käyttäjän välimuistiin.
 
+## Istunnon kuuleminen: mikä on mitattu ja mikä arvattu
+
+`nhsx/mix.py` sijoittaa alueet ohjelma-aikajanalle tasoineen, häivytyksineen
+ja panorointeineen; `nhsx/render.py` summaa ne WAViksi. Yhdessä ne ovat se,
+mikä tekee istunnosta kuunneltavan **ilman Hindenburgia** — tiedosto on XML
+ja äänipooli on WAVeja levyllä, eikä muuta tarvita.
+
+**Mitattua on geometria.** `Start`, `Length`, `Offset` ja `Muted` ovat
+attribuutteja joita tämä repositorio on lukenut ja kirjoittanut alusta asti.
+
+**Arvattua on kaikki muu.** `Gain`, `Pan` ja `<Fade In= Out=>` ovat
+uskottavia nimiä eivätkä todettuja: kummassakaan repositoriossa ei ole
+yhtään istuntoa, jossa faderia olisi liikutettu, eikä formaattia ole
+dokumentoitu. `<Fade>` on se nimi jolla `tests/test_silence.py` rakentaa
+alueen lapsielementin ja `apply.py` sanoo lapsielementeistä «esimerkiksi
+häivytyksiä» — se on huomio, ei mittaus.
+
+Siksi kaksi asiaa. `KNOWN_REGION_ATTRS` on **käsin kirjoitettu** lista, sama
+vartija kuin litteroinnin tunnisteella: uusi nimi ei livahda tunnettujen
+joukkoon ilman että joku päätti niin. Ja tuntematon attribuutti
+**kerrotaan** — `Mix.unknown`, ja `nhsx-render` varoittaa siitä — koska
+miksaus joka ohitti faderin on kelvollinen WAV väärällä tasolla, eli
+täsmälleen tämän talon hiljainen vika.
+
+`nhsx/prospect.py` on se joka vaihtaa arvauksen mittaukseksi. Aja
+`nhsx-render jakso.nhsx --inspect` istuntoon, jossa taso, panorointi ja
+häivytys **on asetettu**, ja se kertoo nimet — ja esimerkkiarvot, koska
+«Gain» ei kerro onko se desibeliä vai kerroin. Sama kuvio kuin
+`verify.py`:llä: formaattia ei arvata, siitä kysytään tiedostolta.
+
+Mitä tässä ei ole eikä pidä olla: taajuuskorjaus, kompressointi ja
+Hindenburgin oma tasonsäätö. Esikatselu on geometria, taso, häivytys ja
+panorointi — ja siksi se voi olla nopea. Se ei siis kuulosta Hindenburgin
+toistolta silloin kun istunnossa on käytetty ääniprofiileja.
+
+### Lohkoraja on renderöinnin vaarallinen kohta
+
+Ohjelmaa ei pidetä muistissa: tunnin jakso on 48 kHz:llä stereona
+liukulukuina 1,4 GB, ja lähteitä on lisäksi yksi per raita. `render.blocks`
+antaa ohjelman 30 sekunnin paloina ja `to_wav` kirjoittaa jokaisen heti.
+Lähteestä puretaan vain se kohta jota tarvitaan (`-ss` **ennen** `-i`:tä,
+muuten tunnin nauhan lopusta otettu kolmen sekunnin leike on tunnin työ).
+
+Jokainen lohkon raja on paikka, jossa leike voi katketa, häivytys alkaa
+alusta tai lähteestä luetaan väärä kohta. Mikään niistä ei kaada mitään:
+tulos on kelvollinen WAV, jossa on naksahdus puolen minuutin välein. Siksi
+verhokäyrä lasketaan **koko leikkeelle** ja viipaloidaan lohkoon, kaikki
+paikat lasketaan näyteindekseinä eikä sekunteina, ja
+`test_the_block_size_does_not_change_the_result` ajaa saman miksauksen
+kahdella lohkokoolla. Se on se yksi testi joka näkee ne kaikki kerralla.
+
+### Panorointi on vakiotehoinen, häivytys lineaarinen
+
+Lineaarisella panorointilailla keskellä oleva raita on summassa 3 dB
+kovempaa kuin laidoille ajettu, ja miksaus kallistuu keskelle sitä mukaa kun
+raitoja on enemmän. `pan_gains` pitää `vasen² + oikea² = 1`, jolloin keski on
+−3,01 dB molemmilla puolilla. Asteikon ulkopuolinen arvo **rajataan** eikä
+kierretä: arvo tulee mittaamattomasta attribuutista, ja kierrettynä se
+antaisi negatiivisen vahvistuksen eli vaihekäännöksen.
+
+Häivytyksen muotoa ei tiedetä, ja lineaarinen on niistä se joka ei väitä
+mitään. Kun muoto mitataan, se vaihdetaan yhdessä funktiossa (`envelope`).
+Leikettä pidemmät häivytykset **skaalataan** — pilkkominen jättää lyhyitä
+paloja, ja perittynä käyrät menisivät ristiin ja summa nollan ali.
+
+### Purkaja on parametri
+
+`render.blocks` ottaa purkajan argumenttina. Ilman sitä jokainen summauksen
+testi tarvitsisi ffmpegin, ja ffmpegiä tarvitseva testi on vihreä siellä
+missä ffmpegiä ei ole — eli sama kuin ettei sitä olisi. Renderöinnin viat
+ovat summauksessa, eivät purussa.
+
 ## Ääniketju tulee joskus, ei vielä
 
 `nhsx/pipeline.py` on sauma autoraffkatin mitatulle puheenkäsittelyketjulle:

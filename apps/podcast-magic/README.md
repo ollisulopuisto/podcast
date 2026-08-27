@@ -192,6 +192,51 @@ What would settle it: a `.nhsx` where Hindenburg's own transcription drives
 the script view correctly. Its structure is the ground truth for `<p>` and
 for what `sp` should contain.
 
+## Reading a session without Hindenburg
+
+A `.nhsx` is XML and its audio pool is WAV files on disk. As long as
+something can read those two, the session is still listenable — with or
+without the program it was made in, and with or without a licence for it.
+`nhsx-render` is that something.
+
+```
+uv run nhsx-render "episode 8.nhsx"              # → episode 8.wav
+uv run nhsx-render "episode 8.nhsx" --plan       # what would be heard
+uv run nhsx-render "episode 8.nhsx" --json       # the same, for a program
+uv run nhsx-render "episode 8.nhsx" --inspect    # what the format contains
+```
+
+It reads region geometry, mute, level, fades and pan — and nothing else. No
+EQ, no compression, no Hindenburg voice profiles. That is a deliberate
+floor, not a to-do: it means `--plan` never opens an audio file at all, so
+an hour-long session is planned in milliseconds. A previewer that has to
+render first is a previewer nobody presses space on.
+
+The render itself never holds the programme in memory. It goes 30 seconds at
+a time, straight to the file, and decodes only the piece of each source it
+needs — so an hour of session costs about as much memory as a minute of it.
+Nothing is overwritten: an existing `episode 8.wav` becomes `episode 8 v2.wav`.
+
+### One caveat worth knowing
+
+Region geometry and mute are certain — this tool has read and written them
+from the beginning. **Level, pan and fades are not.** Their attribute names
+are plausible guesses, because no session in this repository has ever had a
+fader moved in it, and the format is not documented.
+
+So the tool tells you when it meets something it cannot read, rather than
+mixing on quietly at the wrong level:
+
+```
+Huom: istunnossa on attribuutteja joita tämä ei lue: Volume.
+```
+
+`--inspect` is how that gets settled. Point it at a real session where the
+levels, pans and fades **have** been set, and it reports every attribute in
+the file with example values — because "Gain" does not tell you whether it
+is decibels or a factor, and the value does. One such file turns the guess
+into a measurement.
+
 ## Building the app
 
 ```
@@ -221,6 +266,8 @@ src/podcastmagic/
   __main__.py  gui.py  server/      the shell: window, server, static UI
   jobs.py                           one background job at a time, with progress
   nhsx/                             the session format — shared by every module
+    mix.py  render.py  cli.py       the session as sound: nhsx-render
+    prospect.py                     what the format actually contains
   transcribe/  backends/            Whisper: one interface, several engines
   silence/                          speech intervals, region splitting
   modules.py                        the registry

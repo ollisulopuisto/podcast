@@ -28,7 +28,17 @@ uv sync --all-packages --extra mlx        # --extra faster on an Intel Mac
 uv run podcast-magic ~/Podcast/episode8/  # Hindenburg: transcribe and mute
 uv run autoraffkat                        # Final Cut: cut the picture
 uv run automixer                          # render a mix
+
+uv run nhsx-render "episode 8.nhsx"       # a Hindenburg session → a WAV
 ```
+
+That last one is the odd member of the set: it is the only tool here that
+exists for the day the program it reads for is gone. A `.nhsx` is XML and a
+folder of WAVs, so `nhsx-render` turns one back into audio — geometry,
+mute, level, fades and pan, no effects — with nothing but `nhsx/`, numpy and
+ffmpeg. `--plan` and `--json` say what would be heard without opening a
+single audio file, which is what makes a preview fast enough to be worth
+having.
 
 automixer is still mid-move into this repository — one test fails on the
 workspace's mlx and CI carries it as declared debt — so treat that last line
