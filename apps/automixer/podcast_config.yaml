@@ -1,0 +1,10 @@
+project: "Automixer Podcast"
+target_lufs: -16.0
+output_path: "output.wav"
+tracks:
+  - name: "Host"
+    path: "host.wav"
+    type: "speech"
+  - name: "Background"
+    path: "music.wav"
+    type: "music"
