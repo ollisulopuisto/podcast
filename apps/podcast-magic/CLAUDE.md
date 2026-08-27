@@ -171,3 +171,50 @@ ohjelma-aikajanalla. Siinä ei ole yhtään käsittelyä eikä sitä pidä lisä
 tänne — ketju kuuluu jaettuun pakettiin, jotta se ei ehdi ajautua erilleen
 kolmessa projektissa. Tämän tiedoston tehtävä on, ettei ketjun tuominen ole
 lukijan uudelleenkirjoittamista.
+
+### Tämä sovellus ei käytä `speechmix`iä lainkaan — lue tämä ennen kuin kirjoitat DSP:tä
+
+Nollä tuontia, ei riippuvuutta `pyproject.toml`issa. Jaettu ketju on jaettu
+**kahden** sovelluksen kesken (autoraffkat, automixer), ja tämä kolmas on
+kirjoittanut oman ~770 rivin puhe- ja tasokoodinsa (`audio.py`, `silence/`)
+tapaamatta sitä koskaan.
+
+**Se ei ole tyhjä paikka vaan päällekkäisyys, ja se on jo tapahtunut kerran.**
+`silence/detect.py`:n `dominant_words` kirjoitettiin uusiksi vaikka
+`speechmix.grid.speech_grid` teki jo saman päätöksen — samalla vakiolla:
+
+    podcast-magic  Settings.dominance = 6.0     speechmix  DOMINANCE_DB = 6.0
+    podcast-magic  levels >= loudest - kaista   speechmix  levels >= loudest - dominance_db
+
+Sama luku kahdesti kahdessa paikassa on täsmälleen se ajautuminen jota vastaan
+tämä repositorio on olemassa. Kommentti «sama päätös kuin `duck_masks`in»
+ei ole tuonti: se on muistiinpano siitä että kopio tehtiin tietoisesti.
+
+**Ja `speechmix` osaa sen paremmin.** `speech_grid` ei käytä absoluuttista
+kynnystä lainkaan vaan raitakohtaista pohjakohinaa (10. persentiili) plus
+`FLOOR_MARGIN_DB = 8`. Se kalibroituu itse jokaiselle mikille, eli ratkaisee
+juuri sen esivahvistusongelman jonka takia `threshold = -35 dBFS` on huono —
+ja sillä on mittaus jota täällä ei ole: tasoheuristiikka kutsui 74 % raidan
+lohkoista puheeksi kun 53 % oli omistajansa, ja ne olivat samaa mieltä 38 %
+ajasta.
+
+Kun ketju tuodaan, **käytä näitä äläkä kirjoita uusia**:
+
+| täällä nyt | `speechmix` | huomio |
+|---|---|---|
+| `silence/detect.py` `dominant_words`, `speech_intervals` | `grid.speech_grid` → `SpeechGrid.speaking` | sama päätös, parempi aktiivisuustesti |
+| `Settings.threshold` (−35 dBFS kiinteä) | `grid.FLOOR_MARGIN_DB` pohjakohinan yli | itsekalibroituva |
+| `Settings.dominance` | `grid.DOMINANCE_DB` | sama luku, poista toinen |
+| «vain minä äänessä» (ei ole vielä) | `SpeechGrid.only_frames`, `masks.solo_masks` | vuodon vähennys tarvitsee juuri nämä |
+| `silence/apply.py` `merge`, `audible_zones` | `masks.open_windows`, `drop_short`, `envelopes.closed_ranges` | jaksot vs. ruudukko, sama idea |
+| `audio.py` `dbfs` | `dsp.moving_rms`, `dsp.lin_to_db` | |
+| ristivuodon poisto (ei ole) | `debleed.path`, `debleed.remove` | mitattu, tarkistaa tuloksensa |
+
+Mikä **jää** tänne, koska se on istuntoformaattia eikä ketjua: `nhsx/`
+kokonaan, `silence/apply.py`:n `split_track` ja `has_region_children`,
+`audio.py`:n `decode_pcm` (paketoitu ffmpeg-binääri, ei PATH) ja
+`silence/presets.py`:n käyttöliittymäsanasto.
+
+Järjestys jolla tämä kannattaa tehdä: `speech_grid` ensin `dominant_words`in
+tilalle, koska se poistaa vakion kahdennuksen ja tuo pohjakohinan samalla
+kertaa. Vasta sen jälkeen loput — ruudukko on se mitä kaikki muu lukee.
