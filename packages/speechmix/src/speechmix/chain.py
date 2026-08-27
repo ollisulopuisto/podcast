@@ -56,6 +56,16 @@ from .messages import t
 # ei tiivistyksen määrää.
 THRESHOLD_REFERENCE_LUFS = -20.0
 
+# Kynnysten ja ylipäästön oletukset. Nämä ovat isännän säädettävissä, mutta
+# **oletus on ketjun tietoa**: se on viritetty yhdessä kynnysviitteen,
+# suhteiden ja aikojen kanssa yllä, ja irrallaan niistä se on vain numero.
+# Ne olivat autoraffkatin `model.py`:ssä, jolloin toinen kuluttaja saattoi
+# vain kirjoittaa toiset numerot eikä mikään kertoisi eroa. Vertaa
+# `freshness.FINGERPRINT_FIELDS`, joka jo nimeää nämä ketjun asetuksiksi.
+HIGH_PASS_HZ = 80.0
+PEAK_THRESHOLD_DB = -12.0  # nopea, 30 ms
+LEVELER_THRESHOLD_DB = -18.0  # hidas, 300 ms
+
 PEAK_ATTACK_MS = 15.0
 PEAK_RELEASE_MS = 80.0
 PEAK_RATIO = 3.0

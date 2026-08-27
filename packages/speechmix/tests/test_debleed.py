@@ -7,6 +7,7 @@ vähennyksellä joka syö puheen, ja se kuuluisi vasta viennin jälkeen.
 
 import numpy as np
 import pytest
+
 from speechmix import debleed
 
 RATE = 48000

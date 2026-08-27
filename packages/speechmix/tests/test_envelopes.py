@@ -6,6 +6,7 @@ kirjastossa eikä kummassakaan isännässä.
 """
 
 import numpy as np
+
 from speechmix import envelopes
 
 

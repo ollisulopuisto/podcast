@@ -30,13 +30,14 @@ this file once the extraction is finished — it describes a state, not a rule.
    first; this is the module where "valid output, wrong result" lives.
 3. **`editor.py`, `worker.py`** — the plug-in child process. Mostly
    mechanical once `chain` is in place.
-4. **automixer's mlx failure.** `test_multiband_dynamics` fails with
-   `RuntimeError: There is no Stream(gpu, 3) in current thread` on mlx
-   0.32.2, and passes on 0.30.6. The workspace shares one lockfile and so
-   one mlx, which is how this surfaced at all — automixer's `mlx>=0.30.6`
-   was a claim it had never tested. Its CI job is `continue-on-error` until
-   this is fixed; **remove that line as part of the fix**, and fix it
-   forward rather than pinning mlx backwards.
+4. ~~**automixer's mlx failure.**~~ Done. It was not a version problem:
+   mlx's default stream is thread-local, and three call sites ran mlx work
+   in a `ThreadPoolExecutor`, so an array made on a worker raised on first
+   use back on the calling thread. 0.30.6 allowed it silently. Fixed
+   forward in all three places — `processor.py` and `bus.py` run on the
+   calling thread, and `cli_mix.py` keeps the pool for reading files while
+   the mlx conversion happens on the caller (`Track.read` / `Track.to_mlx`).
+   Both `continue-on-error` lines are gone and CI is one gate again.
 
 ## Two things not to undo
 

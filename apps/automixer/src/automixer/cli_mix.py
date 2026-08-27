@@ -6,31 +6,33 @@ processing, routing, and exporting of audio tracks. It also includes a
 command-line entry point for executing mixes from the terminal.
 """
 
-import os
-import yaml
-import time
-import psutil
-import soundfile as sf
-import mlx.core as mx
-import numpy as np
-import pyloudnorm as pyln
 import argparse
 import glob
-from automixer.domain.track import Track
+import os
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+import mlx.core as mx
+import numpy as np
+import psutil
+import pyloudnorm as pyln
+import soundfile as sf
+import yaml
+
+from automixer.domain import shared
 from automixer.domain.bus import Bus
 from automixer.domain.processor import (
+    CeilingProcessor,
+    CompressorProcessor,
     DuckingProcessor,
+    ExternalPluginProcessor,
     GainProcessor,
     HighPassProcessor,
-    CompressorProcessor,
     SpectralCarverProcessor,
-    LimiterProcessor,
-    MultibandCompressorProcessor,
-    ExternalPluginProcessor,
-    DeSmackProcessor,
+    SpeechChainProcessor,
+    SpeechSettings,
 )
-
-from concurrent.futures import ThreadPoolExecutor
+from automixer.domain.track import Track
 
 
 class Mixer:
@@ -80,15 +82,15 @@ class Mixer:
         p_type = p_cfg["type"]
         if p_type == "highpass":
             return HighPassProcessor(cut_freq=p_cfg.get("freq", 100))
-        elif p_type == "compressor":
+        if p_type == "compressor":
             return CompressorProcessor(
                 threshold_db=p_cfg.get("threshold", -20),
                 ratio=p_cfg.get("ratio", 4.0),
                 window_sec=p_cfg.get("window", 0.1),
             )
-        elif p_type == "gain":
+        if p_type == "gain":
             return GainProcessor(gain_db=p_cfg.get("db", 0.0))
-        elif p_type == "plugin":
+        if p_type == "plugin":
             return ExternalPluginProcessor(
                 plugin_path=p_cfg["path"], parameters=p_cfg.get("params", {})
             )
@@ -145,13 +147,20 @@ class Mixer:
         load_start = preview_start if is_preview else 0.0
         load_dur = preview_duration if is_preview else -1.0
 
+        # Reading the files parallelises -- it is disk and a loudness
+        # measurement.  Building the mlx signal does not: mlx's default
+        # stream is thread-local, and an array made on a worker raises
+        # `There is no Stream(gpu, 3) in current thread` the first time the
+        # mix touches it.  So the pool reads, and this thread converts.
         with ThreadPoolExecutor() as executor:
             list(
                 executor.map(
-                    lambda t: t.load(self.sr, start_time=load_start, duration=load_dur),
+                    lambda t: t.read(start_time=load_start, duration=load_dur),
                     tracks_to_load,
                 )
             )
+        for t in tracks_to_load:
+            t.to_mlx()
 
         speech_track_list = []
         for t in tracks_to_load:
@@ -176,42 +185,45 @@ class Mixer:
         speech_cfg = buses_cfg.get("speech", {})
 
         for t in speech_track_list:
-            # Use 0 if loudness is unknown
-            l_val = t.loudness if t.loudness is not None else reference_lufs
-
-            # 2a. Pre-processing: De-Smacker (Option 1: Spectral Interpolation style)
-            if speech_cfg.get("desmack_enabled", True):
-                sensitivity = float(speech_cfg.get("desmack_sensitivity", 0.5))
-                t.add_processor(DeSmackProcessor(sensitivity=sensitivity))
-
-            # 2b. External Plugins next
+            # External plugins first: clean up before you amplify. Same order
+            # as the shared chain's own, which runs its plug-in slot ahead of
+            # everything else for the same reason.
             for p_cfg in speech_cfg.get("processors", []):
                 if p_cfg["type"] == "plugin":
                     t.add_processor(self._create_processor(p_cfg))
 
-            if speech_cfg.get("hp_enabled", True):
-                t.add_processor(HighPassProcessor(cut_freq=80))
-
-            if speech_cfg.get("multiband_enabled", False):
-                t.add_processor(
-                    MultibandCompressorProcessor(
-                        peak_enabled=speech_cfg.get("peak_enabled", True),
-                        lev_enabled=speech_cfg.get("lev_enabled", True),
-                    )
+            # Then the whole speech chain, from the shared library.
+            #
+            # This replaced six hand-rolled stages: the de-smacker, the
+            # high-pass, the normalising gain and two uncapped compressors --
+            # or, in multiband mode, a per-band auto-gain measured to move the
+            # tone by 10.72 dB with the programme.  What comes back is the
+            # chain autoraffkat and podcast-magic run: a de-clicker that
+            # actually fires, a de-esser, three capped stages with a parallel
+            # dry/wet mix, a settle loop onto the target, and a true-peak
+            # limiter.  See `SPEECHMIX-INVENTORY.md` for what each one
+            # measured before and after.
+            #
+            # Thresholds are not written here.  The library slides them with
+            # the target (`offset = target - THRESHOLD_REFERENCE_LUFS`), so
+            # this -23 reference gives -15 / -21 / -25 -- and -15 is exactly
+            # where automixer's fast stage already sat.
+            t.add_processor(
+                SpeechChainProcessor(
+                    target_lufs=reference_lufs,
+                    settings=SpeechSettings(
+                        high_pass_hz=(
+                            shared.HIGH_PASS_HZ
+                            if speech_cfg.get("hp_enabled", True)
+                            else 0.0
+                        ),
+                        declick=speech_cfg.get("desmack_enabled", True),
+                        declick_sensitivity=float(
+                            speech_cfg.get("desmack_sensitivity", 0.5)
+                        ),
+                    ),
                 )
-            else:
-                gain_offset = reference_lufs - l_val
-                t.add_processor(GainProcessor(gain_db=gain_offset))
-                if speech_cfg.get("peak_enabled", True):
-                    t.add_processor(
-                        CompressorProcessor(
-                            threshold_db=-15, ratio=2.5, window_sec=0.03
-                        )
-                    )
-                if speech_cfg.get("lev_enabled", True):
-                    t.add_processor(
-                        CompressorProcessor(threshold_db=-26, ratio=1.5, window_sec=0.3)
-                    )
+            )
 
         for t in music_bus.tracks:
             l_val = t.loudness if t.loudness is not None else -30.0
@@ -307,8 +319,7 @@ class Mixer:
         makeup_gain_db = target_lufs - current_loudness
         final_mix_mx = final_mix_mx * (10 ** (makeup_gain_db / 20))
 
-        limiter = LimiterProcessor(threshold_db=-1.0)
-        master_output = limiter.process(final_mix_mx, self.sr)
+        master_output = CeilingProcessor().process(final_mix_mx, self.sr)
 
         master_np = np.array(master_output)
 
@@ -319,9 +330,8 @@ class Mixer:
             elapsed = time.time() - start_time
             update_progress(100, f"✅ FINISHED in {elapsed / 60:.1f}m: {output_path}")
             return None
-        else:
-            update_progress(100, "✅ Preview Render Ready")
-            return master_np
+        update_progress(100, "✅ Preview Render Ready")
+        return master_np
 
 
 def detect_tracks(paths):

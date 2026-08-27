@@ -14,24 +14,51 @@ One window, one session file, two tools — and room for a third.
 * **Nothing is overwritten.** Every run writes a new file next to the source,
   and an existing result becomes `… v2`, never a replacement.
 
-## Install
+## Quick start
+
+macOS, and [uv](https://docs.astral.sh/uv/). Cold clone to a running window:
 
 ```
-uv sync --extra mlx        # Apple Silicon — the fast one
-uv sync --extra faster     # Intel Mac, or a second opinion
-brew install ffmpeg        # audio decoding; bundled in the built app
-```
-
-## Use
-
-```
-uv run podcast-magic                    # find the newest session here
-uv run podcast-magic "episode 8.nhsx"
+git clone https://github.com/ollisulopuisto/podcast
+cd podcast
+brew install ffmpeg
+uv sync --all-packages --extra mlx
 uv run podcast-magic ~/Podcast/episode8/
 ```
 
-The browser opens at `http://127.0.0.1:8741/`. Built as an app it opens its
-own window instead.
+That opens `http://127.0.0.1:8741/` in your browser. Add `--gui` for a
+native window instead.
+
+Three ways to say which session:
+
+```
+uv run podcast-magic                     # newest .nhsx in the current folder
+uv run podcast-magic "episode 8.nhsx"    # this one
+uv run podcast-magic ~/Podcast/episode8/ # newest .nhsx in that folder
+```
+
+### Two things about `uv sync` here
+
+**Run it from the repository root, and pass `--all-packages`.** This app is
+one member of a uv workspace, next to autoraffkat, automixer and the shared
+`packages/speechmix`. That has two consequences worth knowing before they
+confuse you:
+
+* `uv sync --extra mlx` at the root installs **no engine at all** — the extra
+  belongs to a member, not to the workspace, so there is nothing for it to
+  match and nothing is said about it.
+* `uv sync` *inside* `apps/podcast-magic` syncs that one member and
+  **uninstalls the other members'** dependencies from the shared environment.
+
+`uv run podcast-magic` works from anywhere in the tree; only `uv sync` cares
+where you are.
+
+**Pick your engine with the extra.** `--extra mlx` on Apple Silicon,
+`--extra faster` on an Intel Mac. Both together is fine —
+`--extra mlx --extra faster` is what CI installs — and then the engine picker
+in the window has something to pick between.
+
+## Use
 
 The loop:
 
@@ -78,7 +105,7 @@ word's timestamp is **file** time; a region says where in the file it starts
 `Start + (s - Offset)`. Each region is converted separately, because the same
 file can appear on the timeline more than once.
 
-Three controls:
+Four controls:
 
 * **Tail** — how much speech is kept either side of a word. A word's timestamp
   is its edge, and speech cut exactly at the edge sounds cut.
@@ -86,10 +113,42 @@ Three controls:
   tenths of a second; muting each one makes the track click all episode.
 * **Level check** — when microphones bleed, Whisper hears the other person on
   this track too and writes their words down as yours. Level tells own speech
-  from bleed. Text cannot.
+  from bleed. Text cannot — the two transcriptions are not even the same
+  string, so there is nothing to match.
+* **Margin to loudest** — which track a word belongs to. See below.
 
 The level check decodes every track, so it runs in the job, not in the
 estimate under the sliders. The estimate says so.
+
+### One room, and every microphone hears everyone
+
+A threshold on its own cannot do this. In a quiet studio with good
+microphones the bleed is not quiet — it is *quieter*, and only relative to
+the microphone the speaker is sitting at. Measured on a real session:
+
+* both microphones cross the threshold **41 % of the time**,
+* but the bleed is a median **12.8 dB** below the same speech on its own
+  microphone.
+
+So the discriminator is not level, it is the **difference between tracks at
+the same instant**. Absolute level moves with every microphone's preamp; the
+gap between tracks does not. A word stays on the track where it is loudest,
+and on any track within **Margin to loudest** of that.
+
+It is a margin rather than winner-takes-all on purpose. 6 dB leaves about
+6.8 dB of the measured 12.8 dB gap, so genuine overlap — interruptions,
+laughter, the sounds that make a conversation a conversation — survives,
+while bleed does not. A hard "one speaker at a time" rule would cut exactly
+those. Set the margin to zero to turn the comparison off; that is off, not a
+zero-decibel band.
+
+A word whose level could not be measured on some track is never dropped on
+that track's account: not knowing is not a decision to mute. Same rule as a
+missing file. And with one track there is nothing to compare, so the
+comparison does not run and says so in the log.
+
+This is the same decision, from the same measurement, as `duck_dominance_db`
+in autoraffkat — where it drives ducking rather than muting.
 
 ## When the script view's cursor sticks
 

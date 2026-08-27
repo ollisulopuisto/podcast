@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field
 from fractions import Fraction
 
 # Analyysin aika-askel sekunteina. Sama arvo verhokäyrässä ja päätöksessä.
+from speechmix import chain
 from speechmix.masks import HOP  # noqa: F401  ruudukon askel, kirjastosta
 
 from .timeline import ZERO
@@ -267,7 +268,7 @@ class AudioSettings:
     """
 
     enabled: bool = False
-    high_pass_hz: float = 80.0
+    high_pass_hz: float = chain.HIGH_PASS_HZ
     # Jokainen mikki nostetaan ensin samaan äänekkyyteen. Ilman tätä
     # kompressorin kynnykset ovat mielivaltaisia: käsittelemätön podcast-mikki
     # on helposti -40 LUFS, jolloin -18 dB:n kynnys ei ylity kertaakaan.
@@ -286,8 +287,11 @@ class AudioSettings:
     # ovat ``LOUDNESS_TARGETS``; säädin jää silti vapaaksi, koska jakelu ei
     # ole aina jompikumpi näistä.
     target_lufs: float = -14.0
-    peak_threshold_db: float = -12.0  # nopea, 30 ms
-    leveler_threshold_db: float = -18.0  # hidas, 300 ms
+    # Oletukset tulevat ketjulta, ks. `chain.PEAK_THRESHOLD_DB`: ne on
+    # viritetty yhdessä kynnysviitteen ja aikojen kanssa, ja toinen
+    # kuluttaja saa nyt saman numeron eikä omaansa.
+    peak_threshold_db: float = chain.PEAK_THRESHOLD_DB
+    leveler_threshold_db: float = chain.LEVELER_THRESHOLD_DB
     # Tasonkuljettaja: hidas tason tasaus **ennen** kompressoreita, se
     # vaihe joka käsityönä tehdyssä miksauksessa on ensin. Ks.
     # chain.rider_gain — ilman puhemaskia sitä ei ajeta lainkaan.

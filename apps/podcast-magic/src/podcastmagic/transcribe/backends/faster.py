@@ -44,11 +44,11 @@ class FasterWhisper(Backend):
                 label=self.label,
                 available=False,
                 reason=f"Ei asennettu ({type(exc).__name__}).",
-                install="uv sync --extra faster",
+                install="uv sync --all-packages --extra faster",
             )
         return BackendInfo(
             key=self.key, label=self.label, available=True, device="CPU (int8)",
-            install="uv sync --extra faster",
+            install="uv sync --all-packages --extra faster",
         )
 
     def _model(self, name: str, progress: Progress):

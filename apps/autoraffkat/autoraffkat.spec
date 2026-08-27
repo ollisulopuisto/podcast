@@ -136,6 +136,11 @@ coll = COLLECT(
 )
 
 if sys.platform == "darwin":
+    # Sama muoto kuin podcast-magicilla: oletus on `pyproject.toml`in versio ja
+    # `tests/test_version.py` vahtii että ne pysyvät samana. macOS päättää
+    # `CFBundleVersion`ista tarjoaako se päivitystä, joten jälkeen jäänyt luku
+    # ei kaada mitään — se vain jättää päivityksen tarjoamatta.
+    version = os.environ.get("AR_VERSION", "2026.8.27.113")
     bundle_icon_file = os.path.basename(darwin_icon) if darwin_icon else "autoraffkat.icns"
     app = BUNDLE(
         coll,
@@ -145,8 +150,8 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleName": "autoraffkat",
             "CFBundleDisplayName": "autoraffkat",
-            "CFBundleVersion": "2026.8.22.49",
-            "CFBundleShortVersionString": "2026.8.22.49",
+            "CFBundleVersion": version,
+            "CFBundleShortVersionString": version,
             "CFBundleIconFile": bundle_icon_file,
             "NSHighResolutionCapable": "True",
             "NSRequiresAquaSystemAppearance": "False",

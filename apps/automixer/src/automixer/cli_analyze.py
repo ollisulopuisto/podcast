@@ -7,7 +7,9 @@ using SpotAnalyzer, and writes the resulting timestamps to an output text file.
 
 import os
 import sys
+
 import soundfile as sf
+
 from automixer.analyzer import SpotAnalyzer
 
 

@@ -84,14 +84,14 @@ class MlxWhisper(Backend):
                 label=self.label,
                 available=False,
                 reason=f"Ei asennettu ({type(exc).__name__}). Vaatii Apple Siliconin.",
-                install="uv sync --extra mlx",
+                install="uv sync --all-packages --extra mlx",
             )
         return BackendInfo(
             key=self.key,
             label=self.label,
             available=True,
             device="Apple GPU (Metal)",
-            install="uv sync --extra mlx",
+            install="uv sync --all-packages --extra mlx",
         )
 
     def transcribe(

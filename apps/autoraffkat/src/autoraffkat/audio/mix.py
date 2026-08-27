@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+
 from speechmix import chain
 from speechmix.chain import ChainError
 from speechmix.envelopes import (  # noqa: F401  julkinen rajapinta säilyy
@@ -749,6 +750,7 @@ def _debleed(job, audio, rate, program_start, solos, partners, result):
     juuri se vika joka tässä projektissa on jo kerran jäänyt huomaamatta.
     """
     from pedalboard.io import AudioFile
+
     from speechmix import debleed as db
 
     mine = (solos or {}).get(job.get("speaker"))
