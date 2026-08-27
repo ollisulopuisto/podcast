@@ -174,6 +174,7 @@ const STRINGS = {
     'knobName.duck_min_open': 'Lyhin avaus',
     'knobName.duck_dominance_db': 'Erotus kovimpaan',
     'knobName.duck_min_closed': 'Lyhin vaimennus',
+    'knobName.duck_min_gap': 'Lyhin aukko',
     'knobName.duck_fade': 'Lasku',
     'knobName.duck_release': 'Paluu',
     'knobName.declick_sensitivity': 'Herkkyys',
@@ -196,6 +197,9 @@ const STRINGS = {
       + 'mutta vuoto on mediaanissa 12,8 dB hiljempaa — auki jää kovin.',
     'why.duck_min_closed': 'Ilman tätä syntyi 20 millisekunnin kuoppia: '
       + 'naksahdus, ei vaimennus.',
+    'why.duck_min_gap': 'Yksi kynnystä hipaiseva vuotopiikki avasi mikin '
+      + 'kesken toisen lausetta. Täystasoinen vuoto puolen sekunnin ajan on '
+      + 'kampasuodatusta: se kuuluu metallisena kaikuna.',
     'why.duck_fade': 'Hidas, koska se on peitossa: lasku alkaa vasta kun '
       + 'toinen ääni on jo tullut.',
     'why.duck_release': 'Hitaampi kuin lasku, jotta nousukin ehtii tapahtua '
@@ -275,6 +279,7 @@ const STRINGS = {
     'audio.duckMinOpen': 'Lyhin avaus',
     'audio.duckDominance': 'Erotus kovimpaan',
     'audio.duckMinClosed': 'Lyhin vaimennus',
+    'audio.duckMinGap': 'Lyhin aukko',
     'audio.duckFade': 'Lasku',
     'audio.duckRelease': 'Paluu',
     'audio.room': 'Tilaääni',
@@ -495,6 +500,7 @@ const STRINGS = {
     'knobName.duck_min_open': 'Shortest opening',
     'knobName.duck_dominance_db': 'Margin to loudest',
     'knobName.duck_min_closed': 'Shortest duck',
+    'knobName.duck_min_gap': 'Shortest reopening',
     'knobName.duck_fade': 'Fade',
     'knobName.duck_release': 'Release',
     'knobName.declick_sensitivity': 'Sensitivity',
@@ -519,6 +525,9 @@ const STRINGS = {
       + 'time, but the bleed is a median 12.8 dB quieter — the loudest stays open.',
     'why.duck_min_closed': 'Without this it made 20-millisecond holes: a click, '
       + 'not a duck.',
+    'why.duck_min_gap': 'One leak peak grazing the threshold reopened the '
+      + 'microphone mid-sentence. Full-level bleed for half a second is comb '
+      + 'filtering: it sounds like a metallic echo.',
     'why.duck_fade': 'Slow because it is hidden: the fall starts only once the '
       + 'masking sound has arrived.',
     'why.duck_release': 'Slower than the fade, so the rise also happens under '
@@ -597,6 +606,7 @@ const STRINGS = {
     'audio.duckMinOpen': 'Shortest opening',
     'audio.duckDominance': 'Gap to the loudest',
     'audio.duckMinClosed': 'Shortest duck',
+    'audio.duckMinGap': 'Shortest reopening',
     'audio.duckFade': 'Fade down',
     'audio.duckRelease': 'Fade up',
     'audio.room': 'Room tone',

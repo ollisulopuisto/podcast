@@ -29,6 +29,7 @@ class _Settings:
     duck_min_open = 0.20
     duck_release = 0.40
     duck_min_closed = 0.60
+    duck_min_gap = 1.0
 
 
 def test_runs_finds_the_spans():
@@ -91,3 +92,42 @@ def test_solo_masks_are_where_only_one_speaks():
     assert out["a"][:100].all()
     assert not out["a"][100:200].any(), "päällekkäinen puhe ei ole soloa"
     assert out["b"][200:].all()
+
+
+def test_close_gaps_is_the_dual_of_drop_short():
+    """``drop_short`` poistaa lyhyet todet, ``close_gaps`` lyhyet epätodet."""
+    mask = np.zeros(100, dtype=bool)
+    mask[10:40] = True
+    mask[45:80] = True          # viiden solun aukko, 0,10 s
+    assert masks.close_gaps(mask, 0.2)[40:45].all()
+    assert not masks.close_gaps(mask, 0.05)[40:45].any()
+    # Reunat eivät ole aukkoja: käyrän ulkopuolta ei täytetä.
+    assert not masks.close_gaps(mask, 1.0)[:10].any()
+    assert not masks.close_gaps(mask, 1.0)[80:].any()
+
+
+def test_a_plosive_does_not_reopen_the_ducked_microphone():
+    """Vuoto joka hipaisee kynnystä avasi mikin kesken toisen lauseen.
+
+    Kahden mikin nauhoituksessa vuoto on mediaanissa 12,8 dB hiljempaa, mutta
+    plosiivit ja naurahdukset käyvät `duck_dominance_db`:n sisällä. Yksi
+    sellainen antoi vuotavalle mikille `duck_min_open` + `duck_hold`
+    -mittaisen aukon keskellä vaimennusta, eli täystasoinen vuoto palasi
+    puoleksi sekunniksi toisen mikin omaa puhetta vasten: kampasuodatusta,
+    joka kuuluu metallisena kaikuna.
+
+    Hystereesi oli yksipuolinen. `duck_min_closed` pudottaa lyhyet
+    vaimennukset, mutta lyhyitä *aukkoja* vaimennuksen sisällä ei poistanut
+    mikään.
+    """
+    n = 600
+    a_on = np.ones(n, dtype=bool)               # a puhuu koko ajan
+    leak_level = np.full(n, -34.0)
+    leak_level[300:310] = -18.0                 # 0,20 s plosiivia, tasoissa
+    grid = _Grid(
+        _Lane("a", a_on, np.full(n, -18.0)),
+        _Lane("leak", a_on, leak_level),
+    )
+    out = masks.duck_masks(grid, _Settings())
+    assert out["leak"][100:250].all(), "vaimennus ei alkanut lainkaan"
+    assert out["leak"][300:310].all(), "plosiivi avasi mikin kesken vaimennuksen"

@@ -99,6 +99,8 @@ const DUCK_KNOBS = () => [
     step: 0.5, unit: T('unit.db') },
   { key: 'duck_min_closed', label: T('audio.duckMinClosed'), min: 0, max: 3, step: 0.1,
     unit: T('unit.seconds') },
+  { key: 'duck_min_gap', label: T('audio.duckMinGap'), min: 0, max: 3, step: 0.1,
+    unit: T('unit.seconds') },
   { key: 'duck_fade', label: T('audio.duckFade'), min: 0.02, max: 1, step: 0.01,
     unit: T('unit.seconds') },
   { key: 'duck_release', label: T('audio.duckRelease'), min: 0.02, max: 2, step: 0.02,

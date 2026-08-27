@@ -551,6 +551,7 @@ class AppState:
             "duck_fade",
             "duck_release",
             "duck_min_closed",
+            "duck_min_gap",
             "duck_dominance_db",
             "declick_sensitivity",
         ):

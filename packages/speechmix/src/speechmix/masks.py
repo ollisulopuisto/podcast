@@ -100,6 +100,24 @@ def drop_short(mask: np.ndarray, seconds: float) -> np.ndarray:
     """Pudottaa annettua lyhyemmät todet jaksot pois."""
     return open_runs(mask, hops(seconds)) if seconds > 0 else mask
 
+def close_gaps(mask: np.ndarray, seconds: float) -> np.ndarray:
+    """Täyttää annettua lyhyemmät epätodet jaksot. ``drop_short``in duaali.
+
+    Reunat eivät ole aukkoja. ``~mask`` tekisi ensimmäisestä ja viimeisestä
+    epätodesta jaksosta täytettävän, jolloin maski laajenisi molempiin päihin
+    — ja portin tapauksessa se tarkoittaisi vaimennusta ennen kuin peittävä
+    ääni on tullut, mikä on juuri se lasku joka kuuluu.
+    """
+    if seconds <= 0 or mask.size == 0:
+        return mask
+    out = mask.copy()
+    for start, end, value in runs(mask.astype(np.int8)):
+        if value or start == 0 or end == mask.size:
+            continue
+        if (end - start) < hops(seconds):
+            out[start:end] = True
+    return out
+
 def speech_masks(grid) -> dict:
     """Puhuja -> milloin hän on äänessä, ruudukon tarkkuudella."""
     return {lane.name: np.asarray(lane.on, dtype=bool)
@@ -126,6 +144,15 @@ def duck_masks(grid, settings: object) -> dict:
 
     **Lyhyitä vaimennuksia ei tehdä.** Ilman tätä syntyi 20 millisekunnin
     kuoppia: naksahdus, ei vaimennus.
+
+    **Eikä lyhyitä aukkoja niiden sisään.** Hystereesi oli yksipuolinen:
+    lyhyet vaimennukset pudotettiin, lyhyitä aukkoja ei poistanut mikään.
+    Vuoto on mediaanissa 12,8 dB hiljempaa, mutta plosiivi tai naurahdus käy
+    ``duck_dominance_db``:n sisällä, ja yksi sellainen osti vuotavalle mikille
+    ``duck_min_open + duck_hold`` mittaisen aukon kesken toisen lausetta.
+    Täystasoinen vuoto puolen sekunnin ajan toisen mikin omaa puhetta vasten
+    on kampasuodatusta, ja se kuuluu metallisena kaikuna — ei porttina, joten
+    sitä ei osaa etsiä portin säätimistä.
     """
     if grid is None or not settings.duck or len(grid.speakers) < 2:
         return {}
@@ -161,6 +188,10 @@ def duck_masks(grid, settings: object) -> dict:
             if j != i:
                 others |= masking[j]
         closed = others & ~opened[i]
+        # Aukot umpeen ennen kuin lyhyet vaimennukset pudotetaan: vaimennus
+        # jonka välähdys katkaisee on **yksi** vaimennus, ja se on
+        # arvioitava sellaisena.
+        closed = close_gaps(closed, settings.duck_min_gap)
         out[lane.name] = drop_short(closed, settings.duck_min_closed)
     return out
 

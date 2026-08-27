@@ -34,6 +34,7 @@ class _Settings:
     duck_hold = 0.40
     duck_min_open = 0.20
     duck_min_closed = 0.60
+    duck_min_gap = 1.0
 
 
 def _turn_taking(n=800):

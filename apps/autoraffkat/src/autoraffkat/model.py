@@ -347,6 +347,13 @@ class AudioSettings:
     duck_fade: float = 0.25  # lasku, s — hidas, koska se on peitossa
     duck_release: float = 0.40  # paluu, s
     duck_min_closed: float = 0.60  # tätä lyhyempää vaimennusta ei tehdä, s
+    # Tätä lyhyempi aukko vaimennuksen sisällä täytetään umpeen. Raja on
+    # mitattu eikä arvattu: 77 minuutin jaksolla alle 0,6 s aukkoja ei ole
+    # yhtään — portti ei osaa tehdä lyhyempää — ja 0,8–1,0 s:iin kasautuu
+    # 113 toisen puhujan 779:stä. Se kasauma **on** yksi vuotopiikki, koska
+    # `duck_min_open` + `duck_hold` on juuri se minkä yksi piikki ostaa.
+    # Pidemmät aukot ovat ainakin osittain oikeaa puhetta.
+    duck_min_gap: float = 1.0
     gain_db: float = 0.0  # yhteinen trimmi kaikille mikeille
     # Tavoitetaso koskee ohjelmaa, ei yhtä stemiä. Kaksi -14 LUFS:n mikkiä
     # summautuu tämän yli — mitattuna -12,3 — koska puhujat menevät osittain
