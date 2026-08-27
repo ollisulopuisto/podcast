@@ -1,0 +1,31 @@
+name: tests
+
+# macOS, koska ffmpegin lisäksi testataan Finderin valintaa ja Visionia.
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: brew install ffmpeg
+      - run: uv sync --all-packages
+
+      # Lintti ennen testejä: määrittelemätön nimi tai kuollut argumentti ei
+      # kaada testejä, se vain jättää jonkin kohdan tekemättä mitään — ja
+      # juuri se on näissä projekteissa toistuva vika.
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: speechmix
+        run: uv run pytest packages/speechmix/tests -q
+
+      - name: autoraffkat
+        run: uv run --directory apps/autoraffkat pytest -q
+
+      - name: automixer
+        run: uv run --directory apps/automixer pytest -q
+
+      - name: podcast-magic
+        run: uv run --directory apps/podcast-magic pytest -q

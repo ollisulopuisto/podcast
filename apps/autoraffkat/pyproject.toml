@@ -16,6 +16,7 @@ classifiers = [
     "Topic :: Multimedia :: Video :: Non-Linear Editor",
 ]
 dependencies = [
+    "speechmix",
     "numpy>=1.26",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
@@ -105,3 +106,9 @@ ignore = [
     # Testeissä zip vertaa tarkoituksella eri mittaisia jonoja.
     "B905",
 ]
+
+# Jaettu ketju tulee työtilasta, ei julkaisusta: se muuttuu vielä
+# viikoittain, ja versioitu paketti tarkoittaisi julkaisua jokaisesta
+# mittauksen korjaamasta viasta.
+[tool.uv.sources]
+speechmix = { workspace = true }

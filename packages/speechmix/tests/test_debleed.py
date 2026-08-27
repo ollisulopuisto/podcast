@@ -8,7 +8,7 @@ vähennyksellä joka syö puheen, ja se kuuluisi vasta viennin jälkeen.
 import numpy as np
 import pytest
 
-from autoraffkat.audio import debleed
+from speechmix import debleed
 
 RATE = 48000
 

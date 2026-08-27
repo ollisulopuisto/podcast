@@ -1,6 +1,6 @@
 import pytest
 import mlx.core as mx
-from src.automixer.domain.processor import DuckingProcessor
+from automixer.domain.processor import DuckingProcessor
 
 
 def test_ducking():
