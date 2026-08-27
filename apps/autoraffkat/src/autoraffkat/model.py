@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from fractions import Fraction
 
-from .timeline import ZERO
-
 # Analyysin aika-askel sekunteina. Sama arvo verhokäyrässä ja päätöksessä.
-HOP = 0.02
+from speechmix.masks import HOP  # noqa: F401  ruudukon askel, kirjastosta
+
+from .timeline import ZERO
 
 ROLE_WIDE = "wide"
 ROLE_CLOSE = "close"

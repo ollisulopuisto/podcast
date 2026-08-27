@@ -5,7 +5,15 @@ paikka ohjelman aikajanalla**, ei FCPXML-assetteja eikä nhsx-rivejä; ks.
 paketin README.
 """
 
-from . import chain, debleed, messages
+from . import chain, debleed, envelopes, freshness, masks, messages
 from .messages import set_translator
 
-__all__ = ["chain", "debleed", "messages", "set_translator"]
+__all__ = [
+    "chain",
+    "debleed",
+    "envelopes",
+    "freshness",
+    "masks",
+    "messages",
+    "set_translator",
+]
