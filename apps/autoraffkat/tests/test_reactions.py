@@ -387,6 +387,37 @@ def test_a_reaction_never_lands_on_its_own_speaker():
     assert reactions.fits(other, _Dec(_Seg("Wancke", 0.0, 30.0)), settings)
 
 
+def test_a_reaction_cannot_cover_the_opening_or_closing_wide():
+    """Päätykuvat pysyvät näkyvissä, koska reaktio on omalla lanellaan.
+
+    ``decide._bookend_wide`` päättää että ohjelma alkaa ja päättyy laajaan,
+    mutta reaktiokuva menee vientiin **positiiviselle lanelle** eli
+    kuvavirran päälle. Sääntö olisi siis kumottavissa ylhäältä päin, jos
+    reaktio saisi osua ohjelman ensimmäisiin tai viimeisiin ruutuihin.
+
+    Se ei saa: ``fits`` vaatii marginaalin isäntäkuvan molempiin reunoihin,
+    ja päätykuva on tasan ``min_shot`` pitkä — lyhyempi kuin reaktio ja
+    kaksi marginaalia yhteensä. Pidemmäksi sulautunut päätykuva kelpaa
+    isännäksi, mutta silloinkin marginaali pitää ensimmäiset ja viimeiset
+    sekunnit vapaina. Tämä on siis jo voimassa; testi on tässä siksi, että
+    marginaalin pienentäminen kumoaisi toisen ominaisuuden hiljaa.
+    """
+    settings = Globals(reactions=True, reaction_length=2.2)
+    bookend = _Dec(_Seg("Laaja", 0.0, settings.min_shot))
+    assert not reactions.fits(reactions.Reaction("Nyman", 0.0, 2.2, 1.0),
+                              bookend, settings)
+
+    # Ja sulautuneessa, pitkässä päätykuvassa: alku ja loppu pysyvät
+    # vapaina marginaalin verran.
+    long_wide = _Dec(_Seg("Laaja", 0.0, 20.0))
+    assert not reactions.fits(reactions.Reaction("Nyman", 0.0, 2.2, 1.0),
+                              long_wide, settings)
+    assert not reactions.fits(reactions.Reaction("Nyman", 17.8, 20.0, 1.0),
+                              long_wide, settings)
+    assert reactions.fits(reactions.Reaction("Nyman", 8.0, 10.2, 1.0),
+                          long_wide, settings)
+
+
 def test_a_reaction_keeps_clear_of_the_cut_boundaries():
     """Alle sekunnin päässä rajasta kuva vaihtuu kahdesti peräkkäin.
 

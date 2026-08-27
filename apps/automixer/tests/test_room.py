@@ -53,11 +53,11 @@ def test_a_wav_track_becomes_a_track_with_one_span():
 
     track = heard.tracks["A"]
     assert len(track.spans) == 1
-    assert track.spans[0].start == pytest.approx(2.5)
-    assert track.spans[0].end == pytest.approx(6.5)
+    assert track.spans[0].programme_start == pytest.approx(2.5)
+    assert track.spans[0].programme_end == pytest.approx(6.5)
     assert track.speaker == "A"
     # Ruudukko kattaa koko ohjelman, myös sen osan jossa tätä raitaa ei ole.
-    assert heard.grid.n == int(6.5 / HOP)
+    assert heard.grid.n_frames == pytest.approx(int(6.5 / HOP), abs=1)
 
 
 def test_the_grid_knows_who_is_talking():

@@ -265,6 +265,20 @@ CATALOG: dict[str, dict[str, str]] = {
     "longtake.return": {"fi": "Palaa puhujaan", "en": "Return to speaker"},
     "longtake.stay": {"fi": "Jää laajaan", "en": "Stay wide"},
     "longtake.reaction": {"fi": "Reaktiokuva", "en": "Reaction shot"},
+    "binaries.missing": {
+        "fi": "{name} puuttuu. Asenna: brew install ffmpeg (macOS) tai lataa "
+        "ffmpeg (Windows).",
+        "en": "{name} is missing. Install it: brew install ffmpeg (macOS), or "
+        "download ffmpeg (Windows).",
+    },
+    "envelope.source_missing": {
+        "fi": "Tiedostoa ei löydy: {path}",
+        "en": "File not found: {path}",
+    },
+    "envelope.decode_failed": {
+        "fi": "Äänen purku epäonnistui: {name}\n{error}",
+        "en": "Decoding the audio failed: {name}\n{error}",
+    },
     "audio.envelope_failed": {
         "fi": "Verhokäyrien laskenta epäonnistui: {error}",
         "en": "Computing the envelopes failed: {error}",
@@ -363,6 +377,20 @@ def t(key: str, **params) -> str:
         return text
 
 
+def _translate_for_speechmix(key: str, **params) -> str:
+    """Kääntää kirjaston viestin, tai kieltäytyy jos avainta ei ole täällä.
+
+    Nostaminen on tapa sanoa «ei minun»: ``messages.t`` nappaa sen ja
+    käyttää omaa englanninkielistä oletustaan. Ilman tätä ``t`` palauttaisi
+    tuntemattoman avaimen sellaisenaan, ja käyttäjä näkisi ruudulla
+    tekstin «envelope.source_missing» — kirjasto liikkuu viikoittain, joten
+    avain ehtii olla siellä ennen kuin se on täällä.
+    """
+    if key not in CATALOG:
+        raise KeyError(key)
+    return t(key, **params)
+
+
 # Jaettu ketju kysyy viestinsä täältä.
 #
 # `speechmix` ei tunne tätä moduulia eikä saa tuntea: kolmesta
@@ -370,4 +398,4 @@ def t(key: str, **params) -> str:
 # englanninkielinen oletuksensa, ja tämä korvaa sen omilla teksteillään —
 # jotka ovat samassa luettelossa kuin kaikki muutkin, joten uusi viesti
 # lisätään yhteen paikkaan eikä kahteen.
-speechmix.set_translator(t)
+speechmix.set_translator(_translate_for_speechmix)

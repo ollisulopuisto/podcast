@@ -42,10 +42,23 @@ def angles(segments):
     return [(round(s.start, 2), s.angle) for s in segments]
 
 
+def middle(segments):
+    """Leikkaus ilman päätykuvia.
+
+    Ohjelma alkaa ja päättyy laajaan omana sääntönään
+    (``decide._bookend_wide``). Kaikki muut säännöt koskevat siltä väliltä,
+    joten ne luetaan täältä — muuten jokainen niistä testaisi ohessa myös
+    päätykuvasääntöä, ja rikkoutuisi kun toinen niistä muuttuu.
+    """
+    return segments[1:-1]
+
+
 def test_simple_alternation():
     g = Globals(min_shot=1.0, lead=0.0, confirm=0.2, min_overlap=0.4, wide_every=0.0)
     d = decide(grid_for([(2, 8)], [(10, 16)]), g)
-    assert angles(d.segments) == [(0.0, "W"), (2.0, "CA"), (10.0, "CB")]
+    assert angles(d.segments) == [
+        (0.0, "W"), (2.0, "CA"), (10.0, "CB"), (39.0, "W"),
+    ]
 
 
 def test_lead_cuts_early():
@@ -95,7 +108,7 @@ def test_overlap_hold_stays_put():
         wide_every=0.0,
     )
     d = decide(grid_for([(2, 12)], [(6, 12)]), g)
-    assert [s.angle for s in d.segments] == ["W", "CA"]
+    assert [s.angle for s in d.segments] == ["W", "CA", "W"]
 
 
 def test_overlap_louder_needs_dominance():
@@ -112,7 +125,7 @@ def test_overlap_louder_needs_dominance():
             wide_every=0.0,
         ),
     )
-    assert [s.angle for s in weak.segments] == ["W", "CA"]
+    assert [s.angle for s in weak.segments] == ["W", "CA", "W"]
 
     strong = decide(
         grid_for([(2, 12)], [(6, 12)], level_a=-30.0, level_b=-20.0),
@@ -126,7 +139,7 @@ def test_overlap_louder_needs_dominance():
             wide_every=0.0,
         ),
     )
-    assert [s.angle for s in strong.segments] == ["W", "CA", "CB"]
+    assert [s.angle for s in strong.segments] == ["W", "CA", "CB", "W"]
 
 
 def test_brief_backchannel_does_not_trigger_overlap():
@@ -140,7 +153,7 @@ def test_brief_backchannel_does_not_trigger_overlap():
         wide_every=0.0,
     )
     d = decide(grid_for([(2, 12)], [(6, 6.3)], level_a=-25.0, level_b=-40.0), g)
-    assert [s.angle for s in d.segments] == ["W", "CA"]
+    assert [s.angle for s in d.segments] == ["W", "CA", "W"]
 
 
 def test_wide_every_alternates():
@@ -252,7 +265,7 @@ def test_three_speakers_each_get_their_own_close_up():
     )
     g = Globals(min_shot=1.0, lead=0.0, confirm=0.2, min_overlap=0.4, wide_every=0.0)
     assert angles(decide(grid, g).segments) == [
-        (0.0, "W"), (2.0, "CA"), (10.0, "CB"), (18.0, "CC"),
+        (0.0, "W"), (2.0, "CA"), (10.0, "CB"), (18.0, "CC"), (39.0, "W"),
     ]
 
 
@@ -383,8 +396,16 @@ def test_wide_hold_never_goes_under_min_shot():
 
 
 def test_zero_never_forces_a_wide():
+    """Nolla kytkee pois **pitkän puheenvuoron** katkaisun, ei päätykuvia.
+
+    Kaksi eri sääntöä, ja ne on syytä pitää erillään: ``wide_every`` päättää
+    katkaistaanko yhtä lähikuvaa keskellä ohjelmaa, ja ``_bookend_wide``
+    päättää mistä ohjelma alkaa ja mihin se päättyy. Nolla sanoo «älä
+    katkaise», ei «älä koskaan näytä laajaa».
+    """
     d = _long_take(LONGTAKE_RETURN, wide_every=0.0)
-    assert [s.angle for s in d.segments] == ["W", "CA"]
+    assert [s.angle for s in middle(d.segments)] == ["CA"]
+    assert d.segments[0].angle == "W" and d.segments[-1].angle == "W"
 
 
 def test_short_turns_are_left_alone():
@@ -402,6 +423,84 @@ def test_short_turns_are_left_alone():
         # A:n vuoro on 8 s eli alle kynnyksen; se jää yhdeksi kuvaksi.
         assert [s.angle for s in d.segments[:3]] == ["W", "CA", "CB"], rule
         assert d.segments[1].duration == pytest.approx(8.0, abs=0.05), rule
+
+
+# ------------------------------------------------- laaja alkuun ja loppuun
+
+
+def test_the_cut_starts_and_ends_wide():
+    """Ohjelma alkaa ja päättyy laajaan, aina.
+
+    Ei säädin. Se on leikkauskonventio eikä makuasia: ensimmäinen kuva
+    kertoo katsojalle missä ollaan ja keitä on paikalla, ja viimeinen
+    päästää irti. Lähikuvasta alkava ohjelma pudottaa katsojan keskelle
+    kasvoja tietämättä huonetta, ja lähikuvaan päättyvä jää roikkumaan.
+
+    Kuka tahansa voi vetää sen pois Final Cutissa yhdellä leikkauksella,
+    mikä on tarkalleen se syy jonka takia tämä ei ole valinta: oletuksen
+    kääntäminen maksaa yhden vedon, ja valinta maksaa jokaiselle
+    käyttäjälle yhden päätöksen.
+    """
+    # A puhuu koko ohjelman, joten ilman sääntöä leikkaus olisi yhtä
+    # lähikuvaa alusta loppuun.
+    d = decide(grid_for([(0, 40)], []), Globals())
+
+    assert d.segments[0].angle == "W", angles(d.segments)
+    assert d.segments[-1].angle == "W", angles(d.segments)
+    assert d.segments[0].label == "Laaja"
+    assert d.segments[-1].label == "Laaja"
+
+
+def test_the_bookends_are_the_programmes_own_minimum():
+    """Laajan kesto on ``min_shot``, ei oma vakionsa.
+
+    Sama peruste kuin reaktiokuvien marginaalilla: pään ja hännän kuvat
+    ovat kuvia siinä missä muutkin, joten ne saavat ohjelman oman
+    vähimmäiskeston. Oma vakio ajautuisi rytmiprofiilien kanssa eri
+    suuntaan — hektinen 1,4 s ja rauhallinen 4,5 s tarkoittavat eri
+    kuvaa.
+    """
+    for min_shot in (1.4, 2.5, 4.5):
+        g = replace(Globals(), min_shot=min_shot, rhythm="custom")
+        d = decide(grid_for([(0, 60)], [], seconds=60.0), g)
+        # Vähintään, ei tasan: jos viereinen kuva on jo laaja, ne sulautuvat
+        # yhdeksi pidemmäksi — ja se on oikein, ei poikkeus.
+        assert d.segments[0].duration >= min_shot - 0.05, (min_shot, d.segments[0])
+        assert d.segments[-1].duration >= min_shot - 0.05, (min_shot, d.segments[-1])
+
+
+def test_a_shot_too_short_to_split_becomes_wide_whole():
+    """Jäljelle jäävä pätkä ei saa olla välähdys.
+
+    Jos kuva on lyhyempi kuin kaksi vähimmäiskestoa, siitä ei saa
+    irrotettua laajaa jättämättä loppuosaa alle minimin. Silloin koko kuva
+    on laaja: yksi kunnollinen kuva on parempi kuin kaksi kelvotonta.
+    """
+    # Koko ohjelma on neljä sekuntia, min_shot 2,5 — ei mahdu kahtia.
+    d = decide(grid_for([(0, 4)], [], seconds=4.0), Globals())
+
+    assert [s.angle for s in d.segments] == ["W"], angles(d.segments)
+
+
+def test_a_cut_that_already_starts_and_ends_wide_is_untouched():
+    """Sääntö ei saa lisätä leikkausta joka on jo oikein."""
+    # Kukaan ei puhu ensimmäisiä eikä viimeisiä sekunteja, joten laaja on
+    # jo molemmissa päissä.
+    grid, g = grid_for([(5, 15)], [(20, 30)]), Globals()
+    before = angles(decide(grid, g).segments)
+
+    assert before[0][1] == "W" and decide(grid, g).segments[-1].angle == "W"
+    assert angles(decide(grid, g).segments) == before
+
+
+def test_without_a_wide_shot_there_is_nothing_to_force():
+    """Laajaa ei voi vaatia jos sellaista ei ole valittu."""
+    grid = grid_for([(0, 40)], [])
+    grid.wide_key = ""
+    d = decide(grid, Globals())
+
+    assert d.segments, "leikkauksen pitää silti syntyä"
+    assert all(s.angle != "W" for s in d.segments)
 
 
 # ------------------------------------------------- mikin vaimennus
@@ -502,9 +601,10 @@ def test_longtake_snaps_to_pause_or_breath():
     )
     d = decide(grid, g)
 
-    # Koska puhe alkaa heti t=0:sta, ensimmäinen segmentti (index 0) on CA
-    first_close = d.segments[0]
-    assert first_close.angle == "CA"
+    # Puhe alkaa heti t=0:sta, mutta ohjelma alkaa silti laajaan
+    # (``_bookend_wide``), joten ensimmäinen lähikuva on index 1. Tämän
+    # testin kohde on se mihin katkaisu osuu, ei se mistä ohjelma alkaa.
+    first_close = next(seg for seg in d.segments if seg.angle == "CA")
     assert first_close.end == pytest.approx(10.0, abs=0.1)
 
 
@@ -713,7 +813,10 @@ def test_a_long_take_breaks_at_a_measured_reaction_when_one_is_near():
     moved = decide(grid, g, marks=marks).segments
 
     def first_break(segments):
-        return next((s.start for s in segments if s.angle != "CAM_A"), None)
+        # Päätykuva ei ole katkaisu: se on ohjelman alku.
+        return next(
+            (s.start for s in segments[1:] if s.angle != "CAM_A"), None
+        )
 
     assert first_break(plain) is not None and first_break(moved) is not None
     assert abs(first_break(moved) - 17.0) < abs(first_break(plain) - 17.0), (
@@ -749,6 +852,7 @@ def test_reaction_then_wide_puts_three_shots_where_reaction_puts_one():
     one = decide(grid, base).segments
     three = decide(grid, replace(base, long_take_rule=LONGTAKE_REACTION_WIDE)).segments
     assert len(three) > len(one), ([s.angle for s in one], [s.angle for s in three])
-    # Laaja esiintyy vain kolmen kuvan säännössä.
-    assert any(s.angle == "WIDE" for s in three)
-    assert not any(s.angle == "WIDE" for s in one)
+    # Laaja esiintyy **kesken ohjelman** vain kolmen kuvan säännössä.
+    # Päätykuvat ovat molemmissa, omana sääntönään.
+    assert any(s.angle == "WIDE" for s in middle(three))
+    assert not any(s.angle == "WIDE" for s in middle(one))

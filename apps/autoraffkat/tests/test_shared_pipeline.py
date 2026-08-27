@@ -12,7 +12,7 @@ kopio hylätään.
 
 from autoraffkat import decide
 from autoraffkat.audio import mix
-from speechmix import envelopes, freshness, masks, session
+from speechmix import envelopes, freshness, masks
 
 
 def test_the_ducking_decision_comes_from_the_library():
@@ -20,19 +20,57 @@ def test_the_ducking_decision_comes_from_the_library():
     assert mix.envelope_at is envelopes.envelope_at
 
 
-def test_the_timeline_arithmetic_comes_from_the_library():
-    """Aikajanan ja tiedostoajan välinen muunnos on saumaa, ei sovellusta.
+def test_the_app_converts_and_the_library_computes():
+    """Kaksi noista neljästä ei ole enää sama olio, ja niin kuuluukin.
 
-    ``closed_ranges``, ``speech_blocks``, ``_mask_samples``, ``_aligned`` ja
-    ``overlaps`` olivat kaikki samaa yhtä kaavaa, ja kolme viimeistä olivat
-    tässä tiedostossa ``item.placements``in muodossa — kirjastossa mutta vain
-    yhden sovelluksen ulottuvilla. automixerin vaimennus, ristivuoto ja
-    tasonkuljettaja jäivät sen takia tekemättä.
-
-    ``session.py`` on nyt niiden koti, ja ``MediaItem.as_track`` on se osa
-    joka jää tänne: se on kaikki mitä FCPXML:n tuntemista tarvitaan.
+    ``closed_ranges`` ja ``speech_blocks`` ottavat nyt ``Track``in, joten
+    sovellukseen jää nimenomaan se mikä sille kuuluu: muunnos omasta
+    istuntoformaatista. Identiteetti ei siis enää kelpaa mittariksi — sen
+    tilalle tulee kaksi vahvempaa. Ensin: sovelluksen versio antaa täsmälleen
+    saman tuloksen kuin kirjaston, eli se todella delegoi eikä laske itse.
     """
-    assert mix.session is session
+    from fractions import Fraction
+
+    import numpy as np
+
+    from autoraffkat.model import MediaItem, Placement
+
+    item = MediaItem(
+        key="k", name="n", path="/x.wav", src="",
+        asset_start=Fraction(10),
+        placements=[Placement(offset=Fraction(5), start=Fraction(13),
+                              duration=Fraction(4))],
+    )
+    closed = np.zeros(500, dtype=bool)
+    closed[300:400] = True
+
+    assert mix.closed_ranges(item, closed, 0.0, 48000) == envelopes.closed_ranges(
+        mix.track_of(item), closed, 0.0, 48000
+    )
+
+
+def test_the_timeline_formula_lives_in_exactly_one_function():
+    """Ja toiseksi: ``asset_start`` esiintyy sovelluksessa vain ``track_of``issa.
+
+    Aikajanan ja tiedostoajan muunnos oli kahdeksassa kohdassa, ja se on
+    kaava joka ei kaadu kun se menee väärin — se tuottaa kelvollisen, oikean
+    mittaisen tiedoston väärässä kohdassa. Kopio ei siis paljastu ajamalla,
+    vaan vasta kuuntelemalla valmista ohjelmaa. Siksi tämä luetaan
+    lähdekoodista eikä käyttäytymisestä.
+    """
+    import ast
+    from pathlib import Path
+
+    source = Path(mix.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    outside = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.name == "track_of":
+            continue
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Attribute) and inner.attr == "asset_start":
+                outside.append(f"{node.name}:{inner.lineno}")
+    assert not outside, f"aikajanamuunnos on myös täällä: {outside}"
 
 
 def test_the_duck_defaults_are_the_measured_ones():
@@ -43,10 +81,10 @@ def test_the_duck_defaults_are_the_measured_ones():
     ne kaataisi mitään — ne alkaisivat vain erota, ja kaksi eri vaimennusta
     yhden nimen alla on tarkalleen se vika jota vastaan tämä työtila on.
 
-    automixerin puolella on tämän peilikuva. Kummankin sovelluksen
-    lukema tarkistetaan **kirjastoa** vastaan eikä toista sovellusta
-    vastaan: kirjasto on se yksi paikka jossa muutos tehdään, eikä
-    kummankaan testin tarvitse tuoda toista sovellusta sisään.
+    automixerin puolella on tämän peilikuva. Kummankin sovelluksen lukema
+    tarkistetaan **kirjastoa** vastaan eikä toista sovellusta vastaan:
+    kirjasto on se yksi paikka jossa muutos tehdään, eikä kummankaan testin
+    tarvitse tuoda toista sovellusta sisään.
     """
     from autoraffkat.model import AudioSettings
 

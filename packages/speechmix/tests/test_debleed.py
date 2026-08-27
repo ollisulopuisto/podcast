@@ -6,6 +6,7 @@ vähennyksellä joka syö puheen, ja se kuuluisi vasta viennin jälkeen.
 """
 
 import numpy as np
+import pytest
 
 from speechmix import debleed
 
@@ -101,6 +102,44 @@ def test_the_solo_mask_is_only_where_one_speaker_is_active():
 
     assert mix.solo_masks(Alone()) == {}
     assert mix.solo_masks(None) == {}
+
+
+def test_the_partner_lands_on_the_same_timeline_moment():
+    """Eri tiedostot, eri alut — vuotoa ei voi vähentää ennen kohdistusta."""
+    from fractions import Fraction
+
+    from autoraffkat.audio import mix
+
+    class Placement:
+        def __init__(self, offset, start, duration):
+            self.offset = Fraction(offset)
+            self.start = Fraction(start)
+            self.duration = Fraction(duration)
+
+        @property
+        def end(self):
+            return self.offset + self.duration
+
+    class Item:
+        # `path` mukana, koska `mix.track_of` kokoaa näistä `Track`in ja
+        # `Track` kantaa polun. Tynkä seisoo `MediaItem`in paikalla, joten
+        # sen on tarjottava se mitä muunnos lukee.
+        def __init__(self, placements, asset_start=0):
+            self.placements = placements
+            self.asset_start = Fraction(asset_start)
+            self.path = ""
+
+    # Kohde alkaa aikajanan hetkellä 0 tiedoston hetkestä 0.
+    target = Item([Placement(0, 0, 4)])
+    # Lähde on samassa aikajanan kohdassa mutta alkaa tiedostossaan
+    # sekunnin myöhemmin.
+    source = Item([Placement(0, 1, 4)])
+
+    audio = np.arange(4 * RATE, dtype=np.float64)
+    out = mix._aligned(target, source, audio, RATE, 4 * RATE)
+    # Aikajanan hetki 0 on lähdetiedoston hetki 1 s.
+    assert out[0] == pytest.approx(float(RATE))
+    assert out[RATE] == pytest.approx(float(2 * RATE))
 
 
 def test_the_lag_sums_match_a_full_correlation():

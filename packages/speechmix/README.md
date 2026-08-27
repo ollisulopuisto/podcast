@@ -7,7 +7,7 @@ any session format.
 ## The seam
 
 The host gives the library **tracks with spans on a programme timeline** —
-not FCPXML assets, not session rows. It is `session.py`:
+not FCPXML assets, not session rows. It is `timeline.py`:
 
 ```python
 Track:
@@ -15,14 +15,14 @@ Track:
     speaker: str      # whose microphone this is
     mono: bool        # always True for microphones
     bit_depth: int
-    spans: [Span(start, end, file_offset)]   # programme time, programme time, file time
+    spans: [Span(programme_start, programme_end, file_offset)]
 ```
 
 Within a span the mapping is linear, and that one formula is all the timeline
 knowledge the pipeline needs:
 
 ```
-file_time = span.file_offset + (programme_time - span.start)
+file_time = span.file_offset + (programme_time - span.programme_start)
 ```
 
 Everything downstream — ducking, cross-bleed removal, the level rider, the
@@ -32,24 +32,25 @@ instead, they were in the library but reachable by exactly one host, and
 automixer went without all four.
 
 Building a `Track` is the host's job and the only part that cannot be shared.
-autoraffkat has `MediaItem.as_track`; a host with one file at one offset calls
-`session.whole_file`, which is automixer's whole conversion.
+autoraffkat has `mix.track_of`; a host with one file at one offset builds a
+`Track` with a single `Span`, which is automixer's whole conversion.
 
 ## Who is talking
 
-`detect.py` turns an RMS envelope into the **speech grid** — one row per
+`grid.py` turns raw microphone stems into the **speech grid** — one row per
 microphone, saying when its owner is speaking and how loudly. Every masking
 decision in the package reads it and nothing else, so a host that can build a
 grid gets ducking, solo masks and the rider mask without writing any of them.
 
-Two layers, and they must not be mixed. `rms_db` is the slow one and runs once
-per file; the host decides where the samples come from, because that is where
-the hosts genuinely differ — autoraffkat decodes with ffmpeg and caches to
-disk, automixer already has the wav in memory. `curve` and `lane` are the fast
-layer: numpy over the grid, no file reading, because autoraffkat rebuilds the
-grid on every slider move. `curve` is split from `lane` so that cache has
-somewhere to sit — settings are read in `lane`, so a cached curve survives them
-changing.
+The decision is a *comparison across microphones*, not a threshold on one: on
+a two-microphone recording half of what is loud on a track is the other
+person. `SpeechGrid.speakers` is the view the masks read, and it exists
+because they and this module described the same thing in two shapes that
+nothing joined.
+
+`rms.py` is the other way in, for a host that has a file rather than samples
+in memory: ffmpeg decodes, the envelope is cached, and the decision layer
+reads only the finished table.
 
 ## The second seam: decisions, not samples
 

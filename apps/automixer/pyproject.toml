@@ -1,6 +1,6 @@
 [project]
 name = "automixer"
-version = "2026.8.27.1"
+version = "2026.8.27.2"
 description = "Automatic podcast mixing on Apple Silicon: session config in, rendered mix out"
 readme = "README.md"
 requires-python = ">=3.13"

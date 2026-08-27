@@ -717,6 +717,30 @@ dips, not on a timer.
 **Presets are this model's parameters**, not a preference: broadcast 2.5 s
 minimum with J/L cuts, mellow 4.5 s, hectic 1.4 s.
 
+**The programme always starts and ends on the wide, and it is not a
+setting.** `_bookend_wide` runs last, after `_force_wide`. The first shot
+tells the viewer where they are and who is in the room; a programme opening
+on a close-up drops them into a face without the space. The last one lets
+go. Removing it in Final Cut is one cut, and that is exactly why it is not
+an option: flipping a default costs one drag once, an option costs every
+user a decision — the same reasoning as panning having no amount slider.
+The length is the programme's own `min_shot`, not a constant of its own, or
+it would drift against the rhythm presets where 1.4 s and 4.5 s mean
+different shots. A shot too short to split — under two minimums — becomes
+wide whole, because one decent shot beats two flashes, and a programme with
+no room for three shots is honestly all wide.
+
+Note what it does **not** override: `wide_every=0` still means "never break
+a long take to the wide". Two different rules, and the tests read the middle
+of the cut (`middle()` in `test_decide.py`) so that every other rule is
+measured without the bookends in the way.
+
+The reaction layer cannot undo it, and that is load-bearing rather than
+lucky. Reaction shots go on a positive lane, i.e. over the picture, so they
+could cover the opening frames — except `fits` demands `min_shot` of margin
+at both edges of the host shot, and a bookend is exactly `min_shot` long.
+Shrink that margin and you silently switch off a different feature.
+
 **There are two reaction-shot mechanisms, and they do not know about each
 other.** `LONGTAKE_REACTION` cuts to the co-host on the spine when one
 person has held the floor too long — a timeout, and blind to what the

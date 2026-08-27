@@ -157,11 +157,16 @@ track with spans on a programme timeline — and the conversion from a wav file
 with a start time to that shape is `domain/room.py`, which is thirty lines of
 adapter and no arithmetic of its own.
 
-`speechmix.detect` builds the grid from an RMS envelope, and it is the same
-code autoraffkat runs; `speechmix.session` is the timeline seam that was
-previously reachable only through `item.placements`, which is why every one of
-these stages was locked to one host. Both moved out of autoraffkat rather than
-being written twice.
+`speechmix.grid.speech_grid` builds the grid by comparing the raw stems, and
+`speechmix.timeline.Track` is the seam that was previously reachable only
+through `item.placements` — which is why every one of these stages was locked
+to one host. automixer is `speech_grid`'s first application consumer; it was
+written for exactly this case, stems that share a time base, and had none.
+
+Connecting it took one library change: `SpeechGrid` kept the per-frame levels
+it already computed and grew a `speakers` view in the shape `masks` and
+`envelopes` read. The package had two grids and nothing joined them, so
+ducking could not reach the one this module builds.
 
 **Still absent, and still wanted:** the fingerprint (automixer re-renders
 every time), the lag and length assertions around the plug-in slot, and the

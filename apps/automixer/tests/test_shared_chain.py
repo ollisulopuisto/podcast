@@ -113,7 +113,7 @@ def test_the_constants_come_from_the_library_too():
     "method,module,name",
     [
         ("duck_envelopes", "envelopes", "duck_envelopes"),
-        ("duck_gain", "envelopes", "envelope_gain"),
+        ("duck_gain", "envelopes", "duck_gain"),
         ("solo_masks", "masks", "solo_masks"),
         ("speech_masks", "masks", "speech_masks"),
         ("debleed", "debleed", "remove"),

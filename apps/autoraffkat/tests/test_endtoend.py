@@ -1,6 +1,7 @@
 """Koko putki: XML sisään, päätös, XML ulos. Vaatii ffmpegin."""
 
 import os
+import pathlib
 import threading
 import time
 from xml.etree import ElementTree as ET
@@ -101,7 +102,7 @@ def test_envelope_cache_makes_the_second_pass_free(fixture_dir, monkeypatch):
     kesken käsittelyajon. Nyt purku kielletään, jolloin ohitus näkyy
     virheenä eikä hitautena.
     """
-    from autoraffkat.audio import envelope
+    from speechmix import rms as envelope
 
     timeline = read_fcpxml(str(fixture_dir / "sync.fcpxml"))
     analyze(timeline)  # lämmitys levylle
@@ -943,3 +944,59 @@ def test_every_global_the_interface_shows_can_be_set(scratch_xml):
         if getattr(state.settings.globals, field.name) != wanted:
             missed.append(field.name)
     assert not missed, f"nämä eivät mene käyttöliittymästä läpi: {missed}"
+
+
+@needs_ffmpeg
+def test_opening_a_bundle_reads_the_xml_inside(scratch_xml, tmp_path):
+    """«Avaa XML…» antaa ``.fcpxmld``-paketin polun, joka on hakemisto.
+
+    Finderille paketti on tiedosto, joten sekä pywebview'n dialogi että
+    Finderin oma valintaikkuna palauttavat paketin eivätkä sen sisältöä.
+    Ilman ``pick.resolve``a avaus kaatui virheeseen «[Errno 21] Is a
+    directory» eikä mitään latautunut — polku, jonka käyttäjä valitsi, on
+    juuri se joka ei kelvannut.
+    """
+    first = scratch_xml("sync.fcpxml")
+    inner = scratch_xml("multicam.fcpxml")
+    bundle = tmp_path / "jakso.fcpxmld"
+    bundle.mkdir()
+    inner.rename(bundle / "Info.fcpxml")
+
+    state = AppState(xml_path=str(first))
+    state.load()
+    client = TestClient(create_app(state))
+
+    data = client.post("/api/open", json={"path": str(bundle)}).json()
+
+    assert data["kind"] == "multicam"
+    assert not state.load_error
+    assert state.xml_path == str(bundle / "Info.fcpxml")
+
+
+@needs_ffmpeg
+def test_the_export_fades_the_programme_in_and_out(scratch_xml):
+    """Ohjelma alkaa ja päättyy häivytykseen, ``FADE_FLOOR_DB``:stä ja siihen.
+
+    Käyrä kirjoitetaan samoiksi ``<adjust-volume>``-keyframeiksi kuin
+    vaimennuskin, joten tämä tarkistaa että pohja tosiaan päätyy tiedostoon:
+    ``envelope_at`` palautti kuvan reunalla nollan, jolloin ensimmäinen ja
+    viimeinen keyframe olivat 0 dB ja häivytys jäi tekemättä juuri niissä
+    kahdessa kohdassa joita varten se on.
+    """
+    from speechmix.envelopes import FADE_FLOOR_DB
+
+    state = AppState(xml_path=str(scratch_xml("multicam.fcpxml")))
+    state.load()
+    while not state.progress.get("ready"):
+        time.sleep(0.05)
+    state.settings.tracks = _multicam_tracks()
+    client = TestClient(create_app(state))
+
+    exported = client.post("/api/export", json={}).json()
+    assert exported.get("ok"), exported
+    xml = pathlib.Path(exported["path"]).read_text(encoding="utf-8")
+
+    floor = f'value="{FADE_FLOOR_DB:g}dB"'
+    assert floor in xml, "häivytyksen pohjaa ei kirjoitettu lainkaan"
+    # Yksi alkuun, yksi loppuun, jokaiselle mikkikulmalle.
+    assert xml.count(floor) >= 2, xml.count(floor)

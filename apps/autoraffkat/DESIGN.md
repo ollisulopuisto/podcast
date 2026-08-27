@@ -154,6 +154,26 @@ A reply shorter than the hang gets no cut at all — the floor pushes the cut pa
 the end of that speaker's run, so the picture stays where it is. That is the
 same mechanism as the confirm time, from the other end.
 
+### The programme opens and closes on the wide
+
+Always, and it is not a setting. The first shot establishes the room and who
+is in it; a programme opening on a close-up drops the viewer into a face
+without the space, and one ending on a close-up leaves them hanging.
+
+The length is the programme's own `min_shot`, not a constant of its own —
+otherwise it would drift against the rhythm presets, where 1.4 s and 4.5 s
+mean different shots. A shot too short to split into two legal ones becomes
+wide whole; a programme with no room for three shots is honestly all wide.
+
+Why not an option: removing it in Final Cut is one cut. Flipping a default
+costs one drag, once. An option costs every user a decision, and this tool's
+first screen is ordered rather than exhaustive for exactly that reason. Same
+reasoning as panning having no amount slider.
+
+`_bookend_wide` runs after `_force_wide`, and it does not override
+`wide_every = 0` — that switch is about breaking a *long take*, which is a
+different rule.
+
 ### Long turn and Reaction Shots
 
 Steps 1–6 produce the right shot but not a rhythm: a monologue gives one

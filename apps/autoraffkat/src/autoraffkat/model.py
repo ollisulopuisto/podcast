@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from fractions import Fraction
 
 # Analyysin aika-askel sekunteina. Sama arvo verhokäyrässä ja päätöksessä.
-from speechmix import chain, detect, masks, session
+from speechmix import chain, masks
 from speechmix.masks import HOP  # noqa: F401  ruudukon askel, kirjastosta
 
 from .timeline import ZERO
@@ -158,34 +158,6 @@ class MediaItem:
             return None
         return p.source_at(seconds) - self.asset_start
 
-    def as_track(self, speaker: str = "", **kwargs) -> session.Track:
-        """Tämä media kirjaston saumana: raita, jolla on jaksoja aikajanalla.
-
-        **Tämä on koko FCPXML-kohtainen osa.** Kirjasto ei tunne
-        ``placements``ia eikä ``asset_start``ia — ne ovat Final Cutin tapa
-        sanoa mihin kohtaan aikajanaa tiedoston mikäkin kohta osuu — vaan
-        jaksoja, joilla on alku, loppu ja tiedostoaika alussa. Kaikki mitä
-        ketju tekee aikajanan kanssa tapahtuu sen jälkeen samalla koodilla
-        kuin automixerilla, jonka sauma on ``session.whole_file``.
-
-        Ajat pysyvät ``Fraction``eina. FCPXML:n ajat ovat rationaalisia
-        (1001/30000 s ruutu), ja ruudukon reunalla liukuluvun viimeinen bitti
-        riittää pudottamaan solun; liukuluvuksi muunnetaan vasta
-        näyteindeksiä laskettaessa, kuten ennenkin.
-        """
-        return session.Track(
-            path=self.path,
-            speaker=speaker,
-            spans=[
-                # tiedostoaika hetkellä p.offset = p.start - asset_start
-                session.Span(
-                    start=p.offset, end=p.end, file_offset=p.start - self.asset_start
-                )
-                for p in self.placements
-            ],
-            **kwargs,
-        )
-
 
 @dataclass
 class TrackConfig:
@@ -193,7 +165,7 @@ class TrackConfig:
 
     role: str = ROLE_UNUSED
     speaker: str = ""  # lähikuvan ja mikin yhdistävä nimi
-    sensitivity_db: float = detect.SENSITIVITY_DB  # dB pohjakohinan yli
+    sensitivity_db: float = 12.0  # dB pohjakohinan yli
     gain_db: float = 0.0  # vahvistuksen korjaus
 
     def to_json(self) -> dict:

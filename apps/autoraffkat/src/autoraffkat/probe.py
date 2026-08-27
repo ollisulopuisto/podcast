@@ -16,7 +16,7 @@ import json
 import os
 import subprocess
 
-from .audio.binaries import get_binary_path
+from speechmix.binaries import get_binary_path
 
 TIMEOUT = 30
 

@@ -1213,7 +1213,10 @@ def create_app(state: AppState) -> FastAPI:
         # sen ottaminen tässä jumitti avauksen ikuisesti. Pyyntö ei palannut,
         # ja koska load() nollaa edistymisen ennen lukkoa, käyttöliittymä jäi
         # lukemaan «verhokäyrät 0/0» loputtomiin.
-        state.xml_path = os.path.abspath(path)
+        # Paketti on hakemisto, ja juuri sen polun sekä pywebview'n dialogi
+        # että Finder palauttavat: .fcpxmld on Finderille tiedosto. Ilman
+        # tätä avaus kaatui «[Errno 21] Is a directory».
+        state.xml_path = pick.resolve(path)
         state.load()
         return _state_json(state)
 
@@ -1327,6 +1330,13 @@ def create_app(state: AppState) -> FastAPI:
                 if (state.settings.audio.duck
                         and state.settings.audio.duck_db < 0 and not ducks):
                     warnings.append(t("export.duck_none"))
+                # Häivytys samaan käyrään: se on tasopäätös ketjun jälkeen
+                # niin kuin vaimennuskin, eikä siksi tarvitse omaa rakennetta
+                # vientiin. Rajat tulevat puheentunnistuksesta, jotta liuku
+                # jää hiljaisuuteen eikä syö ensimmäistä sanaa.
+                ducks = mix.program_fades(
+                    _grid, float(program_start), float(program_end), ducks
+                )
 
                 shots = state.reactions_now(_grid, roles, program_start)
                 if state.settings.globals.reactions and not shots:

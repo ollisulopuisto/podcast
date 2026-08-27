@@ -20,10 +20,12 @@ Where a stage says **shared**, the numbers behind it are in
 ## 0. Listening — before anything is processed
 
 **Shared.** Every `type: speech` track is one person's microphone.
-`domain/room.py` turns them into the shape the library asks for — a track with
-spans on a programme timeline — and measures an RMS envelope every 20 ms, from
-which `speechmix.detect` builds the **speech grid**: who is talking, when, and
-how loudly, one row per microphone.
+`domain/room.py` places each stem at its timeline offset, gives it the shape
+the library asks for — a track with spans on a programme timeline — and hands
+the set to `speechmix.grid.speech_grid`, which builds the **speech grid**: who
+is talking, when, and how loudly, one row per microphone. The decision is a
+comparison across microphones rather than a threshold on one, because on two
+microphones half of what is loud on a track is the other person.
 
 Three later stages read nothing else, and none of them existed here before the
 grid did.

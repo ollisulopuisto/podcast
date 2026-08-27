@@ -19,20 +19,15 @@ this file once the extraction is finished — it describes a state, not a rule.
 
 ## Not done, in the order I would do it
 
-1. ~~**`envelope.py`**~~ — the RMS framing is `speechmix.detect.rms_db` and
-   the floor is its `FLOOR_DB`. ffmpeg discovery stays per-app: each one
-   bundles its own binaries, and it probably wants the same hook shape as
-   the translator. `binaries.py` is still open, and still small.
+1. ~~**`envelope.py` + `binaries.py`**~~ — both moved: `speechmix/rms.py`
+   and `speechmix/binaries.py`.
 2. ~~**`mix.py`'s timeline arithmetic**~~ — done. `item.placements` and
    `asset_start` reached the library in about a dozen places; they are now
    the `Track` protocol from `packages/speechmix/README.md`, in
-   `speechmix/session.py`, and `MediaItem.as_track` is the one place that
-   knows FCPXML. `overlaps`, `_mask_samples` and `_aligned` came over with
-   it — the last of those was reached by a *speechmix* test importing
-   autoraffkat, which is how you can tell code is in the wrong package.
-   `analysis.py`'s grid went the same way, into `speechmix/detect.py`.
-   What is left in `mix.py` is what should be: job dicts, sibling output
-   paths, freshness stamps and file I/O.
+   `speechmix/timeline.py`, and `mix.track_of` is the one place that knows
+   FCPXML. `overlaps`, `_mask_samples` and `_aligned` followed, because
+   automixer subtracts the same leak from its own wav tracks and cannot
+   import autoraffkat to reach them.
 3. **`editor.py`, `worker.py`** — the plug-in child process. Mostly
    mechanical once `chain` is in place. automixer wants this one: it takes
    a **list** of plug-ins per track, loaded lazily on a pool worker with no
@@ -76,15 +71,14 @@ siksi, että `masks.py`:ssä on parametri nimeltä `grid`.
 Mitä jäi: `chain`, `masks`, `envelopes`, `debleed`, `freshness`, `messages`.
 Jokaisella on tuoja.
 
-Myöhemmin lisätyt `session` ja `detect` eivät ole tämän toisinto vaan sen
-vastakohta, ja ero on juuri se jonka testi tarkistaa: poistettu `grid` oli
-**rinnakkainen** toteutus `analysis.build_grid`ille, jolla oli neljä kutsujaa
-eikä yhtään syytä vaihtaa. `detect` on sama koodi *siirrettynä* —
-`analysis.build_grid` kutsuu sitä, `audio/envelope.py` kutsuu sitä ja
-automixerin `domain/room.py` kutsuu sitä, eikä autoraffkatiin jäänyt kopiota.
-Sama koskee `session`ia. Testi ei erota näitä kahta tapausta, ja siksi se
-sanotaan tässä: kirjastoon saa siirtää, sinne ei saa kirjoittaa toista
-vastausta.
+`grid` on sittemmin palannut, ja ero edelliseen on juuri se jonka testi ei
+osaa katsoa: silloin sillä ei ollut yhtään kuluttajaa ja se oli rinnakkainen
+toteutus `analysis.build_grid`ille. Nyt sillä on kuluttaja — automixerin
+`domain/room.py`, jolle se on alun perin kirjoitettukin — ja sen ainoa
+ruudukko. Kirjastoon saa siirtää ja sinne saa kirjoittaa sen mitä joku kutsuu;
+sinne ei saa kirjoittaa **toista vastausta** samaan kysymykseen. Kaksi
+ruudukkomuotoa yhdessä paketissa oli tarkalleen sitä, ja se korjattiin
+yhdistämällä ne (`SpeechGrid.speakers`) eikä lisäämällä kolmatta.
 
 ## automixer's missing decision layer — done
 

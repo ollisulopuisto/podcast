@@ -10,27 +10,35 @@ kutsu on sama kolme kopiota ketjusta, vain yhden hakemiston sisällä.
 """
 
 from . import (
+    binaries,
     chain,
     debleed,
-    detect,
+    dsp,
     envelopes,
+    errors,
     freshness,
+    grid,
     masks,
     messages,
     programme,
-    session,
+    rms,
+    timeline,
 )
 from .messages import set_translator
 
 __all__ = [
+    "binaries",
     "chain",
     "debleed",
-    "detect",
+    "dsp",
     "envelopes",
+    "errors",
     "freshness",
+    "grid",
     "masks",
     "messages",
     "programme",
-    "session",
+    "rms",
     "set_translator",
+    "timeline",
 ]

@@ -8,7 +8,8 @@ kirjastossa eikä kummassakaan isännässä.
 import numpy as np
 import pytest
 
-from speechmix import envelopes, session
+from speechmix import envelopes
+from speechmix.timeline import Span, Track
 
 
 class _Lane:
@@ -62,6 +63,56 @@ def test_the_curve_goes_down_and_comes_back_to_unity():
         assert times == sorted(times)
 
 
+def test_the_curve_is_programme_time_not_grid_time():
+    """Ruudukon solu 0 ei ole ohjelman nolla vaan ``program_start``.
+
+    Mitattu: ``program_start``in pudottaminen kokonaan meni läpi koko
+    sarjasta. Se ei kaada mitään — se siirtää jokaisen vaimennuksen
+    ruudukon alun verran, ja aineistossa ruudukko alkaa nollasta, joten
+    siirto on siellä nolla. Oikeassa jaksossa se ei ole.
+    """
+    grid, settings = _turn_taking(), _Settings()
+    at_zero = envelopes.duck_envelopes(grid, settings, 0.0)
+    later = envelopes.duck_envelopes(grid, settings, 100.0)
+
+    assert set(at_zero) == set(later) and at_zero
+    for name, points in at_zero.items():
+        assert [(t + 100.0, db) for t, db in points] == [
+            (pytest.approx(t), db) for t, db in later[name]
+        ]
+
+
+def test_the_curve_matches_the_mask_point_for_point():
+    """Neljä pistettä jaksoa kohden, ja liu'ut jakson **sisällä**.
+
+    Lasku osuu toisen puhujan aloitukseen ja jää sen alle; nousu osuu
+    hiljaisuuteen jossa mikään ei peitä sitä. Siksi ne ovat eri mittaiset
+    ja siksi kumpikaan ei ala jakson ulkopuolelta.
+    """
+    from speechmix import masks
+
+    grid, settings = _turn_taking(), _Settings()
+    out = envelopes.duck_envelopes(grid, settings, 0.0)
+
+    for name, mask in masks.duck_masks(grid, settings).items():
+        if name not in out:
+            continue
+        expected = []
+        for start, end, value in masks.runs(np.asarray(mask).astype(np.int8)):
+            if not value:
+                continue
+            t0, t1 = start * envelopes.HOP, end * envelopes.HOP
+            head = min(settings.duck_fade, (t1 - t0) / 2.0)
+            tail = min(settings.duck_release, (t1 - t0) - head)
+            expected += [
+                (pytest.approx(t0), 0.0),
+                (pytest.approx(t0 + head), settings.duck_db),
+                (pytest.approx(t1 - tail), settings.duck_db),
+                (pytest.approx(t1), 0.0),
+            ]
+        assert out[name] == expected
+
+
 def test_the_value_between_points_is_linear_and_zero_outside():
     points = [(10.0, 0.0), (10.25, -9.0), (12.0, -9.0), (12.4, 0.0)]
     assert envelopes.envelope_at(points, 9.0) == 0.0
@@ -71,33 +122,214 @@ def test_the_value_between_points_is_linear_and_zero_outside():
     assert envelopes.envelope_at([], 1.0) == 0.0
 
 
-def test_the_same_curve_can_be_burnt_into_samples():
-    """Toinen sauma: sama päätös, eri emissio.
+def test_programme_time_becomes_file_time_per_span():
+    """Ruudukko on aikajanan aikaa, tiedosto omaansa."""
+    closed = np.zeros(200, dtype=bool)
+    closed[50:100] = True  # 1.0 s … 2.0 s ohjelma-ajassa
+    track = Track("mic.wav", "a", [Span(0.0, 10.0, 5.0)])
+    ranges = envelopes.closed_ranges(track, closed, program_start=0.0, rate=48000)
+    assert ranges == [(int(6.0 * 48000), int(7.0 * 48000))]
 
-    autoraffkat kirjoittaa ``duck_envelopes``in pisteet Final Cutin
-    keyframeiksi. automixerillä ei ole mitään mihin automaatio kirjoitettaisiin,
-    joten se kertoo tällä — ja kummankin on saatava sama käyrä, tai vaimennus
-    riippuisi siitä kumpi isäntä sen teki.
 
-    Ruudukko ja käyrä ovat aikajanan aikaa, kerroin tiedoston. Muunnos on
-    jakson sisällä lineaarinen, sama kaava kuin ``session.file_ranges``issa.
+def test_a_span_outside_the_placement_is_not_touched():
+    """Ruudukon ulkopuolelle jäävästä ei ole tietoa, eikä vienti käytä sitä."""
+    closed = np.zeros(200, dtype=bool)
+    closed[:20] = True
+    track = Track("mic.wav", "a", [Span(50.0, 60.0, 0.0)])
+    assert envelopes.closed_ranges(track, closed, program_start=0.0, rate=48000) == []
+
+
+# ------------------------------------------------------------------ geometria
+#
+# Vihamielinen geometria: kaksi paikkaa eri puolilla aikajanaa ja ``base``
+# eri merkkinen kummassakin. Identtinen geometria — yksi paikka,
+# ``file_offset`` sama kuin ``programme_start`` — testaa vain nollaa, ja
+# nolla on sama kummin päin tahansa. Mitattuna kaksi kolmesta
+# muunnosvirheestä meni läpi koko sarjasta ennen näitä.
+#
+#   paikka 1: ohjelma 5–9 s   <-> tiedosto 3–7 s     base = -2
+#   paikka 2: ohjelma 20–26 s <-> tiedosto 21–27 s   base = +1
+RATE = 48000
+AWKWARD = [Span(5.0, 9.0, 3.0), Span(20.0, 26.0, 21.0)]
+
+
+@pytest.fixture
+def mic():
+    return Track("mic.wav", "A", list(AWKWARD))
+
+
+def _grid_mask(*ranges, seconds=40.0):
+    out = np.zeros(int(seconds / envelopes.HOP), dtype=bool)
+    for low, high in ranges:
+        out[int(low / envelopes.HOP) : int(high / envelopes.HOP)] = True
+    return out
+
+
+def test_closed_ranges_uses_every_span(mic):
+    closed = _grid_mask((6.0, 8.0), (21.0, 23.0))
+    assert envelopes.closed_ranges(mic, closed, 0.0, RATE) == [
+        (4 * RATE, 6 * RATE),
+        (22 * RATE, 24 * RATE),
+    ]
+
+
+def test_closed_ranges_clip_to_the_spans(mic):
+    """Paikkojen väliin osuvasta ajasta ei ole tietoa, eikä sitä kosketa."""
+    assert envelopes.closed_ranges(mic, _grid_mask((0.0, 40.0)), 0.0, RATE) == [
+        (3 * RATE, 7 * RATE),
+        (21 * RATE, 27 * RATE),
+    ]
+
+
+def test_closed_ranges_follow_the_grid_start(mic):
+    """Ruudukon solu 0 ei ole ohjelman nolla vaan ``program_start``."""
+    closed = _grid_mask((1.0, 3.0))
+    assert envelopes.closed_ranges(mic, closed, 5.0, RATE) == [(4 * RATE, 6 * RATE)]
+
+
+def test_speech_blocks_are_file_time(mic):
+    out = envelopes.speech_blocks(mic, _grid_mask((6.0, 8.0)), 0.0, RATE, 4800, 300)
+    assert np.flatnonzero(out).tolist() == list(range(40, 60))
+
+
+def test_speech_blocks_reach_the_second_span(mic):
+    out = envelopes.speech_blocks(mic, _grid_mask((21.0, 23.0)), 0.0, RATE, 4800, 300)
+    assert np.flatnonzero(out).tolist() == list(range(220, 240))
+
+
+def test_duck_gain_lands_on_the_right_samples(mic):
+    """Käyrä on aikajanan aikaa, kerroin tiedoston näytteitä."""
+    points = [(5.0, 0.0), (6.0, -6.0), (8.0, -6.0), (9.0, 0.0)]
+    gain = envelopes.duck_gain(mic, points, 0, 8 * RATE, RATE)
+
+    def at(seconds):
+        return float(gain[int(seconds * RATE)])
+
+    assert at(2.5) == pytest.approx(1.0)  # ennen paikkaa: koskematon
+    assert at(4.0) == pytest.approx(10.0 ** (-6.0 / 20.0), rel=1e-4)
+    assert at(6.5) == pytest.approx(10.0 ** (-3.0 / 20.0), rel=1e-3)
+    assert at(7.5) == pytest.approx(1.0)  # paikan jälkeen: koskematon
+
+
+def test_duck_gain_without_a_curve_is_unity(mic):
+    """Ilman käyrää tiedosto menee summaan sellaisenaan."""
+    assert envelopes.duck_gain(mic, [], 0, 8 * RATE, RATE).tolist() == [1.0]
+
+
+def test_geometry_is_the_spans_and_the_frame_count(mic):
+    """Summa lasketaan näyte näytteeltä, joten sijainnin pitää täsmätä."""
+    assert envelopes.geometry(mic, 12345) == (
+        12345,
+        ((5.0, 9.0, 3.0), (20.0, 26.0, 21.0)),
+    )
+    moved = Track("mic.wav", "A", [Span(5.0, 9.0, 4.0), AWKWARD[1]])
+    assert envelopes.geometry(moved, 12345) != envelopes.geometry(mic, 12345)
+
+
+def _head_and_tail_silence(n=1500, first=200, last=1200):
+    """Puhetta keskellä, hiljaisuutta molemmissa päissä."""
+    on = np.zeros(n, dtype=bool)
+    on[first:last] = True
+    return on
+
+
+def test_program_fades_land_in_the_silence():
+    """Häivytys alkaa ohjelman alusta ja on ohi ennen ensimmäistä sanaa."""
+    grid = _Grid(_Lane("a", _head_and_tail_silence()))
+    end = 1500 * envelopes.HOP
+    out = envelopes.program_fades(grid, 0.0, end)
+
+    points = out["a"]
+    assert points[0] == (0.0, envelopes.FADE_FLOOR_DB)
+    head_end = points[1][0]
+    assert points[1][1] == 0.0
+    # 200 askelta * 20 ms = 4,0 s ensimmäiseen sanaan; vartti jää väliin.
+    assert head_end <= 200 * envelopes.HOP - envelopes.FADE_GUARD_SEC
+
+    assert points[-1] == (end, envelopes.FADE_FLOOR_DB)
+    tail_start = points[-2][0]
+    assert points[-2][1] == 0.0
+    assert tail_start >= 1200 * envelopes.HOP + envelopes.FADE_GUARD_SEC
+
+
+def test_program_fades_do_not_step_on_speech():
+    """Puhe heti alusta ja loppuun asti: häivytystä ei kirjoiteta.
+
+    Häivytys saa koskea vain hiljaisuutta ja tilaääntä. Puheen päälle
+    ajettuna se on virhe jota ei kuule vientiä kuuntelematta: tiedosto on
+    kelvollinen, oikean mittainen ja alkaa vaimeana.
     """
+    grid = _Grid(_Lane("a", np.ones(1500, dtype=bool)))
+    assert envelopes.program_fades(grid, 0.0, 1500 * envelopes.HOP) == {}
+
+
+def test_program_fades_keep_the_ducks():
+    """Vaimennuskäyrä säilyy häivytysten välissä, aikajärjestyksessä."""
+    grid = _Grid(_Lane("a", _head_and_tail_silence()),
+                 _Lane("b", _head_and_tail_silence()))
+    end = 1500 * envelopes.HOP
+    ducks = {"a": [(10.0, 0.0), (10.25, -9.0), (12.0, -9.0), (12.25, 0.0)]}
+    out = envelopes.program_fades(grid, 0.0, end, ducks)
+
+    times = [t for t, _ in out["a"]]
+    assert times == sorted(times)
+    assert (10.25, -9.0) in out["a"]
+    assert "b" in out, "häivytys kuuluu jokaiselle mikille, ei vain vaimennetuille"
+
+
+def test_envelope_outside_the_curve_holds_its_edge():
+    """Käyrän ulkopuolella reunan arvo, ei nolla.
+
+    Vaimennuskäyrä palaa itse nollaan molemmissa päissään, joten sille tämä
+    on sama asia. Häivytykselle ei: sen viimeinen piste on ohjelman lopussa
+    ja alimmillaan, ja nollaksi tulkittuna vienti nostaisi äänen takaisin
+    juuri siinä kohdassa jossa sen pitäisi olla poissa.
+    """
+    fade = [(0.0, -96.0), (1.0, 0.0)]
+    assert envelopes.envelope_at(fade, -1.0) == -96.0
+    assert envelopes.envelope_at([(0.0, 0.0), (1.0, -96.0)], 2.0) == -96.0
+    duck = [(1.0, 0.0), (1.25, -9.0), (2.0, -9.0), (2.25, 0.0)]
+    assert envelopes.envelope_at(duck, 0.0) == 0.0
+    assert envelopes.envelope_at(duck, 9.0) == 0.0
+
+
+def test_program_fades_ignore_the_blip_at_the_grid_edge():
+    """Ruudukon reunan yksittäinen tosi solu ei ole ohjelman ensimmäinen sana.
+
+    Tunnistus antaa vajaassa ensimmäisessä ja viimeisessä ikkunassa yhden
+    solun tosia. Sellaisenaan luettuna puhe alkaa hetkellä nolla ja päättyy
+    ohjelman loppuun, eikä häivytykselle jää tilaa kummassakaan päässä — eli
+    vika ei näy virheenä vaan puuttuvana häivytyksenä.
+    """
+    on = _head_and_tail_silence()
+    on[0] = True
+    on[-1] = True
+    out = envelopes.program_fades(_Grid(_Lane("a", on)), 0.0, 1500 * envelopes.HOP)
+    assert out, "reunan välähdys esti häivytyksen"
+    assert out["a"][0] == (0.0, envelopes.FADE_FLOOR_DB)
+    assert out["a"][-1] == (1500 * envelopes.HOP, envelopes.FADE_FLOOR_DB)
+
+
+def test_mask_samples_is_closed_ranges_painted_out():
+    """Sama muunnos totuusarvotaulukkona: vuodon estimointi lukee tätä.
+
+    Oli autoraffkatin ``mix._mask_samples``. Vuodon estimointi tarvitsee
+    näytekohtaiset «vain tämä puhuja» -jaksot, ja se on sama muunnos kuin
+    ``closed_ranges``illa — vain toisessa muodossa.
+    """
+    import numpy as np
+
+    from speechmix import envelopes as env
+    from speechmix.masks import HOP
+    from speechmix.timeline import Span, Track
+
     rate = 48000
-    # Aikajanan hetki 10 on tiedoston hetki 0.
-    track = session.whole_file("", start=10.0, duration=10.0)
-    points = [(11.0, 0.0), (11.0, -9.0), (12.0, -9.0), (12.0, 0.0)]
+    track = Track("mic.wav", "olli", [Span(0.0, 4.0, 0.0)])
+    mask = np.zeros(int(4.0 / HOP), dtype=bool)
+    mask[int(1.0 / HOP) : int(2.0 / HOP)] = True
 
-    gain = envelopes.envelope_gain(track, points, 0, 3 * rate, rate)
+    out = env.mask_samples(track, mask, 0.0, rate, 4 * rate)
 
-    quiet = 10.0 ** (-9.0 / 20.0)
-    # Tiedoston sekunnit 1–2 ovat aikajanan 11–12.
-    assert gain[: rate - 1] == pytest.approx(1.0)
-    assert gain[rate + 10 : 2 * rate - 10] == pytest.approx(quiet, abs=1e-6)
-    assert gain[2 * rate + 1 :] == pytest.approx(1.0)
-
-
-def test_without_a_curve_the_file_goes_in_untouched():
-    """Puhuja jolle ei syntynyt vaimennusta menee summaan sellaisenaan."""
-    track = session.whole_file("", start=0.0, duration=1.0)
-    assert envelopes.envelope_gain(track, [], 0, 100, 48000).tolist() == [1.0]
-    assert envelopes.envelope_gain(None, [(0.0, -9.0)], 0, 100, 48000).tolist() == [1.0]
+    assert out[:rate].sum() == 0
+    assert out[rate : 2 * rate].all()
+    assert out[2 * rate :].sum() == 0

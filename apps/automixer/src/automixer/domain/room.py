@@ -1,6 +1,6 @@
 """Mikit huoneessa: automixerin istunto kirjaston saumana.
 
-`shared.py` on ketjun sauma — näytteitä sisään, näytteitä ulos. Tämä on
+`shared.py` on **ketjun** sauma — näytteitä sisään, näytteitä ulos. Tämä on
 **päätöskerroksen** sauma, ja se puuttui kokonaan. Sen puuttuminen jätti
 tekemättä kolme asiaa jotka olivat kirjastossa valmiina:
 
@@ -13,8 +13,8 @@ tekemättä kolme asiaa jotka olivat kirjastossa valmiina:
 automixerilla ole mikrofoneja joista sellaista rakentaa». Havainto oli oikea
 ja johtopäätös väärä. Mikrofoneja on — jokainen `type: speech` -raita on
 yhden ihmisen mikki — ne ovat vain wav-tiedostoja aikajanalla eivätkä FCPXML:n
-kulmia. `speechmix.session` on se muoto jota kirjasto pyytää, ja koko muunnos
-siihen on `listen`: nimi, näytteet ja alkuhetki.
+kulmia. `speechmix.timeline.Track` on se muoto jota kirjasto pyytää, ja koko
+muunnos siihen on `listen`: nimi, näytteet ja alkuhetki.
 
 ## Miksi tässä ei ole yhtään laskentaa
 
@@ -24,9 +24,13 @@ tulee tänne samassa commitissa ilman että kukaan siirtää sitä. Kopio ei kaa
 koskaan — se alkaa vain hiljaa erota, ja juuri niin automixer oli neljä
 mitattua korjausta jäljessä kun se sulautettiin tähän repositorioon.
 
+Ruudukko on `speechmix.grid.speech_grid`, joka vertaa mikkejä toisiinsa
+kehyksittäin. Se on kirjoitettu juuri tähän tapaukseen — raa'at stemit samassa
+aikapohjassa — ja tämä on sen ensimmäinen sovelluskuluttaja.
+
 ## Eikä mlx:ää
 
-Ruudukko on numpyä ruudukon päällä ja vuodon vähennys scipyn FFT:tä. Kumpikaan
+Ruudukko on numpyä kehysten päällä ja vuodon vähennys scipyn FFT:tä. Kumpikaan
 ei ole näytönohjaimen työtä, ja mlx-vapaana tämä moduuli on testattavissa myös
 siellä missä mlx:ää ei ole. Muunnos mlx:ään tehdään `shared.py`:ssä, kerran.
 """
@@ -37,7 +41,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from speechmix import chain, debleed, detect, envelopes, masks, session
+from speechmix import chain, debleed, envelopes, grid, masks, timeline
 
 
 @dataclass
@@ -53,8 +57,6 @@ class Mic:
     samples: np.ndarray
     start_sec: float = 0.0
     path: str = ""
-    sensitivity_db: float = detect.SENSITIVITY_DB
-    gain_db: float = 0.0
 
 
 @dataclass
@@ -80,15 +82,15 @@ class DuckSettings:
 
 @dataclass
 class Room:
-    """Mikit aikajanalla ja niistä rakennettu ruudukko.
+    """Mikit aikajanalla ja niistä rakennettu puheruudukko.
 
     Ohjelman alku on nolla: automixerin istunnossa aikajana alkaa siitä mistä
     se alkaa, eikä ohjelmaa rajata erikseen kuten monikamerassa.
     """
 
     rate: int
-    tracks: dict[str, session.Track]
-    grid: detect.Grid
+    tracks: dict[str, timeline.Track]
+    grid: grid.SpeechGrid
     samples: dict[str, np.ndarray] = field(default_factory=dict)
     program_start: float = 0.0
 
@@ -110,15 +112,14 @@ class Room:
         sellaisenaan. Yhden alkion taulukko riittää siihen, koska se
         levittyy — eikä koko ohjelman mittaista ykköstaulukkoa kannata varata.
         """
-        return envelopes.envelope_gain(
-            self.tracks.get(name), points, 0, frames, self.rate
-        )
+        return envelopes.duck_gain(self.tracks.get(name), points, 0, frames, self.rate)
 
     def solo_masks(self) -> dict:
-        """Jaksot joissa **vain** tämä puhuja on äänessä.
+        """Jaksot joissa **vain** tämä puhuja on äänessä, ruudukon tarkkuudella.
 
         Vuodon estimointi tarvitsee juuri nämä: muualta estimoitu suodin
-        vähentäisi kohteen omaa puhetta.
+        vähentäisi kohteen omaa puhetta, koska sekin korreloi lähteen kanssa
+        aina kun puhujat menevät päällekkäin.
         """
         return masks.solo_masks(self.grid)
 
@@ -139,7 +140,7 @@ class Room:
         track = self.tracks.get(name)
         if mask is None or track is None:
             return None
-        return session.mask_blocks(
+        return envelopes.speech_blocks(
             track, mask, self.program_start, self.rate, block, count
         )
 
@@ -171,7 +172,7 @@ class Room:
         me = self.tracks.get(name)
         if mine is None or me is None:
             return np.asarray(audio), notes
-        solo_target = session.mask_samples(
+        solo_target = envelopes.mask_samples(
             me, mine, self.program_start, self.rate, frames
         )
         for other, samples in sources.items():
@@ -179,10 +180,10 @@ class Room:
             partner = self.tracks.get(other)
             if theirs is None or partner is None:
                 continue
-            if not session.overlaps(me, partner):
+            if not timeline.overlaps(me, partner):
                 continue  # eri kohta aikajanaa: ei yhtään yhteistä hetkeä
-            source = session.aligned(me, partner, samples, self.rate, frames)
-            solo_source = session.mask_samples(
+            source = timeline.aligned(me, partner, samples, self.rate, frames)
+            solo_source = envelopes.mask_samples(
                 partner, theirs, self.program_start, self.rate, frames
             )
             target, info = debleed.remove(
@@ -196,10 +197,19 @@ class Room:
 def listen(mics: list[Mic], rate: int) -> Room:
     """Mikit ruudukoksi. Tämä on koko muunnos automixerin istunnosta.
 
-    Ruudukko kattaa ohjelman viimeisen mikin loppuun asti, jotta raita joka
-    alkaa myöhemmin osuu siihen kohtaan johon väylä sen summaa. Verhokäyrä
-    lasketaan niistä näytteistä jotka on jo luettu — ffmpegiä ei tarvita,
-    koska wav on muistissa.
+    Kaksi asiaa tehdään ennen kirjastoa, ja molemmat ovat isännän tietoa.
+
+    **Jokainen stemi siirretään paikalleen.** ``speech_grid`` vertaa stemejä
+    kehys kehykseltä ja olettaa ne samaan aikapohjaan; automixerin väylä
+    summaa raidat ``start_sec``in mukaan. Jos siirto jäisi tekemättä, ruudukko
+    vertaisi eri hetkiä toisiinsa ja vaimennus osuisi väärään kohtaan juuri
+    niillä raidoilla joilla siirtymä on.
+
+    **Ja jokainen saa ``Track``in.** Ruudukko on ohjelman aikaa, tiedostot
+    omaansa, ja jaksot ovat se mikä kääntää niiden välillä.
+
+    Verhokäyrää ei pureta ffmpegillä: wav on jo muistissa, ja ``speech_grid``
+    laskee tasot itse.
     """
     seen = [mic.name for mic in mics]
     doubled = sorted({name for name in seen if seen.count(name) > 1})
@@ -208,31 +218,34 @@ def listen(mics: list[Mic], rate: int) -> Room:
         # toinen mikki jäisi pois ruudukosta, vaimennus laskettaisiin väärästä
         # parista, eikä siitä sanottaisi mitään.
         raise ValueError(f"kaksi raitaa samalla nimellä: {', '.join(doubled)}")
+
     tracks = {
-        mic.name: session.whole_file(
-            mic.path, mic.name, start=mic.start_sec,
-            duration=len(mic.samples) / rate,
+        mic.name: timeline.Track(
+            path=mic.path,
+            speaker=mic.name,
+            spans=[
+                timeline.Span(
+                    programme_start=mic.start_sec,
+                    programme_end=mic.start_sec + len(mic.samples) / rate,
+                )
+            ],
         )
         for mic in mics
     }
-    end = max((float(t.timeline_end) for t in tracks.values()), default=0.0)
-    n = int(end / masks.HOP)
-    grid = detect.grid_for(
-        {
-            mic.name: [(
-                tracks[mic.name],
-                detect.rms_db(mic.samples, rate),
-                mic.sensitivity_db,
-                mic.gain_db,
-            )]
-            for mic in mics
-        },
-        0.0,
-        n,
+    length = max(
+        (int(round(track.spans[0].programme_end * rate)) for track in tracks.values()),
+        default=0,
     )
+    stems = {}
+    for mic in mics:
+        placed = np.zeros(length, dtype=np.float64)
+        at = int(round(mic.start_sec * rate))
+        piece = np.asarray(mic.samples, dtype=np.float64).reshape(-1)[: length - at]
+        placed[at : at + piece.size] = piece
+        stems[mic.name] = placed
     return Room(
         rate=rate,
         tracks=tracks,
-        grid=grid,
+        grid=grid.speech_grid(stems, rate),
         samples={mic.name: np.asarray(mic.samples) for mic in mics},
     )
