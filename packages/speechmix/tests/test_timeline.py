@@ -6,6 +6,7 @@ span, and that one formula is all the timeline knowledge the pipeline needs.
 """
 
 import pytest
+
 from speechmix.errors import NotMono
 from speechmix.timeline import Span, Track
 

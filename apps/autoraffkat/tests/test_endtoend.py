@@ -6,15 +6,15 @@ import time
 from xml.etree import ElementTree as ET
 
 import pytest
+from conftest import needs_ffmpeg
 from fastapi.testclient import TestClient
+from make_fixture import SPEECH_A, SPEECH_B
 
 from autoraffkat.analysis import analyze, build_grid, resolve_roles
 from autoraffkat.decide import decide
 from autoraffkat.fcpxml.read import read_fcpxml
 from autoraffkat.model import ROLE_CLOSE, ROLE_MIC, ROLE_WIDE, Globals, TrackConfig
 from autoraffkat.server.app import AppState, create_app
-from conftest import needs_ffmpeg
-from make_fixture import SPEECH_A, SPEECH_B
 
 
 def _tracks():

@@ -9,6 +9,7 @@ import time
 
 import numpy as np
 import pytest
+
 from autoraffkat.model import AudioSettings
 from speechmix import chain
 

@@ -2,8 +2,9 @@
 
 import os
 
-from autoraffkat import thumbs
 from conftest import needs_ffmpeg
+
+from autoraffkat import thumbs
 
 
 def test_missing_file_is_not_an_error(tmp_path):

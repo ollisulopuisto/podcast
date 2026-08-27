@@ -7,6 +7,7 @@ first log line -- indistinguishable from a broken button.
 '''
 
 import pytest
+
 from speechmix import fingerprint
 
 SETTINGS = dict.fromkeys(fingerprint.FINGERPRINT_FIELDS, 0)

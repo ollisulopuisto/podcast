@@ -1,6 +1,7 @@
 """Kirjaston viestit ja isännän käännös."""
 
 import pytest
+
 from speechmix import messages
 
 

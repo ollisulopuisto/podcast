@@ -2,8 +2,9 @@
 
 import os
 
-from autoraffkat import probe
 from conftest import needs_ffmpeg
+
+from autoraffkat import probe
 
 
 def test_missing_file_gives_nothing(tmp_path):

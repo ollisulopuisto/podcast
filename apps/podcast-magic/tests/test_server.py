@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+
 from podcastmagic.modules import MODULES
 from podcastmagic.server.app import create_app
 

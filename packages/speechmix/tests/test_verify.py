@@ -7,6 +7,7 @@ length alone cannot detect a plug-in that reports its latency wrongly.
 
 import numpy as np
 import pytest
+
 from speechmix import verify
 from speechmix.errors import LengthChanged
 

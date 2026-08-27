@@ -22,6 +22,7 @@ from dataclasses import replace as dataclasses_replace
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+
 from speechmix import chain
 from speechmix.chain import ChainError
 
