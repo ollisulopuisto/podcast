@@ -5,6 +5,7 @@ description = "Automatic podcast mixing on Apple Silicon: session config in, ren
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "speechmix",
     "mlx>=0.30.6",
     "numpy>=2.4.2",
     "pedalboard>=0.9.24",
@@ -43,3 +44,9 @@ packages = ["src/automixer"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+# Jaettu ketju tulee työtilasta, ei julkaisusta — sama rivi kuin
+# autoraffkatilla, ja samasta syystä: mittauksen korjaama vika näkyy
+# kaikissa kolmessa samassa commitissa eikä julkaisun ja noston päässä.
+[tool.uv.sources]
+speechmix = { workspace = true }

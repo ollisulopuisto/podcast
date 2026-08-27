@@ -1,2 +1,2 @@
-# Vain automixerin omat. Yleinen Python-roska on juuren .gitignoressa.
-.automixer/
+# Vain automixerin omat. Yleinen Python-roska on juuren .gitignoressa,
+# ja `.automixer/` sielläkin — se syntyy työhakemistoon eikä tänne.

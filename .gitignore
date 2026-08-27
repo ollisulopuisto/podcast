@@ -22,6 +22,9 @@ bin/
 # Työkalujen välimuistit
 .pytest_cache/
 .ruff_cache/
+# automixerin äänekkyysvälimuisti syntyy työhakemistoon, ei sovelluksen alle:
+# juuresta ajettu testi kirjoittaa sen tänne.
+.automixer/
 
 # Varmuuskopio- ja väliaikaistiedostot
 *~

@@ -600,3 +600,22 @@ def test_the_rider_returns_to_unity_outside_its_speaker_s_speech():
     assert np.any(gain[: count // 2]), "omalla puheella ei kuljetettu"
     # Loppupuoli palaa nollaan; liuku on hidas, joten katsotaan viimeisiä.
     assert abs(float(gain[-1])) < 0.5, float(gain[-1])
+
+
+def test_the_bands_sum_back_to_the_original():
+    """Jako on vähennyslasku, joten rekonstruktio on tarkka.
+
+    Tavallinen kaistanpäästöpankki vuotaa juuri risteyskohdissa, ja se
+    kuuluu kampasuodatuksena. Tämä ominaisuus on `multiband`in ehto: jos
+    kaistat eivät summaudu takaisin, kompressoimatonkin ajo värittäisi
+    äänen. Testi tuli automixerin `test_multiband_summation`ista, jossa se
+    testasi automixerin omaa kopiota tästä jaosta.
+    """
+    rate = 44100
+    rng = np.random.default_rng(20260827)
+    audio = rng.normal(0, 0.1, int(rate * 0.5)).astype(np.float32)[None, :]
+
+    parts = chain.split_bands(audio, rate)
+
+    assert len(parts) == 3
+    np.testing.assert_allclose(sum(parts), audio, atol=1e-6)

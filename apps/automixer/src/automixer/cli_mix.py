@@ -19,17 +19,18 @@ import pyloudnorm as pyln
 import soundfile as sf
 import yaml
 
+from automixer.domain import shared
 from automixer.domain.bus import Bus
 from automixer.domain.processor import (
+    CeilingProcessor,
     CompressorProcessor,
-    DeSmackProcessor,
     DuckingProcessor,
     ExternalPluginProcessor,
     GainProcessor,
     HighPassProcessor,
-    LimiterProcessor,
-    MultibandCompressorProcessor,
     SpectralCarverProcessor,
+    SpeechChainProcessor,
+    SpeechSettings,
 )
 from automixer.domain.track import Track
 
@@ -184,42 +185,45 @@ class Mixer:
         speech_cfg = buses_cfg.get("speech", {})
 
         for t in speech_track_list:
-            # Use 0 if loudness is unknown
-            l_val = t.loudness if t.loudness is not None else reference_lufs
-
-            # 2a. Pre-processing: De-Smacker (Option 1: Spectral Interpolation style)
-            if speech_cfg.get("desmack_enabled", True):
-                sensitivity = float(speech_cfg.get("desmack_sensitivity", 0.5))
-                t.add_processor(DeSmackProcessor(sensitivity=sensitivity))
-
-            # 2b. External Plugins next
+            # External plugins first: clean up before you amplify. Same order
+            # as the shared chain's own, which runs its plug-in slot ahead of
+            # everything else for the same reason.
             for p_cfg in speech_cfg.get("processors", []):
                 if p_cfg["type"] == "plugin":
                     t.add_processor(self._create_processor(p_cfg))
 
-            if speech_cfg.get("hp_enabled", True):
-                t.add_processor(HighPassProcessor(cut_freq=80))
-
-            if speech_cfg.get("multiband_enabled", False):
-                t.add_processor(
-                    MultibandCompressorProcessor(
-                        peak_enabled=speech_cfg.get("peak_enabled", True),
-                        lev_enabled=speech_cfg.get("lev_enabled", True),
-                    )
+            # Then the whole speech chain, from the shared library.
+            #
+            # This replaced six hand-rolled stages: the de-smacker, the
+            # high-pass, the normalising gain and two uncapped compressors --
+            # or, in multiband mode, a per-band auto-gain measured to move the
+            # tone by 10.72 dB with the programme.  What comes back is the
+            # chain autoraffkat and podcast-magic run: a de-clicker that
+            # actually fires, a de-esser, three capped stages with a parallel
+            # dry/wet mix, a settle loop onto the target, and a true-peak
+            # limiter.  See `SPEECHMIX-INVENTORY.md` for what each one
+            # measured before and after.
+            #
+            # Thresholds are not written here.  The library slides them with
+            # the target (`offset = target - THRESHOLD_REFERENCE_LUFS`), so
+            # this -23 reference gives -15 / -21 / -25 -- and -15 is exactly
+            # where automixer's fast stage already sat.
+            t.add_processor(
+                SpeechChainProcessor(
+                    target_lufs=reference_lufs,
+                    settings=SpeechSettings(
+                        high_pass_hz=(
+                            shared.HIGH_PASS_HZ
+                            if speech_cfg.get("hp_enabled", True)
+                            else 0.0
+                        ),
+                        declick=speech_cfg.get("desmack_enabled", True),
+                        declick_sensitivity=float(
+                            speech_cfg.get("desmack_sensitivity", 0.5)
+                        ),
+                    ),
                 )
-            else:
-                gain_offset = reference_lufs - l_val
-                t.add_processor(GainProcessor(gain_db=gain_offset))
-                if speech_cfg.get("peak_enabled", True):
-                    t.add_processor(
-                        CompressorProcessor(
-                            threshold_db=-15, ratio=2.5, window_sec=0.03
-                        )
-                    )
-                if speech_cfg.get("lev_enabled", True):
-                    t.add_processor(
-                        CompressorProcessor(threshold_db=-26, ratio=1.5, window_sec=0.3)
-                    )
+            )
 
         for t in music_bus.tracks:
             l_val = t.loudness if t.loudness is not None else -30.0
@@ -315,8 +319,7 @@ class Mixer:
         makeup_gain_db = target_lufs - current_loudness
         final_mix_mx = final_mix_mx * (10 ** (makeup_gain_db / 20))
 
-        limiter = LimiterProcessor(threshold_db=-1.0)
-        master_output = limiter.process(final_mix_mx, self.sr)
+        master_output = CeilingProcessor().process(final_mix_mx, self.sr)
 
         master_np = np.array(master_output)
 

@@ -8,13 +8,14 @@ ducking, and external VST/AU plugins.
 
 import os
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 import mlx.core as mx
 import numpy as np
 import pedalboard
-import pyloudnorm as pyln
 from scipy import signal as sp_signal
-from scipy.ndimage import maximum_filter1d
+
+from . import shared
 
 
 class Processor(ABC):
@@ -170,60 +171,6 @@ class CompressorProcessor(Processor):
         return ducker.process(signal, sr, progress_callback=progress_callback)
 
 
-class LimiterProcessor(Processor):
-    """
-    GPU-Accelerated Brickwall Limiter.
-    """
-
-    def __init__(self, threshold_db=-1.0, lookahead_sec=0.005, release_sec=0.1):
-        """
-        Initializes the LimiterProcessor.
-
-        Args:
-            threshold_db (float, optional): Ceiling threshold in dB. Defaults to -1.0.
-            lookahead_sec (float, optional): Lookahead time in seconds. Defaults to 0.005.
-            release_sec (float, optional): Release time in seconds. Defaults to 0.1.
-        """
-        self.threshold = 10 ** (threshold_db / 20)
-        self.lookahead_sec = lookahead_sec
-        self.release_sec = release_sec
-
-    def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
-        lookahead_samples = max(1, int(self.lookahead_sec * sr))
-
-        # 1. Absolute envelope (GPU)
-        env = (
-            mx.max(mx.abs(signal), axis=-1) if len(signal.shape) > 1 else mx.abs(signal)
-        )
-        env_np = np.array(env)
-
-        # 2. Peak Detection (Sliding Max)
-        # We spread the peak's influence backwards in time by 'lookahead_samples'
-        # origin=-(lookahead_samples//2) means for index i, we see max of [i, i+lookahead]
-        peak_env = maximum_filter1d(
-            env_np, size=lookahead_samples, origin=-(lookahead_samples // 2)
-        )
-
-        # 3. Gain Calculation
-        # To make it smooth but brickwall, we apply a release filter to the peak envelope
-        # but NOT an attack filter.
-        target_gain = np.where(
-            peak_env > self.threshold, self.threshold / (peak_env + 1e-6), 1.0
-        )
-
-        # Fast attack, slow release smoothing in NumPy (optimized)
-        # Using target_gain directly for a brickwall limiter with lookahead.
-        # Attack/release smoothing is omitted intentionally; distortion is
-        # controlled by increasing the lookahead window instead.
-        final_gain = mx.array(target_gain.astype(np.float32))
-
-        return (
-            signal * final_gain[:, None]
-            if len(signal.shape) > 1
-            else signal * final_gain
-        )
-
-
 class SpectralCarverProcessor(Processor):
     """
     Applies dynamic spectral carving (dynamic EQ) to reduce masking.
@@ -340,85 +287,6 @@ class SpectralCarverProcessor(Processor):
         return out_signal / norm_signal
 
 
-class MultibandCompressorProcessor(Processor):
-    """
-    Splits the signal into frequency bands and applies dynamics processing independently.
-    """
-
-    def __init__(
-        self, low_mid_freq=250, mid_high_freq=4000, peak_enabled=True, lev_enabled=True
-    ):
-        """
-        Initializes the MultibandCompressorProcessor.
-
-        Args:
-            low_mid_freq (int, optional): Crossover frequency between low and mid bands. Defaults to 250.
-            mid_high_freq (int, optional): Crossover frequency between mid and high bands. Defaults to 4000.
-            peak_enabled (bool, optional): Whether to enable peak compression per band. Defaults to True.
-            lev_enabled (bool, optional): Whether to enable leveling compression per band. Defaults to True.
-        """
-        self.low_mid_freq = low_mid_freq
-        self.mid_high_freq = mid_high_freq
-        self.peak_enabled = peak_enabled
-        self.lev_enabled = lev_enabled
-
-    def _apply_auto_dynamics(
-        self, band_sig: mx.array, sr: int, ref_lufs=-23.0
-    ) -> mx.array:
-        """
-        Applies auto-gain and dynamics to a single frequency band.
-        """
-        band_np = np.array(band_sig)
-        if np.max(np.abs(band_np)) < 1e-5:
-            return band_sig
-        meter = pyln.Meter(sr)
-        try:
-            loudness = meter.integrated_loudness(band_np)
-            if np.isnan(loudness) or np.isinf(loudness):
-                return band_sig
-        except Exception:
-            return band_sig
-        gain_offset = np.clip(ref_lufs - loudness, -20, 20)
-        out = band_sig * (10 ** (gain_offset / 20))
-        if self.peak_enabled:
-            out = CompressorProcessor(
-                threshold_db=-15, ratio=2.5, window_sec=0.03
-            ).process(out, sr)
-        if self.lev_enabled:
-            out = CompressorProcessor(
-                threshold_db=-26, ratio=1.5, window_sec=0.3
-            ).process(out, sr)
-        return out
-
-    def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
-        sig_np = np.array(signal)
-        sos_low = sp_signal.butter(2, self.low_mid_freq, "lp", fs=sr, output="sos")
-        sos_mid = sp_signal.butter(2, self.mid_high_freq, "lp", fs=sr, output="sos")
-        axis = 0 if len(sig_np.shape) > 1 else -1
-
-        low_np = sp_signal.sosfilt(sos_low, sig_np, axis=axis)
-        rem = sig_np - low_np
-        mid_np = sp_signal.sosfilt(sos_mid, rem, axis=axis)
-        high_np = rem - mid_np
-
-        # The three bands run on this thread, not in a pool.  mlx's default
-        # stream is thread-local: an `mx.array` produced on a worker carries
-        # that worker's stream, and the first use of the result back here
-        # raises `RuntimeError: There is no Stream(gpu, 3) in current thread`
-        # -- from the summation below, nowhere near the pool that caused it.
-        # mlx 0.30.6 tolerated it and 0.32.2 does not, but the threading was
-        # wrong on both.
-        #
-        # No parallelism is lost.  mlx already queues the work on the device,
-        # so three Python threads feeding one device wait on one queue: 0.31 s
-        # with the pool against 0.29 s without, on a second of 44.1 kHz audio.
-        low_proc = self._apply_auto_dynamics(mx.array(low_np.astype(np.float32)), sr)
-        mid_proc = self._apply_auto_dynamics(mx.array(mid_np.astype(np.float32)), sr)
-        high_proc = self._apply_auto_dynamics(mx.array(high_np.astype(np.float32)), sr)
-
-        return low_proc + mid_proc + high_proc
-
-
 class ExternalPluginProcessor(Processor):
     """
     Loads and applies an external VST3 or AudioUnit plugin via Pedalboard.
@@ -468,99 +336,101 @@ class ExternalPluginProcessor(Processor):
         return mx.array(processed_pb[0])
 
 
-class DeSmackProcessor(Processor):
-    """
-    Removes high-frequency transients ("smacks" or lip clicks) from speech using
-    spectral interpolation.
+@dataclass
+class SpeechSettings:
+    """Mitä jaettu ketju lukee. Oletukset ovat kirjaston omat.
+
+    `chain.process` on ankkatyypitetty: se lukee näitä kuutta nimeä eikä
+    tiedä mistä ne tulevat. Numerot **eivät** ole tässä kirjoitettuina auki
+    -- ne on viritetty yhdessä kynnysviitteen, suhteiden ja aikojen kanssa,
+    ja irrallaan niistä ne ovat vain numeroita, jotka voivat erota
+    autoraffkatin numeroista ilman että mikään kertoo eroa.
     """
 
-    def __init__(self, sensitivity: float = 0.5):
+    high_pass_hz: float = shared.HIGH_PASS_HZ
+    peak_threshold_db: float = shared.PEAK_THRESHOLD_DB
+    leveler_threshold_db: float = shared.LEVELER_THRESHOLD_DB
+    declick: bool = True
+    declick_sensitivity: float = 0.5
+    # Tasonkuljettaja tarvitsee puhemaskin (`speaking`), ja sellaista
+    # automixer ei rakenna: se ei tunne mikrofoneja vaan raitoja. Ilman
+    # maskia `chain.process` ohittaa vaiheen joka tapauksessa; tämä on
+    # tässä siksi, ettei sen puuttuminen näytä unohdukselta.
+    rider: bool = False
+
+
+class SpeechChainProcessor(Processor):
+    """Koko puheketju kerralla, jaetusta kirjastosta.
+
+    Tämä korvaa kuusi automixerin omaa vaihetta -- naksunpoiston,
+    ylipäästön, normalisoinnin ja kaksi kattamatonta kompressoria (tai
+    monikaistatilan) -- yhdellä kutsulla, ja tuo mukanaan neljä vaihetta
+    joita automixerillä ei ollut lainkaan: sihinänpoiston, kolmannen
+    kompressorivaiheen, rinnakkaiskompression ja true peak -rajoittimen.
+
+    `SPEECHMIX-INVENTORY.md` mittasi mitä vaihtui. Tässä kontissa mitattuna
+    samalla aineistolla: naksunpoisto muutti **0 näytettä** kaikilla
+    herkkyyksillä, yksittäinen kompressorivaihe veti **29,26 dB** ilman
+    kattoa, ja monikaistatila liikutti kaistojen tasapainoa **10,72 dB**.
+
+    Kynnykset siirtyvät tavoitteen mukana kirjastossa (`offset = target -
+    THRESHOLD_REFERENCE_LUFS`), joten automixerin oma -23 LUFS:n viite
+    antaa vaiheille -15 / -21 / -25 ilman että yhtäkään lukua kirjoitetaan
+    tänne. -15 on tarkalleen se kynnys jolla automixerin nopea vaihe jo oli.
+    """
+
+    def __init__(self, target_lufs: float, settings: SpeechSettings | None = None):
         """
-        Initializes the DeSmackProcessor.
-
         Args:
-            sensitivity (float, optional): Detection sensitivity (0.0 to 1.0). Defaults to 0.5.
+            target_lufs (float): Taso johon raita normalisoidaan; myös se
+                mistä kynnysten siirtymä lasketaan.
+            settings (SpeechSettings, optional): Ketjun asetukset.
         """
-        self.sensitivity = sensitivity  # 0.0 to 1.0
+        self.target_lufs = target_lufs
+        self.settings = settings or SpeechSettings()
 
     def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
-        """
-        Spectral Interpolation De-Smacker.
-        Detects HF transients and smooths them in the time/spectrogram domain.
-        """
-        sig_np = np.array(signal)
-        n_samples = sig_np.shape[0]
+        audio = shared.as_channels(signal)
+        stage = None
+        if progress_callback is not None:
 
-        # 1. SIDECHAINS FOR DETECTION
-        # High-pass 4kHz+ (clicks live here)
-        sos_hp = sp_signal.butter(4, 4000, "hp", fs=sr, output="sos")
-        hp_side = sp_signal.sosfiltfilt(
-            sos_hp, sig_np, axis=0 if len(sig_np.shape) > 1 else -1
+            def stage(_name, fraction):
+                progress_callback(fraction)
+
+        out, _ = shared.process(
+            audio,
+            sr,
+            self.settings,
+            gain_db=0.0,
+            speech=True,
+            target_lufs=self.target_lufs,
+            stage=stage,
         )
+        return shared.from_channels(out, signal)
 
-        # Low-pass 1kHz (plosives live here)
-        sos_lp = sp_signal.butter(4, 1000, "lp", fs=sr, output="sos")
-        lp_side = sp_signal.sosfiltfilt(
-            sos_lp, sig_np, axis=0 if len(sig_np.shape) > 1 else -1
-        )
 
-        # 2. DETECTION
-        # Find spikes in HP energy
-        hp_energy = np.abs(hp_side)
-        lp_energy = np.abs(lp_side)
+class CeilingProcessor(Processor):
+    """Masterin katto, true peakina.
 
-        # Local mean energy for relative thresholding (filter along time axis)
-        win_size = int(0.05 * sr)  # 50ms window
-        hp_mean = maximum_filter1d(hp_energy, size=win_size, axis=0)
+    Korvaa `LimiterProcessor`in, joka laski näytehuipuista: näytteiden
+    **väliin** jäävä huippu on se joka leikkaa D/A-muuntimessa ja
+    lossy-koodauksessa, eikä se näy näytteitä katsomalla. Mitattuna tässä
+    kontissa vanha -1,0 dBFS:n rajoitin jätti todellisen huipun -0,93
+    dBTP:hen, ja sen vahvistuskäyrän suurin näytteestä toiseen -askel oli
+    8 dB -- pehmentämätön käyrä on itsessään särölähde.
 
-        # Threshold: spikes that are much louder than local mean
-        # Sensitivity maps 0..1 to 5x..2x factor
-        thresh_factor = 5.0 - (3.0 * self.sensitivity)
-        potential_clicks = hp_energy > (hp_mean * thresh_factor)
+    `peak_guard` on perässä varmistuksena, jonka ei pitäisi koskaan laueta.
+    """
 
-        # Filter out plosives: if LP energy is also high, it's a 'p' or 't', not a smack
-        is_plosive = lp_energy > (np.mean(lp_energy) * 3.0)
-        actual_clicks = potential_clicks & ~is_plosive
+    def __init__(self, ceiling_db: float = shared.CEILING_DB):
+        """
+        Args:
+            ceiling_db (float, optional): Katto dBTP. Oletus kirjastosta.
+        """
+        self.ceiling_db = ceiling_db
 
-        if not np.any(actual_clicks):
-            return signal
-
-        # 3. INTERPOLATION (Spectral Smoothing)
-        # We'll use a short-time windowed approach for detected click ranges.
-        out_np = sig_np.copy()
-        click_indices = np.where(actual_clicks)[0]
-
-        # Group consecutive indices into clicks
-        if len(click_indices) > 0:
-            diffs = np.diff(click_indices)
-            splits = np.where(diffs > 1)[0] + 1
-            clusters = np.split(click_indices, splits)
-
-            for cluster in clusters:
-                # Click center and width
-                c_start = max(0, cluster[0] - 10)
-                c_end = min(n_samples, cluster[-1] + 10)
-
-                # Spectral Interpolation (Simplification: Median smoothing in time domain for tiny segments)
-                # For tiny transients, a median filter on the waveform or a cubic interpolation
-                # is effectively "spectral" if applied to the residual.
-                # Here we do a surgical cubic spline interpolation over the click gap.
-                if (c_end - c_start) < int(0.01 * sr):  # Only for short clicks (<10ms)
-                    x_pre = np.arange(max(0, c_start - 20), c_start)
-                    x_post = np.arange(c_end, min(n_samples, c_end + 20))
-
-                    if len(x_pre) > 5 and len(x_post) > 5:
-                        x_ref = np.concatenate([x_pre, x_post])
-                        if len(sig_np.shape) > 1:
-                            for ch in range(sig_np.shape[1]):
-                                y_ref = sig_np[x_ref, ch]
-                                interp = np.interp(
-                                    np.arange(c_start, c_end), x_ref, y_ref
-                                )
-                                out_np[c_start:c_end, ch] = interp
-                        else:
-                            y_ref = sig_np[x_ref]
-                            interp = np.interp(np.arange(c_start, c_end), x_ref, y_ref)
-                            out_np[c_start:c_end] = interp
-
-        return mx.array(out_np.astype(np.float32))
+    def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
+        audio = shared.as_channels(signal)
+        limited, _ = shared.limiter(audio, sr, ceiling_db=self.ceiling_db)
+        guarded, _ = shared.peak_guard(limited, ceiling_db=self.ceiling_db)
+        return shared.from_channels(guarded, signal)

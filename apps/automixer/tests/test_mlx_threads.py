@@ -16,8 +16,8 @@ sillä hetkellä kun mlx päivittyy.
 
 Rinnakkaisuutta ei menetetä: mlx:n työ menee jo laitteelle jonoon, ja kolme
 Python-säiettä jotka syöttävät samaa laitetta odottavat samaa jonoa. Mittaus
-tälle aineistolle: kolmen kaistan `MultibandCompressorProcessor.process`
-44,1 kHz:n sekunnilla 0,31 s säikeillä ja 0,29 s ilman.
+tälle aineistolle: kolmen kaistan monikaistakompressio 44,1 kHz:n
+sekunnilla 0,31 s säikeillä ja 0,29 s ilman.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ import mlx.core as mx
 import numpy as np
 
 from automixer.domain.bus import Bus
-from automixer.domain.processor import GainProcessor, MultibandCompressorProcessor
+from automixer.domain.processor import GainProcessor, SpectralCarverProcessor
 from automixer.domain.track import Track
 
 
@@ -35,16 +35,24 @@ def _tone(sr: int = 44100, seconds: float = 1.0, hz: float = 100.0) -> np.ndarra
     return (0.8 * np.sin(2 * np.pi * hz * t)).astype(np.float32)
 
 
-def test_multiband_result_is_usable_on_the_calling_thread():
-    """Kaistat saa laskea rinnakkain, mutta tulos palaa kutsujalle."""
+def test_the_carver_result_is_usable_on_the_calling_thread():
+    """Raskas mlx-vaihe, ja tulos palaa kutsujalle.
+
+    Oli `MultibandCompressorProcessor`, joka oli tämän vian alkuperäinen
+    löytöpaikka. Se on sittemmin korvattu jaetulla `chain.multiband`illa,
+    joka on numpyä eikä voi enää rikkoutua tällä tavalla — joten vahti
+    siirtyi raskaimpaan jäljellä olevaan mlx-vaiheeseen. Musiikkiväylä
+    ajaa sen jokaisella miksauksella.
+    """
     sr = 44100
-    processed = MultibandCompressorProcessor(
-        peak_enabled=True, lev_enabled=True
-    ).process(mx.array(_tone(sr)), sr)
+    speech = mx.array(_tone(sr))
+    processed = SpectralCarverProcessor(trigger_signal=speech, strength=0.5).process(
+        mx.array(_tone(sr, hz=300.0)), sr
+    )
 
     # `.item()` on se kohta jossa säieväärinkäytös paljastuu: siihen asti
     # taulukko on laiska eikä kukaan ole pyytänyt siltä lukua.
-    assert mx.max(mx.abs(processed)).item() < 0.8
+    assert mx.max(mx.abs(processed)).item() > 0.0
 
 
 def test_bus_mixdown_is_usable_on_the_calling_thread(tmp_path):
