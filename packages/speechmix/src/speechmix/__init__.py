@@ -6,6 +6,7 @@ paketin README.
 """
 
 from . import (
+    binaries,
     ceiling,
     chain,
     debleed,
@@ -18,12 +19,14 @@ from . import (
     loudness,
     masks,
     messages,
+    rms,
     timeline,
     verify,
 )
 from .messages import set_translator
 
 __all__ = [
+    "binaries",
     "ceiling",
     "chain",
     "debleed",
@@ -36,6 +39,7 @@ __all__ = [
     "loudness",
     "masks",
     "messages",
+    "rms",
     "set_translator",
     "timeline",
     "verify",

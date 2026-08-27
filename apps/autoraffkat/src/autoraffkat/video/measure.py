@@ -27,8 +27,8 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+from speechmix.binaries import get_binary_path
 
-from ..audio.binaries import get_binary_path
 from . import detect
 
 # Purkuleveys. Kasvot ovat lähikuvassa noin viidesosa kuvan korkeudesta, eli

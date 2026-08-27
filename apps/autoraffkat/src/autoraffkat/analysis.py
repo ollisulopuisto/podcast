@@ -1,6 +1,6 @@
 """Kerrosten liitos: verhokäyristä ruudukoksi.
 
-Hidas osa (ffmpeg + RMS) on ``audio.envelope``. Tämä moduuli kohdistaa valmiit
+Hidas osa (ffmpeg + RMS) on ``speechmix.rms``. Tämä moduuli kohdistaa valmiit
 verhokäyrät aikajanan ruudukolle ja soveltaa raitakohtaiset säätimet. Kohdistus
 on pelkkää numpy-indeksointia, joten se kestää roolimuutoksenkin ilman uutta
 purkua.
@@ -12,8 +12,10 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 
 import numpy as np
+from speechmix.errors import EnvelopeError
+from speechmix.rms import FLOOR_DB, envelope_for
 
-from .audio.envelope import FLOOR_DB, EnvelopeError, envelope_for
+from .audio import cache_dir
 from .decide import Grid, SpeakerLanes
 from .fcpxml.read import Timeline
 from .i18n import t
@@ -147,7 +149,7 @@ def analyze(
         if progress is not None:
             progress(index, len(targets), item.name)
         try:
-            analysis.envelopes[item.key] = envelope_for(item.path)
+            analysis.envelopes[item.key] = envelope_for(item.path, cache_dir=cache_dir())
         except EnvelopeError as exc:
             analysis.errors[item.key] = str(exc)
     if progress is not None:

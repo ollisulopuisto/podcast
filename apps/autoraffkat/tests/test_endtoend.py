@@ -101,7 +101,7 @@ def test_envelope_cache_makes_the_second_pass_free(fixture_dir, monkeypatch):
     kesken käsittelyajon. Nyt purku kielletään, jolloin ohitus näkyy
     virheenä eikä hitautena.
     """
-    from autoraffkat.audio import envelope
+    from speechmix import rms as envelope
 
     timeline = read_fcpxml(str(fixture_dir / "sync.fcpxml"))
     analyze(timeline)  # lämmitys levylle

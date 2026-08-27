@@ -20,6 +20,12 @@ from collections.abc import Callable
 # Suomenkieliset vastineet ovat autoraffkatin ``i18n.py``:ssä, joka
 # rekisteröi itsensä kääntäjäksi.
 FALLBACK: dict[str, str] = {
+    "binaries.missing": (
+        "{name} was not found. Install it — brew install ffmpeg on macOS — "
+        "or build the app, which bundles it."
+    ),
+    "envelope.source_missing": "File not found: {path}",
+    "envelope.decode_failed": "Decoding the audio failed: {name}\n{error}",
     "audio.plugin_missing": "Plug-in not found: {path}",
     "audio.plugin_failed": "Could not load the plug-in: {name} — {error}",
     "audio.plugin_length": "The plug-in changed the length ({before} → {after}).",

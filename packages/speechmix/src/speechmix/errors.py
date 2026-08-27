@@ -58,3 +58,22 @@ class NotMono(SpeechmixError):
     first channel, the programme ceiling sums stems of differing channel counts
     by broadcasting them, and panning is a mono-source idea.
     """
+
+
+class MissingBinary(SpeechmixError, FileNotFoundError):
+    """ffmpeg or ffprobe was not found anywhere.
+
+    Also a ``FileNotFoundError``, because the hosts' catch sites were written
+    before this package existed and catch that. podcast-magic's own
+    ``MissingBinary`` is a ``RuntimeError`` instead; when that app moves over,
+    reconcile the two rather than routing around them.
+    """
+
+
+class EnvelopeError(SpeechmixError):
+    """The RMS envelope could not be produced.
+
+    The caller is an analysis loop that shows this to the user, so a missing
+    tool has to arrive as this and not as a bare OSError -- the loop catches
+    this one, and the file it could not read is named in the message.
+    """

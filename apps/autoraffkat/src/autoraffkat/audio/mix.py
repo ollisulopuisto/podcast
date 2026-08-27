@@ -35,6 +35,7 @@ from pathlib import Path
 import numpy as np
 
 from speechmix import chain
+from speechmix.binaries import get_binary_path
 from speechmix.chain import ChainError
 from speechmix.envelopes import (  # noqa: F401  julkinen rajapinta säilyy
     closed_ranges,
@@ -51,7 +52,6 @@ from speechmix.masks import (
 
 from ..i18n import t
 from ..model import HOP, AudioSettings
-from .binaries import get_binary_path
 
 # Formaatit jotka luetaan suoraan. Muut puretaan ffmpegillä: kameran ääni on
 # mp4:n sisällä, eikä pedalboardin lukija avaa sitä.
