@@ -3,7 +3,7 @@ name = "podcast-magic"
 version = "2026.8.27.2"
 description = "Hindenburg-jälkityöt macOS:llä: litterointi ja hiljaisten kohtien vaimennus"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Olli Sulopuisto" }]
@@ -16,7 +16,7 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Editors",
 ]
 dependencies = [
-    "numpy>=1.26",
+    "numpy>=2.4.2",
     "lxml>=5.0",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
@@ -47,7 +47,6 @@ pythonpath = ["src"]
 
 [dependency-groups]
 dev = [
-    "pytest>=8.0",
     "httpx>=0.28.1",
     "pyinstaller>=6.0",
 ]

@@ -1,16 +1,15 @@
 [project]
 name = "automixer"
 version = "2026.4.5.37"
-description = "Add your description here"
+description = "Automatic podcast mixing on Apple Silicon: session config in, rendered mix out"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "mlx>=0.30.6",
     "numpy>=2.4.2",
-    "pedalboard>=0.9.22",
+    "pedalboard>=0.9.24",
     "psutil>=7.2.2",
     "pyloudnorm>=0.2.0",
-    "pytest>=9.0.2",
     "pyyaml>=6.0.3",
     "scipy>=1.17.1",
     "sounddevice>=0.5.5",
@@ -36,11 +35,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/automixer"]
 
+# Sama lohko kuin muilla kolmella jäsenellä. `pythonpath` osoittaa `src`:ään
+# eikä juureen: se on nimenomaan se ero joka päästi `src.automixer`in läpi
+# aikanaan -- juuri polulla `import src.automixer` ratkeaa nimiavaruuspakettina
+# ja hajoaa vasta asennettuna. Tuotava nimi on `automixer`, kummin päin tahansa
+# testit ajetaan.
 [tool.pytest.ini_options]
-# The tests import `automixer`, the installed package -- not a path relative to
-# the checkout.  Run them with `uv run pytest`, which installs the project into
-# the environment first.
 testpaths = ["tests"]
-# Kuten apps/autoraffkat: testit löytävät paketin myös synkkaamattomasta
-# työpuusta, eikä asennuksen tila muutu siitä.
 pythonpath = ["src"]
