@@ -326,6 +326,26 @@ def test_a_packaged_app_has_a_release_workflow(app: Path):
     assert f'"{name(app)}-v*"' in text, name(app)
 
 
+@pytest.mark.parametrize("app", [a for a in APPS if list(a.glob("*.spec"))], ids=name)
+def test_a_release_workflow_syncs_the_whole_workspace(app: Path):
+    """Paketointi asentaa työtilan, ei yhtä jäsentä.
+
+    `uv sync` jäsenen hakemistossa asentaa vain sen jäsenen — jaettu
+    työkalusto (pytest, ruff) on juuren `dependency-groups`issa, joten
+    testiaskel kaatuu «Failed to spawn: pytest» eikä pakettia synny. Sama
+    komento poistaa muiden jäsenten riippuvuudet samasta ympäristöstä.
+
+    Molemmat paketointiputket kaatuivat tähän ensimmäisellä ajollaan, eli
+    kumpikaan ei ollut koskaan ajanut loppuun.
+    """
+    text = (ROOT / ".github" / "workflows" / f"build-{name(app)}.yml").read_text(encoding="utf-8")
+    syncs = [line.strip() for line in text.splitlines()
+             if "uv sync" in line and line.lstrip().startswith("run:")]
+    assert syncs, name(app)
+    for line in syncs:
+        assert "--all-packages" in line, f"{name(app)}: {line}"
+
+
 def test_no_workflow_is_hidden_inside_an_app():
     strays = [str(p.relative_to(ROOT)) for p in ROOT.glob("apps/*/.github/workflows/*")]
     assert not strays, strays
