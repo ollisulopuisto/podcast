@@ -6,7 +6,11 @@ Three tools that share one speech-mixing pipeline.
 |---|---|---|
 | `apps/autoraffkat` | Final Cut FCPXML | FCPXML, the picture cut to whoever is talking |
 | `apps/automixer` | its own session config | a rendered podcast mix |
-| `apps/podcast-magic` | *(another session format)* | *(tbd)* |
+| `apps/podcast-magic` | Hindenburg `.nhsx` | transcription, and everything nobody says muted |
+
+Three session formats, one pipeline. The thing they have in common is not
+the file — it is **tracks placed on a programme timeline**, which `.fcpxml`,
+`.nhsx` and automixer's config all describe in their own words.
 
 `packages/speechmix` is the pipeline itself. It turns samples into other
 samples and knows nothing about any session format — see its README for the
