@@ -13,6 +13,10 @@ import uvicorn
 from . import paths
 from .server.app import AppState, create_app
 
+#: Valikkorivin, Dockin ja ikkunan nimi. Sama merkkijono kuin specin
+#: ``CFBundleName``, jotta pakattu ja lähteestä ajettu näyttävät samalta.
+APP_NAME = "autoraffkat"
+
 
 def find_free_port(start_port: int = 8731) -> int:
     """Etsii vapaan portin alkaen annetusta portista."""
@@ -99,6 +103,31 @@ class DesktopApi:
         return None
 
 
+def name_the_app(name: str) -> bool:
+    """Valikkorivin ja Dockin nimi. ``False`` jos ei ole macOS tai ei onnistu.
+
+    Nimi ei tule ikkunan otsikosta vaan **pääpaketin** ``CFBundleName``ista.
+    Pakattuna se on specin asettama; lähteestä ajettuna pääpaketti on
+    Python.frameworkin oma, ja valikkorivissä lukee «Python». Sanakirja on
+    elävä olio eikä kopio, joten siihen kirjoittaminen riittää — tämä on
+    tehtävä ennen kuin ``webview.start`` rakentaa valikon, koska sen
+    jälkeen nimi on jo luettu.
+    """
+    if sys.platform != "darwin":
+        return False
+    try:
+        from Foundation import NSBundle
+
+        bundle = NSBundle.mainBundle()
+        info = bundle.localizedInfoDictionary() or bundle.infoDictionary()
+        if info is None:
+            return False
+        info["CFBundleName"] = name
+    except (ImportError, AttributeError, TypeError):
+        return False
+    return True
+
+
 def launch_gui(
     xml_path: str | None = None,
     host: str = "127.0.0.1",
@@ -122,7 +151,8 @@ def launch_gui(
         raise RuntimeError("Palvelimen käynnistys aikakatkaistiin.")
 
     api = DesktopApi()
-    config = get_window_config(title="autoraffkat", url=server.url)
+    config = get_window_config(title=APP_NAME, url=server.url)
+    name_the_app(APP_NAME)
 
     window = webview.create_window(
         title=config["title"],

@@ -78,3 +78,27 @@ def test_launch_gui_passes_icon(monkeypatch, tmp_path):
     gui.launch_gui()
 
     assert started_kwargs.get("icon") == str(fake_icon)
+
+
+def test_app_name_replaces_python_in_the_menu_bar():
+    """Valikkorivissä luki «Python», ei ohjelman nimeä.
+
+    Pakattuna nimi tulee ``CFBundleName``ista, jonka spec asettaa. Ajettuna
+    lähteestä pääpaketti on Python.frameworkin oma, ja macOS ottaa nimen
+    siitä — nimi on siis väärä juuri siinä ajotavassa jota kehitys käyttää
+    ja jota kukaan ei katso pakkaamisen jälkeen.
+    """
+    import sys
+
+    if sys.platform != "darwin":
+        import pytest
+
+        pytest.skip("valikkorivin nimi on macOS:n asia")
+
+    from Foundation import NSBundle
+
+    assert gui.name_the_app("autoraffkat") is True
+    info = NSBundle.mainBundle().localizedInfoDictionary() or (
+        NSBundle.mainBundle().infoDictionary()
+    )
+    assert info["CFBundleName"] == "autoraffkat"
