@@ -34,6 +34,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="aja taustapalvelimena ilman ikkunaa")
     parser.add_argument("--no-browser", action="store_true",
                         help="älä avaa selainta (vain ilman ikkunaa)")
+    parser.add_argument(
+        "--inspect",
+        action="store_true",
+        help="tulosta litteroinnin tarkistus ja lopeta (ei avaa ikkunaa)",
+    )
     parser.add_argument("--debug", action="store_true", help="kehitystyökalut käyttöön")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--host", default="127.0.0.1")
@@ -55,6 +60,16 @@ def main(argv: list[str] | None = None) -> int:
         session = pick.newest(here)
         if session:
             print(f"Istunto: {os.path.basename(session)}")
+
+    if args.inspect:
+        from . import nhsx
+        from .nhsx import verify
+
+        if not session:
+            print("Anna istuntotiedosto: podcast-magic --inspect jakso.nhsx", file=sys.stderr)
+            return 1
+        print(verify.as_text(verify.inspect(nhsx.read(session))))
+        return 0
 
     if use_gui:
         from .gui import launch

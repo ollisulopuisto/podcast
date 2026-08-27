@@ -64,6 +64,32 @@ levyltä eikä uutta mallia ajettaisi, eikä siitä sanottaisi mitään.
 Kenttäluettelo on kirjoitettu käsin `test_fingerprint_fields_are_written_out_by_hand`iin,
 jotta uusi asetus ei livahda tunnisteeseen tai siitä pois huomaamatta.
 
+## Käsikirjoitusnäkymän kohdistin: mitä tiedetään ja mitä ei
+
+Oire: aikajananäkymässä sanat osuvat kohdalleen, käsikirjoitusnäkymässä
+toistokohdistin jää alkuun. Näkymät lukevat samaa dataa mutta eri tavalla:
+aikajana piirtää sanat alueen sisään (muunnosta ei tarvita), käsikirjoitus on
+erillinen dokumentti joka tarvitsee aikaindeksin. Epäonnistunut indeksi
+osoittaa alkuun.
+
+Syytä **ei tiedetä**. Formaattia ei ole dokumentoitu, eikä Hindenburgin omaa
+litterointia ole vertailtavaksi. `nhsx/verify.py` on lista epäiltyjä, ei
+diagnoosi, ja se erottaa vian (mitattavasti väärin) huomiosta (rakenteellinen
+tosiasia tuotoksestamme). Älä muuta sitä diagnoosiksi ilman mittausta.
+
+`nhsx/write.py` estää kolme epäiltyä rakenteellisesti: sanat lajitellaan,
+päällekkäisyys korjataan **lyhentämällä edeltävää** sanaa eikä siirtämällä
+seuraavaa (alkuaika on se mihin kohdistin osuu, ja siirtäminen kasaisi
+virheen eteenpäin koko tiedoston läpi), ja pituudella on lattia.
+
+`Options.paragraphs` on olemassa vertailua varten eikä mieltymyksenä: sama
+istunto kahdella asetuksella kertoo onko kappalejako syy. Se on siksi myös
+tunnisteessa — muuten toinen ajo lukisi ensimmäisen tuloksen levyltä eikä
+vertailua tapahtuisi.
+
+`sp="UU"` jätetään ennalleen, koska aikajananäkymä toimii sillä. Oikeaa
+arvoa ei arvata: väärä puhujatunnus voisi rikkoa sen mikä nyt toimii.
+
 ## Ominaisuus, joka ei tuottanut mitään, sanoo sen
 
 Tämän luokan viat ovat kaikki samanlaisia: kelvollinen tiedosto, puhdas ajo,

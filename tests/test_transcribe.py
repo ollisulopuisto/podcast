@@ -86,6 +86,7 @@ def test_fingerprint_fields_are_written_out_by_hand():
     """
     assert set(Options.__dataclass_fields__) == {
         "backend", "model", "language", "fillers", "vad", "initial_prompt",
+        "paragraphs",
     }
 
 

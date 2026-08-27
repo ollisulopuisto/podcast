@@ -27,6 +27,10 @@ class Options:
     fillers: bool = True
     vad: bool = True
     initial_prompt: str = ""
+    # Kappalejako käsikirjoitusnäkymää varten. Pois päältä kirjoittaa kaiken
+    # yhteen <p>:hen kuten Colab-muistikirja, jotta sama istunto voidaan ajaa
+    # kahdesti ja verrata.
+    paragraphs: bool = True
 
     @classmethod
     def from_dict(cls, raw: dict | None) -> "Options":
@@ -62,5 +66,6 @@ class Options:
                 self.language or "auto",
                 "fill" if self.fillers else "clean",
                 "vad" if self.vad else "raw",
+                "split" if self.paragraphs else "flat",
             ]
         )

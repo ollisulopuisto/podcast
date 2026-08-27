@@ -185,8 +185,17 @@ def run(
                 "Onko tiedostossa puhetta, ja onko kieli oikein?"
             )
 
-        count = set_transcription(file_info.elem, words)
-        written_words += count
+        report = set_transcription(file_info.elem, words, split=options.paragraphs)
+        if report["reordered"] or report["shortened"]:
+            # Whisper tuottaa toisinaan taaksepäin hyppääviä ja
+            # nollapituisia sanoja. Aikajananäkymässä ne eivät näy, mutta
+            # aikaindeksi olettaa kasvavan järjestyksen.
+            progress.log(
+                f"  siivottiin: {report['reordered']} sanaa järjestykseen, "
+                f"{report['shortened']} lyhennettiin"
+            )
+        progress.log(f"  {report['words']} sanaa, {report['paragraphs']} kappaletta")
+        written_words += report["words"]
         changed += 1
         progress.fraction(1.0)
         progress.step(Path(path).name, done=index + 1, total=total)

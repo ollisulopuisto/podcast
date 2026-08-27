@@ -18,6 +18,7 @@
       fillers: root.querySelector('#tr-fillers').checked,
       vad: root.querySelector('#tr-vad').checked,
       initial_prompt: root.querySelector('#tr-prompt').value,
+      paragraphs: root.querySelector('#tr-paragraphs').checked,
     };
   }
 
@@ -139,6 +140,8 @@
       root.appendChild(field(PM.t('tr.prompt'), promptInput, PM.t('tr.promptWhy')));
       root.appendChild(check('tr-fillers', PM.t('tr.fillers'), PM.t('tr.fillersWhy'), saved.fillers));
       root.appendChild(check('tr-vad', PM.t('tr.vad'), PM.t('tr.vadWhy'), saved.vad));
+      root.appendChild(check('tr-paragraphs', PM.t('tr.paragraphs'), PM.t('tr.paragraphsWhy'),
+                             saved.paragraphs !== false));
       root.appendChild(check('tr-force', PM.t('tr.force'), PM.t('tr.forceWhy'), false));
 
       root.appendChild(PM.el('h3', { text: PM.t('tr.plan') }));
@@ -152,7 +155,23 @@
           force: root.querySelector('#tr-force').checked,
         }, runButton);
       });
-      root.appendChild(PM.el('div', { class: 'rows' }, [runButton]));
+      const checkButton = PM.el('button', { class: 'ghost', text: PM.t('tr.verify') });
+      const checkBox = PM.el('pre', { class: 'log hidden', id: 'tr-verify' });
+      checkButton.addEventListener('click', async () => {
+        if (!PM.session) { PM.banner(PM.t('app.pickFirst'), true); return; }
+        checkButton.classList.add('busy');
+        try {
+          const result = await PM.api('/api/transcribe/verify', { session: PM.session });
+          checkBox.textContent = result.text;
+          checkBox.classList.remove('hidden');
+        } catch (error) {
+          PM.banner(error.message, true);
+        } finally {
+          checkButton.classList.remove('busy');
+        }
+      });
+      root.appendChild(PM.el('div', { class: 'rows' }, [runButton, checkButton]));
+      root.appendChild(checkBox);
 
       root.addEventListener('change', () => { state.options = options(root); refreshPlan(root); });
       refreshPlan(root);

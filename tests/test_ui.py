@@ -46,6 +46,9 @@ def test_interface_runs_without_errors(tmp_path, session_file):
         "/api/transcribe/plan": client.post(
             "/api/transcribe/plan", json={"session": str(session_file)}
         ).json(),
+        "/api/transcribe/verify": client.post(
+            "/api/transcribe/verify", json={"session": str(session_file)}
+        ).json(),
         "/api/transcribe/run": {"id": 9, "module": "transcribe", "running": True,
                                 "log": [], "result": {}, "elapsed": 0},
         "/api/silence/info": client.get("/api/silence/info").json(),

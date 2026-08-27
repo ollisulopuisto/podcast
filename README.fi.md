@@ -95,6 +95,49 @@ Kolme säädintä:
 Tason tarkistus purkaa jokaisen raidan levyltä, joten se ajetaan työssä eikä
 säätimien alla olevassa ennakossa. Ennakko sanoo sen itse.
 
+## Kun käsikirjoitusnäkymän kohdistin jää jumiin
+
+Hindenburgilla on kaksi näkymää samaan litterointiin. Aikajana piirtää sanat
+alueen sisään, jolloin muunnosta ei tarvita — sana on siinä missä alue on.
+Käsikirjoitusnäkymä on erillinen dokumentti, ja seuratakseen toistokohdistinta
+sen pitää rakentaa aikaindeksi. **Epäonnistunut indeksi osoittaa alkuun**,
+mikä on täsmälleen tämä oire.
+
+Formaattia ei ole dokumentoitu, joten työkalu mittaa eikä arvaa:
+
+```
+uv run podcast-magic --inspect "jakso 8 litteroitu.nhsx"
+```
+
+tai **Tarkista litterointi** litterointipaneelissa. Se raportoi poolin
+tiedostoittain neljä asiaa, jotka voisivat rikkoa aikaindeksin:
+
+* **backwards** — sana joka alkaa ennen edellistä. Whisper tuottaa näitä, kun
+  lämpötilan pudotus siirtää aikaleimoja segmentin rajalla. Puolitushaku
+  järjestämättömän listan yli ei palauta virhettä vaan väärän kohdan, usein
+  ensimmäisen.
+* **overlap** — sana joka alkaa ennen kuin edellinen loppuu.
+* **empty** — nolla tai negatiivinen pituus.
+* **outside_regions** — sana, jota yksikään alue ei sijoita aikajanalle.
+  Alueen alun trimmaus Hindenburgissa jättää leikatun puheen litterointiin:
+  aikajananäkymä ei piirrä sitä ja näyttää oikealta, käsikirjoitusnäkymä
+  näyttää sen eikä voi olla samaa mieltä soittimen kanssa.
+
+Kaksi muuta raportoidaan huomioina eikä vikoina, koska ne ovat epäiltyjä
+eivätkä mittaustuloksia: kaikki yhdessä `<p>`:ssä, ja jokainen sana
+`sp="UU"`.
+
+Kirjoittaja estää nyt kolme ensimmäistä rakenteellisesti — sanat lajitellaan,
+päällekkäisyys korjataan lyhentämällä edeltävää sanaa (ei koskaan siirtämällä
+seuraavaa, koska alkuaika on se mihin kohdistin osuu), ja pituudella on
+lattia. **Jaa kappaleisiin** on oletuksena päällä ja sen voi ottaa pois,
+jolloin saman istunnon voi ajaa molemmin tavoin ja verrata; asetus on mukana
+tunnisteessa, joten toinen ajo todella ajaa uudestaan.
+
+Mikä ratkaisisi asian: `.nhsx`, jossa Hindenburgin oma litterointi ohjaa
+käsikirjoitusnäkymää oikein. Sen rakenne on totuus siitä, mitä `<p>`:ssä ja
+`sp`:ssä pitäisi olla.
+
 ## Sovelluksen kääntäminen
 
 ```

@@ -91,6 +91,48 @@ Three controls:
 The level check decodes every track, so it runs in the job, not in the
 estimate under the sliders. The estimate says so.
 
+## When the script view's cursor sticks
+
+Hindenburg has two views on the same transcription. The timeline draws the
+words inside their region, so no mapping is needed — the word is where the
+region is. The script view is a standalone document, and to follow the
+playhead it has to build a time index. **An index that fails to build points
+at the beginning**, which is exactly the symptom.
+
+The format is not documented, so the tool measures rather than guesses:
+
+```
+uv run podcast-magic --inspect "episode 8 litteroitu.nhsx"
+```
+
+or the **Check the transcription** button in the transcribe panel. It reports,
+per pool file, four things that could break a time index:
+
+* **backwards** — a word starting before the previous one. Whisper emits
+  these when a temperature fallback moves timestamps at a segment boundary.
+  A binary search over a list that is not sorted does not return an error; it
+  returns the wrong position, often the first.
+* **overlap** — a word starting before the previous one ends.
+* **empty** — zero or negative length.
+* **outside_regions** — a word in the transcription that no region puts on
+  the timeline. Trimming the head of a region in Hindenburg leaves the
+  trimmed speech in the transcription: the timeline view does not draw it and
+  looks right, the script view shows it and cannot agree with the transport.
+
+Two more are reported as notes rather than defects, because they are suspects
+and not measurements: everything in one `<p>`, and every word `sp="UU"`.
+
+The writer now prevents the first three by construction — words are sorted,
+overlaps are resolved by shortening the earlier word (never by moving the
+later one, since the start time is what the cursor matches), and lengths have
+a floor. **Split into paragraphs** is on by default and can be turned off, so
+the same session can be run both ways and compared; the model fingerprint
+includes the setting, so the second run really re-runs.
+
+What would settle it: a `.nhsx` where Hindenburg's own transcription drives
+the script view correctly. Its structure is the ground truth for `<p>` and
+for what `sp` should contain.
+
 ## Building the app
 
 ```
