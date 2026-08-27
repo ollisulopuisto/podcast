@@ -62,6 +62,8 @@ const STRINGS = {
     'si.rms': 'Tarkista myös äänen taso',
     'si.rmsWhy': 'Kun mikit vuotavat, Whisper kuulee naapurin puheen myös tästä mikistä. Taso erottaa oman puheen vuodosta.',
     'si.threshold': 'Kynnys',
+    'si.dominance': 'Erotus kovimpaan',
+    'si.dominanceWhy': 'Samassa huoneessa jokainen mikki kuulee jokaisen. Vuoto on mediaanissa 12,8 dB hiljempaa kuin sama puhe omalla mikillä, joten sana jää sille raidalle jolla se on kovimmillaan — ja niille jotka ovat tämän sisällä siitä. Nolla ottaa vertailun pois.',
     'si.run': 'Vaimenna',
     'si.preview': 'Laske ennakko',
     'si.track': 'Raita',
@@ -72,6 +74,7 @@ const STRINGS = {
     'si.muted': 'Vaiti',
     'si.rmsLater': 'Tason tarkistus tehdään vasta ajossa — nämä luvut ovat ilman sitä.',
     'si.quiet': 'Liian hiljaisia',
+    'si.bled': 'Vuotoa',
     'si.untouched': 'ei kosketa',
   },
 
@@ -133,6 +136,8 @@ const STRINGS = {
     'si.rms': 'Check the audio level too',
     'si.rmsWhy': 'When microphones bleed, Whisper hears the other person on this one as well. Level tells own speech from bleed; text cannot.',
     'si.threshold': 'Threshold',
+    'si.dominance': 'Margin to loudest',
+    'si.dominanceWhy': 'In one room every microphone hears everyone. Bleed is a median 12.8 dB quieter than the same speech on its own microphone, so a word stays on the track where it is loudest — and on any within this margin of it. Zero turns the comparison off.',
     'si.run': 'Mute the silence',
     'si.preview': 'Estimate',
     'si.track': 'Track',
@@ -143,6 +148,7 @@ const STRINGS = {
     'si.muted': 'Muted',
     'si.rmsLater': 'The level check runs only in the job itself — these numbers are without it.',
     'si.quiet': 'Too quiet',
+    'si.bled': 'Bleed',
     'si.untouched': 'left alone',
   },
 };
