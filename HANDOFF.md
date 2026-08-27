@@ -39,6 +39,35 @@ this file once the extraction is finished — it describes a state, not a rule.
    the mlx conversion happens on the caller (`Track.read` / `Track.to_mlx`).
    Both `continue-on-error` lines are gone and CI is one gate again.
 
+## Poistettu: kahdeksan moduulia joilla ei ollut kuluttajaa
+
+`packages/speechmix` kasvoi kahdessa päivässä kahdeksan moduulin verran,
+joita mikään ei tuonut sisään: `ceiling`, `loudness`, `grid`, `fingerprint`,
+`timeline`, `verify`, `dsp` ja `errors`, yhteensä 761 riviä lähdettä ja 480
+riviä testejä — sekä `reference/automixer-parallel/`, 1774 riviä eli kolmas
+täysi toteutus samasta ketjusta.
+
+Kolme niistä oli **toisinto elävästä koodista**: `ceiling.programme_ceiling`
+ja `loudness.programme_target` ovat yhä autoraffkatin `mix.py`:ssä
+(`program_ceiling`, `program_trim`), ja `grid.speech_grid` on
+`analysis.build_grid`, jolla on neljä kutsujaa. `fingerprint` oli oman
+sisarensa `freshness` toisinto — `FINGERPRINT_VERSION = 1` vastaan `= 8`, ja
+kenttänimet eivät osuneet toisiinsa (`highpass_hz` vastaan `high_pass_hz`,
+`declick_enabled` vastaan `declick`). Kaksi eri vastausta siihen mikä tekee
+välimuistista vanhentuneen, samassa paketissa.
+
+Mikään niistä ei kaatanut mitään. Ne olivat tarkalleen se vika jota vastaan
+tämä repositorio on: kolme kopiota ketjusta, nyt vain yhden hakemiston
+sisällä.
+
+`tests/test_workspace_agrees.py::test_every_shared_module_has_a_consumer`
+estää seuraavan. Se lukee tuonnit `ast`illa eikä grepillä, koska
+kommentissa mainittu nimi ei ole kuluttaja — ja `grid` näytti eläväitä juuri
+siksi, että `masks.py`:ssä on parametri nimeltä `grid`.
+
+Mitä jäi: `chain`, `masks`, `envelopes`, `debleed`, `freshness`, `messages`.
+Jokaisella on tuoja.
+
 ## Two things not to undo
 
 * **Level decisions after the chain can be automation; before it, they

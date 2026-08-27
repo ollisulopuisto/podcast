@@ -1,0 +1,105 @@
+"""Ohjelmatason päätökset: katto ja trimmi summasta, ei yhdestä stemistä.
+
+Molemmat korjaavat saman virheen kahdella eri suureella. Ketju takaa katon ja
+tason **jokaiselle tiedostolle erikseen**, mutta isäntä soittaa niiden
+**summan**, ja summa ei noudata kumpaakaan.
+
+Tiedostojen lukeminen, paloittelu ja kirjoittaminen jäävät isännälle: ne ovat
+istuntokohtaista I/O:ta. Täällä on se laskenta jonka pitää olla sama
+riippumatta siitä kuka lukee tiedostot — ja ne kaksi sääntöä joita on helppo
+rikkoa vahingossa: katto lasketaan summasta yhtenä käyränä, ja trimmi menee
+**tavoitteeseen** eikä vahvistukseen.
+
+Siirretty autoraffkatin ``audio/mix.py``:stä, ei kopioitu.
+"""
+
+import numpy as np
+
+from . import chain
+
+#: Palan pituus ja marginaali, kun summa lasketaan paloittain: koko ohjelma
+#: muistissa olisi useita gigatavuja. Rajoittimen muisti on ennakko (5 ms) ja
+#: palautus (120 ms), joten sekunnin marginaali on kertaluokkaa liikaa — ja
+#: liikaa on tässä oikea suunta, koska palan raja ei saa näkyä.
+CEILING_CHUNK = 60.0
+CEILING_MARGIN = 1.0
+
+#: Trimmin mittausikkuna. Koko ohjelman käsittely ensin maksaisi noin
+#: viidenneksen lisää aikaa, ja ero on murto-osa desibeliä.
+PROGRAM_WINDOW = 720.0
+
+#: Trimmiä ei sallita rajattomasti: se on korjaus päällekkäisyyteen, ei toinen
+#: normalisointi. Kuudesta desibelistä ylöspäin olisi kyse mittausvirheestä.
+MAX_PROGRAM_TRIM = 6.0
+
+
+def shared_gain(blocks, rate: int) -> np.ndarray:
+    """Yksi rajoittimen käyrä stemien **summasta**.
+
+    Tämä on koko korjaus yhtenä rivinä. Kaksi stemiä joiden huiput on
+    molemmat painettu -1,5 dBTP:hen ylittävät täyden asteikon aina kun huiput
+    osuvat samaan hetkeen — teoriassa +4,5 dB, oikealla jaksolla mitattuna
+    **+4,51 dBFS, 200 ylityspursketta minuutissa**, mediaanipituus 0,23 ms.
+
+    Korjaus ei ole kovempi rajoitus stemeittäin — silloin jokainen stemi
+    maksaisi kuusi desibeliä crestiä sen takia mitä *toinen* tiedosto sattuu
+    tekemään. Käyrä lasketaan summasta ja kerrotaan jokaiseen stemiin
+    **samanlaisena**, jolloin summa noudattaa kattoa eikä puhujien tasapaino
+    voi muuttua. Mitattuna +4,51 -> -1,51 dBFS ja hinta 0,50 LU.
+
+    Idempotentti rakenteeltaan: käyrä on ``min(1, katto/huippu)``, joten
+    summalle joka jo noudattaa kattoa se on ykkönen kaikkialla.
+    """
+    total = None
+    for block in blocks:
+        total = block if total is None else total + block
+    if total is None:
+        raise ValueError("ohjelmakatto ilman stemejä")
+    return chain.limiter_gain(total, rate)
+
+
+def reduction_db(gain: np.ndarray) -> float:
+    """Käyrän suurin vaimennus desibeleinä (≤ 0). Nolla tarkoittaa ettei mitään tehty."""
+    if gain.size == 0:
+        return 0.0
+    return float(20.0 * np.log10(max(float(gain.min()), 1e-9)))
+
+
+def at_target(block: np.ndarray, rate: int, target_lufs: float):
+    """Stemi sillä tasolla jolla se on aikajanalle tulossa, tai ``None``.
+
+    ``block`` on **monoa**: äänekkyys mitataan yhdestä kanavasta, ja summa
+    lasketaan monona. Katto sen sijaan on kanavatietoinen, ks. ``shared_gain``.
+
+    Summa mitataan siitä mitä *tulee*, ei siitä mitä levyllä on nyt: käsittely
+    normalisoi jokaisen mikin tavoitteeseen, joten sama nosto on tehtävä myös
+    mittaukseen. ``None`` tarkoittaa ettei tämä mikki ole äänessä ikkunassa —
+    toisen osan tiedosto tai hiljainen kohta. Se ei ole virhe eikä lisää
+    summaan mitään.
+    """
+    measured = chain.loudness(block, rate)
+    if measured is None:
+        return None
+    return block * float(10 ** ((target_lufs - measured) / 20))
+
+
+def trim_to_target(summed: np.ndarray, rate: int, target_lufs: float,
+                   max_trim: float = MAX_PROGRAM_TRIM) -> float:
+    """Kuinka paljon mikkien summa on tavoitteen yli, desibeleinä (≤ 0).
+
+    ``summed`` on **monoa**, ``at_target``in palauttamien osuuksien summa.
+
+    Kaksi -14 LUFS:n mikkiä ei summaudu -14:ään: tällä aineistolla mitattu
+    summa oli -12,3. Ero ei ole 3 dB (silloin molemmat puhuisivat koko ajan)
+    eikä 0 dB (silloin toinen mikki olisi täysin hiljaa toisen puhuessa),
+    joten se mitataan eikä arvata.
+
+    Palautettu luku kuuluu **tavoitteeseen**, ei vahvistukseen: ketju
+    normalisoi tavoitteeseen viimeisenä työnään, joten vahvistukseen lisätty
+    trimmi poistuu täsmälleen — ja lukema näyttää silti oikealta.
+    """
+    measured = chain.loudness(summed, rate)
+    if measured is None:
+        return 0.0
+    trim = float(target_lufs - measured)
+    return round(max(-abs(max_trim), min(0.0, trim)), 2)

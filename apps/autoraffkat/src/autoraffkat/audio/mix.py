@@ -34,7 +34,7 @@ from pathlib import Path
 
 import numpy as np
 
-from speechmix import chain, envelopes
+from speechmix import chain, envelopes, programme
 from speechmix.binaries import get_binary_path
 from speechmix.chain import ChainError
 from speechmix.envelopes import (  # noqa: F401  julkinen rajapinta säilyy
@@ -48,6 +48,11 @@ from speechmix.masks import (
     solo_masks,
     speech_masks,
 )
+
+# Trimmin katto luetaan tämän moduulin kautta (`tests/test_mix.py` vertaa
+# siihen), joten nimi on osa mix.py:n rajapintaa vaikka moduuli itse lukee sen
+# `programme`n kautta.
+from speechmix.programme import MAX_PROGRAM_TRIM  # noqa: F401
 from speechmix.timeline import Span, Track
 
 from ..i18n import t
@@ -337,8 +342,6 @@ class MixResult:
 # Ohjelmakaton pala ja sen marginaali. Rajoittimen muisti on ennakko (5 ms)
 # ja palautus (120 ms), joten sekunnin marginaali on kertaluokkaa liikaa —
 # ja liikaa on tässä oikea suunta, koska palan raja ei saa näkyä.
-PROGRAM_CEILING_CHUNK = 60.0
-PROGRAM_CEILING_MARGIN = 1.0
 
 
 def track_of(item, **fields) -> Track:
@@ -474,8 +477,8 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
         rate = int(handles[0].samplerate)
         if any(int(h.samplerate) != rate for h in handles):
             raise ValueError("stemien näytetaajuudet eroavat")
-        chunk = int(PROGRAM_CEILING_CHUNK * rate)
-        margin = int(PROGRAM_CEILING_MARGIN * rate)
+        chunk = int(programme.CEILING_CHUNK * rate)
+        margin = int(programme.CEILING_MARGIN * rate)
         outs = [
             AudioFile(job["target"] + ".ceil.tmp.wav", "w", rate,
                       int(h.num_channels), bit_depth=job.get("bit_depth", 24))
@@ -491,14 +494,12 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                 for handle in handles:
                     handle.seek(low)
                     blocks.append(handle.read(high - low))
-                total = None
-                for job, block in zip(members, blocks, strict=True):
-                    heard = block * _envelope_block(
-                        job, envelopes, low, high, rate
-                    )
-                    total = heard if total is None else total + heard
-                gain = chain.limiter_gain(total, rate)
-                worst = min(worst, float(20.0 * np.log10(max(gain.min(), 1e-9))))
+                heard = [
+                    block * _envelope_block(job, envelopes, low, high, rate)
+                    for job, block in zip(members, blocks, strict=True)
+                ]
+                gain = programme.shared_gain(heard, rate)
+                worst = min(worst, programme.reduction_db(gain))
                 head = position - low
                 tail = head + min(chunk, frames - position)
                 for out, block in zip(outs, blocks, strict=True):
@@ -607,12 +608,10 @@ def _jobs(timeline, roles, settings: AudioSettings) -> list[dict]:
 # puhujat menevät päällekkäin ja kuinka paljon mikit kuulevat toisiaan — eikä
 # se muutu jakson aikana niin paljon että koko jakson lukeminen kannattaisi.
 # Kaksitoista minuuttia keskeltä maksaa muutaman sekunnin.
-PROGRAM_WINDOW = 720.0
 
 # Trimmiä ei sallita rajattomasti kumpaankaan suuntaan: se on korjaus
 # päällekkäisyyteen, ei toinen normalisointi. Kuudesta desibelistä ylöspäin
 # olisi kyse mittausvirheestä, ei summasta.
-MAX_PROGRAM_TRIM = 6.0
 
 
 def _item_span(item) -> float:
@@ -658,7 +657,7 @@ def program_trim(jobs: list[dict], settings: AudioSettings) -> float:
     # ja koko mittaus kaatuisi siihen. Saman osan mikit ovat aina päällekkäin.
     anchor = max((job["item"] for job in mics), key=_item_span)
     low, high = float(anchor.timeline_start), float(anchor.timeline_end)
-    span = min(PROGRAM_WINDOW, high - low)
+    span = min(programme.PROGRAM_WINDOW, high - low)
     if span <= 1.0:
         return 0.0
     middle = (low + high) / 2
@@ -695,25 +694,16 @@ def program_trim(jobs: list[dict], settings: AudioSettings) -> float:
                 end = min(len(here), at + len(block))
                 if end > at:
                     here[at:end] = block[: end - at]
-        measured = chain.loudness(here, rate)
-        if measured is None:
-            # Tämä mikki ei ole äänessä tässä ikkunassa — toisen osan
-            # tiedosto tai hiljainen kohta. Se ei ole virhe eikä se lisää
-            # summaan mitään.
+        contribution = programme.at_target(here, rate, settings.target_lufs)
+        if contribution is None:
             continue
-        # Sama nosto jonka käsittely tekee: summa mitataan siitä mitä
-        # aikajanalle on tulossa, ei siitä mitä levyllä on nyt.
-        total += here * float(10 ** ((settings.target_lufs - measured) / 20))
+        total += contribution
         voices += 1
 
     if voices < 2 or total is None:
         return 0.0
-    summed = chain.loudness(total, rate)
-    if summed is None:
-        return 0.0
-    trim = float(settings.target_lufs - summed)
-    trim = round(max(-MAX_PROGRAM_TRIM, min(0.0, trim)), 2)
-    _log(f"ohjelmatrimmi {trim:+.2f} dB (summa {summed:.2f} LUFS)")
+    trim = programme.trim_to_target(total, rate, settings.target_lufs)
+    _log(f"ohjelmatrimmi {trim:+.2f} dB")
     return trim
 
 

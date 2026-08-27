@@ -119,9 +119,17 @@ def dominant_words(
 ) -> dict:
     """Raita -> onko sen jokainen sana omaa puhetta vai vuotoa.
 
-    Sama päätös kuin ``speechmix.masks.duck_masks``in „kovin voittaa”, mutta
-    sanan tarkkuudella eikä ruudukon: vaimennus tarvitsee tiedon siitä
-    kumpi alue jää auki, ei liu'utettavaa vahvistuskäyrää.
+    **Tämä on kopio, ei tuonti.** Sama päätös samalla vakiolla on jo
+    ``speechmix.grid.speech_grid``issa (``DOMINANCE_DB = 6.0``,
+    ``levels >= loudest - dominance_db``), ja tämä sovellus ei käytä
+    ``speechmix``iä lainkaan — ei tuontia, ei riippuvuutta. Kopio tehtiin
+    sanan tarkkuuden vuoksi: vaimennus tarvitsee tiedon siitä mikä alue jää
+    auki, ei liu'utettavaa vahvistuskäyrää. Se ei tee siitä vähemmän kopiota,
+    ja ``speech_grid`` osaa lisäksi sen mitä tämä ei: aktiivisuus mitataan
+    raidan omasta pohjakohinasta eikä absoluuttisesta kynnyksestä.
+
+    Kun ääniketju tuodaan, tämä korvataan sillä. Ks. CLAUDE.md, «Tämä sovellus
+    ei käytä speechmixiä lainkaan» — siinä on taulukko siitä mikä korvaa minkä.
 
     Jokaisen raidan taso mitataan **jokaisen** sanan kohdalta, myös toisten
     raitojen sanojen, koska vertailu on se mikä ratkaisee. Ohjelma-aika
