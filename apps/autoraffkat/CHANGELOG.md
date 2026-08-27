@@ -14,7 +14,7 @@ and this project adheres to Calendar Versioning (CalVer).
   - It does **not** override `wide_every = 0`. That switch means "never break a long take to the wide", which is a different rule; the tests now read the middle of the cut (`middle()`) so every other rule is measured without the bookends in the way.
   - The reaction layer cannot undo it, and that turns out to be load-bearing rather than lucky: reaction shots go on a positive lane, over the picture, so they could have covered the opening frames — except `fits` already demands `min_shot` of margin at both edges of the host shot, and a bookend is exactly `min_shot` long. There is now a test saying so, because shrinking that margin would switch off a different feature in silence.
 
-## [autoraffkat-v2026.8.28.1] - 2026-08-28
+## [autoraffkat-v2026.8.28.1] - 2026-08-28 (ei julkaistu)
 
 Note the tag: **`autoraffkat-v2026.8.28.1`**, not `v2026.8.28.1`. Three apps
 share one tag space in the `podcast` monorepo, so the release workflow keys off
@@ -24,9 +24,9 @@ and match no tag that was ever pushed — from here they carry the real tag name
 
 ### Fixed
 - **The Version Was in Three Places and All Three Disagreed**: `pyproject.toml` said 2026.8.27.113, `__init__.py` said 2026.8.26.95, and `autoraffkat.spec`'s `CFBundleVersion` said 2026.8.22.49.
-  - `__init__.py`'s value is written into **every export** as `fi.autoraffkat.version`, so every FCPXML produced since 2026.8.26.95 has claimed to be made by a version that did not make it. "Which version wrote this" is the first question when an export behaves oddly, and the answer has been wrong all along.
+  - `__init__.py`'s value is written into **every export** as `fi.autoraffkat.version`, so every FCPXML produced since 2026.8.26.95 claimed to be made by a version that did not make it. "Which version wrote this" is the first question when an export behaves oddly, and the answer had been wrong all along.
   - `CFBundleVersion` is what macOS reads to decide whether to offer an update; it was 64 releases behind.
-  - podcast-magic has had `test_version.py` guarding exactly this. autoraffkat did not, which is why it drifted. It does now, and it also asserts the CalVer shape.
+  - Now set by `scripts/bump_version.py` and guarded by `tests/test_workspace_agrees.py`, both of which arrived from the other direction while this branch was in flight. This branch's own per-app `test_version.py` was deleted rather than kept beside them: two guards on one fact is how they end up disagreeing about it.
 - **The Grid Step Existed Twice Inside `speechmix`**: `grid.HOP_SEC = 0.020` and `masks.HOP = 0.02` were two independent declarations of the same number. Equal today, and nothing would say so if they were not equal tomorrow — the envelope would be computed on one step and the decision read on another, moving the cuts further the longer the timeline runs. That is the drift this package exists to end, reproduced inside the package. `grid` owns it; `masks.HOP` is now the same object, and the test says `is`, not `==`.
 
 ### Changed

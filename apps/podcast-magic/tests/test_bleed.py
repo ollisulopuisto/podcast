@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+
 from podcastmagic import nhsx
 from podcastmagic.silence.detect import AudioCache, dominant_words, speech_intervals
 from podcastmagic.silence.presets import PRESETS, Settings
