@@ -6,31 +6,32 @@ processing, routing, and exporting of audio tracks. It also includes a
 command-line entry point for executing mixes from the terminal.
 """
 
-import os
-import yaml
-import time
-import psutil
-import soundfile as sf
-import mlx.core as mx
-import numpy as np
-import pyloudnorm as pyln
 import argparse
 import glob
-from automixer.domain.track import Track
+import os
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+import mlx.core as mx
+import numpy as np
+import psutil
+import pyloudnorm as pyln
+import soundfile as sf
+import yaml
+
 from automixer.domain.bus import Bus
 from automixer.domain.processor import (
+    CompressorProcessor,
+    DeSmackProcessor,
     DuckingProcessor,
+    ExternalPluginProcessor,
     GainProcessor,
     HighPassProcessor,
-    CompressorProcessor,
-    SpectralCarverProcessor,
     LimiterProcessor,
     MultibandCompressorProcessor,
-    ExternalPluginProcessor,
-    DeSmackProcessor,
+    SpectralCarverProcessor,
 )
-
-from concurrent.futures import ThreadPoolExecutor
+from automixer.domain.track import Track
 
 
 class Mixer:
@@ -80,15 +81,15 @@ class Mixer:
         p_type = p_cfg["type"]
         if p_type == "highpass":
             return HighPassProcessor(cut_freq=p_cfg.get("freq", 100))
-        elif p_type == "compressor":
+        if p_type == "compressor":
             return CompressorProcessor(
                 threshold_db=p_cfg.get("threshold", -20),
                 ratio=p_cfg.get("ratio", 4.0),
                 window_sec=p_cfg.get("window", 0.1),
             )
-        elif p_type == "gain":
+        if p_type == "gain":
             return GainProcessor(gain_db=p_cfg.get("db", 0.0))
-        elif p_type == "plugin":
+        if p_type == "plugin":
             return ExternalPluginProcessor(
                 plugin_path=p_cfg["path"], parameters=p_cfg.get("params", {})
             )
@@ -145,13 +146,20 @@ class Mixer:
         load_start = preview_start if is_preview else 0.0
         load_dur = preview_duration if is_preview else -1.0
 
+        # Reading the files parallelises -- it is disk and a loudness
+        # measurement.  Building the mlx signal does not: mlx's default
+        # stream is thread-local, and an array made on a worker raises
+        # `There is no Stream(gpu, 3) in current thread` the first time the
+        # mix touches it.  So the pool reads, and this thread converts.
         with ThreadPoolExecutor() as executor:
             list(
                 executor.map(
-                    lambda t: t.load(self.sr, start_time=load_start, duration=load_dur),
+                    lambda t: t.read(start_time=load_start, duration=load_dur),
                     tracks_to_load,
                 )
             )
+        for t in tracks_to_load:
+            t.to_mlx()
 
         speech_track_list = []
         for t in tracks_to_load:
@@ -319,9 +327,8 @@ class Mixer:
             elapsed = time.time() - start_time
             update_progress(100, f"✅ FINISHED in {elapsed / 60:.1f}m: {output_path}")
             return None
-        else:
-            update_progress(100, "✅ Preview Render Ready")
-            return master_np
+        update_progress(100, "✅ Preview Render Ready")
+        return master_np
 
 
 def detect_tracks(paths):
