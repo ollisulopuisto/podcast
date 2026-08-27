@@ -41,6 +41,11 @@ SMOOTH_SECONDS = 0.10
 #: osu yksittäiseen digitaaliseen nollaan.
 NOISE_PERCENTILE = 20.0
 
+#: Herkkyyden oletus: kuinka monta desibeliä pohjakohinan yli on puhetta.
+#: Kaksitoista on tarpeeksi ylhäältä ohittaakseen huoneen ja ilmastoinnin,
+#: ja tarpeeksi alhaalta poimiakseen hiljaisen loppulauseen.
+SENSITIVITY_DB = 12.0
+
 
 def rms_db(samples, rate: int, hop: float = HOP) -> np.ndarray:
     """RMS-desibelit ``hop`` sekunnin välein tiedoston alusta.

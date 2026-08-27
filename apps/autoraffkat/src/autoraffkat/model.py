@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from fractions import Fraction
 
 # Analyysin aika-askel sekunteina. Sama arvo verhokäyrässä ja päätöksessä.
-from speechmix import chain, session
+from speechmix import chain, detect, masks, session
 from speechmix.masks import HOP  # noqa: F401  ruudukon askel, kirjastosta
 
 from .timeline import ZERO
@@ -193,7 +193,7 @@ class TrackConfig:
 
     role: str = ROLE_UNUSED
     speaker: str = ""  # lähikuvan ja mikin yhdistävä nimi
-    sensitivity_db: float = 12.0  # dB pohjakohinan yli
+    sensitivity_db: float = detect.SENSITIVITY_DB  # dB pohjakohinan yli
     gain_db: float = 0.0  # vahvistuksen korjaus
 
     def to_json(self) -> dict:
@@ -355,26 +355,18 @@ class AudioSettings:
     plugin_state: str = ""
     debleed: bool = True
     duck: bool = False
-    # Kuinka paljon hiljemmalle, 0 = ei mitään. Yhdeksän desibeliä on
-    # tahallisen matala: vuoto on jo valmiiksi ~13 dB puheen alla, joten
-    # syvempi vaimennus muuttaa summaa mitatusti alle 0,1 dB. Kaikki hyöty
-    # tulee ajoituksesta, ei syvyydestä — ja matala vaimennus tekee
-    # vähemmän vahinkoa jos tunnistus joskus erehtyy. Säädettävissä siltä
-    # varalta että mikit ovat lähempänä toisiaan tai huone on eläväisempi.
-    duck_db: float = -9.0
-    duck_lookahead: float = 0.15  # avaa näin paljon ennen puheen alkua, s
-    duck_hold: float = 0.40  # pidä auki näin kauan puheen jälkeen, s
-    duck_min_open: float = 0.20  # tätä lyhyempi jakso ei avaa porttia, s
-    # Kuinka lähellä kovinta mikin on oltava pysyäkseen auki. Tämä on se
-    # säädin joka erottaa puhujat: pelkkä kynnys ei riitä, koska molemmat
-    # mikit kuulevat molemmat puhujat.
-    duck_dominance_db: float = 6.0
-    # Vaimennus piilotetaan toisen mikin avautumisen taakse: lasku alkaa vasta
-    # kun toinen ääni on jo tullut, jolloin sitä ei kuule. Paluu on hitaampi,
-    # koska se osuu hiljaisuuteen eikä siinä ole mitään mikä peittäisi sen.
-    duck_fade: float = 0.25  # lasku, s — hidas, koska se on peitossa
-    duck_release: float = 0.40  # paluu, s
-    duck_min_closed: float = 0.60  # tätä lyhyempää vaimennusta ei tehdä, s
+    # Vaimennuksen oletukset tulevat kirjastolta, ks. ``masks.DUCK_DB``: ne on
+    # mitattu, ja toinen kuluttaja saa nyt saman numeron eikä omaansa.
+    # Säädettävissä siltä varalta että mikit ovat lähempänä toisiaan tai huone
+    # on eläväisempi.
+    duck_db: float = masks.DUCK_DB
+    duck_lookahead: float = masks.DUCK_LOOKAHEAD
+    duck_hold: float = masks.DUCK_HOLD
+    duck_min_open: float = masks.DUCK_MIN_OPEN
+    duck_dominance_db: float = masks.DUCK_DOMINANCE_DB
+    duck_fade: float = masks.DUCK_FADE
+    duck_release: float = masks.DUCK_RELEASE
+    duck_min_closed: float = masks.DUCK_MIN_CLOSED
     gain_db: float = 0.0  # yhteinen trimmi kaikille mikeille
     # Tavoitetaso koskee ohjelmaa, ei yhtä stemiä. Kaksi -14 LUFS:n mikkiä
     # summautuu tämän yli — mitattuna -12,3 — koska puhujat menevät osittain

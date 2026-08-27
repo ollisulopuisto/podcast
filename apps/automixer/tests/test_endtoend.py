@@ -134,3 +134,108 @@ def test_the_declicker_runs_on_the_way_through(session, monkeypatch):
     monkeypatch.setattr("speechmix.chain.declick", counting)
     render(session)
     assert len(calls) == 2, "naksunpoiston pitäisi ajaa kummallekin raidalle"
+
+
+def alternating(path, turns, seconds: float = 12.0, hz: float = 130.0,
+                level: float = 0.2, hum: float = 0.0):
+    """Yksi mikki: oma puhe annetuilla vuoroilla, ja jatkuva oma pohja.
+
+    ``hum`` on tämän mikin oma matalatasoinen jatkuva sisältö samalla
+    taajuudella kuin sen puhe. Se on mittauksen kahva: vaimennus koskee
+    **tätä mikkiä**, joten sen sulkeutuminen näkyy juuri tässä taajuudessa
+    silloin kun mikin omistaja on hiljaa.
+    """
+    rng = np.random.default_rng(int(hz))
+    t = np.arange(int(seconds * RATE)) / RATE
+    voice = 0.6 * np.sin(2 * np.pi * hz * t) + 0.3 * np.sin(2 * np.pi * hz * 2.8 * t)
+    envelope = np.zeros_like(t)
+    for start, length in turns:
+        envelope[int(start * RATE) : int((start + length) * RATE)] = 1.0
+    envelope = sp_signal.savgol_filter(envelope, 2049, 2)
+    audio = voice * envelope * level + hum * np.sin(2 * np.pi * hz * t)
+    audio = audio + 0.0002 * rng.normal(size=t.size)
+    sf.write(path, audio.astype(np.float32), RATE)
+    return audio
+
+
+@pytest.fixture
+def turn_taking(tmp_path):
+    """Vuorottelevat puhujat, kummallakin oma taajuus ja oma jatkuva pohja."""
+    alternating(tmp_path / "a.wav", [(0.5, 2.0), (5.5, 2.0), (10.0, 1.5)],
+                hz=130.0, hum=0.002)
+    alternating(tmp_path / "b.wav", [(3.0, 2.0), (8.0, 1.5)],
+                hz=470.0, hum=0.002)
+    return {
+        "project": "vuorottelu",
+        "target_lufs": -16.0,
+        "output_path": str(tmp_path / "mix.wav"),
+        "tracks": [
+            {"name": "A", "path": str(tmp_path / "a.wav"), "type": "speech"},
+            {"name": "B", "path": str(tmp_path / "b.wav"), "type": "speech"},
+        ],
+        "buses": {"speech": {}, "music": {}},
+    }
+
+
+def _band_db(audio, low, high, at, span=1.2):
+    """Kaistan energia yhdellä aikavälillä, desibeleinä."""
+    mono = np.asarray(audio).mean(axis=1)
+    piece = mono[int(at * RATE) : int((at + span) * RATE)]
+    sos = sp_signal.butter(6, [low, high], "bandpass", fs=RATE, output="sos")
+    band = sp_signal.sosfilt(sos, piece)
+    return 20.0 * np.log10(float(np.sqrt(np.mean(band**2))) + 1e-12)
+
+
+def test_a_microphone_closes_while_its_owner_is_silent(turn_taking):
+    """Ruudukko on johdotettu, ja vaimennus osuu toisen puheen alle.
+
+    Tämä on se ominaisuus jota automixerilla ei ollut: `DuckingProcessor`
+    sivuketjuttaa musiikkipedin, mutta **mikrofonin** sulkeminen sen
+    omistajan ollessa hiljaa on eri asia, ja se tuli kirjastosta vasta kun
+    puheruudukko saatiin rakennettua wav-raidoista.
+
+    Mitataan A:n taajuudesta B:n vuoron aikana: siellä kuuluva 130 Hz on
+    pelkkää vuotoa A:n mikistä, ja juuri sen vaimennus sulkee.
+    """
+    turn_taking["buses"]["speech"] = {"mic_duck_enabled": False}
+    without = render(turn_taking)
+    turn_taking["output_path"] = turn_taking["output_path"].replace(".wav", "-2.wav")
+    turn_taking["buses"]["speech"] = {"mic_duck_enabled": True}
+    with_duck = render(turn_taking)
+
+    # B:n vuoro on 3,0–5,0 s. 130 Hz siellä on **A:n mikistä**, ja juuri se
+    # mikki on kiinni. (Vaimennus ei ylety siihen mitä A:sta on vuotanut B:n
+    # raidalle — se on ristivuodon vähennyksen työtä, ei portin.)
+    quiet_off = _band_db(without, 100, 170, at=3.4)
+    quiet_on = _band_db(with_duck, 100, 170, at=3.4)
+    assert quiet_off - quiet_on > 3.0, (quiet_off, quiet_on)
+
+    # A:n omalla vuorolla 0,5–2,5 s mikään ei saa sulkeutua.
+    own_off = _band_db(without, 100, 170, at=1.0)
+    own_on = _band_db(with_duck, 100, 170, at=1.0)
+    assert abs(own_off - own_on) < 1.5, (own_off, own_on)
+
+
+def test_the_speech_grid_reaches_the_chain_as_the_rider_mask(turn_taking, monkeypatch):
+    """Kuljettajan maski tulee ruudukosta, eikä se saa olla ``None``.
+
+    Ilman maskia `chain.process` ohittaa tasonkuljettajan äänettömästi —
+    kelvollinen tiedosto, puhdas ajo, ei poikkeusta, vaihe tekemättä. Juuri
+    se on tämän koodikannan tyypillinen vika, joten johdotus tarkistetaan
+    eikä uskota.
+    """
+    from automixer.domain import processor as processor_mod
+
+    seen = []
+    original = processor_mod.SpeechChainProcessor.__init__
+
+    def spy(self, target_lufs, settings=None, speaking=None):
+        seen.append(speaking)
+        original(self, target_lufs, settings=settings, speaking=speaking)
+
+    monkeypatch.setattr(processor_mod.SpeechChainProcessor, "__init__", spy)
+    render(turn_taking)
+
+    assert len(seen) == 2, seen
+    assert all(mask is not None for mask in seen), "kummallakin mikillä on maski"
+    assert any(mask.any() for mask in seen), "maskissa pitää olla puhetta"
