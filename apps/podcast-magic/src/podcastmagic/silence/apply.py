@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from itertools import pairwise
 
 from lxml import etree
 
@@ -73,7 +74,7 @@ def split_track(track_elem, zones: list[tuple[float, float]]) -> tuple[int, int]
         cuts = sorted(edges)
 
         pieces = []
-        for a, b in zip(cuts, cuts[1:]):
+        for a, b in pairwise(cuts):
             middle = (a + b) / 2
             audible = any(z0 <= middle <= z1 for z0, z1 in zones)
             piece = etree.Element(region.tag, dict(region.attrib))
@@ -99,9 +100,6 @@ def split_track(track_elem, zones: list[tuple[float, float]]) -> tuple[int, int]
 
 def has_region_children(track_elem) -> bool:
     """Onko jollain alueella lapsielementtejä, jotka pilkkominen pudottaa."""
-    for region in track_elem:
-        if localname(region) == "Region" and len(region):
-            return True
-    return False
+    return any(localname(region) == "Region" and len(region) for region in track_elem)
 
 

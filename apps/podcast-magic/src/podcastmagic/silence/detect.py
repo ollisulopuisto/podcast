@@ -56,7 +56,8 @@ class AudioCache:
             return self._data[path]
         try:
             samples = audio_io.decode_pcm(path)
-        except Exception:  # noqa: BLE001 — puuttuva tai rikki ääni ei kaada ajoa
+        # Puuttuva tai rikki ääni ei kaada ajoa: muut raidat käsitellään silti.
+        except Exception:
             samples = None
         self._data[path] = samples
         while len(self._data) > self.MAXSIZE:

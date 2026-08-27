@@ -1332,7 +1332,7 @@ wheels = [
 
 [[package]]
 name = "podcast-magic"
-version = "2026.8.27.1"
+version = "2026.8.27.2"
 source = { editable = "apps/podcast-magic" }
 dependencies = [
     { name = "fastapi" },
