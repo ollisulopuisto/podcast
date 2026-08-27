@@ -9,42 +9,55 @@
 </head>
 <body>
 
-<header>
-  <div class="titles">
-    <h1>Podcast Magic</h1>
-    <p class="muted small" id="version"></p>
-  </div>
-  <nav id="tabs" class="tabs"></nav>
-  <div class="actions">
-    <span id="language" class="langs"></span>
-  </div>
-</header>
+<div class="shell">
 
-<div id="banner" class="banner hidden"></div>
+  <!-- Kuori vasemmalla: istunto ja työkalut ovat samat välilehdestä
+       riippumatta, joten ne eivät kuulu sisältöön eivätkä vie sen leveyttä. -->
+  <aside class="rail">
+    <div class="titles">
+      <h1>Podcast Magic</h1>
+      <p class="muted small" id="version"></p>
+    </div>
 
-<section class="panel source">
-  <h2 data-t="app.session">Istunto</h2>
-  <div class="picker">
-    <input id="session" type="text" spellcheck="false" autocomplete="off"
-           placeholder="…/jakso.nhsx">
-    <button id="browse" class="ghost" data-t="app.browse">Selaa…</button>
+    <section class="source">
+      <h2 data-t="app.session">Istunto</h2>
+      <input id="session" type="text" spellcheck="false" autocomplete="off"
+             placeholder="…/jakso.nhsx">
+      <p id="session-note" class="muted small"></p>
+      <button id="browse" class="ghost" data-t="app.change">Vaihda…</button>
+    </section>
+
+    <h2 data-t="app.tools">Työkalut</h2>
+    <nav id="tabs" class="tabs"></nav>
+
+    <div id="browser" class="browser hidden"></div>
+
+    <div class="rail-foot">
+      <span id="language" class="langs"></span>
+    </div>
+  </aside>
+
+  <div class="work">
+    <div id="banner" class="banner hidden"></div>
+    <main id="panels"></main>
+
+    <!-- Työn kulku alapalkkina: se on paikallaan myös ennen ajoa, joten
+         mikään ei hyppää kun ajo alkaa. -->
+    <section class="jobbar hidden" id="job">
+      <div class="job-head">
+        <span id="job-step"></span>
+        <span id="job-file" class="muted"></span>
+        <span id="job-all" class="muted"></span>
+        <button id="job-log-toggle" class="ghost" data-t="app.log">Loki</button>
+        <button id="cancel" class="ghost" data-t="app.cancel">Keskeytä</button>
+      </div>
+      <div class="progress"><div id="job-fill" class="progress-fill"></div></div>
+      <pre id="job-log" class="log hidden"></pre>
+      <div id="job-result" class="exported hidden"></div>
+    </section>
   </div>
-  <p id="session-note" class="muted small"></p>
-  <div id="browser" class="browser hidden"></div>
-</section>
 
-<main id="panels"></main>
-
-<section class="panel job hidden" id="job">
-  <div class="job-head">
-    <h2 data-t="app.progress">Työn kulku</h2>
-    <span id="job-step" class="muted"></span>
-    <button id="cancel" class="ghost" data-t="app.cancel">Keskeytä</button>
-  </div>
-  <div class="progress"><div id="job-fill" class="progress-fill"></div></div>
-  <pre id="job-log" class="log"></pre>
-  <div id="job-result" class="exported hidden"></div>
-</section>
+</div>
 
 <script src="/static/i18n.js"></script>
 <script src="/static/app.js"></script>

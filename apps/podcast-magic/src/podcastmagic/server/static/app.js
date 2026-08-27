@@ -175,6 +175,16 @@ const PM = {
     }, 500);
   },
 
+  /* Kellonaika ihmiselle. Sekunnit ovat tarkkoja ja hyödyttömiä silloin kun
+     ajo kestää tunnin: «74 min» kertoo enemmän kuin «4432 s». */
+  clock(seconds) {
+    const s = Math.max(0, Math.round(seconds || 0));
+    if (s < 90) return `${s} s`;
+    const m = Math.round(s / 60);
+    if (m < 90) return `${m} min`;
+    return `${Math.floor(m / 60)} h ${m % 60} min`;
+  },
+
   showJob(job) {
     const panel = document.getElementById('job');
     if (!job || !job.id) { panel.classList.add('hidden'); return; }
@@ -182,9 +192,13 @@ const PM = {
 
     const step = document.getElementById('job-step');
     const parts = [];
-    if (job.stepsTotal) parts.push(`${job.stepsDone}/${job.stepsTotal}`);
+    /* Kesken oleva vaihe on se jota tehdään, ei se joka on valmis: «0/5»
+       lukee kuin mitään ei olisi alkanut, vaikka ensimmäinen on työn alla. */
+    if (job.stepsTotal) {
+      const at = job.running ? Math.min(job.stepsDone + 1, job.stepsTotal) : job.stepsDone;
+      parts.push(`${at}/${job.stepsTotal}`);
+    }
     if (job.step) parts.push(job.step);
-    if (job.elapsed > 60) parts.push(this.t('app.elapsed', { m: (job.elapsed / 60).toFixed(1) }));
     step.textContent = parts.join(' · ');
 
     /* Osuus koko työstä: valmiit vaiheet plus nykyisen vaiheen osuus.
@@ -202,6 +216,40 @@ const PM = {
     const unknown = job.running && ratio === null;
     fill.classList.toggle('indeterminate', unknown);
     fill.style.width = unknown ? '' : `${Math.round((ratio || (job.running ? 0 : 1)) * 100)}%`;
+
+    /* Kaksi arviota, erikseen: tämä tiedosto ja koko työ. Odottaja kysyy
+       kumpaakin eri hetkinä — «ehdinkö hakea kahvin» on tämä tiedosto,
+       «ehdinkö ulos» on koko työ — eikä yksi luku vastaa kumpaankaan.
+       Kummallakin on oma kellonsa: tiedostot ovat eri mittaisia, joten koko
+       ajon keskinopeus ei kerro tästä tiedostosta mitään.
+
+       Arvio lasketaan vasta muutaman prosentin jälkeen: alussa se olisi
+       tuntikausia väärässä ja pahempi kuin ei mitään. */
+    const estimate = (fraction, spent) => (
+      job.running && typeof fraction === 'number' && fraction > 0.02 && spent > 5
+        ? this.t('app.left', { t: this.clock(spent * (1 - fraction) / fraction) })
+        : null
+    );
+
+    /* Yhden tiedoston työssä molemmat rivit olisivat sama luku kahdesti. */
+    const perFile = [];
+    if (total > 1 && typeof job.fraction === 'number') {
+      perFile.push(this.t('app.fileProgress', { p: Math.round(job.fraction * 100) }));
+      const left = estimate(job.fraction, job.stepElapsed);
+      if (left) perFile.push(left);
+    }
+    document.getElementById('job-file').textContent = perFile.join(' · ');
+
+    const overall = [];
+    if (ratio !== null) {
+      overall.push(total > 1
+        ? this.t('app.allProgress', { p: Math.round(ratio * 100) })
+        : `${Math.round(ratio * 100)} %`);
+    }
+    if (job.elapsed) overall.push(this.t('app.spent', { t: this.clock(job.elapsed) }));
+    const leftAll = estimate(ratio, job.elapsed);
+    if (leftAll) overall.push(leftAll);
+    document.getElementById('job-all').textContent = overall.join(' · ');
 
     const log = document.getElementById('job-log');
     const text = (job.log || []).join('\n');
@@ -318,6 +366,14 @@ const PM = {
     });
     document.getElementById('cancel').addEventListener('click', () => {
       this.api('/api/job/cancel', {}).catch(() => {});
+    });
+    /* Loki on kiinni kunnes sitä pyydetään. Se on ajon lokia eikä ajon
+       tilaa: tila mahtuu yhdelle riville, ja auki oleva loki vie sen
+       tilan jossa kerrotaan mitä tehdään. */
+    document.getElementById('job-log-toggle').addEventListener('click', () => {
+      const log = document.getElementById('job-log');
+      log.classList.toggle('hidden');
+      if (!log.classList.contains('hidden')) log.scrollTop = log.scrollHeight;
     });
 
     this.redraw();
