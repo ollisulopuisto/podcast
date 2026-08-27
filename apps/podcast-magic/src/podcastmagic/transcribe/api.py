@@ -6,7 +6,8 @@ from fastapi import APIRouter, HTTPException
 
 from .. import settings as saved
 from ..jobs import RUNNER
-from ..nhsx import NhsxError
+from ..nhsx import NhsxError, read as read_session
+from ..nhsx import verify
 from . import run as runner
 from .backends import infos
 from .models import DEFAULT_MODEL, MODELS
@@ -59,6 +60,20 @@ def plan(body: dict) -> dict:
     except NhsxError as exc:
         raise HTTPException(400, str(exc)) from exc
     return result.to_dict()
+
+
+@router.post("/verify")
+def check(body: dict) -> dict:
+    """Litteroinnin tarkistus. Nopea: pelkkää XML:ää, ei ääntä."""
+    session = str(body.get("session") or "").strip()
+    if not session:
+        raise HTTPException(400, "Valitse istuntotiedosto.")
+    try:
+        result = verify.inspect(read_session(session))
+    except NhsxError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    result["text"] = verify.as_text(result)
+    return result
 
 
 @router.post("/run")

@@ -51,10 +51,10 @@ def test_second_transcription_replaces_the_first(session_file):
 def test_empty_words_are_dropped(session_file):
     session = nhsx.read(session_file)
     file_info = session.file_by_id("2")
-    count = set_transcription(file_info.elem, [
+    report = set_transcription(file_info.elem, [
         nhsx.Word("  ", 1.0, 0.2), nhsx.Word("sana", 2.0, 0.2),
     ])
-    assert count == 1
+    assert report["words"] == 1
 
 
 def test_existing_output_is_never_overwritten(tmp_path):
