@@ -27,3 +27,22 @@ def bundle_name() -> str | None:
 def test_app_is_named_after_the_app_not_the_interpreter():
     gui.name_the_app()
     assert bundle_name() == "Podcast Magic"
+
+
+def test_a_packaged_program_opens_a_window_only_where_there_is_one():
+    """Ikkuna on oletus paketissa — paitsi Linuxilla.
+
+    Pakattu ohjelma ei voi tulostaa osoitetta terminaaliin, joten ikkuna on
+    oikea oletus. Linuxilla `pywebview` tarvitsee GTK:n ja WebKit2:n koneelta
+    eikä paketista, ja niiden puuttuessa ohjelma ei avaisi mitään eikä
+    kertoisi mitään — selain on siellä se joka varmasti on.
+    """
+    from podcastmagic.__main__ import wants_window
+
+    assert wants_window(None, frozen=True, system="darwin") is True
+    assert wants_window(None, frozen=True, system="win32") is True
+    assert wants_window(None, frozen=True, system="linux") is False
+    assert wants_window(None, frozen=False, system="darwin") is False
+    # Pyydetty ikkuna on pyydetty ikkuna, myös Linuxilla.
+    assert wants_window(True, frozen=False, system="linux") is True
+    assert wants_window(False, frozen=True, system="darwin") is False
