@@ -19,6 +19,8 @@ import locale
 import os
 from contextvars import ContextVar
 
+import speechmix
+
 LANGUAGES = ("fi", "en")
 DEFAULT = "fi"
 
@@ -359,3 +361,13 @@ def t(key: str, **params) -> str:
         return text.format(**params) if params else text
     except (KeyError, IndexError, ValueError):
         return text
+
+
+# Jaettu ketju kysyy viestinsä täältä.
+#
+# `speechmix` ei tunne tätä moduulia eikä saa tuntea: kolmesta
+# sovelluksesta vain tällä on kaksi kieltä. Kirjastolla on oma
+# englanninkielinen oletuksensa, ja tämä korvaa sen omilla teksteillään —
+# jotka ovat samassa luettelossa kuin kaikki muutkin, joten uusi viesti
+# lisätään yhteen paikkaan eikä kahteen.
+speechmix.set_translator(t)

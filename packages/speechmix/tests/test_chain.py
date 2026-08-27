@@ -9,9 +9,8 @@ import time
 
 import numpy as np
 import pytest
-
-from autoraffkat.audio import chain
 from autoraffkat.model import AudioSettings
+from speechmix import chain
 
 RATE = 48000
 
@@ -267,7 +266,7 @@ def test_a_plugin_that_changes_length_is_refused():
         def process(self, audio, rate, reset=True):
             return audio[:, :-4641]  # dxReviven mitattu viive
 
-    with pytest.raises(chain.ChainError, match="pituutta"):
+    with pytest.raises(chain.ChainError, match="changed the length"):
         chain.process(
             speech_like(), RATE, AudioSettings(), 0.0, True, -20.0, Truncating()
         )
@@ -284,7 +283,7 @@ def test_room_tone_is_not_compressed():
 
 
 def test_missing_plugin_is_a_readable_error():
-    with pytest.raises(chain.ChainError, match="ei löydy"):
+    with pytest.raises(chain.ChainError, match="not found"):
         chain.load_plugin("/ei/ole/mitaan.vst3")
     assert chain.load_plugin("") is None
 

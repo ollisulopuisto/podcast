@@ -35,7 +35,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..i18n import t
+from .messages import t
 
 # Ylipäästön jyrkkyys ja kompressorien ajat. automixer ilmaisi kompressorin
 # RMS-ikkunana; pedalboard puhuu hyökkäys- ja palautusajoista, joten nopea ja

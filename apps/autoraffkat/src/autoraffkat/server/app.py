@@ -22,11 +22,12 @@ from dataclasses import replace as dataclasses_replace
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from speechmix import chain
+from speechmix.chain import ChainError
 
 from .. import i18n, pick, probe, project, reactions, staging, thumbs
 from ..analysis import Analysis, AnalysisError, analyze, build_grid, resolve_roles
-from ..audio import chain, mix
-from ..audio.chain import ChainError
+from ..audio import mix
 from ..decide import WIDE_LABEL, decide
 from ..fcpxml.read import ReadError, Timeline, read_fcpxml
 from ..fcpxml.write import (

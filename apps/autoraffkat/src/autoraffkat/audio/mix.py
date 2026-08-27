@@ -33,13 +33,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+from speechmix import chain
+from speechmix.chain import ChainError
 
 from ..decide import _runs, drop_short, open_windows, trim_end
 from ..i18n import t
 from ..model import HOP, AudioSettings
-from . import chain
 from .binaries import get_binary_path
-from .chain import ChainError
 
 # Formaatit jotka luetaan suoraan. Muut puretaan ffmpegillä: kameran ääni on
 # mp4:n sisällä, eikä pedalboardin lukija avaa sitä.
@@ -900,7 +900,6 @@ def _debleed(job, audio, rate, program_start, solos, partners, result):
     juuri se vika joka tässä projektissa on jo kerran jäänyt huomaamatta.
     """
     from pedalboard.io import AudioFile
-
     from speechmix import debleed as db
 
     mine = (solos or {}).get(job.get("speaker"))

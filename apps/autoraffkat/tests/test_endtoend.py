@@ -483,7 +483,7 @@ def test_plugin_parameters_accept_only_scalars(scratch_xml, tmp_path):
 
 def test_plugin_parameters_endpoint_lists_the_controls(scratch_xml, monkeypatch):
     """Säätimet ovat oma pyyntönsä: liitännäisen lataus kestää sekunteja."""
-    from autoraffkat.audio import chain
+    from speechmix import chain
 
     monkeypatch.setattr(
         chain,

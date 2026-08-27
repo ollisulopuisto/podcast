@@ -515,7 +515,7 @@ def test_missing_plugin_is_reported_not_raised(fixture_dir):
 
 def test_plugins_are_found_by_extension(tmp_path, monkeypatch):
     """Liitännäisluettelo tulee vakiopaikoista, ei mistä tahansa."""
-    from autoraffkat.audio import chain
+    from speechmix import chain
 
     (tmp_path / "Hieno.vst3").mkdir()
     (tmp_path / "Toinen.component").mkdir()
@@ -528,7 +528,7 @@ def test_plugins_are_found_by_extension(tmp_path, monkeypatch):
 
 def test_same_plugin_in_both_formats_is_listed_once(tmp_path, monkeypatch):
     """VST3 ja AU samasta liitännäisestä ovat sama asia valikossa."""
-    from autoraffkat.audio import chain
+    from speechmix import chain
 
     vst = tmp_path / "vst3"
     au = tmp_path / "components"
@@ -787,8 +787,7 @@ def test_the_program_trim_moves_the_level_it_is_supposed_to_move():
     """
     import numpy as np
     import pyloudnorm as pyln
-
-    from autoraffkat.audio import chain
+    from speechmix import chain
 
     rate = 48000
     rng = np.random.default_rng(5)
@@ -850,8 +849,7 @@ def test_the_ceiling_belongs_to_the_programme_not_to_one_stem(tmp_path):
     puhujien tasapaino muutu.
     """
     from pedalboard.io import AudioFile
-
-    from autoraffkat.audio import chain
+    from speechmix import chain
 
     rate, seconds = 48000, 6.0
     jobs = []

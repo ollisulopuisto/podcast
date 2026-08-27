@@ -74,7 +74,7 @@ def _become_an_app() -> bool:
 
 def main() -> int:
     """Avaa ikkunan ja palauttaa tilan, jonka käyttäjä siihen jätti."""
-    from . import chain
+    from speechmix import chain
 
     spec = json.load(sys.stdin)
 
