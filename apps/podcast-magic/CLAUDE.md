@@ -107,6 +107,39 @@ leikkaus on jo tehty käsin eikä sitä voi rakentaa uudestaan. Siksi:
   tiedon puute ei ole päätös vaientaa. Musiikkiraita on tästä se tapaus jota
   ei huomaa ennen kuin se puuttuu.
 
+## Vuoto ratkaistaan raitojen välillä, ei raidan sisällä
+
+Kynnys on raidan sisäinen kysymys ja vuoto on raitojen välinen. Siksi
+`threshold` ei riitä: hiljaisessa studiossa hyvillä mikeillä vuoto on
+reilusti kynnyksen yläpuolella. Autoraffkatissa mitattuna molemmat mikit
+ylittävät kynnyksen **41 % ajasta**, mutta vuoto on mediaanissa **12,8 dB**
+hiljempaa kuin sama puhe omalla mikillä.
+
+`dominant_words` mittaa siksi **jokaisen** raidan tason **jokaisen** sanan
+kohdalta — myös toisten raitojen sanojen — ja sana jää sille raidalle jolla
+se on kovimmillaan sekä niille jotka ovat `dominance`-kaistan sisällä.
+Litteroinneista ei voi verrata: sama puhe tuottaa eri merkkijonon eri
+mikeillä, joten tekstissä ei ole mitään mitä täsmäyttää.
+
+Kaista on 6 dB eikä nolla, koska nolla leikkaisi päällekkäisen puheen.
+Mitatusta 12,8 dB:stä jää silti ~6,8 dB pelivaraa vuotoa vastaan.
+
+**`-inf` on kaksi eri asiaa, ja niitä ei saa laskea yhteen.** Mittaamaton
+(tiedosto puuttuu, ei aukea, raidalla ei ole aluetta tällä hetkellä) on eri
+kuin mitattu digitaalinen hiljaisuus. Yhteen laskettuna raita jonka tiedosto
+ei aukea häviää joka vertailun ja vaikenee kokonaan — sama vika jota vastaan
+`speech_intervals` jo suojaa puuttuvalla tiedostolla. Siksi `measured` on oma
+taulukkonsa tason rinnalla. Tämä ei ole teoreettinen: se syntyi ja jäi kiinni
+vasta testiin, ei lukemalla.
+
+Muisti ei muutu: raidat mitataan yksi kerrallaan ja ikkunat ovat sekunnin
+murto-osia, joten levyltä on auki edelleen enintään kaksi tiedostoa.
+
+Sama päätös samasta mittauksesta on `speechmix.masks.duck_masks`. Se antaa
+liu'utettavan vahvistuskäyrän ruudukolla; tämä antaa sanakohtaisen kyllä/ei,
+koska vaimennus tarvitsee tiedon siitä mikä alue jää auki. Jos ero katoaa,
+tämä kuuluu `speechmix`iin — se ei kuulu sinne ennen sitä.
+
 ## Kaksi säädintä sulkee taukoja, ja suurempi ratkaisee
 
 `audible_zones` sulkee tauon jos se on lyhyempi kuin `gap` **tai** lyhyempi

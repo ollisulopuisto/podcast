@@ -17,6 +17,7 @@
       gap: Number(root.querySelector('#si-gap').value),
       rms: root.querySelector('#si-rms').checked,
       threshold: Number(root.querySelector('#si-threshold').value),
+      dominance: Number(root.querySelector('#si-dominance').value),
     };
   }
 
@@ -33,9 +34,14 @@
     ]);
   }
 
-  function table(rows, rmsSkipped) {
+  // `bled` on oma sarakkeensa eikä alaviite, ja se näkyy myös nollana silloin
+  // kun vertailu on päällä: säädin jonka vaikutusta ei näe on säädin jota ei
+  // osaa säätää, ja «ei löytynyt vuotoa» on eri tulos kuin «ei etsitty».
+  function table(rows, rmsSkipped, showBled) {
     if (!rows.length) return PM.el('p', { class: 'muted small', text: PM.t('app.noWords') });
-    const head = [PM.t('si.track'), PM.t('si.trackWords'), PM.t('si.zones'), PM.t('si.audible')];
+    const head = [PM.t('si.track'), PM.t('si.trackWords')];
+    if (showBled) head.push(PM.t('si.bled'));
+    head.push(PM.t('si.zones'), PM.t('si.audible'));
     return PM.el('div', { class: 'table-wrap' }, [
       PM.el('table', {}, [
         PM.el('thead', {}, [PM.el('tr', {}, head.map((title, i) => PM.el(
@@ -44,6 +50,9 @@
         PM.el('tbody', {}, rows.map((row) => PM.el('tr', { class: row.skipped ? 'off' : '' }, [
           PM.el('td', { text: row.name || '—' }),
           PM.el('td', { class: 'num', text: String(row.words) }),
+          showBled
+            ? PM.el('td', { class: 'num', text: row.skipped ? '—' : String(row.bled || 0) })
+            : null,
           PM.el('td', { class: 'num', text: row.skipped ? '—' : String(row.zones) }),
           PM.el('td', {
             class: 'num',
@@ -62,7 +71,10 @@
       const result = await PM.api('/api/silence/preview', {
         session: PM.session, settings: values(root),
       });
-      box.replaceChildren(table(result.tracks, result.rmsSkipped));
+      const settings = values(root);
+      box.replaceChildren(table(
+        result.tracks, result.rmsSkipped, settings.rms && settings.dominance > 0,
+      ));
     } catch (error) {
       box.replaceChildren(PM.el('p', { class: 'muted small', text: error.message }));
     }
@@ -107,6 +119,12 @@
       ]));
       root.appendChild(slider('si-threshold', PM.t('si.threshold'), '',
                               saved.threshold, -60, -10, 1, 'dB'));
+      // Ylärajaksi 24: mitattu ero oman puheen ja vuodon välillä on
+      // mediaanissa 12,8 dB, joten sitä leveämpi kaista ei enää erottele.
+      // Nolla on «pois», ja se on kaistan alapää eikä oma valintansa.
+      root.appendChild(slider('si-dominance', PM.t('si.dominance'),
+                              PM.t('si.dominanceWhy'),
+                              saved.dominance, 0, 24, 1, 'dB'));
 
       // Esivalinta asettaa säätimet; säätimen liikuttaminen tekee valinnasta
       // «oma». Kumpikaan suunta ei saa valehdella toisesta.
@@ -115,6 +133,7 @@
         if (!preset) return;
         for (const [id, value] of Object.entries({
           'si-tail': preset.tail, 'si-gap': preset.gap, 'si-threshold': preset.threshold,
+          'si-dominance': preset.dominance,
         })) {
           const input = root.querySelector(`#${id}`);
           input.value = value;
@@ -162,6 +181,7 @@
       const same = Math.abs(preset.tail - settings.tail) < 0.001
         && Math.abs(preset.gap - settings.gap) < 0.001
         && Math.abs(preset.threshold - settings.threshold) < 0.001
+        && Math.abs(preset.dominance - settings.dominance) < 0.001
         && !!preset.rms === !!settings.rms;
       if (same) return name;
     }
