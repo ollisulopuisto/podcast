@@ -52,7 +52,7 @@ wheels = [
 [[package]]
 name = "automixer"
 version = "2026.4.5.37"
-source = { virtual = "apps/automixer" }
+source = { editable = "apps/automixer" }
 dependencies = [
     { name = "mlx" },
     { name = "numpy" },
