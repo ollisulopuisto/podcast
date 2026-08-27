@@ -63,6 +63,56 @@ def test_the_curve_goes_down_and_comes_back_to_unity():
         assert times == sorted(times)
 
 
+def test_the_curve_is_programme_time_not_grid_time():
+    """Ruudukon solu 0 ei ole ohjelman nolla vaan ``program_start``.
+
+    Mitattu: ``program_start``in pudottaminen kokonaan meni läpi koko
+    sarjasta. Se ei kaada mitään — se siirtää jokaisen vaimennuksen
+    ruudukon alun verran, ja aineistossa ruudukko alkaa nollasta, joten
+    siirto on siellä nolla. Oikeassa jaksossa se ei ole.
+    """
+    grid, settings = _turn_taking(), _Settings()
+    at_zero = envelopes.duck_envelopes(grid, settings, 0.0)
+    later = envelopes.duck_envelopes(grid, settings, 100.0)
+
+    assert set(at_zero) == set(later) and at_zero
+    for name, points in at_zero.items():
+        assert [(t + 100.0, db) for t, db in points] == [
+            (pytest.approx(t), db) for t, db in later[name]
+        ]
+
+
+def test_the_curve_matches_the_mask_point_for_point():
+    """Neljä pistettä jaksoa kohden, ja liu'ut jakson **sisällä**.
+
+    Lasku osuu toisen puhujan aloitukseen ja jää sen alle; nousu osuu
+    hiljaisuuteen jossa mikään ei peitä sitä. Siksi ne ovat eri mittaiset
+    ja siksi kumpikaan ei ala jakson ulkopuolelta.
+    """
+    from speechmix import masks
+
+    grid, settings = _turn_taking(), _Settings()
+    out = envelopes.duck_envelopes(grid, settings, 0.0)
+
+    for name, mask in masks.duck_masks(grid, settings).items():
+        if name not in out:
+            continue
+        expected = []
+        for start, end, value in masks.runs(np.asarray(mask).astype(np.int8)):
+            if not value:
+                continue
+            t0, t1 = start * envelopes.HOP, end * envelopes.HOP
+            head = min(settings.duck_fade, (t1 - t0) / 2.0)
+            tail = min(settings.duck_release, (t1 - t0) - head)
+            expected += [
+                (pytest.approx(t0), 0.0),
+                (pytest.approx(t0 + head), settings.duck_db),
+                (pytest.approx(t1 - tail), settings.duck_db),
+                (pytest.approx(t1), 0.0),
+            ]
+        assert out[name] == expected
+
+
 def test_the_value_between_points_is_linear_and_zero_outside():
     points = [(10.0, 0.0), (10.25, -9.0), (12.0, -9.0), (12.4, 0.0)]
     assert envelopes.envelope_at(points, 9.0) == 0.0
