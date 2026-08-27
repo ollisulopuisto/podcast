@@ -116,6 +116,31 @@ DEESS_SMOOTH_MS = 3.0
 #: yli — rajoitin on viimeinen vaihe ja saa tehdä hieman enemmän, muttei
 #: eri lajissa. Budjetin täytyttyä taso jää tavoitteesta, ja se on oikea
 #: lopputulos: taso on korjattavissa yhdellä liu'ulla, tiivistetty puhe ei.
+#: Kuinka paljon rajoitin saa tehdä **jatkuvaa** työtä, dB. Nolla tai
+#: negatiivinen = ei rajaa, eli vanha käytös.
+#:
+#: Rajoitin oli ketjun ainoa rajaton vaihe: kompressorit ottavat kukin
+#: enintään ``MAX_GR_DB``, mutta rajoittimen läpi ajettiin niin paljon
+#: vahvistusta kuin tavoitetaso sattui vaatimaan. Mitattuna oikealla mikillä
+#: ketjun kevyet vaiheet veivät crestiä 37,4 -> 32,1 dB ja **rajoitin yksin
+#: 32,1 -> 16,7**, minkä jälkeen hakusilmukka vielä 12,8:aan.
+#:
+#: Syy on aritmeettinen eikä makuasia. Stemi jonka crest on 32 dB ei mahdu
+#: -14 LUFS:iin: huiput osuisivat +18 dBFS:ään, eikä kiintopisteinen tiedosto
+#: kanna sitä. Jompikumpi antaa periksi, taso tai crest — ja taso on se joka
+#: on korjattavissa yhdellä liu'ulla. Summan katosta huolehtii silti
+#: ``programme.shared_gain``, joten stemin ei tarvitse olla itse kattoa
+#: vasten.
+LIMITER_BUDGET_DB = 0.0
+
+#: Mistä kohtaa jakaumaa «jatkuva työ» luetaan. Käyrän minimi on **yhden
+#: näytteen** vaatimus, ja koko tiedoston vaimentaminen sen mukaan on juuri
+#: se staattinen vaimennus jonka rajoitin korvasi (mitattuna 9–12 dB, ja se
+#: teki puhujien tasapainosta sattumanvaraisen). Yksittäinen huippu *kuuluu*
+#: rajoittaa; vaimennus joka jatkuu promillen ajan tiedostosta ei ole huippu
+#: vaan taso. 20 minuutin tiedostossa promille on 1,2 sekuntia.
+LIMITER_BUDGET_PERCENTILE = 0.1
+
 CEILING_DB = -1.5
 LIMITER_OVERSAMPLE = 4
 LIMITER_LOOKAHEAD_MS = 5.0
@@ -933,6 +958,27 @@ def limiter_gain(
     return np.minimum(smooth, ahead)
 
 
+def sustained_reduction_db(
+    audio: np.ndarray,
+    rate: int,
+    percentile: float = LIMITER_BUDGET_PERCENTILE,
+    ceiling_db: float = CEILING_DB,
+) -> float:
+    """Kuinka paljon rajoitin joutuisi vaimentamaan **jatkuvasti**, dB (≥ 0).
+
+    Ei käyrän minimi. Minimi on yhden näytteen vaatimus, ja se on tavallisesti
+    yksittäinen plosiivi tai naksahdus — mitattuna toisen puhujan kohdalla se
+    heitti tuloksen kahdellatoista desibelillä ohi siitä mitä rajoitin
+    todellisuudessa teki. Prosenttipiste kysyy sen sijaan: minkä verran
+    vaimennusta kestää ainakin ``percentile`` prosentin ajan tiedostosta.
+    """
+    gain = limiter_gain(audio, rate, ceiling_db)
+    if gain.size == 0:
+        return 0.0
+    quiet = float(np.percentile(gain, percentile))
+    return max(0.0, -20.0 * np.log10(max(quiet, 1e-9)))
+
+
 def limiter(
     audio: np.ndarray,
     rate: int,
@@ -1178,7 +1224,7 @@ def process(
 
     frames = audio.shape[1]
     original = audio[0].copy() if speech and plugin is not None else None
-    limiter_db, reached = 0.0, True
+    limiter_db, reached, capped = 0.0, True, False
 
     # 1. Ulkoinen liitännäinen ensin: siivoa ennen kuin vahvistat.
     #
@@ -1306,15 +1352,27 @@ def process(
         #
         # Rajoittimen työstä pidetään kirjaa: se päätyy ``ChainResult``iin,
         # koska se on ainoa vaihe jolla ei ole kattoa eikä sitä nähnyt mikään.
+        # Ylimenevä osa otetaan tasosta eikä tiivistyksestä. Vaimennus ennen
+        # rajoitinta vähentää vaadittua rajoitusta yksi yhteen, joten siirto
+        # on tarkka — ja taso on se puoli joka on jälkikäteen korjattavissa.
+        budget = float(getattr(settings, "limiter_budget_db", LIMITER_BUDGET_DB))
+        if budget > 0:
+            over = sustained_reduction_db(audio, rate) - budget
+            if over > 0:
+                audio = _board(pedalboard.Gain(gain_db=-over))(
+                    audio, rate, reset=True
+                )
+                lift -= over
+                capped = True
         audio, limiter_db = limiter(audio, rate)
         # Rajoitin syö äänekkyyttä sen verran kuin se leikkaa, ja korjaus
         # nostaa huiput takaisin rajoittimen kynsiin — yksi kierros jää siis
         # vajaaksi. Kolme riittää: mitattuna ensimmäinen kierros jäi 1–2 dB
         # tavoitteesta, kolmannen jälkeen ero on alle 0,3 dB. Tavoite on nyt
         # jakelualustan lukema eikä makuasia, joten se on osuttava.
-        reached = True
+        reached = not capped
         for _ in range(3):
-            if target_lufs is None:
+            if target_lufs is None or capped:
                 break
             settled = loudness(audio.mean(axis=0), rate)
             if settled is None or abs(target_lufs - settled) <= 0.3:
@@ -1326,7 +1384,9 @@ def process(
             lift += step
         else:
             settled = loudness(audio.mean(axis=0), rate) if target_lufs else None
-            reached = settled is None or abs(target_lufs - settled) <= 0.3
+            reached = not capped and (
+                settled is None or abs(target_lufs - settled) <= 0.3
+            )
         # Viimeinen varmistus. Rajoittimen jälkeen tämän ei pitäisi laueta,
         # ja jos laukeaa, se on rajoittimessa oleva vika eikä turvaverkon työ.
         audio, trimmed = peak_guard(audio)
