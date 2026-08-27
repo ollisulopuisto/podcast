@@ -34,14 +34,12 @@ from pathlib import Path
 
 import numpy as np
 
-from speechmix import chain
+from speechmix import chain, envelopes
 from speechmix.binaries import get_binary_path
 from speechmix.chain import ChainError
 from speechmix.envelopes import (  # noqa: F401  julkinen rajapinta säilyy
-    closed_ranges,
     duck_envelopes,
     envelope_at,
-    speech_blocks,
 )
 from speechmix.freshness import FINGERPRINT_FIELDS, FINGERPRINT_VERSION
 from speechmix.masks import (
@@ -49,6 +47,7 @@ from speechmix.masks import (
     solo_masks,
     speech_masks,
 )
+from speechmix.timeline import Span, Track
 
 from ..i18n import t
 from ..model import HOP, AudioSettings
@@ -341,24 +340,55 @@ PROGRAM_CEILING_CHUNK = 60.0
 PROGRAM_CEILING_MARGIN = 1.0
 
 
-def _geometry(item, frames: int) -> tuple:
-    """Tiedoston sijainti aikajanalla, vertailukelpoisena avaimena.
+def track_of(item, **fields) -> Track:
+    """Tämä media kirjaston ``Track``ina. **Ainoa** kohta joka tuntee molemmat.
 
-    Summa lasketaan tiedostoista näyte näytteeltä, mikä on oikein vain jos
-    stemit ovat samassa kohdassa aikajanaa ja yhtä pitkiä. Tämä tekee siitä
-    tarkistettavan asian eikä oletuksen.
+    Aikajanan ja tiedostoajan muunnos oli laskettuna kaavana
+    ``placement.start - item.asset_start - placement.offset`` kuudessa
+    kohdassa tässä moduulissa ja kahdessa kirjastossa. Kaava on hiljainen
+    kun se menee väärin — käännetty etumerkki tai pudonnut esiintymä
+    tuottaa kelvollisen, oikean mittaisen tiedoston väärässä kohdassa — ja
+    kahdeksana kappaleena se on kahdeksan tilaisuutta mennä väärin eri
+    tavalla.
+
+    ``Fraction`` muuttuu liukuluvuksi tässä ja vain tässä. Tarkka aika on
+    XML:n ja aikajanan asia, koska pyöristysvirhe kertyy tuhansien ruutujen
+    yli; näytepaikat pyöristetään kokonaisluvuiksi heti perään, joten
+    kirjastolle liukuluku riittää.
+
+    ``file_offset`` on tiedoston hetki joka osuu paikan alkuun, eli
+    ``placement.start - item.asset_start``: tiedoston t=0 vastaa
+    lähdemateriaalin hetkeä ``asset_start``.
     """
-    return (
-        frames,
-        tuple(
-            (
-                round(float(p.offset), 4),
-                round(float(p.end), 4),
-                round(float(p.start - item.asset_start - p.offset), 4),
+    fields.setdefault("speaker", "")
+    return Track(
+        path=item.path,
+        spans=[
+            Span(
+                float(p.offset), float(p.end), float(p.start - item.asset_start)
             )
             for p in item.placements
-        ),
+        ],
+        **fields,
     )
+
+
+def closed_ranges(item, closed, program_start: float, rate: int):
+    """Ruudukon kiinni-jaksot tämän tiedoston näyteväleiksi."""
+    return envelopes.closed_ranges(track_of(item), closed, program_start, rate)
+
+
+def speech_blocks(item, mask, program_start: float, rate: int,
+                  block: int, count: int):
+    """Puhujan oma puhe lohkoittain tässä tiedostossa."""
+    return envelopes.speech_blocks(
+        track_of(item), mask, program_start, rate, block, count
+    )
+
+
+def _geometry(item, frames: int) -> tuple:
+    """Tiedoston sijainti aikajanalla, vertailukelpoisena avaimena."""
+    return envelopes.geometry(track_of(item), frames)
 
 
 def program_ceiling(jobs: list[dict], result: "MixResult",
@@ -497,41 +527,18 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
     return worst
 
 
-def _envelope_block(job: dict, envelopes: dict | None, low: int, high: int,
-                    rate: int) -> np.ndarray:
+def _envelope_block(job: dict, envelopes_by_speaker: dict | None, low: int,
+                    high: int, rate: int) -> np.ndarray:
     """Vaimennuksen kerroin tiedoston näyteväliltä ``[low, high)``.
 
-    Käyrä on aikajanan aikaa, tiedosto omaansa. Muunnos on esiintymittäin
-    lineaarinen, sama kaava kuin ``closed_ranges``issa. Ykkösiä silloin kun
-    puhujalle ei ole käyrää: silloin summaan menee tiedosto sellaisenaan.
+    Ykkösiä silloin kun puhujalle ei ole käyrää: silloin summaan menee
+    tiedosto sellaisenaan.
     """
-    points = (envelopes or {}).get(job.get("speaker"))
+    points = (envelopes_by_speaker or {}).get(job.get("speaker"))
     item = job.get("item")
     if not points or item is None:
         return np.ones(1, dtype=np.float32)
-    gain = np.ones(high - low, dtype=np.float32)
-    for placement in item.placements:
-        base = float(placement.start - item.asset_start - placement.offset)
-        # Tiedostoaika = base + aikajana, joten aikajana = tiedostoaika - base.
-        first = max(low / rate, float(placement.offset) + base)
-        last = min(high / rate, float(placement.end) + base)
-        if last <= first:
-            continue
-        i0, i1 = int(round(first * rate)) - low, int(round(last * rate)) - low
-        i0, i1 = max(0, i0), min(len(gain), i1)
-        if i1 <= i0:
-            continue
-        times = (np.arange(i0, i1, dtype=np.float64) + low) / rate - base
-        curve = np.interp(
-            times,
-            [t for t, _ in points],
-            [v for _, v in points],
-            left=0.0,
-            right=0.0,
-        )
-        gain[i0:i1] = (10.0 ** (curve / 20.0)).astype(np.float32)
-    return gain
-
+    return envelopes.duck_gain(track_of(item), points, low, high, rate)
 
 def _drop(path: str) -> None:
     """Poistaa tilapäistiedoston, jos se on olemassa."""
@@ -671,13 +678,12 @@ def program_trim(jobs: list[dict], settings: AudioSettings) -> float:
             if total is None:
                 total = np.zeros(int(span * rate), dtype=np.float32)
             here = np.zeros_like(total)
-            for placement in item.placements:
-                first = max(window[0], float(placement.offset))
-                last = min(window[1], float(placement.end))
+            for span in track_of(item).spans:
+                first = max(window[0], span.programme_start)
+                last = min(window[1], span.programme_end)
                 if last <= first:
                     continue
-                base = float(placement.start - item.asset_start - placement.offset)
-                start = int(round((base + first) * rate))
+                start = int(round(span.to_file_time(first) * rate))
                 frames = int(round((last - first) * rate))
                 if start < 0 or frames <= 0 or start >= handle.frames:
                     continue
@@ -977,17 +983,22 @@ def _aligned(target_item, source_item, source_audio, rate: int, frames: int):
     """
     out = np.zeros(frames, dtype=np.float64)
     source = np.asarray(source_audio, dtype=np.float64).reshape(-1)
-    for pt in target_item.placements:
-        base_t = float(pt.start - target_item.asset_start - pt.offset)
-        for ps in source_item.placements:
-            base_s = float(ps.start - source_item.asset_start - ps.offset)
-            low = max(float(pt.offset), float(ps.offset))
-            high = min(float(pt.end), float(ps.end))
+    for target in track_of(target_item).spans:
+        for source_span in track_of(source_item).spans:
+            low = max(target.programme_start, source_span.programme_start)
+            high = min(target.programme_end, source_span.programme_end)
             if high <= low:
                 continue
-            t0 = int(round((base_t + low) * rate))
-            t1 = int(round((base_t + high) * rate))
-            shift = int(round((base_s - base_t) * rate))
+            t0 = int(round(target.to_file_time(low) * rate))
+            t1 = int(round(target.to_file_time(high) * rate))
+            # Kuinka kaukana lähdetiedosto on kohdetiedostosta samalla
+            # ohjelman hetkellä. Molemmat kuvaukset ovat kulmakertoimeltaan
+            # yksi, joten erotus on sama joka hetkellä paikan sisällä.
+            shift = int(
+                round(
+                    (source_span.to_file_time(low) - target.to_file_time(low)) * rate
+                )
+            )
             t0, t1 = max(0, t0), min(frames, t1)
             s0, s1 = t0 + shift, t1 + shift
             if s1 <= 0 or s0 >= source.size or t1 <= t0:

@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 
 import numpy as np
+
 from speechmix.errors import EnvelopeError
 from speechmix.rms import FLOOR_DB, envelope_for
 

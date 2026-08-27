@@ -8,6 +8,7 @@ käyttäjän kotihakemistosta on kirjasto joka kirjoittaa kutsumatta. Siksi
 
 import numpy as np
 import pytest
+
 from speechmix import rms as envelope
 
 

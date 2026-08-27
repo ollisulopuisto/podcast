@@ -27,6 +27,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+
 from speechmix.binaries import get_binary_path
 
 from . import detect

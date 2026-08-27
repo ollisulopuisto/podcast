@@ -1,6 +1,6 @@
 """Aikajanan ja tiedostoajan muunnos ``mix.py``:ssä, vihamielisellä geometrialla.
 
-`mix.py` muuntaa aikajanan ajan tiedoston ajaksi kahdeksassa kohdassa,
+`mix.py` muunsi aikajanan ajan tiedoston ajaksi kahdeksassa kohdassa,
 aina samalla kaavalla::
 
     base = placement.start - item.asset_start - placement.offset
@@ -72,11 +72,16 @@ def _grid(*ranges, seconds=40.0):
     return closed
 
 
-def test_geometry_is_the_two_spans_and_their_bases(item):
-    """``_geometry`` on jo ``Track.spans``, muussa järjestyksessä."""
+def test_geometry_is_the_two_spans(item):
+    """``_geometry`` on ``Track.spans`` ja näytemäärä.
+
+    Kolmas luku on ``file_offset`` — tiedoston hetki joka osuu paikan
+    alkuun — eikä ``base``. Ne eroavat ``programme_start``in verran, joka on
+    samassa monikossa, joten avaimen erottelukyky on sama.
+    """
     frames, spans = mix._geometry(item, 12345)
     assert frames == 12345
-    assert spans == ((5.0, 9.0, -2.0), (20.0, 26.0, 1.0))
+    assert spans == ((5.0, 9.0, 3.0), (20.0, 26.0, 21.0))
 
 
 def test_closed_ranges_uses_both_placements(item):

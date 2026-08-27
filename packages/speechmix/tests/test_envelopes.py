@@ -6,8 +6,10 @@ kirjastossa eikä kummassakaan isännässä.
 """
 
 import numpy as np
+import pytest
 
 from speechmix import envelopes
+from speechmix.timeline import Span, Track
 
 
 class _Lane:
@@ -32,17 +34,6 @@ class _Settings:
     duck_hold = 0.40
     duck_min_open = 0.20
     duck_min_closed = 0.60
-
-
-class _Placement:
-    def __init__(self, offset, end, start):
-        self.offset, self.end, self.start = offset, end, start
-        self.duration = end - offset
-
-
-class _Item:
-    def __init__(self, placements, asset_start=0.0):
-        self.placements, self.asset_start = placements, asset_start
 
 
 def _turn_taking(n=800):
@@ -81,12 +72,12 @@ def test_the_value_between_points_is_linear_and_zero_outside():
     assert envelopes.envelope_at([], 1.0) == 0.0
 
 
-def test_programme_time_becomes_file_time_per_placement():
+def test_programme_time_becomes_file_time_per_span():
     """Ruudukko on aikajanan aikaa, tiedosto omaansa."""
     closed = np.zeros(200, dtype=bool)
     closed[50:100] = True  # 1.0 s … 2.0 s ohjelma-ajassa
-    item = _Item([_Placement(offset=0.0, end=10.0, start=5.0)], asset_start=0.0)
-    ranges = envelopes.closed_ranges(item, closed, program_start=0.0, rate=48000)
+    track = Track("mic.wav", "a", [Span(0.0, 10.0, 5.0)])
+    ranges = envelopes.closed_ranges(track, closed, program_start=0.0, rate=48000)
     assert ranges == [(int(6.0 * 48000), int(7.0 * 48000))]
 
 
@@ -94,5 +85,92 @@ def test_a_span_outside_the_placement_is_not_touched():
     """Ruudukon ulkopuolelle jäävästä ei ole tietoa, eikä vienti käytä sitä."""
     closed = np.zeros(200, dtype=bool)
     closed[:20] = True
-    item = _Item([_Placement(offset=50.0, end=60.0, start=0.0)])
-    assert envelopes.closed_ranges(item, closed, program_start=0.0, rate=48000) == []
+    track = Track("mic.wav", "a", [Span(50.0, 60.0, 0.0)])
+    assert envelopes.closed_ranges(track, closed, program_start=0.0, rate=48000) == []
+
+
+# ------------------------------------------------------------------ geometria
+#
+# Vihamielinen geometria: kaksi paikkaa eri puolilla aikajanaa ja ``base``
+# eri merkkinen kummassakin. Identtinen geometria — yksi paikka,
+# ``file_offset`` sama kuin ``programme_start`` — testaa vain nollaa, ja
+# nolla on sama kummin päin tahansa. Mitattuna kaksi kolmesta
+# muunnosvirheestä meni läpi koko sarjasta ennen näitä.
+#
+#   paikka 1: ohjelma 5–9 s   <-> tiedosto 3–7 s     base = -2
+#   paikka 2: ohjelma 20–26 s <-> tiedosto 21–27 s   base = +1
+RATE = 48000
+AWKWARD = [Span(5.0, 9.0, 3.0), Span(20.0, 26.0, 21.0)]
+
+
+@pytest.fixture
+def mic():
+    return Track("mic.wav", "A", list(AWKWARD))
+
+
+def _grid_mask(*ranges, seconds=40.0):
+    out = np.zeros(int(seconds / envelopes.HOP), dtype=bool)
+    for low, high in ranges:
+        out[int(low / envelopes.HOP) : int(high / envelopes.HOP)] = True
+    return out
+
+
+def test_closed_ranges_uses_every_span(mic):
+    closed = _grid_mask((6.0, 8.0), (21.0, 23.0))
+    assert envelopes.closed_ranges(mic, closed, 0.0, RATE) == [
+        (4 * RATE, 6 * RATE),
+        (22 * RATE, 24 * RATE),
+    ]
+
+
+def test_closed_ranges_clip_to_the_spans(mic):
+    """Paikkojen väliin osuvasta ajasta ei ole tietoa, eikä sitä kosketa."""
+    assert envelopes.closed_ranges(mic, _grid_mask((0.0, 40.0)), 0.0, RATE) == [
+        (3 * RATE, 7 * RATE),
+        (21 * RATE, 27 * RATE),
+    ]
+
+
+def test_closed_ranges_follow_the_grid_start(mic):
+    """Ruudukon solu 0 ei ole ohjelman nolla vaan ``program_start``."""
+    closed = _grid_mask((1.0, 3.0))
+    assert envelopes.closed_ranges(mic, closed, 5.0, RATE) == [(4 * RATE, 6 * RATE)]
+
+
+def test_speech_blocks_are_file_time(mic):
+    out = envelopes.speech_blocks(mic, _grid_mask((6.0, 8.0)), 0.0, RATE, 4800, 300)
+    assert np.flatnonzero(out).tolist() == list(range(40, 60))
+
+
+def test_speech_blocks_reach_the_second_span(mic):
+    out = envelopes.speech_blocks(mic, _grid_mask((21.0, 23.0)), 0.0, RATE, 4800, 300)
+    assert np.flatnonzero(out).tolist() == list(range(220, 240))
+
+
+def test_duck_gain_lands_on_the_right_samples(mic):
+    """Käyrä on aikajanan aikaa, kerroin tiedoston näytteitä."""
+    points = [(5.0, 0.0), (6.0, -6.0), (8.0, -6.0), (9.0, 0.0)]
+    gain = envelopes.duck_gain(mic, points, 0, 8 * RATE, RATE)
+
+    def at(seconds):
+        return float(gain[int(seconds * RATE)])
+
+    assert at(2.5) == pytest.approx(1.0)  # ennen paikkaa: koskematon
+    assert at(4.0) == pytest.approx(10.0 ** (-6.0 / 20.0), rel=1e-4)
+    assert at(6.5) == pytest.approx(10.0 ** (-3.0 / 20.0), rel=1e-3)
+    assert at(7.5) == pytest.approx(1.0)  # paikan jälkeen: koskematon
+
+
+def test_duck_gain_without_a_curve_is_unity(mic):
+    """Ilman käyrää tiedosto menee summaan sellaisenaan."""
+    assert envelopes.duck_gain(mic, [], 0, 8 * RATE, RATE).tolist() == [1.0]
+
+
+def test_geometry_is_the_spans_and_the_frame_count(mic):
+    """Summa lasketaan näyte näytteeltä, joten sijainnin pitää täsmätä."""
+    assert envelopes.geometry(mic, 12345) == (
+        12345,
+        ((5.0, 9.0, 3.0), (20.0, 26.0, 21.0)),
+    )
+    moved = Track("mic.wav", "A", [Span(5.0, 9.0, 4.0), AWKWARD[1]])
+    assert envelopes.geometry(moved, 12345) != envelopes.geometry(mic, 12345)

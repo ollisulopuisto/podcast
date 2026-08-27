@@ -6,8 +6,8 @@ olla olemassa ennen kuin tämän luettelossa on sille riviä.
 """
 
 import pytest
-import speechmix
 
+import speechmix
 from autoraffkat import i18n
 
 

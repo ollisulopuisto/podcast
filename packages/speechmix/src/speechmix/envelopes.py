@@ -8,10 +8,19 @@ kirjoitetaan polttaa saman käyrän näytteisiin. Sama laskenta, eri emissio.
     Tasopäätökset jotka tulevat ketjun **jälkeen** voivat olla automaatiota.
     Tasopäätökset jotka tulevat sitä **ennen** on poltettava sisään.
 
-``closed_ranges`` ja ``speech_blocks`` muuntavat ruudukon aikajanalta
-tiedostoaikaan. Ne tarvitsevat esiintymät — mikä tahansa olio jolla on
-``placements`` ja ``asset_start`` kelpaa — koska muunnos on esiintymän sisällä
-lineaarinen, ja se on ainoa aikajanatieto jota ketju tarvitsee.
+``closed_ranges``, ``speech_blocks``, ``duck_gain`` ja ``geometry``
+muuntavat ruudukon aikajanalta tiedostoaikaan. Ne ottavat ``Track``in eivätkä
+isännän mediaoliota: muunnos on paikan sisällä lineaarinen, ja ``Track`` on
+juuri se yksi asia jonka kirjasto aikajanasta tarvitsee tietää. Aiemmin ne
+lukivat ``item.placements`` ja ``item.asset_start`` suoraan, mikä siirsi
+koodin saumasta yli mutta jätti sauman leikkaamatta — ja jätti ``Track``in
+sellaiseksi jota mikään ei tuonut sisään.
+
+Muunnos on hiljainen kun se menee väärin. Käännetty etumerkki, pudonnut
+paikka tai unohtunut ``asset_start`` tuottavat kelvollisen, oikean mittaisen
+tiedoston väärässä kohdassa: mikään ei kaadu, mitään ei tulostu, ja vika
+kuuluu vasta valmiissa ohjelmassa. Mitattuna kaksi noista kolmesta meni
+läpi koko sarjasta, molemmista, ennen kuin ne kytkettiin tänne.
 
 Siirretty autoraffkatin ``audio/mix.py``:stä, ei kopioitu.
 """
@@ -19,6 +28,7 @@ Siirretty autoraffkatin ``audio/mix.py``:stä, ei kopioitu.
 import numpy as np
 
 from .masks import HOP, duck_masks, runs
+from .timeline import Track
 
 
 def duck_envelopes(grid, settings: object,
@@ -84,54 +94,106 @@ def envelope_at(points: list, when: float) -> float:
         return float(v1)
     return float(v0 + (v1 - v0) * (when - t0) / (t1 - t0))
 
+def geometry(track: Track, frames: int) -> tuple:
+    """Raidan sijainti ohjelmassa, vertailukelpoisena avaimena.
+
+    Summa lasketaan tiedostoista näyte näytteeltä, mikä on oikein vain jos
+    stemit ovat samassa kohdassa aikajanaa ja yhtä pitkiä. Tämä tekee siitä
+    tarkistettavan asian eikä oletuksen.
+    """
+    return (
+        frames,
+        tuple(
+            (
+                round(span.programme_start, 4),
+                round(span.programme_end, 4),
+                round(span.file_offset, 4),
+            )
+            for span in track.spans
+        ),
+    )
+
+
 def closed_ranges(
-    item, closed, program_start: float, rate: int
+    track: Track, closed, program_start: float, rate: int
 ) -> list[tuple[int, int]]:
     """Missä tiedoston kohdissa mikki on kiinni, näyteväleinä.
 
     Ruudukko on aikajanan aikaa, tiedosto omaansa. Muunnos tehdään
-    esiintymittäin, koska kunkin palan sisällä kuvaus on lineaarinen.
+    paikoittain, koska kunkin paikan sisällä kuvaus on lineaarinen.
     Ruudukon ulkopuolelle jäävää osaa ei vaimenneta: siitä ei ole tietoa, eikä
     vienti käytä sitä.
     """
     out: list[tuple[int, int]] = []
-    for start, end, value in runs(closed.astype(np.int8)):
+    for start, end, value in runs(np.asarray(closed).astype(np.int8)):
         if not value:
             continue
         low = program_start + start * HOP
         high = program_start + end * HOP
-        for placement in item.placements:
-            first = max(low, float(placement.offset))
-            last = min(high, float(placement.end))
+        for span in track.spans:
+            first = max(low, span.programme_start)
+            last = min(high, span.programme_end)
             if last <= first:
                 continue
-            # tiedostoaika = klipin start - assetin start + (aikajana - offset)
-            base = float(placement.start - item.asset_start - placement.offset)
             out.append(
-                (int(round((base + first) * rate)), int(round((base + last) * rate)))
+                (
+                    int(round(span.to_file_time(first) * rate)),
+                    int(round(span.to_file_time(last) * rate)),
+                )
             )
     return out
 
-def speech_blocks(item, mask, program_start: float, rate: int,
+
+def speech_blocks(track: Track, mask, program_start: float, rate: int,
                   block: int, count: int) -> np.ndarray:
     """Puhujan oma puhe lohkoittain tässä tiedostossa.
 
-    Ruudukko on aikajanan aikaa, tiedosto omaansa; muunnos on
-    esiintymittäin lineaarinen, sama kaava kuin ``closed_ranges``issa.
-    Tasonkuljettaja tarvitsee juuri tämän eikä signaalista pääteltyä
-    puhetta — ks. ``chain.rider_gain``.
+    Ruudukko on aikajanan aikaa, tiedosto omaansa. Tasonkuljettaja tarvitsee
+    juuri tämän eikä signaalista pääteltyä puhetta — kahden mikin
+    nauhoituksessa puolet siitä mikä on raidalla kovaa on toinen puhuja.
+    Ks. ``chain.rider_gain``.
     """
     out = np.zeros(count, dtype=bool)
     mask = np.asarray(mask, dtype=bool)
-    for placement in item.placements:
-        base = float(placement.start - item.asset_start - placement.offset)
+    for span in track.spans:
+        base = span.file_offset - span.programme_start
         # Lohkon keskikohta tiedostoajassa -> aikajana -> ruudukon solu.
         times = (np.arange(count) + 0.5) * block / rate
         timeline = times - base
-        inside = ((timeline >= float(placement.offset))
-                  & (timeline < float(placement.end)))
+        inside = (timeline >= span.programme_start) & (timeline < span.programme_end)
         cells = ((timeline - program_start) / HOP).astype(int)
         ok = inside & (cells >= 0) & (cells < mask.shape[0])
         out[ok] |= mask[cells[ok]]
     return out
 
+
+def duck_gain(track: Track, points: list, low: int, high: int,
+              rate: int) -> np.ndarray:
+    """Vaimennuksen kerroin tiedoston näyteväliltä ``[low, high)``.
+
+    Käyrä on aikajanan aikaa, tiedosto omaansa. Ykkösiä silloin kun käyrää
+    ei ole: silloin summaan menee tiedosto sellaisenaan.
+
+    Tämä on ``duck_envelopes``in toinen emissio. Sama käyrä menee joko Final
+    Cutin keyframeiksi tai — täällä — näytteisiin, ja kummankin on annettava
+    sama tulos, koska muuten vienti ja ohjelmakatto eivät kuule samaa asiaa.
+    """
+    if not points:
+        return np.ones(1, dtype=np.float32)
+    gain = np.ones(high - low, dtype=np.float32)
+    times_db = [t for t, _ in points]
+    values_db = [v for _, v in points]
+    for span in track.spans:
+        base = span.file_offset - span.programme_start
+        first = max(low / rate, span.file_offset)
+        last = min(high / rate, span.to_file_time(span.programme_end))
+        if last <= first:
+            continue
+        i0 = max(0, int(round(first * rate)) - low)
+        i1 = min(len(gain), int(round(last * rate)) - low)
+        if i1 <= i0:
+            continue
+        timeline = (np.arange(i0, i1, dtype=np.float64) + low) / rate - base
+        curve = np.interp(timeline, times_db, values_db, left=0.0, right=0.0)
+        gain[i0:i1] = (10.0 ** (curve / 20.0)).astype(np.float32)
+    return gain

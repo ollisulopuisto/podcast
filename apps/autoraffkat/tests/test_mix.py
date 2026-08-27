@@ -814,6 +814,7 @@ class _Placement:
 
 class _Item:
     asset_start = 0.0
+    path = ""
 
     def __init__(self, offset=0.0, end=10.0, start=0.0):
         self.placements = [_Placement(offset, end, start)]

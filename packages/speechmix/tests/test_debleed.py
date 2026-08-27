@@ -121,9 +121,13 @@ def test_the_partner_lands_on_the_same_timeline_moment():
             return self.offset + self.duration
 
     class Item:
+        # `path` mukana, koska `mix.track_of` kokoaa näistä `Track`in ja
+        # `Track` kantaa polun. Tynkä seisoo `MediaItem`in paikalla, joten
+        # sen on tarjottava se mitä muunnos lukee.
         def __init__(self, placements, asset_start=0):
             self.placements = placements
             self.asset_start = Fraction(asset_start)
+            self.path = ""
 
     # Kohde alkaa aikajanan hetkellä 0 tiedoston hetkestä 0.
     target = Item([Placement(0, 0, 4)])
