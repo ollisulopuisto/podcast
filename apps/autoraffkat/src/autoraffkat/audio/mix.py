@@ -333,6 +333,10 @@ class MixResult:
     # Huomautukset raidoittain: tehtiin kyllä, mutta jokin osa jäi tekemättä
     # ja siihen on syy. Erillään virheistä, koska tiedosto on silti kelvollinen.
     notes: dict[str, list] = field(default_factory=dict)
+    # Kuinka paljon rajoittimen budjetti otti tasosta stemikohtaisesti (≤ 0).
+    # Tasapaino korjataan näistä yhtenä jaettuna päätöksenä, ks.
+    # `programme.shared_backoff`.
+    backoffs: dict[str, float] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -396,7 +400,8 @@ def _geometry(item, frames: int) -> tuple:
 
 
 def program_ceiling(jobs: list[dict], result: "MixResult",
-                    envelopes: dict | None = None) -> None:
+                    envelopes: dict | None = None,
+                    extra: dict | None = None) -> None:
     """Huippukatto **ohjelmalle**, ei yhdelle stemille.
 
     Sama virhe kuin äänekkyydessä, jonka ``program_trim`` jo korjaa: ketju
@@ -445,7 +450,7 @@ def program_ceiling(jobs: list[dict], result: "MixResult",
             continue
         frames = key[0]
         try:
-            worst = _ceiling_pass(members, frames, AudioFile, envelopes)
+            worst = _ceiling_pass(members, frames, AudioFile, envelopes, extra)
         except (OSError, ValueError) as exc:
             for job in members:
                 result.notes.setdefault(job["key"], []).append(str(exc))
@@ -457,7 +462,8 @@ def program_ceiling(jobs: list[dict], result: "MixResult",
 
 
 def _ceiling_pass(members: list[dict], frames: int, AudioFile,
-                  envelopes: dict | None = None) -> float:
+                  envelopes: dict | None = None,
+                  extra: dict | None = None) -> float:
     """Yksi ryhmä: summa paloittain, sama käyrä jokaiseen stemiin.
 
     ``envelopes`` on vaimennus puhujittain aikajanan aikana. Se **on**
@@ -466,6 +472,11 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
     aineistolla 8 ja 30 minuuttia vaimennettavaa — ja katto laskettaisiin
     liian kovasta signaalista. Vaimennus itse kirjoitetaan silti vientiin,
     ei tiedostoon; tässä se vain otetaan huomioon.
+
+    ``extra`` on stemikohtainen vakiovaimennus, jolla rajoittimen budjetin
+    eri syvyiset peruutukset tasataan samaan lukemaan. Se kulkee tässä
+    samassa ajossa eikä omanaan, koska tämä pass lukee ja kirjoittaa jokaisen
+    stemin joka tapauksessa.
 
     Paloittain, koska koko ohjelma muistissa olisi useita gigatavuja.
     Marginaali molemmin puolin ja siitä keskiosa talteen, jotta rajoittimen
@@ -491,9 +502,14 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                 low = max(0, position - margin)
                 high = min(frames, position + chunk + margin)
                 blocks = []
-                for handle in handles:
+                for job, handle in zip(members, handles, strict=True):
                     handle.seek(low)
-                    blocks.append(handle.read(high - low))
+                    # Jaettu peruutus samaan ajoon: tämä pass lukee ja
+                    # kirjoittaa stemin joka tapauksessa.
+                    blocks.append(
+                        handle.read(high - low)
+                        * _linear((extra or {}).get(job["key"], 0.0))
+                    )
                 heard = [
                     block * _envelope_block(job, envelopes, low, high, rate)
                     for job, block in zip(members, blocks, strict=True)
@@ -527,6 +543,11 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
     for job in members:
         os.replace(job["target"] + ".ceil.tmp.wav", job["target"])
     return worst
+
+
+def _linear(db: float) -> float:
+    """Desibelit kertoimeksi. Nolla on ykkönen eikä pyöristysvirhe."""
+    return 1.0 if not db else float(10.0 ** (float(db) / 20.0))
 
 
 def _envelope_block(job: dict, envelopes_by_speaker: dict | None, low: int,
@@ -922,6 +943,8 @@ def _run_one(
     os.replace(tmp, job["target"])
     write_stamp(job, settings)
     report("write", READ_SHARE + DEBLEED_SHARE + CHAIN_SHARE + WRITE_SHARE)
+    if result is not None:
+        result.backoffs[job["key"]] = info.backed_off_db
     return info.gain_db
 
 
@@ -1120,7 +1143,12 @@ def process(
     # laskettaisiin ohjelmasta jota Final Cut ei soita.
     ducks = (duck_envelopes(grid, settings, program_start)
              if grid is not None else {})
-    program_ceiling(jobs, result, ducks)
+    # Budjetin peruutukset tasataan ennen kattoa: eri syvyiset peruutukset
+    # siirtäisivät puhujien tasapainoa, mitattuna 1,1 dB:n erosta 5,9 dB:iin.
+    extra = programme.shared_backoff(result.backoffs)
+    if any(extra.values()):
+        _log(f"jaettu peruutus: {extra}")
+    program_ceiling(jobs, result, ducks, extra)
     return out
 
 

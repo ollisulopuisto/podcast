@@ -83,6 +83,27 @@ def at_target(block: np.ndarray, rate: int, target_lufs: float):
     return block * float(10 ** ((target_lufs - measured) / 20))
 
 
+def shared_backoff(backoffs) -> dict:
+    """Sama peruutus jokaiselle stemille: ``{avain: lisävaimennus dB}`` (≤ 0).
+
+    Budjetti lasketaan stemikohtaisesti, koska crest on puhujakohtainen —
+    mitattuna toinen mikki tarvitsi 5,9 dB ja toinen ei mitään. Sellaisenaan
+    sovellettuna se **siirtää puhujien tasapainoa**: mitattuna 1,1 dB:n ero
+    kasvoi 5,9 dB:iin, eli ohjelman kovempi puhuja jäi yhtä tiivistetyksi ja
+    hiljaisempi vain vaimeni. Se ei ole korjaus vaan uusi vika.
+
+    Sama peruste kuin ``shared_gain``illa: käyrä lasketaan summasta ja
+    kerrotaan jokaiseen stemiin **samanlaisena**. Tässä luku on vakio eikä
+    käyrä, mutta sääntö on sama — eniten tarvitseva sanelee, ja kaikki
+    seuraavat, jolloin taso siirtyy eikä tasapaino.
+    """
+    if not backoffs:
+        return {}
+    deepest = min(0.0, min(float(v) for v in backoffs.values()))
+    return {key: round(deepest - min(0.0, float(v)), 2)
+            for key, v in backoffs.items()}
+
+
 def trim_to_target(summed: np.ndarray, rate: int, target_lufs: float,
                    max_trim: float = MAX_PROGRAM_TRIM) -> float:
     """Kuinka paljon mikkien summa on tavoitteen yli, desibeleinä (≤ 0).

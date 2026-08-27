@@ -1164,6 +1164,10 @@ class ChainResult:
     gain_db: float  # normalisoinnin nosto
     measured_lufs: float | None
     lag: int  # liitännäisen aiheuttama siirtymä näytteinä
+    limiter_db: float = 0.0  # rajoittimen suurin vaimennus (≤ 0)
+    backed_off_db: float = 0.0  # budjetin tähden tasosta otettu (≤ 0)
+    reached_target: bool = True  # osuiko tavoitetasoon budjetin sisällä
+    psr_lu: float = float("nan")  # ylipakkauksen mittari, ks. peak_to_short_term
 
 
 # Vaiheiden kumulatiiviset osuudet ketjun työstä.
@@ -1221,7 +1225,7 @@ def process(
 
     frames = audio.shape[1]
     original = audio[0].copy() if speech and plugin is not None else None
-    limiter_db, reached, capped = 0.0, True, False
+    limiter_db, reached, capped, backed_off = 0.0, True, False, 0.0
 
     # 1. Ulkoinen liitännäinen ensin: siivoa ennen kuin vahvistat.
     #
@@ -1360,6 +1364,7 @@ def process(
                     audio, rate, reset=True
                 )
                 lift -= over
+                backed_off = -over
                 capped = True
         audio, limiter_db = limiter(audio, rate)
         # Rajoitin syö äänekkyyttä sen verran kuin se leikkaa, ja korjaus
@@ -1412,6 +1417,13 @@ def process(
         gain_db=round(lift, 2),
         measured_lufs=measured,
         lag=lag,
+        limiter_db=round(limiter_db, 2),
+        backed_off_db=round(backed_off, 2),
+        reached_target=reached,
+        # Ylipakkauksen mittari ajetaan vihdoin. Se on ollut kirjoitettuna
+        # siitä asti kun ketju sai rajoittimen, eikä sitä kutsunut mikään:
+        # mittari jota ei lueta on sama kuin mittaria ei olisi.
+        psr_lu=round(peak_to_short_term(audio, rate), 2) if speech else float("nan"),
     )
 
 

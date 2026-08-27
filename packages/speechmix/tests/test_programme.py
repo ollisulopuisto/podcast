@@ -105,3 +105,23 @@ def test_the_trim_measures_the_sum():
 def test_a_microphone_that_is_silent_in_the_window_is_not_an_error():
     """Toisen osan tiedosto tai hiljainen kohta: ei virhe, ei lisäystä summaan."""
     assert programme.at_target(np.zeros(RATE * 5), RATE, -14.0) is None
+
+
+def test_the_backoff_is_shared_so_the_balance_cannot_move():
+    """Eniten tarvitseva sanelee, ja kaikki seuraavat.
+
+    Budjetti lasketaan stemikohtaisesti, koska crest on puhujakohtainen.
+    Sellaisenaan sovellettuna se siirtää puhujien tasapainoa: mitattuna
+    77 minuutin jaksolla 1,1 dB:n ero kasvoi 5,9 dB:iin, eli ohjelman
+    kovempi puhuja jäi yhtä tiivistetyksi ja hiljaisempi vain vaimeni.
+    """
+    extra = programme.shared_backoff({"a": -5.9, "b": 0.0})
+    assert extra["a"] == 0.0, "syvimmin peruuttanut ei saa lisää"
+    assert extra["b"] == -5.9, "toinen ei seurannut, eli tasapaino siirtyi"
+    # Ero säilyy: -5,9 + 0,0 vs 0,0 + -5,9.
+    assert (-5.9 + extra["a"]) == (0.0 + extra["b"])
+
+
+def test_no_backoff_means_no_change():
+    assert programme.shared_backoff({}) == {}
+    assert programme.shared_backoff({"a": 0.0, "b": 0.0}) == {"a": 0.0, "b": 0.0}
