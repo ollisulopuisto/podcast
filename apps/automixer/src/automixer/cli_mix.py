@@ -16,9 +16,9 @@ import numpy as np
 import pyloudnorm as pyln
 import argparse
 import glob
-from src.automixer.domain.track import Track
-from src.automixer.domain.bus import Bus
-from src.automixer.domain.processor import (
+from automixer.domain.track import Track
+from automixer.domain.bus import Bus
+from automixer.domain.processor import (
     DuckingProcessor,
     GainProcessor,
     HighPassProcessor,

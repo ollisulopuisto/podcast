@@ -9,3 +9,6 @@ wheels/
 # Virtual environments
 .venv
 .automixer/
+
+# local test venv for non-Apple-Silicon machines
+.venv-speechmix/

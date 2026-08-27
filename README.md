@@ -1,99 +1,74 @@
-# 🎙️ Podcast Automixer
+# Podcast tooling workspace
 
-A modular, high-performance podcast assembly tool optimized for **Apple Silicon (ARM Macs)**. It uses **MLX** for GPU-accelerated signal processing and a parallelized DSP pipeline to deliver a transparent, professional sound.
+A uv workspace holding the shared speech-mixing pipeline and the applications
+that use it.
 
-## 🚀 Key Features
-
-### 1. **Phase 1: Intelligent Spotting**
-- **MLX-Accelerated Analysis**: Uses the Metal GPU to perform rapid RMS energy scans of your episode.
-- **Natural Pause Detection**: Automatically identifies silences longer than 0.5s (skipping the first 50% of the episode) to suggest perfect ad insertion points.
-
-### 2. **Phase 2: Transparent Signal Chain**
-- **Serial Compression**: Replaces a single "heavy" compressor with a two-stage chain:
-  - **Peak Tamer (Fast)**: Catches loud transients with a 30ms window.
-  - **Leveler (Slow)**: Smooths overall volume with a 300ms window for a natural, uncompressed feel.
-- **Spectral Carving (Dynamic PEQ)**: Analyzes the speech spectrum in real-time and carves out those specific frequencies from the music bus using FFT spectral subtraction.
-- **Delicate Stereo Panning**: Automatically applies a subtle (±10%) spatial spread to multiple speakers, improving clarity through psychoacoustic separation.
-- **Sidechain Auto-Ducking**: GPU-accelerated music ducking triggered by the speech bus.
-
-### 3. **Phase 3: Parallelized Production**
-- **Multi-Core Loading**: Parallel track I/O using `ThreadPoolExecutor`.
-- **Concurrent Bus Processing**: Speech and Music buses process simultaneously to saturate your CPU/GPU.
-- **LUFS Normalization**: Final render is precisely normalized to **-16.0 LUFS** (ITU-R BS.1770-4) with 24-bit stereo depth.
-
----
-
-## 🛠️ Usage
-
-### **The Unified TUI (Recommended)**
-The easiest way to use the automixer is via the interactive dashboard:
-```bash
-autotui
 ```
-*(Or `uv run python -m src.automixer.app` if running from source)*
-
-**TUI Workflow:**
-1.  **Audio Assets**: Select files from the current directory and mark them as `SPEECH` or `MUSIC`.
-2.  **Signal Chain**: 
-    - Toggle High-Pass filters (default 80Hz for speech).
-    - Adjust Peak Tamer and Leveler thresholds.
-    - Set the **Spectral Carve** strength (0.5 is recommended for transparency).
-    - Scan for ad breaks and select your preferred spot.
-3.  **Render**: Hit **"RENDER FINAL MIX"** to produce your high-fidelity stereo WAV.
-
-### **The Automixer CLI**
-The `automixer` command provides a powerful, zero-configuration way to mix your podcast. It features **Automatic Track Detection** based on filename keywords.
-
-#### **Zero-Config Mix**
-Run it in a folder containing your audio files, and it will automatically find and classify them:
-```bash
-automixer
-```
-*(Looks for all `.wav` and `.mp3` files in the current directory)*
-
-#### **Auto-Detection Logic**
-Files are classified as **MUSIC** if their filename contains any of these keywords:
-`MUSIC`, `THEME`, `TUNNARI`, `MUSA`, `MUSIIKKI`, `TUNNUS`, `JINGLE`.
-All other audio files are treated as **SPEECH**.
-
-#### **Custom CLI Control**
-Specify tracks and options explicitly:
-```bash
-automixer --speech mic1.wav mic2.wav --music theme_THEME.wav -o episode1.wav --target-lufs -14.0
+packages/speechmix/     the chain, de-bleeding, the speech grid, the programme
+                        ceiling, duck/rider envelope computation -- and the
+                        measurement tests that prove what each stage does
+apps/automixer/         session reader, render, TUI  (see apps/automixer/README.md)
 ```
 
-**Available Options:**
-- `tracks`: Positional arguments for audio files (auto-detected if `--speech`/--music` not used).
-- `--speech`: Explicitly specify speech tracks.
-- `--music`: Explicitly specify music tracks.
-- `--output`, `-o`: Output filename (default: `final_mix.wav`).
-- `--target-lufs`: Target loudness (default: `-16.0`).
-- `--ad-spot`: Ad spot time in seconds.
-- `--ad-duration`: Ad duration in seconds (default: `30.0`).
+Room is left for the sibling apps: autoraffkat (FCPXML in, FCPXML out, picture
+cuts to whoever is talking) drops in as `apps/autoraffkat/`, and the
+session-based app after it as another member of `apps/`.
 
-### **Utility Commands**
-- **Analyze Ad Spots**: `autoanalyze <file> <output_spots>`
-- **Launch TUI**: `autotui`
+## Why one repository
 
----
+The pipeline changed ten times in one day, and every change was driven by a
+measurement that invalidated the previous behaviour. With a separately
+versioned package, each of those is a release plus a bump in every consumer,
+and the consumers drift in between. That drift *is* the problem: automixer was
+behind on the de-clicker fix, on de-bleeding, on a compressor stage that never
+fired, and on the programme ceiling. A separate repository would have
+formalised the drift rather than removed it.
 
-## 🏗️ Project Architecture & Signal Flow
-For a detailed breakdown of exactly when processing happens, see **[PIPELINE.md](PIPELINE.md)**.
+Each app keeps its reader, its writer, its UI and its editing logic. The
+library keeps everything that turns samples into other samples, plus the tests
+that prove it. Split `speechmix` into a real PyPI package when the pipeline
+stops moving, or when a fourth consumer appears outside these three. Splitting
+later is cheap; un-splitting is not.
 
-- `src/automixer/domain/`: Core DSP logic (Processors, Buses, Tracks).
-- `src/automixer/analyzer.py`: MLX-based silence detection.
-- `src/automixer/cli_mix.py`: Parallelized mixing engine.
-- `src/automixer/app.py`: Textual-based TUI dashboard.
+## The two seams
 
-### **Plugin Parameters**
-You can now control your plugins directly from the TUI. In the **Plugins** tab, use the following format:
-`PluginName: param1=val1, param2=val2; NextPlugin: param=val`
-- Separate multiple parameters with commas.
-- Separate multiple plugins with semicolons.
-- The app will match the name you type against the plugin's filename.
+**Samples.** `speechmix.process_track(audio, rate, settings, gain_db,
+speech_flag, target_lufs, plugin, speech_mask)` takes an array and returns an
+array. It has never heard of FCPXML, session files, timelines or paths.
 
-## 💻 Optimization for Mac
-This project is built from the ground up to leverage:
-- **Metal Performance Shaders**: Via the `mlx` library for FFTs and convolutions.
-- **Accelerate Framework**: High-efficiency math operations on Apple Silicon.
-- **Parallel I/O**: Taking advantage of fast NVMe storage on modern Macs.
+**Decisions.** `speechmix.duck_envelopes(grid, settings, program_start)`
+returns `{speaker: [(time, dB), ...]}` -- gain *decisions*. One host writes
+them into an FCPXML as `<adjust-volume>` keyframes so the editor can still
+change them; another bakes the same curve into samples. Same computation,
+different emission:
+
+> Level decisions that come **after** the chain can be automation.
+> Level decisions that come **before** it must be baked in.
+
+The host-shaped idea the library does carry is "a track with a placement on a
+programme timeline" (`speechmix.Track` / `speechmix.Span`), because the linear
+conversion between programme time and file time is the only timeline knowledge
+the pipeline needs.
+
+## Working in it
+
+```bash
+uv sync                       # installs every workspace member
+uv run pytest                 # the measurement tests and the app's tests
+uv run automixer --help       # the app's CLI
+```
+
+On anything that is not Apple Silicon, `mlx` has no Metal backend; install
+`mlx[cpu]` to run automixer's tests. `speechmix` itself needs only numpy,
+scipy and pyloudnorm, and runs anywhere.
+
+## The findings
+
+[`packages/speechmix/FINDINGS.md`](packages/speechmix/FINDINGS.md) carries the
+measurements each stage exists for. Nearly every bug in that list was valid,
+accepted, and silently wrong: correct-looking output, a clean import, no
+exception, and a result nobody notices until they listen. So the working rule
+is: **a feature that produced nothing must say so.** Setting on and result
+empty is an error, not a silence -- and every claim about what a stage does has
+a number next to it, taken from real material, in the comment where the
+constant lives.

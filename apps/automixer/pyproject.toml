@@ -1,0 +1,34 @@
+[project]
+name = "automixer"
+version = "2026.4.5.37"
+description = "Podcast assembly: session in, rendered mix out."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "mlx>=0.30.6",
+    "numpy>=2.4.2",
+    "pedalboard>=0.9.22",
+    "psutil>=7.2.2",
+    "pyloudnorm>=0.2.0",
+    "pyyaml>=6.0.3",
+    "scipy>=1.17.1",
+    "sounddevice>=0.5.5",
+    "soundfile>=0.13.1",
+    "speechmix",
+    "textual>=8.0.0",
+]
+
+[project.scripts]
+automixer = "automixer.cli_mix:main"
+autoanalyze = "automixer.cli_analyze:main"
+autotui = "automixer.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/automixer"]
+
+[tool.uv.sources]
+speechmix = { workspace = true }
