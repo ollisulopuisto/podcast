@@ -6,10 +6,11 @@ and then applies a sequence of processors to the summed signal.
 """
 
 from typing import List
+
 import mlx.core as mx
-from .track import Track
+
 from .processor import Processor
-from concurrent.futures import ThreadPoolExecutor
+from .track import Track
 
 
 class Bus:
@@ -98,7 +99,6 @@ class Bus:
         # Now we produce a STEREO signal: [length, 2]
         sum_signal = mx.zeros((max_len, 2))
 
-        # Parallel track processing
         def proc_track(t):
             if t.signal is not None:
                 return t.process(sr)
@@ -107,11 +107,16 @@ class Bus:
         if progress_callback:
             progress_callback(
                 0.1,
-                f"Parallel processing {len(self.tracks)} tracks in {self.name} bus...",
+                f"Processing {len(self.tracks)} tracks in {self.name} bus...",
             )
 
-        with ThreadPoolExecutor() as executor:
-            processed_signals = list(executor.map(proc_track, self.tracks))
+        # Sequential, and deliberately so: `proc_track` runs mlx processors,
+        # and mlx's default stream is thread-local.  A signal processed on a
+        # worker carries that worker's stream, and the summation below -- back
+        # on this thread -- then raises `RuntimeError: There is no Stream(gpu,
+        # 3) in current thread`.  See `tests/test_mlx_threads.py`; the same
+        # trap is in `processor.py` and `cli_mix.py`.
+        processed_signals = [proc_track(t) for t in self.tracks]
 
         for i, (t, sig) in enumerate(zip(self.tracks, processed_signals)):
             if progress_callback:

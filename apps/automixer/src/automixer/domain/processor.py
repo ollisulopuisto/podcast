@@ -6,15 +6,15 @@ implementations for applying effects like gain, EQ, compression, limiting,
 ducking, and external VST/AU plugins.
 """
 
+import os
 from abc import ABC, abstractmethod
+
 import mlx.core as mx
 import numpy as np
+import pedalboard
+import pyloudnorm as pyln
 from scipy import signal as sp_signal
 from scipy.ndimage import maximum_filter1d
-import pyloudnorm as pyln
-from concurrent.futures import ThreadPoolExecutor
-import os
-import pedalboard
 
 
 class Processor(ABC):
@@ -35,7 +35,6 @@ class Processor(ABC):
         Returns:
             mx.array: The processed audio signal.
         """
-        pass
 
 
 class GainProcessor(Processor):
@@ -344,8 +343,7 @@ class SpectralCarverProcessor(Processor):
         norm_signal = mx.maximum(norm_signal, 1e-6)
         if n_ch > 1:
             return out_signal / norm_signal[:, None]
-        else:
-            return out_signal / norm_signal
+        return out_signal / norm_signal
 
 
 class MultibandCompressorProcessor(Processor):
@@ -409,20 +407,20 @@ class MultibandCompressorProcessor(Processor):
         mid_np = sp_signal.sosfilt(sos_mid, rem, axis=axis)
         high_np = rem - mid_np
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            f_low = executor.submit(
-                self._apply_auto_dynamics, mx.array(low_np.astype(np.float32)), sr
-            )
-            f_mid = executor.submit(
-                self._apply_auto_dynamics, mx.array(mid_np.astype(np.float32)), sr
-            )
-            f_high = executor.submit(
-                self._apply_auto_dynamics, mx.array(high_np.astype(np.float32)), sr
-            )
-
-            low_proc = f_low.result()
-            mid_proc = f_mid.result()
-            high_proc = f_high.result()
+        # The three bands run on this thread, not in a pool.  mlx's default
+        # stream is thread-local: an `mx.array` produced on a worker carries
+        # that worker's stream, and the first use of the result back here
+        # raises `RuntimeError: There is no Stream(gpu, 3) in current thread`
+        # -- from the summation below, nowhere near the pool that caused it.
+        # mlx 0.30.6 tolerated it and 0.32.2 does not, but the threading was
+        # wrong on both.
+        #
+        # No parallelism is lost.  mlx already queues the work on the device,
+        # so three Python threads feeding one device wait on one queue: 0.31 s
+        # with the pool against 0.29 s without, on a second of 44.1 kHz audio.
+        low_proc = self._apply_auto_dynamics(mx.array(low_np.astype(np.float32)), sr)
+        mid_proc = self._apply_auto_dynamics(mx.array(mid_np.astype(np.float32)), sr)
+        high_proc = self._apply_auto_dynamics(mx.array(high_np.astype(np.float32)), sr)
 
         return low_proc + mid_proc + high_proc
 
@@ -476,8 +474,7 @@ class ExternalPluginProcessor(Processor):
         processed_pb = self.plugin.process(sig_pb, sr)
         if len(sig_np.shape) > 1:
             return mx.array(processed_pb.T)
-        else:
-            return mx.array(processed_pb[0])
+        return mx.array(processed_pb[0])
 
 
 class DeSmackProcessor(Processor):
