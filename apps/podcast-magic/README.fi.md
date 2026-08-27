@@ -15,24 +15,51 @@ istuntotiedosto, kaksi työkalua — ja tilaa kolmannelle.
 * **Mitään ei kirjoiteta yli.** Jokainen ajo tekee uuden tiedoston lähteen
   viereen, ja jos sellainen on jo, seuraavasta tulee `… v2`.
 
-## Asennus
+## Pikakäynnistys
+
+macOS ja [uv](https://docs.astral.sh/uv/). Tyhjästä kloonista ikkunaan:
 
 ```
-uv sync --extra mlx        # Apple Silicon — se nopea
-uv sync --extra faster     # Intel-Mac tai toinen mielipide
-brew install ffmpeg        # äänen purku; käännetyssä sovelluksessa mukana
-```
-
-## Käyttö
-
-```
-uv run podcast-magic                    # etsii uusimman istunnon täältä
-uv run podcast-magic "jakso 8.nhsx"
+git clone https://github.com/ollisulopuisto/podcast
+cd podcast
+brew install ffmpeg
+uv sync --all-packages --extra mlx
 uv run podcast-magic ~/Podcast/jakso8/
 ```
 
-Selain avautuu osoitteeseen `http://127.0.0.1:8741/`. Sovellukseksi
-käännettynä ohjelma avaa oman ikkunansa.
+Selain avautuu osoitteeseen `http://127.0.0.1:8741/`. `--gui` avaa selaimen
+sijaan natiivin ikkunan.
+
+Istunnon voi antaa kolmella tavalla:
+
+```
+uv run podcast-magic                    # uusin .nhsx tästä kansiosta
+uv run podcast-magic "jakso 8.nhsx"     # tämä
+uv run podcast-magic ~/Podcast/jakso8/  # uusin .nhsx tuosta kansiosta
+```
+
+### Kaksi asiaa `uv sync`istä
+
+**Aja se työtilan juuressa ja anna `--all-packages`.** Tämä sovellus on yksi
+työtilan jäsen autoraffkatin, automixerin ja jaetun `packages/speechmix`in
+rinnalla, ja siitä seuraa kaksi asiaa jotka on parempi tietää etukäteen kuin
+ihmetellä jälkikäteen:
+
+* `uv sync --extra mlx` juuressa ei asenna **yhtään moottoria** — lisä kuuluu
+  jäsenelle eikä työtilalle, joten sillä ei ole mitään mihin osua eikä siitä
+  sanota mitään.
+* `uv sync` **`apps/podcast-magic`in sisällä** synkronoi vain sen jäsenen ja
+  **poistaa muiden jäsenten** riippuvuudet yhteisestä ympäristöstä.
+
+`uv run podcast-magic` toimii mistä tahansa puun kohdasta; vain `uv sync`
+välittää siitä missä seisot.
+
+**Moottori valitaan lisällä.** `--extra mlx` Apple Siliconilla, `--extra
+faster` Intel-Macilla. Molemmat yhtä aikaa käy myös — `--extra mlx --extra
+faster` on se mitä CI asentaa — ja silloin ikkunan moottorivalitsimessa on
+mistä valita.
+
+## Käyttö
 
 Työjärjestys:
 
@@ -80,7 +107,7 @@ ja mihin kohtaan aikajanaa se on sijoitettu (`Start`), joten sana osuu
 kohtaan `Start + (s - Offset)`. Muunnos tehdään alueittain, koska sama
 tiedosto voi esiintyä aikajanalla useaan kertaan.
 
-Kolme säädintä:
+Neljä säädintä:
 
 * **Häntä** — kuinka paljon puhetta jätetään sanan molemmin puolin. Sanan
   aikaleima on sanan reuna, ja tarkalleen reunasta katkaistu puhe kuulostaa
@@ -90,10 +117,43 @@ Kolme säädintä:
   jakson ajan.
 * **Tason tarkistus** — kun mikit vuotavat, Whisper kuulee naapurin puheen
   myös tältä raidalta ja kirjaa sen sinun sanoiksesi. Taso erottaa oman
-  puheen vuodosta. Teksti ei erota.
+  puheen vuodosta. Teksti ei erota — litteroinneissa ei ole edes samaa
+  merkkijonoa, jota vertailla.
+* **Erotus kovimpaan** — kummalle raidalle sana kuuluu. Ks. alla.
 
 Tason tarkistus purkaa jokaisen raidan levyltä, joten se ajetaan työssä eikä
 säätimien alla olevassa ennakossa. Ennakko sanoo sen itse.
+
+### Yksi huone, ja jokainen mikki kuulee jokaisen
+
+Kynnys yksinään ei tähän pysty. Hiljaisessa studiossa hyvillä mikeillä vuoto
+ei ole hiljaista — se on *hiljaisempaa*, ja vain suhteessa siihen mikkiin
+jonka edessä puhuja istuu. Oikealla jaksolla mitattuna:
+
+* molemmat mikit ylittävät kynnyksen **41 % ajasta**,
+* mutta vuoto on mediaanissa **12,8 dB** hiljempaa kuin sama puhe omalla
+  mikillä.
+
+Erottava tekijä ei siis ole taso vaan **raitojen välinen ero samalla
+hetkellä**. Absoluuttinen taso liikkuu jokaisen mikin esivahvistuksen
+mukana; raitojen välinen ero ei liiku. Sana jää sille raidalle jolla se on
+kovimmillaan, ja niille jotka ovat **erotus kovimpaan** ‑kaistan sisällä
+siitä.
+
+Kaista eikä «kovin vie kaiken», ja se on tarkoituksellista. 6 dB jättää
+mitatusta 12,8 dB:n erosta noin 6,8 dB pelivaraa, joten aito päällekkäinen
+puhe — keskeytykset, naurut, se mikä tekee keskustelusta keskustelun — jää
+läpi, mutta vuoto ei. Kova sääntö «vain yksi kerrallaan» leikkaisi juuri
+ne. Nolla ottaa vertailun pois; se on pois päältä eikä nollan desibelin
+kaista.
+
+Sanaa jonka tasoa ei jollain raidalla saatu mitattua ei pudoteta sen raidan
+takia: tiedon puute ei ole päätös vaientaa. Sama sääntö kuin puuttuvalla
+tiedostolla. Yhdellä raidalla ei ole mihin verrata, joten vertailua ei ajeta
+ja se sanotaan lokissa.
+
+Sama päätös samasta mittauksesta kuin autoraffkatin ``duck_dominance_db``,
+jossa se ohjaa vaimennusta eikä vaientamista.
 
 ## Kun käsikirjoitusnäkymän kohdistin jää jumiin
 

@@ -36,8 +36,9 @@ def resolve(key: str) -> Backend:
             if backend.info().available:
                 return backend
         raise RuntimeError(
-            "Yhtään Whisper-moottoria ei ole asennettu. "
-            "Apple Silicon: uv sync --extra mlx. Muut: uv sync --extra faster."
+            "Yhtään Whisper-moottoria ei ole asennettu. Aja työtilan "
+            "juuressa — Apple Silicon: uv sync --all-packages --extra mlx. "
+            "Muut: uv sync --all-packages --extra faster."
         )
     for backend in BACKENDS:
         if backend.key == key:
