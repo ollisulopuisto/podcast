@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [autoraffkat-v2026.8.28.1] - 2026-08-28
+
+Note the tag: **`autoraffkat-v2026.8.28.1`**, not `v2026.8.28.1`. Three apps
+share one tag space in the `podcast` monorepo, so the release workflow keys off
+`autoraffkat-v*`; a bare `v*` tag matches nothing, builds nothing, and looks
+perfectly fine while doing it. Earlier headings in this file say `v26.08.27.113`
+and match no tag that was ever pushed — from here they carry the real tag name.
+
+### Fixed
+- **The Version Was in Three Places and All Three Disagreed**: `pyproject.toml` said 2026.8.27.113, `__init__.py` said 2026.8.26.95, and `autoraffkat.spec`'s `CFBundleVersion` said 2026.8.22.49.
+  - `__init__.py`'s value is written into **every export** as `fi.autoraffkat.version`, so every FCPXML produced since 2026.8.26.95 has claimed to be made by a version that did not make it. "Which version wrote this" is the first question when an export behaves oddly, and the answer has been wrong all along.
+  - `CFBundleVersion` is what macOS reads to decide whether to offer an update; it was 64 releases behind.
+  - podcast-magic has had `test_version.py` guarding exactly this. autoraffkat did not, which is why it drifted. It does now, and it also asserts the CalVer shape.
+- **The Grid Step Existed Twice Inside `speechmix`**: `grid.HOP_SEC = 0.020` and `masks.HOP = 0.02` were two independent declarations of the same number. Equal today, and nothing would say so if they were not equal tomorrow — the envelope would be computed on one step and the decision read on another, moving the cuts further the longer the timeline runs. That is the drift this package exists to end, reproduced inside the package. `grid` owns it; `masks.HOP` is now the same object, and the test says `is`, not `==`.
+
+### Changed
+- **`rms.py` and `binaries.py` Moved Into `speechmix`**: the last two autoraffkat-specific pieces of the chain — the ffmpeg + RMS envelope decode, and locating ffmpeg. Named `rms`, not `envelope`, because `envelopes.py` already exists and means something else entirely; two module names one letter apart with nothing in common is a trap.
+  - The ffmpeg search got **no host hook**. autoraffkat's and podcast-magic's copies looked in the same three places in the same order — both are PyInstaller apps — so it was one piece of code in two copies, not two cases, and automixer has no ffmpeg at all.
+  - The envelope cache's **directory** is now a parameter defaulting to `None`, meaning compute and store nothing. A library that picks a path in the user's home writes uninvited. The path itself is unchanged, so warm caches survive.
+- **`closed_ranges` and `speech_blocks` Take a `Track`**: they had moved into `speechmix.envelopes` but still read `item.placements` and `item.asset_start` directly, so the code had crossed the seam without the seam being cut — and `timeline.Track` was a protocol nothing imported. The conversion is now `mix.track_of`, the one place in the app that knows both models, and `Fraction` becomes float there and only there.
+  - Measured before touching it: **the sign of that mapping could be inverted and all 295 autoraffkat tests passed**; dropping `asset_start` or using only the first placement passed all 295 *and* all 94 package tests. The fixtures have identity geometry — one placement, zero `asset_start` — and zero is the same either way round.
+  - `test_shared_pipeline` measured this with `is`, which was right while the app merely re-exported the function. It now checks that the app's version returns exactly what the library's does, and that `asset_start` appears in `mix.py`'s AST only inside `track_of` — read from the source on purpose, because a copy of that formula does not fail when you run it. It works, and produces a file of the right length in the wrong place.
+
+### Added
+- **`duck_gain` in the Library**: autoraffkat's `_envelope_block`, the second emission of `duck_envelopes`. The same curve goes either to Final Cut keyframes or into samples, and the two must agree or the export and the programme ceiling are not hearing the same thing.
+- **The Ducking Curve Is Timeline Time, and Tested As Such**: `program_start` could be dropped entirely and every test passed. It shifts every duck by the grid's start, which is zero in the fixtures and is not zero in a real episode.
+- **A Message the Catalogue Lacks Falls Back to the Library's English**: `i18n.t` returns an unknown key unchanged, which is right for this app's own messages. It is wrong for `speechmix`'s, which moves weekly and gains keys before the catalogue gains rows; the user would have read `envelope.source_missing` off the screen.
+
 ## [v26.08.27.113] - 2026-08-27
 
 ### Fixed
