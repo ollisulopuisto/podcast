@@ -8,10 +8,9 @@ kirjoitetaan polttaa saman käyrän näytteisiin. Sama laskenta, eri emissio.
     Tasopäätökset jotka tulevat ketjun **jälkeen** voivat olla automaatiota.
     Tasopäätökset jotka tulevat sitä **ennen** on poltettava sisään.
 
-``closed_ranges`` ja ``speech_blocks`` muuntavat ruudukon aikajanalta
-tiedostoaikaan. Ne tarvitsevat esiintymät — mikä tahansa olio jolla on
-``placements`` ja ``asset_start`` kelpaa — koska muunnos on esiintymän sisällä
-lineaarinen, ja se on ainoa aikajanatieto jota ketju tarvitsee.
+Ruudukon muunnos aikajanalta tiedostoaikaan on ``session.py``:ssä, ja
+``envelope_gain`` on sen ainoa käyttäjä täällä: käyrä on aikajanan aikaa,
+tiedosto omaansa, ja väli niiden välillä on yksi ``Span``.
 
 Siirretty autoraffkatin ``audio/mix.py``:stä, ei kopioitu.
 """
@@ -84,93 +83,25 @@ def envelope_at(points: list, when: float) -> float:
         return float(v1)
     return float(v0 + (v1 - v0) * (when - t0) / (t1 - t0))
 
-def closed_ranges(
-    item, closed, program_start: float, rate: int
-) -> list[tuple[int, int]]:
-    """Missä tiedoston kohdissa mikki on kiinni, näyteväleinä.
-
-    Ruudukko on aikajanan aikaa, tiedosto omaansa. Muunnos tehdään
-    esiintymittäin, koska kunkin palan sisällä kuvaus on lineaarinen.
-    Ruudukon ulkopuolelle jäävää osaa ei vaimenneta: siitä ei ole tietoa, eikä
-    vienti käytä sitä.
-    """
-    out: list[tuple[int, int]] = []
-    for start, end, value in runs(closed.astype(np.int8)):
-        if not value:
-            continue
-        low = program_start + start * HOP
-        high = program_start + end * HOP
-        for placement in item.placements:
-            first = max(low, float(placement.offset))
-            last = min(high, float(placement.end))
-            if last <= first:
-                continue
-            # tiedostoaika = klipin start - assetin start + (aikajana - offset)
-            base = float(placement.start - item.asset_start - placement.offset)
-            out.append(
-                (int(round((base + first) * rate)), int(round((base + last) * rate)))
-            )
-    return out
-
-def speech_blocks(item, mask, program_start: float, rate: int,
-                  block: int, count: int) -> np.ndarray:
-    """Puhujan oma puhe lohkoittain tässä tiedostossa.
-
-    Ruudukko on aikajanan aikaa, tiedosto omaansa; muunnos on
-    esiintymittäin lineaarinen, sama kaava kuin ``closed_ranges``issa.
-    Tasonkuljettaja tarvitsee juuri tämän eikä signaalista pääteltyä
-    puhetta — ks. ``chain.rider_gain``.
-    """
-    out = np.zeros(count, dtype=bool)
-    mask = np.asarray(mask, dtype=bool)
-    for placement in item.placements:
-        base = float(placement.start - item.asset_start - placement.offset)
-        # Lohkon keskikohta tiedostoajassa -> aikajana -> ruudukon solu.
-        times = (np.arange(count) + 0.5) * block / rate
-        timeline = times - base
-        inside = ((timeline >= float(placement.offset))
-                  & (timeline < float(placement.end)))
-        cells = ((timeline - program_start) / HOP).astype(int)
-        ok = inside & (cells >= 0) & (cells < mask.shape[0])
-        out[ok] |= mask[cells[ok]]
-    return out
-
-
-def geometry(item, frames: int) -> tuple:
-    """Tiedoston sijainti aikajanalla, vertailukelpoisena avaimena.
-
-    Summa lasketaan tiedostoista näyte näytteeltä, mikä on oikein vain jos
-    stemit ovat samassa kohdassa aikajanaa ja yhtä pitkiä. Tämä tekee siitä
-    tarkistettavan asian eikä oletuksen.
-    """
-    return (
-        frames,
-        tuple(
-            (
-                round(float(p.offset), 4),
-                round(float(p.end), 4),
-                round(float(p.start - item.asset_start - p.offset), 4),
-            )
-            for p in item.placements
-        ),
-    )
-
-
-def envelope_gain(item, points, low: int, high: int, rate: int) -> np.ndarray:
+def envelope_gain(track, points, low: int, high: int, rate: int) -> np.ndarray:
     """Vaimennuksen kerroin tiedoston näyteväliltä ``[low, high)``.
 
-    Käyrä on aikajanan aikaa, tiedosto omaansa. Muunnos on esiintymittäin
-    lineaarinen, sama kaava kuin ``closed_ranges``issa. Ykkösiä silloin kun
-    puhujalle ei ole käyrää: silloin summaan menee tiedosto sellaisenaan.
+    Tämä on se puoli saumaa jolla vaimennus **poltetaan sisään**: isäntä
+    jolla on automaatio kirjoittaa ``duck_envelopes``in pisteet sellaisenaan,
+    isäntä joka vie valmiin miksauksen kertoo tällä. Sama käyrä, eri emissio.
+
+    Käyrä on aikajanan aikaa, tiedosto omaansa. Muunnos on jakson sisällä
+    lineaarinen, sama kaava kuin ``session.file_ranges``issa. Ykkösiä silloin
+    kun puhujalle ei ole käyrää: silloin summaan menee tiedosto sellaisenaan.
     """
-    if not points or item is None:
+    if not points or track is None:
         return np.ones(1, dtype=np.float32)
     gain = np.ones(high - low, dtype=np.float32)
-    for placement in item.placements:
-        base = float(placement.start - item.asset_start - placement.offset)
+    for span in track.spans:
+        base = float(span.base)
         # Tiedostoaika = base + aikajana, joten aikajana = tiedostoaika - base.
-        first = max(low / rate, float(placement.offset) + base)
-        last = min(high / rate, float(placement.end) + base)
+        first = max(low / rate, float(span.start) + base)
+        last = min(high / rate, float(span.end) + base)
         if last <= first:
             continue
         i0, i1 = int(round(first * rate)) - low, int(round(last * rate)) - low

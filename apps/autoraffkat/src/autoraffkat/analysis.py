@@ -13,58 +13,33 @@ from fractions import Fraction
 
 import numpy as np
 
-from .audio.envelope import FLOOR_DB, EnvelopeError, envelope_for
+from speechmix import detect
+
+from .audio.envelope import EnvelopeError, envelope_for
 from .decide import Grid, SpeakerLanes
 from .fcpxml.read import Timeline
 from .i18n import t
 from .model import HOP, ROLE_CLOSE, ROLE_MIC, ROLE_WIDE, MediaItem, TrackConfig
 
-SMOOTH_SECONDS = 0.10
-NOISE_PERCENTILE = 20.0
+# Kohdistus, tasoitus, pohjakohina ja kynnyssääntö ovat kirjastossa: sama
+# ruudukko rakennetaan automixerissa wav-tiedostoista, ja kaksi kopiota
+# siitä tarkoittaisi että «kuka on äänessä» vastataan eri tavalla eri
+# sovelluksessa. Tänne jää se mikä on FCPXML:ää: roolit, ohjelman rajat ja
+# ``MediaItem.as_track``.
+FLOOR_DB = detect.FLOOR_DB
+SMOOTH_SECONDS = detect.SMOOTH_SECONDS
+NOISE_PERCENTILE = detect.NOISE_PERCENTILE
 
 
 class AnalysisError(Exception):
     """Aineisto ei riitä päätökseen."""
 
 
-def _smooth(db: np.ndarray, seconds: float) -> np.ndarray:
-    """Liukuva keskiarvo. Tasoittaa tavuvälit, joita ei haluta leikkauksiksi."""
-    k = max(1, int(round(seconds / HOP)))
-    if k <= 1 or db.size < k:
-        return db
-    kernel = np.ones(k, dtype=np.float32) / k
-    return np.convolve(db, kernel, mode="same").astype(np.float32)
-
-
 def align(
     item: MediaItem, envelope: np.ndarray, program_start: Fraction, n: int
 ) -> tuple[np.ndarray, np.ndarray]:
     """Verhokäyrä aikajanan ruudukolle. Palauttaa (dB, onko mediaa)."""
-    out = np.full(n, FLOOR_DB, dtype=np.float32)
-    valid = np.zeros(n, dtype=bool)
-    if n <= 0 or envelope.size == 0:
-        return out, valid
-    start_f = float(program_start)
-    program_end = program_start + Fraction(n) * Fraction(HOP).limit_denominator(1000)
-
-    for p in item.placements:
-        lo = max(p.offset, program_start)
-        hi = min(p.end, program_end)
-        if hi <= lo:
-            continue
-        i0 = max(0, int(np.ceil((float(lo) - start_f) / HOP)))
-        i1 = min(n, int(np.floor((float(hi) - start_f) / HOP)))
-        if i1 <= i0:
-            continue
-        idx = np.arange(i0, i1)
-        # tiedostoaika = klipin start - assetin start + (aikajana - klipin offset)
-        base = float(p.start - item.asset_start - p.offset)
-        file_t = base + start_f + idx * HOP
-        e = np.rint(file_t / HOP).astype(np.int64)
-        ok = (e >= 0) & (e < envelope.size)
-        out[idx[ok]] = envelope[e[ok]]
-        valid[idx[ok]] = True
-    return out, valid
+    return detect.align(item.as_track(), envelope, program_start, n)
 
 
 def availability(
@@ -121,16 +96,10 @@ class Analysis:
                     FLOOR_DB,
                 )
             else:
-                db, valid = align(item, env, program_start, n)
-                db = _smooth(db, SMOOTH_SECONDS)
-                # Pohjakohina riippuu vain verhokäyrästä, ei säätimistä, joten
-                # se lasketaan kerran tähän välimuistiin.
-                floor = (
-                    float(np.percentile(db[valid], NOISE_PERCENTILE))
-                    if valid.any()
-                    else FLOOR_DB
-                )
-                hit = (db, valid, floor)
+                # Kohdistus, tasoitus ja pohjakohina yhtenä kutsuna; säätimet
+                # luetaan vasta ``detect.lane``ssa, joten tämä kelpaa niiden
+                # muuttuessakin ja välimuisti on siksi tässä kohtaa.
+                hit = detect.curve(item.as_track(), env, program_start, n)
             self._aligned[cache_key] = hit
         return hit
 
@@ -252,21 +221,19 @@ def build_grid(
         mic_keys = roles.mics.get(name, [])
         if not mic_keys:
             continue
-        level = np.full(n, FLOOR_DB, dtype=np.float32)
-        on = np.zeros(n, dtype=bool)
+        parts = []
         for key in mic_keys:
             cfg = tracks.get(key, TrackConfig())
             # Raidan osat ovat eri tiedostoja mutta sama mikki: sama säädin,
             # sama puhuja, eri kohta aikajanaa.
             for item in timeline.track_media(key):
-                db, valid, floor = analysis.aligned(item, program_start, n)
-                if not valid.any():
-                    continue
-                # Herkkyys on kynnys pohjakohinan yli; vahvistus siirtää sekä
-                # signaalin että pohjan, joten se ei vaikuta kynnykseen — vain
-                # mikkien keskinäiseen vertailuun päällekkäispuheessa.
-                on |= valid & (db > floor + cfg.sensitivity_db)
-                level = np.maximum(level, db + cfg.gain_db)
+                parts.append(
+                    (*analysis.aligned(item, program_start, n),
+                     cfg.sensitivity_db, cfg.gain_db)
+                )
+        # Kynnyssääntö on kirjastossa — herkkyys pohjan yli, vahvistus vain
+        # mikkien keskinäiseen vertailuun.
+        heard = detect.lane(name, parts, n)
 
         close_key = roles.closes.get(name)
         avail = None
@@ -276,7 +243,8 @@ def build_grid(
                 avail = availability(items, program_start, n)
         lanes.append(
             SpeakerLanes(
-                name=name, level=level, on=on, close_key=close_key, available=avail
+                name=name, level=heard.level, on=heard.on,
+                close_key=close_key, available=avail,
             )
         )
 

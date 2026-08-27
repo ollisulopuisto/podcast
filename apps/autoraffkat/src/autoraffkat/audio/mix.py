@@ -34,14 +34,12 @@ from pathlib import Path
 
 import numpy as np
 
-from speechmix import chain, programme
+from speechmix import chain, programme, session
 from speechmix import envelopes as envelopes_lib
 from speechmix.chain import ChainError
 from speechmix.envelopes import (  # noqa: F401  julkinen rajapinta säilyy
-    closed_ranges,
     duck_envelopes,
     envelope_at,
-    speech_blocks,
 )
 from speechmix.freshness import FINGERPRINT_FIELDS, FINGERPRINT_VERSION
 from speechmix.masks import (
@@ -373,7 +371,7 @@ def program_ceiling(jobs: list[dict], result: "MixResult",
         job
         for job in jobs
         if job.get("speech")
-        and job.get("item") is not None
+        and job.get("track") is not None
         and os.path.exists(job.get("target", ""))
     ]
     if len(mics) < 2:
@@ -385,7 +383,7 @@ def program_ceiling(jobs: list[dict], result: "MixResult",
         frames = frame_count(job["target"])
         if frames is None:
             continue
-        groups.setdefault(envelopes_lib.geometry(job["item"], frames), []).append(job)
+        groups.setdefault(session.geometry(job["track"], frames), []).append(job)
 
     for key, members in groups.items():
         if len(members) < 2:
@@ -482,10 +480,10 @@ def _envelope_block(job: dict, envelopes: dict | None, low: int, high: int,
                     rate: int) -> np.ndarray:
     """Vaimennuksen kerroin tiedoston näyteväliltä, työn muodosta purettuna."""
     points = (envelopes or {}).get(job.get("speaker"))
-    item = job.get("item")
-    if not points or item is None:
+    track = job.get("track")
+    if not points or track is None:
         return np.ones(1, dtype=np.float32)
-    return envelopes_lib.envelope_gain(item, points, low, high, rate)
+    return envelopes_lib.envelope_gain(track, points, low, high, rate)
 
 
 def _drop(path: str) -> None:
@@ -508,7 +506,11 @@ def _jobs(timeline, roles, settings: AudioSettings) -> list[dict]:
                             "key": item.key,
                             "name": item.name,
                             "speaker": speaker,
-                            "item": item,
+                            # Kirjastolle mennään saumana, ei MediaItemina:
+                            # ``as_track`` on koko FCPXML-kohtainen osa, ja
+                            # sen jälkeen aikajanan käsittely on samaa koodia
+                            # kuin automixerilla.
+                            "track": item.as_track(speaker),
                             "source": item.path,
                             "target": sibling(item.path, MIX_SUFFIX),
                             "target_lufs": settings.target_lufs,
@@ -535,6 +537,7 @@ def _jobs(timeline, roles, settings: AudioSettings) -> list[dict]:
                     {
                         "key": item.key,
                         "name": item.name,
+                        "track": item.as_track(),
                         "source": item.path,
                         "target": sibling(item.path, ROOM_SUFFIX),
                         "target_lufs": settings.target_lufs + settings.room_db,
@@ -560,11 +563,6 @@ def _jobs(timeline, roles, settings: AudioSettings) -> list[dict]:
 # olisi kyse mittausvirheestä, ei summasta.
 
 
-def _item_span(item) -> float:
-    """Median kokonaiskesto aikajanalla, ikkunan ankkurin valintaan."""
-    return sum(float(p.duration) for p in item.placements)
-
-
 def program_trim(jobs: list[dict], settings: AudioSettings) -> float:
     """Kuinka paljon mikkien summa on tavoitteen yli, desibeleinä (≤ 0).
 
@@ -581,7 +579,7 @@ def program_trim(jobs: list[dict], settings: AudioSettings) -> float:
     Final Cutissa joka tapauksessa.
 
     Ikkuna on aikajanan aikaa, koska summa on aikajanalla. Tiedostoaika
-    lasketaan esiintymistä samalla kaavalla kuin ``closed_ranges``:issa.
+    lasketaan jaksoista samalla kaavalla kuin ``session.file_ranges``:issa.
     """
     from pedalboard.io import AudioFile
 
@@ -589,7 +587,7 @@ def program_trim(jobs: list[dict], settings: AudioSettings) -> float:
         job
         for job in jobs
         if job.get("speech")
-        and job.get("item") is not None
+        and job.get("track") is not None
         and os.path.exists(job["source"])
         and os.path.splitext(job["source"])[1].lower() in READABLE
     ]
@@ -601,7 +599,7 @@ def program_trim(jobs: list[dict], settings: AudioSettings) -> float:
     # keskelle: monikamerassa osat ovat peräkkäin, ja aikajanan keskikohta
     # osuu yhteen osaan — toisen osan tiedostot mittautuisivat hiljaisiksi
     # ja koko mittaus kaatuisi siihen. Saman osan mikit ovat aina päällekkäin.
-    anchor = max((job["item"] for job in mics), key=_item_span)
+    anchor = max((job["track"] for job in mics), key=lambda t: float(t.span_total))
     low, high = float(anchor.timeline_start), float(anchor.timeline_end)
     span = min(programme.PROGRAM_WINDOW, high - low)
     if span <= 1.0:
@@ -613,7 +611,7 @@ def program_trim(jobs: list[dict], settings: AudioSettings) -> float:
     voices = 0
     total: np.ndarray | None = None
     for job in mics:
-        item = job["item"]
+        track = job["track"]
         with AudioFile(job["source"]) as handle:
             if rate and handle.samplerate != rate:
                 # Eri näytetaajuudet vaatisivat uudelleennäytteistyksen.
@@ -624,12 +622,12 @@ def program_trim(jobs: list[dict], settings: AudioSettings) -> float:
             if total is None:
                 total = np.zeros(int(span * rate), dtype=np.float32)
             here = np.zeros_like(total)
-            for placement in item.placements:
-                first = max(window[0], float(placement.offset))
-                last = min(window[1], float(placement.end))
+            for span in track.spans:
+                first = max(window[0], float(span.start))
+                last = min(window[1], float(span.end))
                 if last <= first:
                     continue
-                base = float(placement.start - item.asset_start - placement.offset)
+                base = float(span.base)
                 start = int(round((base + first) * rate))
                 frames = int(round((last - first) * rate))
                 if start < 0 or frames <= 0 or start >= handle.frames:
@@ -662,26 +660,6 @@ CHAIN_SHARE = 0.81
 WRITE_SHARE = 0.07
 
 
-def overlaps(one, other) -> bool:
-    """Ovatko kaksi mediaa yhtään hetkeä yhtä aikaa aikajanalla.
-
-    Monikamerassa osat ovat peräkkäin, joten toisen osan mikki ei voi
-    vuotaa tämän osan tiedostoon. Ilman tätä se tarjottiin silti
-    vuotolähteeksi, ``_aligned`` palautti pelkkää nollaa, ja lokiin tuli
-    «vuotopolkua ei saatu ratkaistua» pariutumisesta joka ei ollut koskaan
-    mahdollinen. Vienti ei mennyt siitä rikki — oikea kumppani käsiteltiin
-    erikseen — mutta sama tiedosto näytti lokissa sekä onnistuvan että
-    epäonnistuvan, ja se peitti alleen oikean vian pitkissä osissa.
-    Virheilmoitus jota ei voi uskoa on huonompi kuin ei ilmoitusta.
-    """
-    for mine in one.placements:
-        for theirs in other.placements:
-            if (float(mine.offset) < float(theirs.end)
-                    and float(theirs.offset) < float(mine.end)):
-                return True
-    return False
-
-
 def _debleed(job, audio, rate, program_start, solos, partners, result):
     """Vähentää muiden mikkien vuodon ``audio``:sta paikan päällä.
 
@@ -701,13 +679,17 @@ def _debleed(job, audio, rate, program_start, solos, partners, result):
     if mine is None:
         return
     frames = audio.shape[1]
-    solo_target = _mask_samples(job["item"], mine, program_start, rate, frames)
+    solo_target = session.mask_samples(
+        job["track"], mine, program_start, rate, frames
+    )
     target = audio[0].astype(np.float64)
     for partner in partners:
         theirs = (solos or {}).get(partner.get("speaker"))
         if theirs is None:
             continue
-        if partner.get("item") is None or not overlaps(job["item"], partner["item"]):
+        if partner.get("track") is None or not session.overlaps(
+            job["track"], partner["track"]
+        ):
             continue          # eri osa: ei yhtään yhteistä hetkeä
         try:
             with AudioFile(ensure_readable(partner["source"])) as handle:
@@ -718,10 +700,12 @@ def _debleed(job, audio, rate, program_start, solos, partners, result):
         except (OSError, RuntimeError) as exc:
             _log(f"    vuoto {partner['speaker']}: {exc}")
             continue
-        source = _aligned(
-            job["item"], partner["item"], np.asarray(other).mean(axis=0), rate, frames
+        source = session.aligned(
+            job["track"], partner["track"], np.asarray(other).mean(axis=0), rate, frames
         )
-        solo_source = _mask_samples(partner["item"], theirs, program_start, rate, frames)
+        solo_source = session.mask_samples(
+            partner["track"], theirs, program_start, rate, frames
+        )
         target, info = db.remove(target, source, rate, solo_source, solo_target)
         if info["reason"]:
             note = t(f"audio.debleed_{info['reason']}", name=partner["speaker"])
@@ -793,10 +777,10 @@ def _run_one(
     # vuotoa, ja kuljettaja nostaisi sitä — ks. ``chain.rider_gain``.
     own = None
     mine = (speaking or {}).get(job.get("speaker"))
-    if mine is not None and job.get("item") is not None and job.get("speech"):
+    if mine is not None and job.get("track") is not None and job.get("speech"):
         block = max(1, int(chain.RIDER_BLOCK_S * rate))
-        own = speech_blocks(job["item"], mine, program_start, rate, block,
-                            audio.shape[1] // block)
+        own = session.mask_blocks(job["track"], mine, program_start, rate, block,
+                                  audio.shape[1] // block)
 
     audio, info = chain.process(
         audio,
@@ -898,51 +882,6 @@ def adopt(timeline, roles, settings: AudioSettings) -> MixResult:
     return result
 
 
-
-
-def _mask_samples(item, mask, program_start: float, rate: int, frames: int):
-    """Ruudukon maski tiedoston näytteiksi. Sama muunnos kuin ``closed_ranges``."""
-    out = np.zeros(frames, dtype=bool)
-    for first, last in closed_ranges(item, mask, program_start, rate):
-        low, high = max(0, first), min(frames, last)
-        if high > low:
-            out[low:high] = True
-    return out
-
-
-def _aligned(target_item, source_item, source_audio, rate: int, frames: int):
-    """Lähdemikin ääni kohdetiedoston näytepaikoille.
-
-    Tiedostot ovat eri pituisia ja alkavat aikajanalla eri kohdista, joten
-    vuotoa ei voi vähentää ennen kuin ne ovat samassa aikapohjassa. Kuvaus
-    on esiintymän sisällä lineaarinen ja näytetaajuus sama, joten se on
-    kokonaisluvun siirto — ei uudelleennäytteistystä, joka siirtäisi
-    vaihetta ja pilaisi juuri sen mitä tässä yritetään mitata.
-    """
-    out = np.zeros(frames, dtype=np.float64)
-    source = np.asarray(source_audio, dtype=np.float64).reshape(-1)
-    for pt in target_item.placements:
-        base_t = float(pt.start - target_item.asset_start - pt.offset)
-        for ps in source_item.placements:
-            base_s = float(ps.start - source_item.asset_start - ps.offset)
-            low = max(float(pt.offset), float(ps.offset))
-            high = min(float(pt.end), float(ps.end))
-            if high <= low:
-                continue
-            t0 = int(round((base_t + low) * rate))
-            t1 = int(round((base_t + high) * rate))
-            shift = int(round((base_s - base_t) * rate))
-            t0, t1 = max(0, t0), min(frames, t1)
-            s0, s1 = t0 + shift, t1 + shift
-            if s1 <= 0 or s0 >= source.size or t1 <= t0:
-                continue
-            cut = max(0, -s0)
-            s0, t0 = s0 + cut, t0 + cut
-            cut = max(0, s1 - source.size)
-            s1, t1 = s1 - cut, t1 - cut
-            if t1 > t0:
-                out[t0:t1] = source[s0:s1]
-    return out
 
 
 def process(

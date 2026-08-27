@@ -17,13 +17,14 @@ from pathlib import Path
 
 import numpy as np
 
+from speechmix.detect import FLOOR_DB, rms_db  # noqa: F401  lattia on kirjaston
+
 from ..model import HOP
 from .binaries import get_binary_path
 from .binaries import require_ffmpeg as _check_binaries
 
 SAMPLE_RATE = 8000  # riittää puheen energialle, neljäsosa purkuajasta
 CACHE_VERSION = 2
-FLOOR_DB = -120.0
 
 
 class EnvelopeError(Exception):
@@ -121,11 +122,12 @@ def _decode_rms(path: str, progress=None) -> np.ndarray:
             leftover = data[usable:]
             if usable == 0:
                 continue
-            samples = np.frombuffer(data[:usable], dtype="<f4")
-            frames = samples.reshape(-1, win)
-            mean_sq = np.mean(np.square(frames, dtype=np.float64), axis=1)
-            blocks.append(mean_sq.astype(np.float32))
-            frames_done += frames.shape[0]
+            # Desibelit kirjaston kaavalla. Pala on ikkunan monikerta, joten
+            # paloittain laskettu käyrä on sama luku luvulta kuin kerralla
+            # laskettu — vain kertyminen on eri järjestyksessä.
+            block = rms_db(np.frombuffer(data[:usable], dtype="<f4"), SAMPLE_RATE)
+            blocks.append(block)
+            frames_done += block.size
             if progress is not None:
                 progress(frames_done * HOP)
     finally:
@@ -144,9 +146,7 @@ def _decode_rms(path: str, progress=None) -> np.ndarray:
     if not blocks:
         return np.zeros(0, dtype=np.float32)
 
-    mean_sq = np.concatenate(blocks)
-    db = 10.0 * np.log10(np.maximum(mean_sq, 1e-12))
-    return np.maximum(db, FLOOR_DB).astype(np.float32)
+    return np.concatenate(blocks)
 
 
 def envelope_for(path: str, progress=None, use_cache: bool = True) -> np.ndarray:

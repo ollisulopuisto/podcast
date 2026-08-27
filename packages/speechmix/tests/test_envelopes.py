@@ -6,8 +6,9 @@ kirjastossa eikä kummassakaan isännässä.
 """
 
 import numpy as np
+import pytest
 
-from speechmix import envelopes
+from speechmix import envelopes, session
 
 
 class _Lane:
@@ -32,17 +33,6 @@ class _Settings:
     duck_hold = 0.40
     duck_min_open = 0.20
     duck_min_closed = 0.60
-
-
-class _Placement:
-    def __init__(self, offset, end, start):
-        self.offset, self.end, self.start = offset, end, start
-        self.duration = end - offset
-
-
-class _Item:
-    def __init__(self, placements, asset_start=0.0):
-        self.placements, self.asset_start = placements, asset_start
 
 
 def _turn_taking(n=800):
@@ -81,18 +71,33 @@ def test_the_value_between_points_is_linear_and_zero_outside():
     assert envelopes.envelope_at([], 1.0) == 0.0
 
 
-def test_programme_time_becomes_file_time_per_placement():
-    """Ruudukko on aikajanan aikaa, tiedosto omaansa."""
-    closed = np.zeros(200, dtype=bool)
-    closed[50:100] = True  # 1.0 s … 2.0 s ohjelma-ajassa
-    item = _Item([_Placement(offset=0.0, end=10.0, start=5.0)], asset_start=0.0)
-    ranges = envelopes.closed_ranges(item, closed, program_start=0.0, rate=48000)
-    assert ranges == [(int(6.0 * 48000), int(7.0 * 48000))]
+def test_the_same_curve_can_be_burnt_into_samples():
+    """Toinen sauma: sama päätös, eri emissio.
+
+    autoraffkat kirjoittaa ``duck_envelopes``in pisteet Final Cutin
+    keyframeiksi. automixerillä ei ole mitään mihin automaatio kirjoitettaisiin,
+    joten se kertoo tällä — ja kummankin on saatava sama käyrä, tai vaimennus
+    riippuisi siitä kumpi isäntä sen teki.
+
+    Ruudukko ja käyrä ovat aikajanan aikaa, kerroin tiedoston. Muunnos on
+    jakson sisällä lineaarinen, sama kaava kuin ``session.file_ranges``issa.
+    """
+    rate = 48000
+    # Aikajanan hetki 10 on tiedoston hetki 0.
+    track = session.whole_file("", start=10.0, duration=10.0)
+    points = [(11.0, 0.0), (11.0, -9.0), (12.0, -9.0), (12.0, 0.0)]
+
+    gain = envelopes.envelope_gain(track, points, 0, 3 * rate, rate)
+
+    quiet = 10.0 ** (-9.0 / 20.0)
+    # Tiedoston sekunnit 1–2 ovat aikajanan 11–12.
+    assert gain[: rate - 1] == pytest.approx(1.0)
+    assert gain[rate + 10 : 2 * rate - 10] == pytest.approx(quiet, abs=1e-6)
+    assert gain[2 * rate + 1 :] == pytest.approx(1.0)
 
 
-def test_a_span_outside_the_placement_is_not_touched():
-    """Ruudukon ulkopuolelle jäävästä ei ole tietoa, eikä vienti käytä sitä."""
-    closed = np.zeros(200, dtype=bool)
-    closed[:20] = True
-    item = _Item([_Placement(offset=50.0, end=60.0, start=0.0)])
-    assert envelopes.closed_ranges(item, closed, program_start=0.0, rate=48000) == []
+def test_without_a_curve_the_file_goes_in_untouched():
+    """Puhuja jolle ei syntynyt vaimennusta menee summaan sellaisenaan."""
+    track = session.whole_file("", start=0.0, duration=1.0)
+    assert envelopes.envelope_gain(track, [], 0, 100, 48000).tolist() == [1.0]
+    assert envelopes.envelope_gain(None, [(0.0, -9.0)], 0, 100, 48000).tolist() == [1.0]

@@ -14,6 +14,7 @@ from conftest import needs_ffmpeg
 
 from autoraffkat.audio import mix
 from autoraffkat.model import HOP, AudioSettings
+from speechmix import session
 
 
 def test_sibling_is_always_wav():
@@ -283,7 +284,7 @@ def _mic_job(path, seconds, name):
     return {
         "key": name,
         "name": name,
-        "item": item,
+        "track": item.as_track(),
         "source": str(path),
         "target": mix.sibling(str(path), mix.MIX_SUFFIX),
         "speech": True,
@@ -646,8 +647,13 @@ def test_ducking_off_produces_no_masks():
     assert mix.duck_masks(None, AudioSettings(duck=True)) == {}
 
 
-def test_closed_ranges_map_timeline_to_file_time(fixture_dir):
-    """Ruudukko on aikajanan aikaa, vaimennus tiedoston aikaa."""
+def test_as_track_maps_timeline_to_file_time(fixture_dir):
+    """Ruudukko on aikajanan aikaa, vaimennus tiedoston aikaa.
+
+    Muunnos itse on kirjastossa (``session.file_ranges``). Tässä testataan
+    se osa joka jää tänne: että ``MediaItem.as_track`` kääntää FCPXML:n
+    esiintymät jaksoiksi niin että vastaus on sama kuin ennen.
+    """
     import numpy as np
 
     from autoraffkat.fcpxml.read import read_fcpxml
@@ -658,14 +664,14 @@ def test_closed_ranges_map_timeline_to_file_time(fixture_dir):
     # Osa A kattaa aikajanan 0–18 s ja tiedoston 0–18 s.
     closed = np.zeros(int(36 / HOP), dtype=bool)
     closed[int(4 / HOP) : int(6 / HOP)] = True  # kiinni 4–6 s
-    ranges = mix.closed_ranges(item, closed, 0.0, 48000)
+    ranges = session.file_ranges(item.as_track(), closed, 0.0, 48000)
     assert len(ranges) == 1
     start, end = ranges[0]
     assert start == pytest.approx(4 * 48000, abs=48)
     assert end == pytest.approx(6 * 48000, abs=48)
 
 
-def test_closed_ranges_stay_inside_the_clip(fixture_dir):
+def test_as_track_stays_inside_the_clip(fixture_dir):
     """Esiintymän ulkopuolta ei vaimenneta: siitä ei ole tietoa."""
     import numpy as np
 
@@ -675,9 +681,34 @@ def test_closed_ranges_stay_inside_the_clip(fixture_dir):
     timeline = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
     item = timeline.media_by_key()["host a Track1.wav"]  # aikajanalla 0–18 s
     closed = np.ones(int(36 / HOP), dtype=bool)  # kaikki kiinni
-    ranges = mix.closed_ranges(item, closed, 0.0, 48000)
+    ranges = session.file_ranges(item.as_track(), closed, 0.0, 48000)
     assert len(ranges) == 1
     assert ranges[0][1] <= 18 * 48000 + 48
+
+
+def test_as_track_keeps_the_times_exact(fixture_dir):
+    """Sauma ei saa muuttaa aikoja liukuluvuiksi.
+
+    FCPXML:n ajat ovat rationaalisia, ja ruudukon reunalla liukuluvun
+    viimeinen bitti riittää pudottamaan solun. Muunnos liukuluvuksi kuuluu
+    näyteindeksin laskentaan, ei saumaan.
+    """
+    from fractions import Fraction
+
+    from autoraffkat.fcpxml.read import read_fcpxml
+
+    timeline = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    item = timeline.media_by_key()["host a Track1.wav"]
+    track = item.as_track("Host")
+
+    assert track.speaker == "Host"
+    assert len(track.spans) == len(item.placements)
+    for span, placement in zip(track.spans, item.placements):
+        assert isinstance(span.start, Fraction)
+        assert span.start == placement.offset
+        assert span.end == placement.end
+        # tiedostoaika = klipin start - assetin start + (aikajana - offset)
+        assert span.base == placement.start - item.asset_start - placement.offset
 
 
 def test_run_mix_talks_to_the_child_process(scratch_xml, monkeypatch):
@@ -806,17 +837,11 @@ def test_the_program_trim_moves_the_level_it_is_supposed_to_move():
     )
 
 
-class _Placement:
-    def __init__(self, offset, end, start):
-        self.offset, self.end, self.start = offset, end, start
-        self.duration = end - offset
-
-
-class _Item:
-    asset_start = 0.0
-
-    def __init__(self, offset=0.0, end=10.0, start=0.0):
-        self.placements = [_Placement(offset, end, start)]
+def _track(offset=0.0, end=10.0, file_offset=0.0):
+    """Stemi yhdessä kohdassa aikajanaa, kirjaston saumana."""
+    return session.whole_file(
+        "", start=offset, duration=end - offset, file_offset=file_offset
+    )
 
 
 def _peaky(path, rate, seconds, seed):
@@ -864,7 +889,7 @@ def test_the_ceiling_belongs_to_the_programme_not_to_one_stem(tmp_path):
         jobs.append({
             "key": name, "name": name, "speech": True,
             "source": str(source), "target": str(target),
-            "item": _Item(0.0, seconds, 0.0), "bit_depth": 24,
+            "track": _track(0.0, seconds), "bit_depth": 24,
         })
 
     summa = ennen["a"] + ennen["b"]
@@ -915,7 +940,7 @@ def test_the_programme_ceiling_does_nothing_the_second_time(tmp_path):
         jobs.append({
             "key": name, "name": name, "speech": True,
             "source": str(source), "target": str(target),
-            "item": _Item(0.0, seconds, 0.0), "bit_depth": 24,
+            "track": _track(0.0, seconds), "bit_depth": 24,
         })
 
     mix.program_ceiling(jobs, mix.MixResult())
@@ -948,7 +973,7 @@ def test_stems_that_do_not_line_up_are_not_summed(tmp_path):
         jobs.append({
             "key": name, "name": name, "speech": True,
             "source": str(source), "target": str(target),
-            "item": _Item(offset, offset + seconds, 0.0), "bit_depth": 24,
+            "track": _track(offset, offset + seconds), "bit_depth": 24,
         })
     ennen = []
     for job in jobs:
@@ -967,30 +992,35 @@ def test_a_partner_from_another_part_is_not_a_leakage_source():
 
     Monikamerassa osat ovat peräkkäin, joten «wancke b» ei ole yhtään
     hetkeä päällekkäin «nyman a»:n kanssa. Silti se tarjottiin
-    vuotolähteeksi, ja ``_aligned`` palautti pelkkää nollaa — mistä tuli
-    «vuotopolkua ei saatu ratkaistua».
+    vuotolähteeksi, ja ``session.aligned`` palautti pelkkää nollaa — mistä
+    tuli «vuotopolkua ei saatu ratkaistua».
 
     Vienti ei mennyt siitä rikki, koska oikea kumppani käsiteltiin
     erikseen, mutta loki valehteli: sama tiedosto näytti sekä onnistuvan
     että epäonnistuvan, ja se peitti alleen oikean vian pitkissä osissa.
     Virheilmoitus jota ei voi uskoa on huonompi kuin ei ilmoitusta.
+
+    Sääntö itse on kirjastossa; tässä ajetaan se muoto jossa ``_debleed``
+    sitä kutsuu, eli ``MediaItem.as_track``in läpi.
     """
-    class P:
-        def __init__(self, offset, end):
-            self.offset, self.end = offset, end
-            self.start, self.duration = 0.0, end - offset
+    from fractions import Fraction
 
-    class Item:
-        asset_start = 0.0
+    from autoraffkat.model import MediaItem, Placement
 
-        def __init__(self, offset, end):
-            self.placements = [P(offset, end)]
+    def item(offset, end):
+        return MediaItem(
+            key="", name="", path="", src="",
+            placements=[Placement(
+                offset=Fraction(offset), start=Fraction(0),
+                duration=Fraction(end) - Fraction(offset),
+            )],
+        ).as_track()
 
-    a = Item(0.0, 819.0)
-    b = Item(819.0, 4632.0)
-    assert mix.overlaps(a, a)
-    assert not mix.overlaps(a, b), "eri osat eivät ole päällekkäin"
-    assert not mix.overlaps(b, a)
+    a = item(0, 819)
+    b = item(819, 4632)
+    assert session.overlaps(a, a)
+    assert not session.overlaps(a, b), "eri osat eivät ole päällekkäin"
+    assert not session.overlaps(b, a)
     # Raja on kosketus, ei päällekkäisyys: peräkkäiset osat jakavat hetken.
-    assert not mix.overlaps(Item(0.0, 10.0), Item(10.0, 20.0))
-    assert mix.overlaps(Item(0.0, 10.0), Item(9.0, 20.0))
+    assert not session.overlaps(item(0, 10), item(10, 20))
+    assert session.overlaps(item(0, 10), item(9, 20))

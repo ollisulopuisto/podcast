@@ -12,14 +12,27 @@ kopio hylätään.
 
 from autoraffkat import decide
 from autoraffkat.audio import mix
-from speechmix import envelopes, freshness, masks
+from speechmix import envelopes, freshness, masks, session
 
 
 def test_the_ducking_decision_comes_from_the_library():
     assert mix.duck_envelopes is envelopes.duck_envelopes
     assert mix.envelope_at is envelopes.envelope_at
-    assert mix.closed_ranges is envelopes.closed_ranges
-    assert mix.speech_blocks is envelopes.speech_blocks
+
+
+def test_the_timeline_arithmetic_comes_from_the_library():
+    """Aikajanan ja tiedostoajan välinen muunnos on saumaa, ei sovellusta.
+
+    ``closed_ranges``, ``speech_blocks``, ``_mask_samples``, ``_aligned`` ja
+    ``overlaps`` olivat kaikki samaa yhtä kaavaa, ja kolme viimeistä olivat
+    tässä tiedostossa ``item.placements``in muodossa — kirjastossa mutta vain
+    yhden sovelluksen ulottuvilla. automixerin vaimennus, ristivuoto ja
+    tasonkuljettaja jäivät sen takia tekemättä.
+
+    ``session.py`` on nyt niiden koti, ja ``MediaItem.as_track`` on se osa
+    joka jää tänne: se on kaikki mitä FCPXML:n tuntemista tarvitaan.
+    """
+    assert mix.session is session
 
 
 def test_the_masks_come_from_the_library():
