@@ -36,7 +36,9 @@ class FasterWhisper(Backend):
     def info(self) -> BackendInfo:
         try:
             import faster_whisper  # noqa: F401
-        except Exception as exc:  # noqa: BLE001
+        # Asentamaton paketti on tavallisin, mutta mikä tahansa tuontivirhe
+        # tarkoittaa samaa: tätä moottoria ei voi tarjota.
+        except Exception as exc:
             return BackendInfo(
                 key=self.key,
                 label=self.label,

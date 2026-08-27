@@ -7,6 +7,7 @@ jakso avautuu samoilla säädöillä kuin edellinen.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import threading
 
@@ -32,12 +33,10 @@ def save(section: str, values: dict) -> None:
     with _LOCK:
         data = load()
         data[section] = values
-        try:
+        # Asetusten tallennus ei ole työn tulos. Jos kotihakemistoon ei
+        # voi kirjoittaa, ohjelman pitää silti toimia.
+        with contextlib.suppress(OSError):
             _path().write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-        except OSError:
-            # Asetusten tallennus ei ole työn tulos. Jos kotihakemistoon ei
-            # voi kirjoittaa, ohjelman pitää silti toimia.
-            pass
 
 
 def section(name: str) -> dict:

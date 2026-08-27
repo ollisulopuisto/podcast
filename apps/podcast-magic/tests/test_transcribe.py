@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from podcastmagic import nhsx
 from podcastmagic.jobs import Job, Progress
 from podcastmagic.transcribe import run as runner
@@ -106,7 +105,7 @@ def test_run_writes_words_into_the_session(wired, session_file):
     # olli.wav oli jo litteroitu, panu.wav ei — vain jälkimmäinen ajettiin.
     assert wired.calls == 1
     assert [w.text for w in written.file_by_name("panu.wav").words()] == ["yksi", "kaksi"]
-    assert [w.text for w in written.file_by_name("olli.wav").words()][0] == "Terve"
+    assert next(w.text for w in written.file_by_name("olli.wav").words()) == "Terve"
 
 
 def test_run_never_touches_the_source(wired, session_file):
@@ -140,7 +139,7 @@ def test_a_new_model_does_not_reuse_the_old_transcription(wired, session_file):
 
 def test_plan_says_what_will_happen(session_file):
     (session_file.parent / "olli.wav").write_bytes(b"")
-    plan = runner.plan(str(session_file), Options())
+    plan = runner.plan(str(session_file))
     assert [i["name"] for i in plan.todo] == []
     assert [i["name"] for i in plan.skipped] == ["olli.wav"]
     assert [i["name"] for i in plan.missing] == ["panu.wav"]

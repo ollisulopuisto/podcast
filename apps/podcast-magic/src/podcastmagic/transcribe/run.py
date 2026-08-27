@@ -22,8 +22,8 @@ from pathlib import Path
 from .. import audio as audio_io
 from .. import nhsx
 from ..jobs import Progress
-from ..nhsx.write import next_free_path, set_transcription
 from ..nhsx.read import locate as locate_audio
+from ..nhsx.write import next_free_path, set_transcription
 from .backends import resolve
 from .backends.base import words_from_segments
 from .options import Options
@@ -72,8 +72,15 @@ def cache_path(directory: Path, audio_path: str, options: Options) -> Path:
     return directory / f"{stem}.{options.fingerprint()}.json"
 
 
-def plan(session_path: str, options: Options, audio_dir: str = "", force: bool = False) -> Plan:
-    """Kertoo mitä ajo tekisi, ilman että mitään ajetaan."""
+def plan(session_path: str, audio_dir: str = "", force: bool = False) -> Plan:
+    """Kertoo mitä ajo tekisi, ilman että mitään ajetaan.
+
+    Ei ota ``Options``ia, koska vastaus ei riipu niistä: ``run`` päättää
+    tekemisen samalla ehdolla (``transcribed and not force``), ja
+    asetustunnisteella nimetty välimuisti vaikuttaa vain nopeuteen — sen
+    osuma ei poista tiedostoa työlistalta. Jos asetukset joskus muuttavat
+    sitä *mitä* tehdään, ne palaavat tänne käyttönsä kanssa.
+    """
     session = nhsx.read(session_path)
     todo, skipped, missing = [], [], []
     for info in session.files:

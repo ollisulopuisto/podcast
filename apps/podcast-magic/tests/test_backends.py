@@ -7,9 +7,9 @@ import types
 
 import numpy as np
 import pytest
-
 from podcastmagic.jobs import Cancelled, Job, Progress
-from podcastmagic.transcribe.backends import BACKENDS, mlx as mlx_backend
+from podcastmagic.transcribe.backends import BACKENDS
+from podcastmagic.transcribe.backends import mlx as mlx_backend
 from podcastmagic.transcribe.options import Options
 
 
@@ -59,7 +59,7 @@ def test_progress_comes_from_the_progress_bar(monkeypatch):
     on käyttöliittymä joka näyttää jumiutuneelta.
     """
     module = fake_mlx(monkeypatch)
-    job, progress = handle()
+    _job, progress = handle()
     seen = []
     original = progress.fraction
     monkeypatch.setattr(progress, "fraction", lambda v: (seen.append(v), original(v))[1])
@@ -78,7 +78,7 @@ def test_the_patch_is_removed_even_when_transcribing_raises(monkeypatch):
         raise ValueError("hajosi")
 
     sys.modules["mlx_whisper"].transcribe = lambda audio, **kw: boom(kw)
-    job, progress = handle()
+    _job, progress = handle()
     with pytest.raises(ValueError):
         mlx_backend.MlxWhisper().transcribe(np.zeros(10, np.float32), Options(), progress)
     assert module.tqdm.tqdm is None
@@ -96,7 +96,7 @@ def test_filler_words_turn_the_suppression_off(monkeypatch):
     """Muistikirjan --suppress_tokens "" --suppress_blank False."""
     seen = {}
     fake_mlx(monkeypatch, on_call=seen.update)
-    job, progress = handle()
+    _job, progress = handle()
     mlx_backend.MlxWhisper().transcribe(np.zeros(10, np.float32), Options(fillers=True), progress)
     assert seen["suppress_tokens"] == [] and seen["suppress_blank"] is False
 
@@ -118,7 +118,7 @@ def test_audio_is_passed_as_samples_not_a_path(monkeypatch):
     sys.modules["mlx_whisper"].transcribe = (
         lambda audio, **kw: (got.update(kind=type(audio)), original(audio, **kw))[1]
     )
-    job, progress = handle()
+    _job, progress = handle()
     mlx_backend.MlxWhisper().transcribe(np.zeros(10, np.float32), Options(), progress)
     assert got["kind"] is np.ndarray
 
@@ -150,7 +150,7 @@ def test_faster_whisper_maps_the_notebook_switches(monkeypatch):
 
     backend = faster_backend.FasterWhisper()
     monkeypatch.setattr(backend, "_model", lambda name, progress: FakeModel())
-    job, progress = handle()
+    _job, progress = handle()
 
     result = backend.transcribe(np.zeros(16000, np.float32), Options(fillers=True, vad=True), progress)
     assert [w.text for w in result.words] == ["sana"]
@@ -175,7 +175,7 @@ def test_faster_whisper_progress_is_measured_not_guessed(monkeypatch):
 
     backend = faster_backend.FasterWhisper()
     monkeypatch.setattr(backend, "_model", lambda name, progress: FakeModel())
-    job, progress = handle()
+    _job, progress = handle()
     seen = []
     monkeypatch.setattr(progress, "fraction", seen.append)
     backend.transcribe(np.zeros(16000 * 10, np.float32), Options(), progress)

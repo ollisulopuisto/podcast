@@ -39,7 +39,7 @@ class _Bar:
     yhden tiedoston litteroinnin.
     """
 
-    def __init__(self, *args, total=None, on=None, check=None, **kwargs):
+    def __init__(self, *_args, total=None, on=None, check=None, **_kwargs):
         self.total = total or 0
         self.n = 0
         self._on = on
@@ -76,7 +76,9 @@ class MlxWhisper(Backend):
     def info(self) -> BackendInfo:
         try:
             import mlx_whisper  # noqa: F401
-        except Exception as exc:  # noqa: BLE001 — puuttuva paketti on tavallisin
+        # Puuttuva paketti on tavallisin, mutta mikä tahansa tuontivirhe
+        # tarkoittaa samaa: tätä moottoria ei voi tarjota.
+        except Exception as exc:
             return BackendInfo(
                 key=self.key,
                 label=self.label,

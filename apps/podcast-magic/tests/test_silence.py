@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from itertools import pairwise
 
+from lxml import etree
 from podcastmagic import nhsx
-from podcastmagic.silence.apply import audible_zones, merge, split_track
+from podcastmagic.silence.apply import (
+    audible_zones,
+    has_region_children,
+    merge,
+    split_track,
+)
 from podcastmagic.silence.detect import speech_intervals
 from podcastmagic.silence.presets import PRESETS, Settings
 
@@ -12,6 +19,31 @@ from podcastmagic.silence.presets import PRESETS, Settings
 def test_merge_closes_only_short_gaps():
     assert merge([(0.0, 1.0), (1.2, 2.0)], 0.4) == [(0.0, 2.0)]
     assert merge([(0.0, 1.0), (1.6, 2.0)], 0.4) == [(0.0, 1.0), (1.6, 2.0)]
+
+
+def test_region_children_are_noticed_before_they_are_dropped():
+    """Pilkkominen pudottaa alueen lapset, ja siitä pitää voida kertoa.
+
+    Sama häivytys sadassa palassa on eri asia kuin yksi häivytys alueen
+    alussa, joten `run` varoittaa siitä lokissa. Muistikirja pudotti ne
+    hiljaa, eikä sitä huomaa ennen kuin kuuntelee. Tämä on se tarkistus,
+    jonka varassa varoitus on — ja se katsoo vain `Region`-elementtejä,
+    ei mitä tahansa raidan lasta.
+    """
+    track = etree.fromstring(
+        "<Track Name='Olli'>"
+        "<Region Ref='1' Start='0.000' Length='12.000' Offset='0.000'/>"
+        "</Track>"
+    )
+    assert has_region_children(track) is False
+
+    # Raidan oma lapsi lapsineen ei ole alueen lapsi: pilkkominen ei koske
+    # siihen, joten se ei saa laukaista varoitusta.
+    etree.SubElement(etree.SubElement(track, "Automation"), "Point")
+    assert has_region_children(track) is False
+
+    etree.SubElement(track[0], "Fade")
+    assert has_region_children(track) is True
 
 
 def test_gap_stays_open_when_both_controls_allow_it():
@@ -81,7 +113,7 @@ def test_split_mutes_the_gap_and_keeps_the_speech(session_file):
     edges = [(float(p.get("Start")), float(p.get("Length"))) for p in pieces]
     edges.sort()
     assert edges[0][0] == 0.0
-    for (start, length), (next_start, _) in zip(edges, edges[1:]):
+    for (start, length), (next_start, _) in pairwise(edges):
         assert abs(start + length - next_start) < 1e-6
     assert abs(edges[-1][0] + edges[-1][1] - 12.0) < 1e-6
 
@@ -119,11 +151,11 @@ def test_a_track_with_no_transcription_is_left_alone(session_file):
 
     result = runner.run(str(session_file), Settings(rms=False),
                         Progress(Job(id=0, module="t", label="t")))
-    panu = [row for row in result["tracks"] if row["name"] == "Panu"][0]
+    panu = next(row for row in result["tracks"] if row["name"] == "Panu")
     assert panu["skipped"] and panu["muted"] == 0
 
     written = nhsx.read(result["written"])
-    regions = [t for t in written.tracks if t.name == "Panu"][0].regions
+    regions = next(t for t in written.tracks if t.name == "Panu").regions
     assert len(regions) == 1
     assert regions[0].elem.get("Muted") is None
 

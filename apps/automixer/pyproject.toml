@@ -41,3 +41,6 @@ packages = ["src/automixer"]
 # the checkout.  Run them with `uv run pytest`, which installs the project into
 # the environment first.
 testpaths = ["tests"]
+# Kuten apps/autoraffkat: testit löytävät paketin myös synkkaamattomasta
+# työpuusta, eikä asennuksen tila muutu siitä.
+pythonpath = ["src"]

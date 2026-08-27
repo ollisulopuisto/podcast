@@ -6,8 +6,8 @@ from fastapi import APIRouter, HTTPException
 
 from .. import settings as saved
 from ..jobs import RUNNER
-from ..nhsx import NhsxError, read as read_session
-from ..nhsx import verify
+from ..nhsx import NhsxError, verify
+from ..nhsx import read as read_session
 from . import run as runner
 from .backends import infos
 from .models import DEFAULT_MODEL, MODELS
@@ -49,11 +49,9 @@ def plan(body: dict) -> dict:
     session = str(body.get("session") or "").strip()
     if not session:
         raise HTTPException(400, "Valitse istuntotiedosto.")
-    options = Options.from_dict(body.get("options"))
     try:
         result = runner.plan(
             session,
-            options,
             audio_dir=str(body.get("audioDir") or ""),
             force=bool(body.get("force")),
         )
