@@ -3,40 +3,21 @@
 Ei tunne yhtäkään istuntoformaattia. Isäntä antaa **raitoja joilla on
 paikka ohjelman aikajanalla**, ei FCPXML-assetteja eikä nhsx-rivejä; ks.
 paketin README.
+
+Jokaisella alla olevalla moduulilla on kuluttaja. Se on tämän paketin
+ainoa olemassaolon syy: kirjasto johon kirjoitetaan koodia jota mikään ei
+kutsu on sama kolme kopiota ketjusta, vain yhden hakemiston sisällä.
 """
 
-from . import (
-    ceiling,
-    chain,
-    debleed,
-    dsp,
-    envelopes,
-    errors,
-    fingerprint,
-    freshness,
-    grid,
-    loudness,
-    masks,
-    messages,
-    timeline,
-    verify,
-)
+from . import chain, debleed, envelopes, freshness, masks, messages
 from .messages import set_translator
 
 __all__ = [
-    "ceiling",
     "chain",
     "debleed",
-    "dsp",
     "envelopes",
-    "errors",
-    "fingerprint",
     "freshness",
-    "grid",
-    "loudness",
     "masks",
     "messages",
     "set_translator",
-    "timeline",
-    "verify",
 ]
