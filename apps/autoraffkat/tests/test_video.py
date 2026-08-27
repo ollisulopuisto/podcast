@@ -1,0 +1,249 @@
+"""Kuvakerros: välimuisti ja rajaus.
+
+Tunnistin on vaihdettava osa, joten testit käyttävät omaa tynkäänsä. Se ei
+ole oikotie vaan sopimuksen tarkistus: jos oikea tunnistin ei kelpaisi
+tähän rooliin, sitä ei voisi vaihtaa toiseen.
+"""
+
+import os
+import subprocess
+
+import numpy as np
+import pytest
+
+from autoraffkat.video import analyse, detect, measure
+
+FFMPEG = os.environ.get("FFMPEG", "ffmpeg")
+
+
+class Stub:
+    """Tunnistin joka lukee ruudun keskiarvon. Ei kasvoja, ei riippuvuuksia."""
+
+    name = "tynka"
+    version = 1
+    fields = ("yaw", "smile", "eyes", "size", "cx", "cy")
+
+    def __init__(self, blind_every=0):
+        self.blind_every = blind_every
+        self.seen = 0
+
+    def measure(self, path):
+        self.seen += 1
+        if self.blind_every and self.seen % self.blind_every == 0:
+            return None
+        return {name: float(self.seen) / 100.0 for name in self.fields}
+
+
+def test_an_unknown_detector_is_an_error_not_a_silent_skip():
+    """Kirjoitusvirhe asetuksissa ei saa tarkoittaa «ei reaktioita»."""
+    with pytest.raises(detect.DetectError):
+        detect.load("ei-tallaista")
+
+
+def test_the_cache_key_changes_with_the_detector(tmp_path):
+    """Vaihdettu tunnistin tuottaa eri sarakkeet eri merkityksillä.
+
+    Ilman tätä uusi tunnistin lukisi edellisen jäljet: kelvollinen tulos,
+    hyväksytty ja väärä.
+    """
+    target = tmp_path / "a.mp4"
+    target.write_bytes(b"x" * 10)
+    one, two = Stub(), Stub()
+    two.name = "toinen"
+    assert measure.cache_key(str(target), one) != measure.cache_key(str(target), two)
+    three = Stub()
+    three.version = 2
+    assert measure.cache_key(str(target), one) != measure.cache_key(str(target), three)
+
+
+@pytest.fixture
+def clip(tmp_path):
+    """Lyhyt video, jossa avainruutu joka sekunti."""
+    if not subprocess.run([FFMPEG, "-version"], capture_output=True).returncode == 0:
+        pytest.skip("ffmpeg puuttuu")
+    target = tmp_path / "clip.mp4"
+    subprocess.run(
+        [FFMPEG, "-y", "-v", "error", "-f", "lavfi",
+         "-i", "testsrc2=size=320x180:rate=25:duration=6",
+         "-c:v", "libx264", "-g", "25", "-preset", "ultrafast",
+         "-pix_fmt", "yuv420p", str(target)],
+        check=True, capture_output=True)
+    return target
+
+
+def test_only_keyframes_are_measured(clip):
+    """Kuusi sekuntia 25 kuvan nopeudella on 150 ruutua; avainruutuja kuusi.
+
+    Jos tämä palauttaa 150, ``-skip_frame nokey`` on lakannut toimimasta ja
+    purku on 25-kertainen — mikä ei kaada mitään, vain hidastaa hiljaa.
+    """
+    stub = Stub()
+    table = measure.measure_file(str(clip), stub)
+    assert 5 <= len(table["times"]) <= 8, f"{len(table['times'])} ruutua"
+    assert stub.seen == len(table["times"])
+    assert np.all(np.diff(table["times"]) > 0.5)
+
+
+def test_a_frame_without_a_face_stays_in_the_table(clip):
+    """Poistaminen siirtäisi indeksit, eikä aikaleimoja voisi enää pariuttaa.
+
+    Rivi jää nolliksi ja ``found`` kertoo totuuden — pisteytys osaa hylätä
+    sen, kun taas puuttuva rivi siirtäisi kaiken jälkeensä väärään hetkeen.
+    """
+    table = measure.measure_file(str(clip), Stub(blind_every=2))
+    assert len(table["found"]) == len(table["times"])
+    assert not table["found"].all() and table["found"].any()
+    assert np.all(table["yaw"][~table["found"]] == 0)
+
+
+def test_the_cache_returns_the_same_table_without_decoding(clip, monkeypatch, tmp_path):
+    monkeypatch.setattr(measure, "cache_dir", lambda: tmp_path)
+    first = measure.table(str(clip), Stub())
+
+    def explode(*args, **kwargs):
+        raise AssertionError("purettiin uudestaan vaikka välimuisti oli")
+
+    monkeypatch.setattr(measure, "measure_file", explode)
+    again = measure.table(str(clip), Stub())
+    assert np.array_equal(first["times"], again["times"])
+    assert np.array_equal(first["found"], again["found"])
+
+
+def test_a_broken_cache_file_is_recomputed(clip, monkeypatch, tmp_path):
+    """Rikkinäinen välimuisti ei saa olla umpikuja."""
+    monkeypatch.setattr(measure, "cache_dir", lambda: tmp_path)
+    stub = Stub()
+    measure.table(str(clip), stub)
+    for junk in tmp_path.glob("*.npz"):
+        junk.write_bytes(b"ei ole npz")
+    again = measure.table(str(clip), stub)
+    assert len(again["times"]) > 0
+
+
+class _Lane:
+    def __init__(self, name, on):
+        self.name, self.on = name, np.asarray(on, dtype=bool)
+
+
+class _Grid:
+    def __init__(self, *lanes):
+        self.speakers = list(lanes)
+
+
+class _Item:
+    def __init__(self, key, path):
+        self.key, self.path, self.has_video = key, path, True
+
+
+class _Timeline:
+    def __init__(self, media):
+        self._media = media
+
+    def track_media(self, key):
+        return self._media.get(key, [])
+
+
+class _Roles:
+    closes = {"A": "camA", "B": "camB"}
+
+
+def test_a_speaker_who_never_listens_is_never_decoded():
+    """Purku on koko työn hinta, joten rajaus on tehtävä ennen sitä.
+
+    Puhuja joka ei ole kertaakaan vaiti ei voi tuottaa reaktiokuvaa, ja
+    hänen kameransa purkaminen olisi minuutteja tyhjää.
+    """
+    grid = _Grid(_Lane("A", [1, 1, 1]), _Lane("B", [0, 0, 0]))
+    timeline = _Timeline({"camA": [_Item("a", "/x/a.mp4")],
+                          "camB": [_Item("b", "/x/b.mp4")]})
+    picked = analyse.close_up_files(grid, _Roles(), timeline)
+    assert [key for _, key, _ in picked] == ["b"]
+
+
+def test_files_are_measured_in_parallel(monkeypatch):
+    """Purku on koko työn hinta ja se rinnakkaistuu — mitattuna neljä
+    tiedostoa yhtä aikaa on kolminkertainen läpimeno.
+
+    Sarjallinen silmukka ei kaadu vaan on kolme kertaa hitaampi, mikä on
+    juuri sellainen hidastuminen jota kukaan ei huomaa ilman mittausta.
+    """
+    import threading
+
+    from autoraffkat.model import Globals
+
+    grid = _Grid(_Lane("A", [1, 1]), _Lane("B", [0, 0]))
+    items = [_Item(f"k{i}", f"/x/{i}.mp4") for i in range(4)]
+    timeline = _Timeline({"camB": items})
+    monkeypatch.setattr(detect, "load", lambda name: Stub())
+    monkeypatch.setattr(analyse.os.path, "exists", lambda path: True)
+
+    live, peak = 0, 0
+    guard = threading.Lock()
+    start = threading.Event()
+
+    def slow(path, det, progress=None):
+        nonlocal live, peak
+        with guard:
+            live += 1
+            peak = max(peak, live)
+        start.wait(timeout=2.0)
+        with guard:
+            live -= 1
+        return {"times": np.zeros(1), "found": np.zeros(1, dtype=bool)}
+
+    monkeypatch.setattr(analyse.measure, "table", slow)
+    done = threading.Thread(
+        target=lambda: analyse.tables(grid, _Roles(), timeline,
+                                      Globals(reactions=True)))
+    done.start()
+    threading.Event().wait(0.3)
+    start.set()
+    done.join(timeout=5.0)
+    assert peak > 1, f"tiedostot purettiin sarjassa (samanaikaisia enintään {peak})"
+
+
+def test_measuring_works_with_the_setting_off(monkeypatch):
+    """«Mittaa lähikuvat» on nimenomainen pyyntö, ei asetuksen seuraus.
+
+    Aiemmin tämä palasi tyhjänä kun ``reactions`` oli pois: palkki juoksi
+    sekunnissa läpi, nolla tiedostoa mitattiin eikä mitään kerrottu.
+    Mittaaminen on tiedon keräämistä; asetus päättää vain käytetäänkö sitä.
+    """
+    from autoraffkat.model import Globals
+
+    grid = _Grid(_Lane("A", [1, 1]), _Lane("B", [0, 0]))
+    timeline = _Timeline({"camB": [_Item("b", "/x/b.mp4")]})
+    monkeypatch.setattr(detect, "load", lambda name: Stub())
+    monkeypatch.setattr(analyse.os.path, "exists", lambda path: True)
+    monkeypatch.setattr(analyse.measure, "table",
+                        lambda *a, **k: {"times": np.zeros(1),
+                                         "found": np.zeros(1, dtype=bool)})
+    tables, errors = analyse.tables(
+        grid, _Roles(), timeline, Globals(reactions=False))
+    assert set(tables) == {"b"}, "asetus pois esti mittauksen"
+    assert not errors
+
+
+def test_nothing_to_measure_is_said_out_loud(monkeypatch):
+    """Painike ei saa näyttää onnistuneen tekemättä mitään."""
+    from autoraffkat.model import Globals
+
+    grid = _Grid(_Lane("A", [1, 1]), _Lane("B", [1, 1]))   # kumpikaan ei vaikene
+    monkeypatch.setattr(detect, "load", lambda name: Stub())
+    tables, errors = analyse.tables(
+        grid, _Roles(), _Timeline({}), Globals(reactions=True))
+    assert tables == {}
+    assert errors, "tyhjä mittaus ei kertonut mitään"
+
+
+def test_missing_media_is_reported_not_swallowed(monkeypatch):
+    """Levy voi olla irrotettu. Se on tavallista — mutta se on kerrottava."""
+    from autoraffkat.model import Globals
+
+    grid = _Grid(_Lane("A", [1, 1]), _Lane("B", [0, 0]))
+    timeline = _Timeline({"camB": [_Item("b", "/ei/ole/mitaan.mp4")]})
+    monkeypatch.setattr(detect, "load", lambda name: Stub())
+    tables, errors = analyse.tables(
+        grid, _Roles(), timeline, Globals(reactions=True))
+    assert tables == {}
+    assert "b" in errors and "mitaan.mp4" in errors["b"]

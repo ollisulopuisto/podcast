@@ -1,0 +1,547 @@
+"""Reaktiokuvat: pisteytys ja jaksot.
+
+Tunnistin on se osa jonka odotetaan vaihtuvan, joten testit eivät saa
+riippua siitä. Taulukot kirjoitetaan tässä käsin — se on sama muoto jonka
+``video.measure`` tuottaa, ja siksi testit kertovat pisteytyksestä eivätkä
+macOS:n kasvontunnistuksesta.
+"""
+
+from dataclasses import replace
+
+import numpy as np
+import pytest
+
+from autoraffkat import reactions
+from autoraffkat.model import HOP as HOP_FOR_TEST
+from autoraffkat.model import Globals
+
+FIELDS = ("yaw", "roll", "size", "x", "y", "w", "h", "eyes", "smile",
+          "cx", "cy", "turn", "tilt")
+
+
+def table(n=40, **columns):
+    """Mittaustaulukko oletuksilla, joita testi muuttaa nimeltä."""
+    out = {"times": np.arange(n, dtype=np.float32),
+           "found": np.ones(n, dtype=bool)}
+    for name in FIELDS:
+        out[name] = np.zeros(n, dtype=np.float32)
+    for name, value in columns.items():
+        out[name] = (np.asarray(value, dtype=np.float32) if np.ndim(value)
+                     else np.full(n, float(value), dtype=np.float32))
+    return out
+
+
+def test_a_frame_without_a_face_can_never_be_chosen():
+    """«Ei kasvoja» on tulos, ei nolla.
+
+    Nollana se kilpailisi muiden kanssa ja voisi voittaa, koska nolla on
+    z-luvuissa keskiarvo — eli reaktiokuvaksi valikoituisi ruutu jossa ei
+    näy ketään.
+    """
+    data = table(smile=np.linspace(-1, 1, 40))
+    data["found"][:10] = False
+    points = reactions.scores(data, {"turn": 0})
+    assert np.all(np.isneginf(points[:10]))
+    assert np.all(np.isfinite(points[10:]))
+
+
+def test_the_gate_keeps_the_facing_frames_and_stops_the_rest():
+    """Portti ratkaisee, ei järjestys.
+
+    Reaktiokuvan rima on «ei kelvoton», ei «loistava». Mitattuna oikealla
+    jaksolla raja 0,057 päästi läpi kaikki kuusi hyväksi arvioitua eikä
+    yhtään viidestätoista huonosta. Tässä sama muoto pienoiskoossa: pää
+    kääntyneenä ei kelpaa millään muulla osalla.
+    """
+    turn = np.full(40, 0.30)      # perusasento, ei nolla
+    turn[5] = 0.30 + 0.20         # kääntynyt selvästi pois
+    turn[6] = 0.30 + 0.01         # käytännössä suoraan
+    data = table(turn=turn, smile=np.full(40, 5.0))   # hymy ei saa pelastaa
+    points = reactions.scores(data, {"turn_max": reactions.TURN_MAX})
+    assert np.isneginf(points[5]), "kääntynyt pää läpäisi portin"
+    assert np.isfinite(points[6])
+
+
+def test_the_gate_default_sits_between_the_marked_classes():
+    """Raja on mitattu, ei valittu.
+
+    Kaksikymmentäkolme käsin arvioitua ruutua eivät mene päällekkäin:
+    huonoin hyväksi merkitty 0,0721, paras huonoksi merkitty 0,0943.
+    Oletuksen on oltava siinä välissä, ja välin tiukemmalla puoliskolla —
+    ohi mennyt reaktiokuva ei maksa mitään, kelvoton maksaa oton.
+
+    Jos joku siirtää lukua, tämä kertoo kumman virheen hän valitsi.
+    """
+    worst_good, best_bad = 0.0721, 0.0943
+    assert worst_good < reactions.TURN_MAX < best_bad
+    middle = (worst_good + best_bad) / 2
+    assert reactions.TURN_MAX <= middle, "raja päästää huonoja ennemmin kuin hylkää hyviä"
+
+
+def test_the_turn_baseline_is_measured_not_assumed():
+    """Kamera ei ole kohtisuorassa, joten «puhujaan päin» ei ole nolla.
+
+    Nollaan sidottu portti hylkäisi tässä koko kameran tai päästäisi kaiken
+    sen mukaan miten kamera sattui olemaan.
+    """
+    turn = np.full(40, 0.42)      # kaikki katsovat vakaasti sivuun
+    data = table(turn=turn)
+    points = reactions.scores(data, {"turn_max": reactions.TURN_MAX})
+    assert np.all(np.isfinite(points)), "perusasento luettiin nollaksi"
+
+
+def test_the_gaze_baseline_is_measured_not_assumed():
+    """Kamera ei ole kohtisuorassa, joten «puhujaan päin» ei ole yaw nolla.
+
+    Nollaan sidottu ehto antaisi tämän kameran jokaiselle ruudulle saman
+    surkean pisteen, ja katse lakkaisi erottelemasta yhtään mitään.
+    """
+    # Kaikki katsovat vakaasti 0,8 radiaanissa paitsi yksi joka kääntyy pois.
+    yaw = np.full(40, 0.8)
+    yaw[7] = 0.0
+    points = reactions.scores(table(yaw=yaw), {"gaze": 1.0, "turn": 0, "smile": 0,
+                                               "eyes": 0, "motion": 0, "size": 0})
+    assert points[7] == pytest.approx(points.min())
+    # Perusasennossa olevat ovat keskenään samanarvoisia.
+    rest = np.delete(points, 7)
+    assert rest.std() < 1e-6
+
+
+def test_weights_change_the_ranking_without_new_measurements():
+    """Painot ovat se osa jota säädetään, eikä säätö saa maksaa purkua."""
+    data = table(smile=np.linspace(0, 1, 40), eyes=np.linspace(1, 0, 40))
+    smiley = reactions.scores(data, {"turn": 0, "gaze": 0, "smile": 1, "eyes": 0,
+                                     "motion": 0, "size": 0})
+    wide_eyed = reactions.scores(data, {"turn": 0, "gaze": 0, "smile": 0, "eyes": 1,
+                                        "motion": 0, "size": 0})
+    assert int(np.argmax(smiley)) == 39
+    assert int(np.argmax(wide_eyed)) == 0
+
+
+def test_motion_is_not_measured_across_a_gap():
+    """Kahden eri ikkunan yli mitattu «liike» on eri hetki, ei elettä."""
+    times = np.array([0.0, 1.0, 2.0, 900.0, 901.0], dtype=np.float32)
+    data = table(5)
+    data["times"] = times
+    data["cx"] = np.array([0.0, 0.0, 0.0, 0.9, 0.9], dtype=np.float32)
+    points = reactions.scores(data, {"turn": 0, "gaze": 0, "smile": 0, "eyes": 0,
+                                     "motion": 1, "size": 0})
+    # Hyppy ruutuun 3 on 898 sekunnin päässä edellisestä eikä saa näkyä.
+    assert points[3] == pytest.approx(points[0], abs=1e-6)
+
+
+def _grid(pattern):
+    """Ruudukko kahdella puhujalla; pattern on merkkijono A/B/-."""
+    class Lane:
+        def __init__(self, name, on):
+            self.name, self.on = name, np.asarray(on, dtype=bool)
+
+    class Grid:
+        speakers = [Lane("A", [c == "A" for c in pattern]),
+                    Lane("B", [c == "B" for c in pattern])]
+    return Grid()
+
+
+def test_listening_is_silence_under_someone_elses_voice():
+    """Ei mikä tahansa hiljaisuus: hiljaisuudessa ei ole mihin reagoida."""
+    grid = _grid("AAB--B")
+    assert list(reactions.listening(grid, "A")) == [False, False, True, False,
+                                                    False, True]
+    assert list(reactions.listening(grid, "B")) == [True, True, False, False,
+                                                    False, False]
+
+
+def test_nothing_is_proposed_below_the_threshold():
+    """Reaktiokuva jossa kuuntelija katsoo puhelintaan on huonompi kuin ei
+    reaktiokuvaa. Puuttuva löydös on oikea tulos."""
+    settings = Globals(reactions=True, reaction_threshold=99.0)
+    grid = _grid("B" * 200)
+
+    class Item:
+        key = "cam"
+        asset_start = 0
+        placements = []
+
+    class Timeline:
+        def track_media(self, key):
+            return [Item()]
+
+    class Roles:
+        closes = {"A": "camA"}
+
+    assert reactions.find(grid, Roles(), Timeline(), {"cam": table()},
+                          settings, 0.0) == []
+
+
+def test_reactions_off_means_nothing_is_computed():
+    """Asetus pois päältä ei saa tuottaa mitään — eikä kaatua puuttuvaan
+    taulukkoon."""
+    assert reactions.find(_grid("AB"), None, None, {}, Globals(), 0.0) == []
+
+
+def test_crowded_candidates_are_thinned_best_first():
+    """Sama hyvä hetki tulisi muuten valituksi monta kertaa peräkkäin."""
+    settings = Globals(reactions=True, reaction_length=2.0, reaction_spacing=10.0)
+    found = [reactions.Reaction("A", t, t + 2.0, score)
+             for t, score in ((10.0, 1.0), (11.0, 3.0), (12.0, 2.0), (60.0, 0.5))]
+    kept = reactions._thin(found, settings)
+    assert [r.start for r in kept] == [11.0, 60.0]
+    assert kept[0].score == 3.0
+
+
+def test_the_preview_lane_lines_up_with_the_speech_rows():
+    """Reaktiorivi tiivistetään samoihin sarakkeisiin kuin puhujarivit.
+
+    Palkkia luetaan päällekkäin: rivien suhde toisiinsa *on* se mitä siitä
+    katsotaan. Eri jaolla reaktiokuva näyttäisi osuvan väärään kohtaan
+    puheen suhteen, eikä mikään kertoisi siitä.
+    """
+    from autoraffkat.decide import Decision
+    from autoraffkat.preview import build
+
+    class Lane:
+        def __init__(self, name, on):
+            self.name, self.on = name, np.asarray(on, dtype=bool)
+            self.close_key = "cam"
+
+    class Grid:
+        n = 200
+        duration = 100.0
+        program_start = 0.0
+        speakers = [Lane("A", [1] * 100 + [0] * 100),
+                    Lane("B", [0] * 100 + [1] * 100)]
+
+    decision = Decision(segments=[], active=np.zeros((2, 200), dtype=bool),
+                        chosen=np.zeros(200, dtype=np.int32))
+    # Reaktio ohjelman puolivälistä eteenpäin, viisi sekuntia.
+    out = build(Grid(), decision, columns=100, reactions=[(50.0, 55.0, 1)])
+    lane = out["reactions"]
+    assert len(lane) == len(out["chosen"]) == out["columns"]
+    on = [i for i, v in enumerate(lane) if v >= 0]
+    assert on, "reaktio katosi tiivistyksessä"
+    # Puolivälissä ohjelmaa = puolivälissä sarakkeita, samalla jaolla.
+    assert 48 <= on[0] <= 52, on
+    assert all(lane[i] == 1 for i in on), "puhujan indeksi ei säilynyt"
+
+
+def test_a_short_reaction_survives_the_squeeze():
+    """Reaktiokuva on sekunnin luokkaa ja palkki on tuhat saraketta.
+
+    Keskiarvoistava tiivistys hukkaisi ne juuri niiltä kohdin jotka
+    halutaan nähdä — sarake merkitään heti kun yksikin osuu siihen.
+    """
+    from autoraffkat.decide import Decision
+    from autoraffkat.preview import build
+
+    class Lane:
+        name, close_key = "A", "cam"
+        on = np.ones(4000, dtype=bool)
+
+    class Grid:
+        n = 4000
+        duration = 4000.0
+        program_start = 0.0
+        speakers = [Lane()]
+
+    decision = Decision(segments=[], active=np.zeros((1, 4000), dtype=bool),
+                        chosen=np.zeros(4000, dtype=np.int32))
+    out = build(Grid(), decision, columns=1400, reactions=[(1000.0, 1001.6, 0)])
+    assert any(v >= 0 for v in out["reactions"]), "lyhyt reaktio katosi"
+
+
+def test_zooming_makes_a_column_shorter_not_the_programme():
+    """Ikkuna on sama sarakemäärä lyhyemmän jakson yli.
+
+    Se *on* koko zoomauksen idea: koko ohjelmassa sarake on 3,3 s, eikä
+    sekunnin mittaista reaktiokuvaa voi siinä nähdä. Jos ikkunaa ei
+    huomioida, palkki näyttää samalta eikä mikään kerro siitä.
+    """
+    from autoraffkat.decide import Decision
+    from autoraffkat.preview import build
+
+    class Lane:
+        name, close_key = "A", "cam"
+        on = np.zeros(1000, dtype=bool)
+
+    class Grid:
+        n = 1000
+        duration = 1000.0
+        program_start = 0.0
+        speakers = [Lane()]
+
+    Lane.on[500:502] = True      # kahden sekunnin repliikki keskellä
+    decision = Decision(segments=[], active=np.zeros((1, 1000), dtype=bool),
+                        chosen=np.zeros(1000, dtype=np.int32))
+
+    whole = build(Grid(), decision, columns=100)
+    zoomed = build(Grid(), decision, columns=100, window=(480.0, 520.0))
+    assert whole["view_end"] - whole["view_start"] == 1000.0
+    assert 39.0 <= zoomed["view_end"] - zoomed["view_start"] <= 41.0
+
+    # Sama repliikki vie zoomatussa selvästi useamman sarakkeen.
+    wide = sum(whole["speakers"][0]["active"])
+    near = sum(zoomed["speakers"][0]["active"])
+    assert near > wide, f"zoomaus ei tarkentanut ({near} vs {wide} saraketta)"
+
+
+def test_a_window_outside_the_programme_is_clamped():
+    """Vedon saa viedä reunan yli, mutta näkymä ei saa karata ohjelmasta."""
+    from autoraffkat.decide import Decision
+    from autoraffkat.preview import build
+
+    class Lane:
+        name, close_key = "A", "cam"
+        on = np.ones(500, dtype=bool)
+
+    class Grid:
+        n = 500
+        duration = 500.0
+        program_start = 100.0
+        speakers = [Lane()]
+
+    decision = Decision(segments=[], active=np.zeros((1, 500), dtype=bool),
+                        chosen=np.zeros(500, dtype=np.int32))
+    out = build(Grid(), decision, columns=50, window=(-9999.0, 9999.0))
+    assert out["view_start"] >= 100.0
+    assert out["view_end"] <= 600.0 + 0.001
+
+
+def test_the_gate_moves_candidates_and_the_spacing_moves_the_count():
+    """Kaksi lukua, kaksi kysymystä.
+
+    Mitattuna oikealla jaksolla portti 0,03 -> 0,40 vei ehdokkaat 461:stä
+    1875:een mutta vientiin päätyvät vain 94:stä 131:een, koska harvennus
+    ottaa yhden kustakin välistä. Pelkkä jälkimmäinen näytettynä säädin
+    näyttää rikkinäiseltä — se oli oikea havainto käyttäjältä.
+    """
+    settings = Globals(reactions=True, reaction_length=1.0,
+                       reaction_spacing=25.0, reaction_threshold=-1.0)
+    # Kaksisataa ehdokasta viiden sekunnin välein: enemmän kuin välejä.
+    found = [reactions.Reaction("A", t * 5.0, t * 5.0 + 1.0, 1.0)
+             for t in range(200)]
+    kept = reactions._thin(found, settings)
+    assert len(found) == 200
+    assert len(kept) < 45, f"harvennus ei rajoittanut ({len(kept)})"
+    # Väli puolitettuna mahtuu noin kaksinkertainen määrä.
+    tighter = reactions._thin(found, Globals(
+        reactions=True, reaction_length=1.0, reaction_spacing=10.0))
+    assert len(tighter) > len(kept) * 1.5, (len(tighter), len(kept))
+
+
+def test_candidates_and_find_answer_different_questions():
+    """``candidates`` ei harvenna, ``find`` harventaa."""
+    grid = _grid("B" * 400)
+    settings = Globals(reactions=True, reaction_threshold=-99.0,
+                       reaction_spacing=30.0, reaction_length=1.0)
+
+    class Item:
+        key = "cam"
+        asset_start = 0
+
+        class P:
+            offset = 0
+            end = 400
+            start = 0
+        placements = [P()]
+
+    class Timeline:
+        def track_media(self, key):
+            return [Item()]
+
+    class Roles:
+        closes = {"A": "camA"}
+
+    data = table(200, turn=np.zeros(200))
+    data["times"] = np.arange(200, dtype=np.float32)
+    # Ennakko siirtäisi ensimmäiset ehdokkaat ohjelman alkua edelle.
+    settings = replace(settings, reaction_lead=0.0)
+    raw = reactions.candidates(grid, Roles(), Timeline(), {"cam": data},
+                               settings, 0.0)
+    thinned = reactions.find(grid, Roles(), Timeline(), {"cam": data},
+                             settings, 0.0)
+    assert len(raw) > len(thinned), (len(raw), len(thinned))
+
+
+class _Seg:
+    def __init__(self, label, start, end, angle=""):
+        self.label, self.start, self.end = label, start, end
+        self.duration = end - start
+        self.angle = angle
+
+
+class _Dec:
+    def __init__(self, *segs):
+        self.segments = list(segs)
+
+
+def test_a_reaction_never_lands_on_its_own_speaker():
+    """Nymanin reaktio Nymanin kuvan päällä on hyppyleikkaus samaan kasvoon.
+
+    Mitattuna oikealla jaksolla näin kävi 7 kertaa 121:stä — sijoitus ei
+    tiennyt leikkauksesta mitään.
+    """
+    settings = Globals(reactions=True)
+    own = reactions.Reaction("Nyman", 10.0, 11.6, 2.0)
+    other = reactions.Reaction("Nyman", 10.0, 11.6, 2.0)
+    assert not reactions.fits(own, _Dec(_Seg("Nyman", 0.0, 30.0)), settings)
+    assert reactions.fits(other, _Dec(_Seg("Wancke", 0.0, 30.0)), settings)
+
+
+def test_a_reaction_keeps_clear_of_the_cut_boundaries():
+    """Alle sekunnin päässä rajasta kuva vaihtuu kahdesti peräkkäin.
+
+    Se luetaan tärähdyksenä eikä kuvana. Mitattuna 18 kertaa 121:stä osui
+    alle 0,2 sekunnin päähän.
+    """
+    settings = Globals(reactions=True, reaction_length=1.6)
+    host = _Dec(_Seg("Wancke", 0.0, 30.0))
+    assert not reactions.fits(reactions.Reaction("Nyman", 0.2, 1.8, 1.0),
+                              host, settings)
+    assert not reactions.fits(reactions.Reaction("Nyman", 28.6, 30.2, 1.0),
+                              host, settings)
+    assert reactions.fits(reactions.Reaction("Nyman", 10.0, 11.6, 1.0),
+                          host, settings)
+
+
+def test_the_margin_is_the_programmes_own_minimum_shot():
+    """Isäntäkuvan alkupala on kuva siinä missä muutkin.
+
+    Mitattu vika: leikkaus laajasta Wanckeen ja 1,04 s myöhemmin
+    reaktiokuva — juuri vaihtunut lähikuva ei ehtinyt alkaa. Sekunnin
+    marginaali salli sen. Marginaali on nyt ``min_shot``, sama ehto kuin
+    ``decide._force_wide``:n kolmiosaisella jaolla. Oikealla jaksolla 22
+    reaktiokuvaa 98:sta osui alle kahden sekunnin päähän leikkauksesta, ja
+    ehdon kiristäminen maksoi 13 kuvaa.
+    """
+    host = _Dec(_Seg("Wancke", 0.0, 30.0))
+    settings = Globals(reactions=True, reaction_length=2.2, min_shot=2.5)
+    close = reactions.Reaction("Nyman", 1.5, 3.7, 1.0)
+    assert not reactions.fits(close, host, settings)
+    assert reactions.fits(reactions.Reaction("Nyman", 3.0, 5.2, 1.0),
+                          host, settings)
+    # Nopeassa profiilissa raja seuraa mukana, ei jää kiinni vakioon.
+    assert reactions.fits(close, host, replace(settings, min_shot=1.4))
+    # Sekunti on silti alaraja: tärähdys on tärähdys kaikilla asetuksilla.
+    assert not reactions.fits(reactions.Reaction("Nyman", 0.5, 2.7, 1.0),
+                              host, replace(settings, min_shot=0.2))
+
+
+def test_a_reaction_will_not_fit_a_shot_too_short_to_hold_it():
+    """Isäntäkuvan on mahduttava reaktio ja molemmat marginaalit."""
+    settings = Globals(reactions=True, reaction_length=1.6)
+    short = _Dec(_Seg("Wancke", 0.0, 2.5))
+    assert not reactions.fits(reactions.Reaction("Nyman", 0.4, 2.0, 1.0),
+                              short, settings)
+
+
+def test_the_interval_follows_the_conversation_tempo():
+    """Kiinteä väli on metronomi.
+
+    Sama 1/f-vaihtelu joka säätää kuvan vähimmäiskestoa säätää nyt myös
+    reaktioiden väliä — mitattuna välien hajonta nousi 10 sekunnista
+    17:ään, eli kerros lakkasi olemasta jakson tasatahtisin asia.
+    """
+    settings = Globals(reactions=True, reaction_length=1.0,
+                       reaction_spacing=20.0)
+    found = [reactions.Reaction("A", t * 2.0, t * 2.0 + 1.0, 1.0)
+             for t in range(120)]
+    steady = reactions._thin(found, settings)
+    fast = np.full(int(240 / HOP_FOR_TEST), 1.4, dtype=np.float32)
+    quick = reactions._thin(found, settings, fast, 0.0)
+    assert len(quick) > len(steady), (len(quick), len(steady))
+
+
+def test_the_cut_leads_the_measured_frame():
+    """Avainruutuja on yksi sekunnissa.
+
+    Mittaus kertoo minkä sekunnin sisällä ilme on, ei milloin se alkoi.
+    Ilman ennakkoa kuva vaihtuu vasta kun reaktio on jo käynnissä — sama
+    syy kuin J-cutin ennakolla.
+    """
+    settings = Globals(reactions=True, reaction_threshold=-99.0,
+                       reaction_lead=0.4, reaction_length=2.2,
+                       reaction_spacing=0.0)
+    grid = _grid("B" * 400)
+
+    class Item:
+        key = "cam"
+        asset_start = 0
+
+        class P:
+            offset, end, start = 0, 400, 0
+        placements = [P()]
+
+    class Timeline:
+        def track_media(self, key):
+            return [Item()]
+
+    class Roles:
+        closes = {"A": "camA"}
+
+    data = table(50, turn=np.zeros(50))
+    data["times"] = np.arange(50, dtype=np.float32) + 1.0
+    found = reactions.candidates(grid, Roles(), Timeline(), {"cam": data},
+                                 settings, 0.0)
+    late = reactions.candidates(grid, Roles(), Timeline(), {"cam": data},
+                                replace(settings, reaction_lead=0.0), 0.0)
+    assert found and late
+    early = sorted(r.start for r in found)
+    without = sorted(r.start for r in late)
+    assert len(early) == len(without)
+    for a, b in zip(early, without):
+        assert abs((b - a) - 0.4) < 1e-6, (a, b)
+
+
+def test_a_cut_lands_on_a_pause_when_one_is_within_reach():
+    """Puheen keskelle osuva leikkaus kuulostaa katkaisulta.
+
+    «Sanan raja» ei ole tässä aineistossa olemassa: verhokäyrä heilahtelee
+    tavurytmissä, mitattuna puhejaksojen mediaani 0,22 s ja taukojen
+    0,14 s. Kolmasosasekunnin tauko on lauseen raja, ja siihen osutaan.
+    """
+    class Lane:
+        def __init__(self, name, on):
+            self.name, self.on = name, np.asarray(on, dtype=bool)
+
+    class Grid:
+        n = 200
+        speakers = [Lane("A", np.ones(200, dtype=bool))]
+
+    # Tauko ruuduissa 100-125 = 2,0…2,5 s.
+    Grid.speakers[0].on[100:125] = False
+    moved = reactions._snap(Grid(), 2.3, 0.0)
+    assert abs(moved - 2.0) < 0.05, moved
+    # Kaukana olevaa taukoa ei haeta.
+    assert reactions._snap(Grid(), 8.0, 0.0) == 8.0
+
+
+def test_the_same_face_twice_in_a_row_becomes_the_wide():
+    """Mittaus kertoo milloin, ohjelma päättää mitä.
+
+    Ilman tätä kerros toistaa itseään: mitattuna oikealla jaksolla 49
+    reaktiokuvaa 83:sta oli sama kasvo kuin edellinen, ja peräkkäin ne ovat
+    lähikuvasta lähikuvaan — juuri se leikkaus jonka laaja pehmentää.
+    Säännön jälkeen 0/83.
+    """
+    class Grid:
+        wide_key = "camWide"
+
+    host = _Dec(_Seg("Wancke", 0.0, 300.0))
+    found = [reactions.Reaction("Nyman", t, t + 2.2, 1.0)
+             for t in (10.0, 40.0, 70.0)]
+    out = reactions._vary(found, Grid(), host)
+    assert [r.shot for r in out] == ["", "camWide", ""]
+    # Mitattu kasvo säilyy syynä, vaikka ruudulla olisi laaja.
+    assert all(r.speaker == "Nyman" for r in out)
+
+    # Laajan päälle ei vaihdeta laajaa: se olisi leikkaus samaan kuvaan.
+    wide_host = _Dec(_Seg("Laaja", 0.0, 300.0))
+    wide_host.segments[0].angle = "camWide"
+    again = [reactions.Reaction("Nyman", t, t + 2.2, 1.0) for t in (10.0, 40.0)]
+    assert [r.shot for r in reactions._vary(again, Grid(), wide_host)] == ["", ""]
+
+    # Ilman laajaa raitaa sääntöä ei ole.
+    class NoWide:
+        wide_key = ""
+    plain = [reactions.Reaction("Nyman", t, t + 2.2, 1.0) for t in (10.0, 40.0)]
+    assert [r.shot for r in reactions._vary(plain, NoWide(), host)] == ["", ""]

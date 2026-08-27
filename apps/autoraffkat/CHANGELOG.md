@@ -1,0 +1,537 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to Calendar Versioning (CalVer).
+
+## [v26.08.27.113] - 2026-08-27
+
+### Fixed
+- **A Microphone From Another Part Was Offered as a Leakage Source**: in a multicam the parts are consecutive, so "wancke b" is never on screen at the same moment as "nyman a". It was still handed to the de-bleeder, `_aligned` returned nothing but zeros, and the log said `vuotopolkua ei saatu ratkaistua` about a pairing that was never possible.
+  - The export was never wrong — the real partner is processed separately — but the same file appeared to both succeed and fail in the log, and that noise hid the genuine failure on the long parts for most of a day. An error message you cannot believe is worse than no message.
+  - No fingerprint bump: the spurious partner was a no-op, so no processed file changes.
+
+## [v26.08.27.112] - 2026-08-27
+
+### Added
+- **Strict Linting, and It Immediately Found Dead Code**: ruff with a broad `select` (pyflakes, bugbear, comprehensions, simplify, return, unused arguments, perf, numpy), run in CI **before** the tests. The rationale is this project's failure mode: an undefined name or an unused argument does not crash anything — it leaves some stage quietly doing nothing, which is exactly the bug class that keeps costing time here.
+  - It found two dead locals (`asset_ids` in the writer, left over from the `asset-clip` reaction structure; `roles` in `run_mix`, which the worker child resolves itself), and four dead parameters left by today's changes — `masks` in `_run_one`/`_run_todo` after ducking moved to envelopes, three arguments to `_reaction_clips` after the nested `mc-clip` rewrite, and `settings` in `program_ceiling` and `_debleed`.
+  - `zip()` now carries `strict=True` wherever the lengths must match. A silent length mismatch pairing the wrong items is the same family as the frames-and-timestamps rule in the video layer.
+  - Rules that genuinely do not fit carry a written reason in `ignore`: Finnish typography is deliberate (`RUF001-003`), `int(round(x))` is not redundant on numpy scalars (`RUF046`), and a filtered nested loop reads better than a nested comprehension in a codebase where the explanation sits between the lines (`PERF401`).
+
+## [v26.08.27.111] - 2026-08-27
+
+### Fixed
+- **De-bleeding Silently Gave Up on Long Parts of an Episode**: `debleed.path` needs 2048 lags and was slicing them out of a full `2n-1` correlation. A 64-minute microphone is 184 M samples, so that correlation is 368 M floats whose FFT rounds up to the next fast length — gigabytes. Twenty-minute files survived, 64-minute ones did not, and the "no path" guard turned the failure into a reason string rather than an error. It read as "this material is harder", not as a bug.
+  - `_lags` accumulates the same sums blockwise — **identical to 1e-16 relative**, 36 s for the whole file. Both directions now solve: **−4.12 dB and −3.77 dB**, own speech kept at 0.9998.
+  - Third instance of this mistake here, after `np.correlate(..., "full")` in the shift measurement and `keyframe_times` reading every packet to pick 24 frames. When a computation ends in a slice, check what it computed to get there.
+  - The block's tail is zero-padded, not shortened: a shortened window makes `correlate(..., "valid")` return one value, so only lag zero is filled and the filter is a single number rather than a path. That hits the final block of every run and looks like it worked. Both behaviours now have tests.
+  - `FINGERPRINT_VERSION` 7 → 8.
+
+## [v26.08.27.110] - 2026-08-27
+
+### Fixed
+- **Panning Inherited From Settings Never Measured Anything**: the switch starts the sampling only when it changes from off to on, so a project that loaded with panning already enabled would export zero panning and say nothing about it. Loading now starts the sampling itself, once the grid exists.
+
+## [v26.08.27.109] - 2026-08-27
+
+### Added
+- **A Level Rider Before the Compressors**, the stage every hand-made mix starts with and this chain lacked. It removes the speaker's own slow variation so the compressors only catch what is left. Measured on ten minutes of real speech: own-speech level spread **6.72 → 6.44 dB** and **6.46 → 5.67 dB**, separation and noise floor unchanged.
+  - **It cannot decide "speech" from the signal.** On a two-microphone recording half of what is loud on a track is the other person: the level heuristic called 74 % of Nyman's blocks speech when 53 % were his own, agreeing only 38 % of the time. It lifted the leakage — noise floor up 3.5 dB, level spread *worse* at 2.88 → 3.37 dB. The mask now comes from the grid, and without a mask `ride` returns the audio untouched rather than guessing.
+  - **The gain returns to unity outside its own speaker's speech rather than holding.** Holding is right for a one-microphone rider; here the pause is the other person talking, and a held boost lands on their leakage — separation fell 19.1 → 14.8 dB. Returning to zero keeps it at 18.7.
+  - Honest note on the premise: the compressor does not cost separation either (19.1 → 19.0), so the rider is not the answer to leakage. De-bleeding still is.
+  - `FINGERPRINT_VERSION` 6 → 7.
+
+## [v26.08.27.108] - 2026-08-27
+
+### Changed
+- **The Processing Button Moved to the Header, Beside Export**: it is an action, not an audio setting — the panel decides what processing does, the header decides whether to do it, the same split as between the cut panel and Export.
+  - The real reason is the state it carries: the button says how many files were made with different settings, and that is what you need at the moment you press Export. At the bottom of the audio panel, in the right-hand rail below the fold, it was invisible exactly when it mattered — and an export that used raw audio looks successful until somebody listens.
+  - The stale count now sits on the button itself, since the panel's explanatory note is no longer next to it.
+
+## [v26.08.27.107] - 2026-08-27
+
+### Added
+- **Panning No Longer Waits for the Reaction Measurement**: the two features ask different questions at different prices. Reactions look for *moments*, so every keyframe is a candidate and the decode is minutes; seating decides one sign per speaker. Measured, **five random frames got the sign right 400 times out of 400**. `measure.sample_file` takes 24 frames spread across the file — far more than needed, on purpose, since some frames have no face in them.
+- **Both Switches Start Their Own Scan**: turning panning on samples the picture; turning reaction shots on starts the full measurement. A feature that silently requires another feature's button to have been pressed is a feature that looks broken. The buttons stay, because a minutes-long run is something you may want to repeat deliberately.
+
+### Fixed
+- **`keyframe_times` Was the Entire Cost of the Light Scan**: it reads every packet in the file with ffprobe, which on a 20-minute clip takes longer than the frame extraction it was meant to serve — the first version of the light scan timed out at five minutes doing nothing else. The sample needs no timestamps: `-ss` finds the nearest keyframe itself, and a seating position is not tied to a moment. `measure.duration` reads one header field instead: **over 300 s → 22.9 s serial**, and four files in parallel after that.
+  - `SIDE_MIN_FRAMES` drops from 100 to 5, which is what makes the light sample usable at all. A hundred would have forced the full decode back.
+
+## [v26.08.27.106] - 2026-08-27
+
+### Changed
+- **Panning Is On or Off; the Amount Is No Longer Adjustable**: "how much panning" is a question the user has no answer to — it is exactly the number this tool exists to decide, and a slider hands the responsibility back. The width lives in `staging.PAN_WIDTH`, where it can be measured and argued about. The per-track slider, the width slider, the `pan` track setting, the `pan_width` global and the "Set from picture" button are all gone; a test fails if a pan amount reappears in `Globals` or `TrackConfig`.
+  - The panel now shows **where the speakers were placed** — left, centre, right — and shows it whether the switch is on or off. Panning that is the wrong way round sounds perfectly fine until you compare it with the picture, so the placement has to be checkable without exporting first.
+
+## [v26.08.27.105] - 2026-08-27
+
+### Changed
+- **The Pan Slider Moved onto the Microphone Card**, beside sensitivity and gain, where a track's own knobs already live. It shows only while panning is on — otherwise it would be a control that does nothing.
+  - The pan is now a **track setting**, not a calculation. Deriving it from the measurement at every export would mean the slider showed a number the export did not use, which is this project's recurring failure in a new hat. "Set from picture" fills every microphone's pan from the measured seating once; after that it is an ordinary value that survives saving.
+  - A button rather than automatic: a value that changed itself whenever the video was re-measured would silently discard whatever had been dragged by hand.
+
+## [v26.08.27.104] - 2026-08-27
+
+### Changed
+- **Ducking Is Now an Envelope in the Export, Not a Burn Into the File**: it is a level decision, and level decisions belong where the editor can still reach them. Baked in it was the one setting in the whole chain that could not be changed without a minutes-long run — "3 dB too deep" meant reprocessing every microphone. It is now written as Final Cut's own per-angle `<adjust-volume>` keyframes: on this episode 1164 and 3120 points at −9 dB, and one drag to change.
+  - `mix.duck_envelopes` reproduces the shape `chain.apply_duck` burnt, point for point — fades **inside** the range, asymmetric, interpolated in decibels — because the result must not depend on which way it was made.
+  - **The duck settings left `FINGERPRINT_FIELDS`.** Changing the depth no longer makes a single file stale: export again, don't process. A test asserts they stay out.
+  - **`program_ceiling` now applies the envelope while it sums**, because the stems on disk are no longer what Final Cut plays — 8 and 30 minutes of attenuation are missing from them, and a ceiling computed without it limits a programme that does not exist.
+  - A shot the envelope does not touch gets no `<adjust-volume>` at all; a shot it crosses gets a keyframe on its edge carrying the value there, or Final Cut would restart the attenuation from zero at every cut.
+  - Ducking on with no envelope written is now an export warning, not a silence.
+  - `FINGERPRINT_VERSION` 5 → 6.
+
+## [v26.08.27.103] - 2026-08-27
+
+### Added
+- **Subtle Panning, Placed From the Picture**: each speaker's microphone is panned to where they actually sit, using the seating order `staging.py` measures from the Vision data. It is written as Final Cut's own per-angle `<adjust-panner>` inside `<audio-role-source>` — **the audio files are not touched**, so the whole thing stays editable in Final Cut afterwards. Off by default; the width is adjustable and starts at 6 %.
+  - Per **angle**, not per clip. A panner on the `mc-clip` moves every angle together — that is turning the desk, not panning, and both speakers land in the same place. Settled by having Final Cut write one rather than by reading the DTD, which permits both and predicts neither.
+  - Three literals came out of that reference file and none were guessable: the mode is the string `"1 (Stereo Left/Right)"`, volume values carry their unit (`"-27dB"`), and `<keyframe time=…>` is in the host's local time base, not timeline time.
+  - A zero pan writes nothing at all, so an unmeasured episode produces byte-for-byte the same file as before the feature existed. A test asserts it.
+
+## [v26.08.27.102] - 2026-08-27
+
+### Added
+- **Where People Sit, Measured From the Picture**: `staging.py` reads the seating order out of the Vision measurements the reaction layer already caches — no new decoding, and fast enough for the settings loop. The measure is `turn`, and **its sign is the opposite of the obvious guess**: people sitting opposite each other look at each other, so the one on the left looks right and reads positive. Measured on a real episode: left-hand speaker +0.46, right-hand −0.28, the same in both parts, confirmed by extracting frames and looking at them.
+  - Framing (`cx`) is useless for this — both speakers sat in the right half of their own close-up (+0.51, +0.60), which describes the camera operator, not the room.
+  - Pan positions spread evenly by *order*, not in proportion to the angle: the angle gives the ordering reliably and the distance not at all. Three speakers are left, centre, right.
+  - The spread is deliberately tiny — ±3 for two speakers, ±6 at the widest. Above five speakers nothing is panned at all.
+
+### Fixed
+- **A Microphone Is Always Mono Out**: a stereo source used to stay stereo through the chain, which breaks three things without saying so — de-bleeding reads only the first channel, the programme ceiling sums stems of differing channel counts by broadcasting them, and panning is a mono-source idea. `mono` is in the fingerprint, so anything previously processed as stereo counts as stale.
+
+## [v26.08.27.101] - 2026-08-27
+
+### Fixed
+- **The Ceiling Was Guaranteed Per Stem, But Final Cut Plays the Sum**: two microphones whose peaks are both pressed to −1.5 dBTP exceed full scale whenever those peaks coincide. Measured on a real episode: **+4.51 dBFS, 49 971 samples over full scale in 4072 bursts — 200 a minute**, median 0.23 ms. That is the distortion, and it is what Final Cut draws in red.
+  - `mix.program_ceiling` computes the limiter's gain curve from the **summed** stems and multiplies the identical curve into each one. The sum then obeys the ceiling and the balance between speakers cannot move, because every stem gets the same number. Verified on the real files: **+4.51 → −1.51 dBFS, zero samples over full scale**, at a cost of 0.5 LU and 7 s for a 20-minute pair.
+  - Not harder per-stem limiting: that would make every stem pay six decibels of crest for what some *other* file happens to do.
+  - The pass is idempotent — the curve is `min(1, ceiling/peak)`, so a sum already at the ceiling gets 1 everywhere — which is what makes it safe to run on every round, including one where most files were skipped as up to date.
+  - Summing files sample by sample is only correct when the stems line up on the timeline, so `_geometry` checks it. Stems that do not match are left untouched rather than quietly summed at the wrong offset.
+  - `chain.limiter_gain` is split out of `chain.limiter` so the curve can be computed without applying it.
+
+## [v26.08.27.100] - 2026-08-27
+
+### Fixed
+- **One of the Three Compressors Never Fired**: the third stage's threshold was `leveler_threshold + 4.0` — four decibels *above* the second — and it runs after the second, which has already pulled everything below its own threshold. Measured on three minutes of real speech, the stage's gain moved **0.00 dB** at every target from −14 to −18 LUFS. The chain promised three bounded stages and ran two. It now sits 4 dB **below** the second, where it does about what the second does (σ 0.58 dB each), which is the "small amounts several times" the design intended.
+  - A dead stage crashes nothing and logs nothing. `test_every_compressor_stage_actually_engages` now runs each stage in sequence and fails on any that leaves the signal untouched; a second test asserts the ordering directly so the sign cannot flip back unnoticed.
+  - `FINGERPRINT_VERSION` 4 → 5: files processed before this are not up to date at any setting.
+
+## [v26.08.26.99] - 2026-08-26
+
+### Added
+- **A Repeated Reaction Goes to the Wide**: the measurement says *when* to cut; what appears is the programme's decision. Left alone the layer repeated itself — measured, **49 of 83** consecutive reaction shots showed the same face as the one before, and close-up straight to close-up is the cut the three-beat long-take form already softens by going through the wide. The second of a repeated pair now uses the wide: **1 of 83** afterwards, split 31 / 27 / 26 across Wancke, the wide and Nyman.
+  - It is a repetition breaker, not an alternation. The wide spends the measurement that caused the cut, since a face is small in it.
+  - `Reaction.speaker` stays the measured person — it is the reason for the cut, and the placement rules need it — while `Reaction.shot` names the track actually shown. The preview bar, the cut list and the Final Cut keyword all follow the shot, not the reason.
+  - Nothing is substituted when the host shot is already the wide: that would be a cut to the picture already on screen.
+
+## [v26.08.26.98] - 2026-08-26
+
+### Fixed
+- **A Reaction Shot Landed Before Its Host Shot Had Begun**: a cut from the wide to Wancke, then 1.04 s later a reaction, then back. The one-second margin kept the reaction off the boundary but did nothing for the shot it sat in — the close-up had not established. The margin is now the programme's own **`min_shot`**, the same condition `decide._force_wide` uses before splitting into its three-beat form; one second stays as the floor, because a flash is a flash at any setting.
+  - Measured on the episode: 22 of 98 reaction shots sat under two seconds from a cut. The rule costs 14 of them and moves the nearest to 2.50 s.
+
+## [v26.08.26.97] - 2026-08-26
+
+### Added
+- **The Exported File Gets Its Own Field**: the path used to sit in the middle of a sentence in the header, where no double-click can select it — and the next reader of that path is always another program. It now appears on its own row under the header, in a read-only field that selects itself on focus, with **Open in Final Cut** and **Show in Finder** beside it.
+  - `/api/final-cut` runs `open -a "Final Cut Pro"`, which gives Final Cut its import dialog. A failure — no Final Cut installed — is reported rather than swallowed.
+
+## [v26.08.26.96] - 2026-08-26
+
+### Changed
+- **Reaction Shots Were Cut Too Fast to Read**: 1.6 s was long enough for the shot to begin and end before a viewer had read the face. The length is now **2.2 s** and adjustable up to 6 s.
+- **The Cut Leads the Measured Frame**: keyframes are one per second, so a measurement says the listener looked good *somewhere* in that second — cutting at its start arrives after the reaction has begun. A `reaction_lead` (default 0.4 s) moves the cut earlier, the same reasoning as a J-cut's lead.
+- **The Cut Lands on a Pause When One Is Near**: within half a second of the intended point, the cut moves to the nearest moment where **nobody** is speaking for at least 0.3 s.
+  - Not a word boundary: there is no such thing in this data. The envelope switches at syllable rate — measured over 77 minutes, 26 452 on/off transitions, speech runs median 0.22 s and pauses 0.14 s, so every reaction was already within 0.06 s of a "boundary" and the metric said nothing. A third of a second of silence is a sentence boundary, and that is what is snapped to.
+  - The lead never moves a cut before the programme's start.
+
+## [v26.08.26.95] - 2026-08-26
+
+### Fixed
+- **The Reaction Switch Never Reached the Server**: `apply()` reads globals from a name list, and none of the reaction settings were on it. So the box showed ticked, the sliders moved, the count updated — and nothing was stored. Every state refresh reset it, and the export correctly wrote zero reaction shots. Three exports were made this way. Everything worked except the thing that was asked for, which is this project's most typical failure.
+  - `reaction_threshold` is handled separately: it is a z-score and may be negative, which the shared clamp would have zeroed.
+  - **A test now walks every `Globals` field** and fails on any that cannot round-trip through `/api/settings`. Fixing the one field would have left the next one to fail the same way; the list is the bug, not the entry.
+
+## [v26.08.26.94] - 2026-08-26
+
+### Fixed
+- **Reaction Shots Were Written in a Shape Final Cut Never Produces**: they were `asset-clip`s referencing the angle's asset directly — valid DTD, clean import, and **nothing on the timeline**. A hand-made comparison file showed the real structure: a nested `mc-clip` carrying the host's own `ref`, with its angle chosen by `<mc-source angleID=…>`. As a multicam clip it also stays in sync, which a separate file reference would not.
+  - Times are in the host's local base, so a synchronous placement has `offset` and `start` equal. Final Cut's own file differs only because that clip had been dragged there by hand.
+  - Final Cut writes `srcEnable="all"`; ours is `video`, or the close-up's camera microphone would sum over the processed mics.
+
+### Added
+- **The Speaker as a Keyword on Every Clip**: the browser shows a multicam clip's *media* name, so every shot read "A-osa" regardless of what we named it, and the index's Tags tab was empty. Keywords are where Final Cut actually shows this. Reaction shots get `Reaktio · <speaker>`.
+  - The DTD fixes the order — `mc-source*`, then nested clips, then keywords — and a keyword before the lanes fails validation. A test asserts the order rather than just the presence.
+
+## [v26.08.26.93] - 2026-08-26
+
+### Fixed
+- **The Preview Promised Reaction Shots the Export Would Not Write**: the preview lane and the cut list deliberately ignore the on/off switch, so you can see what turning it on would do. But with the switch off they showed 96 shots and the export correctly wrote none, with nothing saying why. The lane, the legend and the list now state plainly that these are **not exported** while the switch is off — dimmed, italic, and labelled.
+
+## [v26.08.26.92] - 2026-08-26
+
+### Added
+- **The Long-Take Break Now Lands on a Measured Reaction**: the timeout knows only that time has passed; the measurement knows that something is happening. The stronger signal now decides. When a long turn must be broken and a measured reaction moment falls within 4 s of the timeout, the cut moves there and goes to *that* speaker's close-up; otherwise the timeout stands. The measured moment also beats the breath point — a breath says you *may* cut here, a measured moment says there is something to look at.
+  - The measurement reaches `decide.py` as a plain `(speakers, n)` boolean array. No file reading in the decision layer, and measured: `decide()` runs at **24.3 ms without marks and 24.2 ms with them**.
+  - `reactions.marks()` costs 24 ms itself, so it is cached against the settings that feed it. Recomputing it every settings round would have spent a quarter of the interface's response budget on something that rarely changes.
+- **`LONGTAKE_REACTION_WIDE`, a three-beat break**: reaction, then wide, then back to the speaker. Returning through the wide is a softer cut than close-up straight to close-up, and the wide restores the geography. It only splits when both halves clear `min_shot` — below that it is two flashes, not two shots.
+
+## [v26.08.26.91] - 2026-08-26
+
+### Fixed
+- **Reaction Shots Ignored the Cut They Were Placed Into**: placement was pure greed — best score first, a fixed 25 s apart, with no knowledge of the edit. Measured on a real episode: **18 of 121 landed within 0.2 s of a cut** (the picture changes, a reaction flashes, it changes back — a jolt, not a shot), **7 sat on their own speaker's close-up** (a jump cut to the same face), and **18 were inside a host shot under 3 s**. All three are now refused, and all three measure zero afterwards.
+  - The conditions run **before** thinning. Applied after, an interval would be spent on a candidate that is then rejected, and no acceptable one could take its place.
+- **The Interval Follows the Conversation's Tempo**: the same 1/f measure that scales `min_shot` in `decide.py` now scales the spacing, so reaction shots come closer together where turn-taking is quick and further apart in a monologue. A fixed interval had made this layer the most metronomic thing in the programme — interval spread was σ 10 s; it is now σ 17 s.
+  - Worth knowing: there are **two** reaction mechanisms. The older `LONGTAKE_REACTION` cuts to the co-host on the spine during a monologue and already used the rhythm engine; this one places them on their own lane.
+
+## [v26.08.26.90] - 2026-08-26
+
+### Fixed
+- **The Note Promised a Number That Cannot Move**: "121 moments pass the gate — that number changes as soon as you move the gate" was false, and the report was right. Measured on a real episode, moving the gate from 0.03 to 0.40 takes the candidates from **461 to 1875** — but what reaches the export only goes from **94 to 131**, because `reaction_spacing` takes one moment per interval and there are always more qualifying moments than intervals.
+  - Both numbers are now shown, because they answer different questions: the gate decides **which** moments qualify, the spacing decides **how many** get used. `reactions.candidates()` was split out from `find()` for exactly this.
+  - **The spacing and the shot length are now controls.** The setting that actually decides the count was not exposed at all, so the count could not be changed by any slider on screen.
+
+## [v26.08.26.89] - 2026-08-26
+
+### Fixed
+- **"Mittaa uudestaan" Reverted the Gate Slider**: no, not intentional. `/api/video` answered with the whole application state and the browser assigned it straight into `state`, so every control snapped back to whatever had last reached the server — a gate you had just dragged jumped to its saved value. The endpoint now returns **only the measurement state**, which makes the mistake impossible rather than merely fixed. A test asserts the response carries nothing else.
+- **The gate slider now shows its effect beside itself.** Dragging it did change something — the reaction row in the preview bar — but that is at the other end of the screen, and a control cannot be judged against a result you have to go looking for. The moment count in the row's header and in the note under the slider now update as you drag. They are swapped **in place**: redrawing the panel would pull the slider out from under the cursor, the same rule that governs the audio button.
+
+## [v26.08.26.88] - 2026-08-26
+
+### Fixed
+- **Zooming Felt Broken in Three Separate Ways**, all now addressed:
+  - **The bar did not move while scrolling.** Only the ruler updated; the picture stood still until the server replied and then jumped. The last drawn bar is now kept and stretched into the new window immediately — blurry when zoomed in, sharp when zoomed out, but always in the right place, which is the only thing that matters before the exact version arrives.
+  - **The zoom rate was unusable.** The wheel step went into an unclamped exponent, and a trackpad sends large deltas many times a second, so one gesture jumped from the whole programme to seconds. A step now changes the scale by at most about 6 %, making it a continuous gesture rather than a leap.
+  - **The hint sat on top of the ruler**, covering exactly the times the ruler exists to show. It moved to the preview's heading row, beside the decision timing.
+
+## [v26.08.26.87] - 2026-08-26
+
+### Added
+- **The Preview Bar Zooms**: wheel to zoom around the cursor, drag to pan, double-click for the whole programme. Inspection only — editing stays in Final Cut.
+  - The reason is resolution, not comfort. The whole programme in 1400 columns makes a column **3.3 s**: measured, 791 cuts at 5.9 s each is **1.8 columns per cut**, and a 1.6 s reaction shot is **half a column**. As an overview the bar reads the rhythm correctly; as a timeline it cannot show where anything is, because a second is not a distance in it.
+  - The window is applied **server-side**, where the squeezing already happens: the same column count over a shorter span *is* a sharper picture, and the whole grid never has to reach the browser. The bar redraws immediately on the data it has and asks for the sharper version once the movement stops, so a wheel notch is not a request.
+  - The ruler now draws from the **view**, not the programme duration. Tied to the total it would have shown wrong times while zoomed, which is worse than no ruler.
+
+### Fixed
+- The smoke test's stub had no `setPointerCapture` and its synthetic event carried no `clientX` or `deltaY`, so the drag handler failed and the zoom arithmetic would have produced `NaN` that nothing checked. A real canvas has all three.
+
+## [v26.08.26.86] - 2026-08-26
+
+### Added
+- **Reaction Shots Appear in the Cut List**: interleaved by timecode with the cuts, but **unnumbered and indented**. They are not cuts — they are overlays on their own lane, and the numbering is the running order of cuts. Numbering them would claim they are part of the cut underneath, which is exactly what the separate lane exists to deny. The summary line counts them separately.
+
+## [v26.08.26.85] - 2026-08-26
+
+### Added
+- **Reaction Shots Appear in the Preview Bar**: a low fourth row under the cut row, coloured by speaker, so their placement against the speech is visible before exporting. Where they fall relative to who is talking *is* the question, and a list of timecodes cannot answer it.
+  - The row is squeezed into the **same columns** as the speech rows. The bar is read across, so the rows' relation to each other is the whole point; a different division would put a reaction shot at the wrong place against the speech with nothing to say so. A test asserts the column counts match, and fails if they drift.
+  - A column is marked as soon as any reaction touches it, exactly as the speaker rows work. Reaction shots are around a second and the bar is 1400 columns wide, so an averaging squeeze would lose them precisely where they matter.
+  - The row and its legend entry appear only when there are shots; an empty strip would promise a feature that has not been measured.
+  - The lane is drawn even when the setting is off, because that is the only way to judge what turning it on would do before exporting.
+
+## [v26.08.26.84] - 2026-08-26
+
+### Fixed
+- **"4 lähikuvaa mitattu" Was the Least Informative Number Available**: it counted *files* — two cameras in two parts — and read as though four pictures had been found. The row now says how many keyframes came out of how many files, in what share a face was found, and **how many moments pass the gate**, which is the only number that answers "will this do anything".
+  - The candidate count is recomputed on every state request, so it moves as the gate slider moves. It is numpy over the cached tables with no file reading, so it belongs in the settings loop.
+  - Like the measurement, it ignores the `reactions` setting on purpose: it reports what is in the material, and the setting only decides whether that gets used. Reading it would have shown zero while hundreds of candidates existed — the same lie as the button.
+
+## [v26.08.26.83] - 2026-08-26
+
+### Fixed
+- **"Mittaa lähikuvat" Was a Silent No-op While Reaction Shots Were Off**: the progress bar ran through in a second, zero files were measured, and nothing was said. `analyse.tables()` returned empty as soon as it saw the setting off — but pressing the button is an explicit request, and measuring is gathering data; the setting only decides whether the data gets used. The measurement no longer looks at it.
+- **Nothing to measure now says so.** If no close-up qualifies — none roled, or nobody ever falls silent — that is a valid situation but it is not "done", and the button must not look like it succeeded.
+
+## [v26.08.26.82] - 2026-08-26
+
+### Changed
+- **Close-ups Are Measured Four at a Time**: decoding one stream does not spread across cores, so the parallelism has to be across files. On the real path the job went **990 s → 476 s**.
+  - Four is measured, not chosen: 22× realtime for one file, 38× for two, 73× for four — and then it stops, 72× at six and 71× at eight. The ceiling is neither the disk nor the CPU. During a decode `dd` pulled **759 MB/s** off the same drive while the decode held its 254 MB/s, and **66 % of the CPU was idle even at eight**. It is the number of hardware h264 decoders, and threads cannot add to those.
+  - The temp JPEG round-trip, which looked like an obvious suspect, costs about **1 %** of the time (23.1 s → 23.3 s over a 300 s segment). Scaling to 960 px costs 19 %. Everything else is the decode itself.
+  - A test asserts the files actually overlap. Serial would not fail, only take three times as long, which is the kind of slowdown nobody notices without measuring.
+
+## [v26.08.26.81] - 2026-08-26
+
+### Added
+- **Reaction Shots Reach the Export and the Interface**: the pipeline built earlier is now wired end to end. A row in the cut panel turns them on, measures the close-ups, and shows how far along it is; the export puts what passes the gate on its own lane.
+  - **Measuring is a button, not something the load does.** Decoding is minutes and most episodes do not want reaction shots at all. The result is cached on disk, so a second run costs seconds — which is what makes it affordable to press.
+  - It runs in a **thread**, not a child process. The child was pedalboard's requirement, which needs the main thread to load a VST3; Vision has no such constraint and ffmpeg is already its own process.
+  - **Both empty cases are reported.** Reaction shots on with nothing measured, and measured with nothing passing the gate, are different situations and each says so in the export warnings. Setting on and nothing in the result is this project's recurring failure, and silence is how it gets missed.
+  - The gate is the only control exposed, and it carries its measurement: the classes do not overlap, so 0.080 sits in the gap between the worst acceptable frame and the best unacceptable one.
+
+### Fixed
+- The interface smoke test's coverage guard caught `watchVideo` never being called — the harness did not serve `/api/video`, so the handler failed before reaching it. The route is now stubbed, which is the honest fix: the harness should answer the endpoints the interface actually calls.
+
+## [v26.08.26.80] - 2026-08-26
+
+### Changed
+- **The Gate Moved to 0.080, and It Is Now Measured Rather Than Chosen**: 23 hand-marked frames out of 381 candidates, and the two classes do not overlap at all — the worst frame marked good is 0.0721, the best marked bad is 0.0943. The threshold belongs in that gap. At 0.080 it keeps **all twelve marked good, admits none of the eleven marked bad**, and passes 60 % of candidates, about nine seconds a minute. The previous 0.057 was set from six marks and falsely rejected three good frames.
+  - It sits on the tight half of the gap on purpose: a reaction shot that never happens costs nothing, one that is disqualifying costs the take. A test asserts the default stays inside the gap and on that side, so moving it says which error was chosen.
+  - Caveat kept in the source: all eleven frames marked bad come from one speaker, so that half of the evidence is thin.
+
+## [v26.08.26.79] - 2026-08-26
+
+### Fixed
+- **Vision's `yaw` Is a Bin, Not an Angle**: measured across 9995 frames of real footage it takes exactly five values — multiples of 45° — and `roll` takes three. The components computed from the landmarks here (`smile`, `eyes`, `size`) take about nine thousand each over the same frames. So the one component that separated good reaction frames from bad was effectively binary, and the continuous ones did not separate at all. It looked like an angle and nothing said otherwise.
+  - `turn` and `tilt` now come from the nose relative to the midpoint of the eyes, divided by the eye span so face size and distance stay out of the measure. `yaw` stays: as a bin, "turned away" is exactly what it detects well. Detector version 2, so the cache invalidates itself.
+
+### Changed
+- **The Reaction Score Is a Gate, Not a Ranking**: the bar for a reaction shot is not "outstanding" but "not disqualifying" — in a finished edit most are unremarkable and only have to avoid embarrassment. Measured on 381 candidates against hand marks, a head-pose deviation of **0.057 keeps all six frames marked good, admits none of the fifteen marked bad, and halves the pool**. The same job on the quantised `yaw` let 95 % through and admitted three bad ones.
+  - `eyes` and `size` now default to zero weight. Neither separated good from bad, and `eyes` was actively harmful: a hard laugh closes the eyes, so rewarding open eyes buried the frames worth cutting to — three of the six marked good sat at ranks 66, 67 and 69 of 72 because they were neutral, attentive faces rather than grinning ones.
+
+## [v26.08.26.78] - 2026-08-26
+
+### Added
+- **Video Analysis Layer (`video/`) and Reaction Spans (`reactions.py`)**: the scaffolding for reaction shots, built so the detection can be replaced without touching anything else. Nothing is wired into the export path or the interface yet — this is the stable half, deliberately built first.
+  - **The seam is the detector.** `video/detect.py` is a registry; a detector looks at one frame and returns numbers, knowing nothing about the timeline, the speakers or the scoring. Its `name` and `version` are part of the cache key, so swapping it invalidates the cache by itself. Without that a new detector reads the old one's traces, and the result is valid, accepted and wrong.
+  - **Measurements are cached, not scores.** Tuning the weights costs nothing, which matters because the weights are the part expected to change. `reactions.py` reads the finished table in numpy with no file access — same rule as `decide.py`, since it runs in the settings loop.
+  - **Only keyframes are decoded**, measured at 70× realtime against 16× for a full decode — one frame a second at a camera's usual keyframe interval. And only close-ups of speakers who are silent at some point: decoding is the entire cost, so the narrowing happens before it.
+  - **Reactions are written to a positive lane as video-only connected clips**, never as angle switches inside the `mc-clip`. Validated against Final Cut's own DTD.
+  - The gaze baseline is measured, not assumed: a camera is not square-on, so "facing the speaker" is that camera's median yaw, not zero. Below the threshold nothing is proposed — a reaction shot of someone looking at their phone is worse than none.
+
+### Fixed
+- Two traps found while building, both silent: `-vsync 0` no longer exists in current ffmpeg (`-fps_mode passthrough`), and without it keyframes are stretched back to full rate — the same picture dozens of times, timestamps out of step with frames. And `ffprobe`'s `csv=p=0` still emits a trailing comma, so every timestamp failed to parse.
+
+## [v26.08.25.77] - 2026-08-25
+
+### Fixed
+- **The Row Hover Lied About What It Would Do**: a row carries two different actions — switch it on, or look inside — and the hover highlighted the whole row, including the checkbox. It promised one target where there were two. The checkbox sitting at the far left made it worse: a checkbox before a label reads as *that label's* checkbox, so clicking the name looked like it would toggle.
+  - Opening is now a **button** containing the name, the value and the chevron, and only that button highlights. The switch comes after it, next to the chevron: two controls side by side at the right edge, with the label clearly outside both.
+  - The button handles the keyboard itself. The hand-rolled `keydown` was doubling the space bar and breaking Enter.
+  - A test asserts the switch is not inside the button — nesting it would mean one click doing both things, and a control inside a `<button>` is invalid anyway. Verified by breaking it.
+
+## [v26.08.25.76] - 2026-08-25
+
+### Changed
+- **A Preset's Sliders Appear Only Once "Custom" Is Chosen**: the rhythm preset's four numbers were always visible, and moving one switched the preset to Custom in passing. That made the choice change as a *side effect* rather than as a choice. A preset **is** the decision; those four numbers are its definition, not something adjusted on top of it. Pick Custom and they appear, carrying the values the preset had.
+- **Long Turn and Overlapping Speech Are Rows Too**: each is one rule and a couple of timings, and the chosen rule now reads off the collapsed row instead of having to be found among the radio buttons. The settings rail went from one long scroll to eight collapsed rows.
+- **Three Columns on a Wide Screen**: two columns left a metre of empty space beside the patch bay and crammed everything else into one rail, so the audio section fell below the fold and could not be found — which is exactly what happened. The rail now splits into two columns above 1500 px, giving bay / cut / audio. Below that it is unchanged, and it stacks as before on narrow screens. The third column comes from splitting the rail rather than adding a column to `main`, so the medium case is untouched.
+
+### Fixed
+- The smoke test now asserts that a preset hides its sliders and Custom shows them. Verified by breaking it: the guard reports `esiasetuksessa näkyi 4 säädintä, pitäisi olla 0`.
+
+## [v26.08.25.75] - 2026-08-25
+
+### Fixed
+- **The New Rows Read Like the Old Checkboxes**: they inherited the checkbox labels, which were whole sentences — "Vaimenna toinen mikki puheen ulkopuolella" as a row name beside its own description and its own value. A checkbox needs a sentence because nothing else is next to it; a row does not. The rows are now named: Palautusliitännäinen, Vuodon poisto, Vaimennus, Naksunpoisto.
+- `unit.db` already begins with a space, so the row value read `-9  dB`.
+
+## [v26.08.25.74] - 2026-08-25
+
+### Changed
+- **The Audio Panel Collapses to Seven Rows**: it showed 26 sliders, and eight of them belonged to one feature. Almost every one has a measured default, and the measurement is written down in the code — but the user saw only the slider. The rule for the first screen is now: **if a default's measurement can be written down, the slider does not belong there.** That separates a number we measured from the few where taste genuinely varies — ducking depth, the plug-in's Mix, the platform's loudness.
+  - Nothing was removed. All 26 controls are still present at the same values; they were **ranked**, not deleted, and each now carries the measurement that set it. `duck_min_closed` says it is 0.6 s because shorter made 20 ms holes that click; `declick_sensitivity` says the threshold was calibrated on findings per second, 316–666 at 3.5× against about one at 25×.
+  - **A closed row shows when something inside it has been changed**, and names which control. Disclosure that hides a setting you already moved is worse than no disclosure — the knob disappears and cannot be found. Same principle as `project.name_tag`, which writes deviating controls into the export filename: the deviation is always visible one level up.
+  - Bleed removal is a row with no controls at all, and that is not a gap. It estimates the leakage path and measures its own result; a knob would only be a way to break it.
+  - Each row can restore its own measured defaults. `audio_defaults` comes from `AudioSettings()` over `/api/state`, not a copy in JavaScript — a copy would drift silently and the marker would then be wrong or absent.
+  - Opening a row does not redraw the panel, for the same reason `swapMixButton` exists: it would swap a slider out from under the cursor mid-drag.
+
+### Fixed
+- The interface smoke test's synthetic event had no `stopPropagation`, so a handler that used it threw only in the test. A real browser event has it; the stub now does too. The smoke test also asserts the rows and the deviation marker structurally — a marker that quietly stopped appearing would otherwise still pass, since nothing throws.
+
+## [v26.08.25.73] - 2026-08-25
+
+### Fixed
+- **The Plug-in's Window Opened Behind Everything**: the button reported the window was open and nothing appeared. The window was there all along — measured at 536×392 in the top-left corner, on screen, thirteenth from the front — but a plain Python process is not a GUI application to macOS, so it has no Dock icon and never comes forward. To the user that is indistinguishable from a button that does nothing, which is this project's recurring failure: it happened, it did not show, nothing said so. The child now sets `NSApplicationActivationPolicyRegular` and activates itself, once before opening and once a second later, when the plug-in has actually drawn something. pyobjc arrives with pywebview and is not required here: without it the window still opens, it just has to be found.
+- The window's title is pedalboard's, not the plug-in's, so the panel now says which title to look for.
+
+## [v26.08.25.72] - 2026-08-25
+
+### Added
+- **The Plug-in's Own Window (`audio/editor.py`)**: a button in the audio panel opens the plug-in's real interface, and whatever state you leave it in is saved with the episode.
+  - This is not a convenience. **Not everything that changes the result is a parameter.** dxRevive publishes four automatable parameters — bypass, input gain, output gain, Mix — and the *model selector is not one of them*. Studio 2 and its siblings live in the plug-in's own state, reachable only through its own interface. Without this we always ran whatever model the plug-in happens to default to, and could not even report which one.
+  - It runs in a **child process**. `show_editor` carries the same rule as loading — main thread only — and it *blocks* until the window is closed. The server's main thread is the event loop and cannot be held for as long as someone looks at a plug-in. Same reason, same shape as `audio/worker.py`.
+  - The state is applied **before** parameters, so a saved Mix cannot override the slider in the panel. A state from a different plug-in is opaque and useless, so it is ignored rather than made into an error, and changing `plugin_path` drops it along with the parameters.
+  - `plugin_state` is in `FINGERPRINT_FIELDS` and `FINGERPRINT_VERSION` is 4: a different model is a different result, and the button must not call those files fresh.
+
+## [v26.08.25.71] - 2026-08-25
+
+### Added
+- **Bleed Removal (`audio/debleed.py`)**: two microphones in one room hear both speakers, and in the export both tracks play — so the other person's voice arrives twice, a few milliseconds apart. That is a comb filter, and it sounds like a metallic reverb. Measured on a real episode: Nyman's voice sits 7.7 dB below the direct sound in Wancke's track at a 5 ms delay.
+  - **Ducking cannot fix this, and a deeper duck does not help.** Measured: the masks fire correctly and close Wancke's microphone on 64 % of the frames where only Nyman speaks — yet *infinite* attenuation moved the sum's ripple from 6.22 dB to 6.01 dB. The gaps are at the turn-taking boundaries, which is where the bleed is loudest. A gate can also do nothing about overlapping speech, where both microphones must stay open.
+  - The bleed is **linear** — one source, one room, a fixed delay and early reflections — so it is an FIR filter from one microphone to the other, and it can be estimated and subtracted. The filter is solved by least squares over the passages where **only the source speaks**, and subtracted everywhere, overlapping speech included.
+  - Measured coherence, 200–6000 Hz, where only the source speaks: raw 0.1734 → 0.0095; after the full chain 0.1069 → 0.0098. The target's own speech survived at r = 0.9993.
+  - It runs on the **raw** audio before the plug-in. The plug-in is generative and does not preserve the linear relation between tracks; after it, no filter can remove the bleed.
+  - **The result is checked, not assumed.** A wrong estimate eats the target's own speech, and that is only audible after the export. `remove` measures its own output and refuses a filter that reduces the target's own speech below `MIN_SPEECH_KEPT`, that had less than `MIN_SOLO_SECONDS` to learn from, or that achieves nothing. Every refusal names its reason in the log and in the result.
+- **`FINGERPRINT_VERSION` 3**, and a `debleed` toggle in the audio panel.
+
+## [v26.08.25.70] - 2026-08-25
+
+### Fixed
+- **The De-clicker Was a Distortion Generator**: it corrected **1.8–2.2 % of every sample — 550–640 corrections per second** — and altered the signal by −10 to −15 dB relative to itself. A lip smack happens a few times a minute. The cause was half a fix: when the reference was corrected from a local maximum to a local mean, the multiplier stayed the maximum's (3.5), and against a mean it fires on ordinary speech. Measured on real podcast material, the threshold that finds clicks at the rate clicks actually occur is around 25× the local mean. Default sensitivity now makes 0.2–0.6 corrections per second and touches 0.03 % of samples.
+  - A **ceiling** backs the threshold up: more findings than `DECLICK_MAX_PER_SECOND` and the threshold doubles until they fit; if they never fit, nothing is corrected. A detector that finds a click every other millisecond has found the signal, not clicks.
+  - Overshoots within 2 ms are **one** event. Without that, a single 2 ms click counts as thirty separate findings — its half-cycles — so the ceiling tripped on one click and the interpolation repaired only the peaks of the wave and left the rest.
+  - The plosive guard compares against a **local** mean. A whole-file mean made the guard a function of file length: in an hour-long recording full of pauses the mean sinks and the guard stops guarding exactly where the detector fires most.
+  - Two tests now cover both directions. The old suite only asked whether a planted click was removed, never *how many* were found, so a detector that corrected everything passed it.
+- **`FINGERPRINT_VERSION` 2**: files made with the old detector are not up to date under any setting, and without this the button would have said the opposite.
+
+## [v26.08.25.69] - 2026-08-25
+
+### Fixed
+- **The Export's Name Did Not Reach Final Cut**: the file name carries the settings tag and a version number — `…-cut broadcast audio v8.fcpxml` — but Final Cut does not show file names. It shows `<project name>`, which was the project name setting and therefore identical for every export. Successive imports were indistinguishable in the browser, with nothing to say which was newer or which file it came from, which is the same problem the file numbering exists to solve. The shown name now carries the distinguishing part: `Rough cut · broadcast audio v8`.
+
+## [v26.08.25.68] - 2026-08-25
+
+### Fixed
+- **The Envelope Cache Had Never Worked**: `np.save` appends `.npy` to a path that does not already end in it, so writing the temporary file `<key>.npy.tmp` actually produced `<key>.npy.tmp.npy`. The rename that followed then looked for a file that did not exist, raised `FileNotFoundError` — which is an `OSError` — and the `except OSError` swallowed it. Nothing failed, nothing was logged, and every load re-decoded every audio file with ffmpeg. There were 1212 orphaned files in the cache directory going back to 21 August, and they have been removed. Writing through an open handle instead: analysing this project's ten files falls from **56.5 s to 0.0 s** on the second pass.
+- **The Test That Should Have Caught It Measured the Wrong Thing**: it asserted the second analysis pass took under 0.4 seconds — a proxy for "the cache was used" that the tiny test fixture satisfied whether or not the cache worked, and that fails on a busy machine whether or not it is broken. It now forbids decoding outright, so a miss is an error rather than a slowdown.
+
+## [v26.08.25.67] - 2026-08-25
+
+### Changed
+- **The Channel Strip Bites in Small Amounts, Several Times**: one compressor pulling twelve decibels sounds like a compressor; three pulling four sound like nothing. Every stage now has a hard ceiling on its gain reduction (`MAX_GR_DB`), and there are three of them — a multiband stage first, so a plosive at 100 Hz cannot drag the sibilance down with it, then two gentle broadband stages. Owsinski puts a single box at "less (usually way less) than 3dB" and calls six decibels "extreme processing" worth splitting; five is the hard ceiling here, and typical reduction sits well below it. All bands share one ratio and one limit, which is his explicit precaution — differing amounts per band alter the tone with the programme and read as unnatural.
+- **The Ceiling Is True Peak, With Headroom**: limiting sample peaks to −1.0 dBFS measured −0.42 dBTP, because the peaks that clip a converter fall *between* samples. Detection is now 4× oversampled and the ceiling is −1.5 dBTP, which survives AAC encoding — the handbook wants true peaks under −1, and −2 for Spotify.
+- **An Over-Compression Alarm**: `peak_to_short_term` reports peak-to-short-term loudness. Owsinski's one numeric rule for this: below about 6 LU means more compression than was needed. The current chain measures 12 LU on a stem and 15 on the programme.
+
+### Fixed
+- **Compressor Thresholds Follow the Target**: they were absolute, so raising the delivery target from −20 to −14 LUFS drove the signal 6 dB deeper into them and removed 4.5 dB more crest. The target now changes the level, not the amount of compression.
+
+## [v26.08.25.66] - 2026-08-25
+
+### Fixed
+- **The Program Trim Was Being Undone**: it was added to the gain, and the chain normalises to the target *after* that, so the normalisation removed it exactly. The stems measured −14.1 LUFS where they should have measured −15.8, and nothing said otherwise — the number looked right, just for the wrong reason. The trim now goes into the target, where normalisation preserves it because it is the thing normalisation aims at. A test asserts the trim actually moves the level.
+- **Doubled `[ääni]` in the log**: the child's own lines were passed through the parent's logger, which added its prefix a second time.
+
+## [v26.08.25.65] - 2026-08-25
+
+### Fixed
+- **The Plug-In Pool Loaded on the Wrong Thread**: moving processing into a child process was necessary but not sufficient. The pool then loaded each instance *lazily, inside the worker thread that would use it*, which is exactly what pedalboard forbids — and the error says `reset=False`, which points at processing and hides that the rule is about **loading**. Processing from a worker thread is fine; loading is not. Every instance is now created when the pool is built, on the thread that builds it, and each piece is handed one. Verified end to end on the real project: plug-in 59 s for a 20-minute file across six pieces, with ducking active.
+
+## [v26.08.25.64] - 2026-08-25
+
+### Fixed
+- **"Process Audio" Raised `name 'json' is not defined`**: the child-process change added a `json.dump` to the server without the import, and no test reached that path — the whole of `run_mix` was untested, so 235 green tests said nothing about the button. Two tests now drive it end to end with a stand-in child: one that reports progress, a non-JSON log line and a result, and one that dies with a non-zero code. Both were confirmed to fail without the fix.
+
+## [v26.08.25.63] - 2026-08-25
+
+### Fixed
+- **Audio Processing Runs in Its Own Process**: loading a VST3 through pedalboard requires the **main thread** — anywhere else it refuses with "must be reloaded on the main thread". The server's main thread runs the event loop and cannot be occupied for minutes, so hosting the plug-in inside the server was never sound; it had simply been getting away with it. Processing now happens in a child process whose main thread is free to do the work, talking back over line-delimited JSON. Two things come free: a plug-in that crashes or hangs no longer takes the server with it, and the child computes the envelopes itself, so ducking can no longer be skipped for not having them.
+
+## [v26.08.25.62] - 2026-08-25
+
+### Fixed
+- **Ducking Was Silently Skipped, and the Bleed Comb-Filtered**: playing two processed microphones together produced a flanging sound. It was not a sync problem — the files measure 0 samples of offset against their sources, everywhere, and the parallel pieces differ by at most 2 samples. It was the crosstalk. Each microphone is normalised to the same target independently, so the quieter one gets more gain, and that gain lifts the *other* speaker's bleed inside it: separation between direct sound and bleed fell from 19.2 dB to 15.2 dB, which is where a few milliseconds of acoustic path delay stops being inaudible and starts being a comb filter.
+
+  Ducking exists to prevent exactly this, and it had not run. The envelopes are computed in a background thread on load; pressing the button before that finished left `analysis` unset, the grid unbuilt and the masks empty — with no log line, no warning and no error. Measured in the output: the ducked track was **1.7 dB louder** during the other speaker's turn rather than 9 dB quieter. Processing now waits for the envelopes instead of skipping, says so while it waits, and reports it in the panel if they never arrive. It also logs how many microphones got a mask and how much material will be ducked, and treats "the setting is on and nothing matched" as an error rather than a silence.
+
+## [v26.08.24.61] - 2026-08-24
+
+### Added
+- **Loudness Targets Have Names**: −14 LUFS is where YouTube normalises, −16 where Spotify and Apple Podcasts do, −23 is EBU R128. These are specifications, not preferences: export louder and the platform turns it down, quieter and it sits under everything else. The panel now names them and the default is YouTube's −14; the slider stays free, because not all delivery is one of the three.
+- **The Level Now Lands Where It Was Asked To**: the limiter eats loudness in proportion to what it clips, and correcting for that pushes the peaks back into the limiter, so a single correction pass always fell short — measured 1–2 dB under target. It now iterates up to three times and stops within 0.3 dB. On real material: asked −14, got −14.52 and −14.64 for the two speakers; asked −16, got −16.27 and −16.53. The two microphones land **0.12 dB apart**, which is the balance that matters.
+
+## [v26.08.24.60] - 2026-08-24
+
+### Fixed
+- **Final Cut Played the Raw Audio Because `uid` Beats `src`**: the exported video measured −43 LUFS, which is raw-microphone level. Cross-correlated against the sources it was raw: +0.958 to the untouched file, +0.883 to the processed one. Final Cut identifies media by `uid`, not by path. Redirecting an asset's `src` left its `uid` untouched, so the processed file claimed to be the same media as the original — and the raw twin, being a copy, carried that same `uid` *and* a `<bookmark>`. Final Cut collapsed the pair and kept the raw. Every "processed" angle had been playing untouched audio, and nothing said so. A redirected asset now drops its `uid` as well as its `<bookmark>`; the twin keeps both, because it really is the original media.
+
+### Changed
+- **The Channel Strip Was Throwing Away 9–12 dB**: `peak_guard` attenuated the whole file by whatever its single loudest sample demanded. After normalisation the peaks sat at +8 to +11 dBFS, so the static cut was enormous: −14.00 LUFS became −25.74 (Nyman) and −22.94 (Wancke). That one line put every file 9–12 dB under target, made the speakers' balance depend on whose loudest transient was loudest, and reduced the program trim to noise. The ceiling is now a look-ahead limiter that touches only the peaks, and the level is re-measured after it so speakers land together. Measured on the same excerpts: **−14.95 and −16.02 LUFS with peaks at exactly −1.00 dBFS**.
+- **Less Distortion at the Same Loudness**: the peak compressor attacked in 2 ms, which is inside the pitch period of a 110 Hz voice — that is waveform modulation, not level control. Measured on a 110 Hz sine at −6 dBFS: 2 ms gives −30.9 dB THD, 40 ms gives −36.1 dB. The attack is now 15 ms, longer than any speech pitch period. The two compressors run in **parallel** with the dry signal rather than in series, so quiet passages come up while transients survive untouched, and a de-esser sits ahead of them because the restoration plug-in adds +4 to +5.7 dB across 3–20 kHz and a single sibilant was pulling whole sentences down.
+
+## [v26.08.24.59] - 2026-08-24
+
+### Fixed
+- **Per-Speaker Roles Now Survive the Import**: `audioRole` on a multicam angle's clip is the obvious way to give it a role, and Final Cut ignores it — the angle stays on the default subrole `Dialogue-1`, which is where it puts every dialogue clip. The working mechanism is `<audio-channel-source>`, which names the component channel by channel. Established by importing both versions and looking: `audioRole` alone shows "Dialogue-1", `audio-channel-source` shows "Nyman". Both are written now, since that is how it was tested and the attribute costs nothing. The Audio Configuration inspector reads "Nyman, Wancke" instead of "Dialogue-1", which means per-speaker faders and role-based stem exports.
+
+## [v26.08.24.58] - 2026-08-24
+
+### Fixed
+- **The Raw Twin Still Played: `srcEnable` Beats `active`**: the previous release made the angle carry the subrole its `mc-source` names, which was a real mismatch — and not the one keeping the twin audible. Final Cut never writes `srcEnable="audio"` together with `active="0"`. In its own multicams an angle with audio on is `srcEnable="audio"` with `active="1"`, and an angle with audio off is `srcEnable="none"` (or `"video"`) with `active="0"`. Our combination is a contradiction, and Final Cut resolves it in favour of `srcEnable`: the angle plays, whatever the role says. The twin's source is now `srcEnable="none"`, which still lists it in Audio Configuration — unticked, ready to switch on when it is wanted.
+
+## [v26.08.24.57] - 2026-08-24
+
+### Fixed
+- **The Raw Twin Was Not Muted, and Played Underneath the Processed Track**: the multicam angles are copied from the source, so their audio keeps Final Cut's default subrole `dialogue.dialogue-1`. The `<mc-source>` written beside them named a per-speaker subrole instead — `dialogue.Nyman`, `dialogue.Nyman raw` — which the angle did not carry. Nothing failed: the XML validated against the DTD, the import succeeded, and `active="0"` simply had no role to apply to. So the untouched twin played summed with the processed track, two nearly identical signals combing against each other, and it was audible only by listening. The angle now carries the subrole its `mc-source` names, built by the same construction in both places so they cannot drift apart again. A test asserts the invariant and fails without the fix.
+
+**If you have already imported an earlier export**, you do not need to re-export and redo your edits: in the Audio Configuration inspector, untick the two angles whose names end in `raw`.
+
+## [v26.08.24.56] - 2026-08-24
+
+### Added
+- **The Button Says What Has Been Done**: after a run the panel reset to "Process audio", which looks exactly like a panel where nothing has happened. There are three states and they were all rendered the same: nothing processed, everything processed, and processed-but-the-settings-have-changed-since. The button now reads "Audio processed (n files)" when every file matches the current settings, and pressing it asks for confirmation before starting a run that costs minutes. When only some files are stale — because a control moved after the last run — it invites processing again and the note says how many and why. Freshness is recomputed on every settings round, so the button goes stale at the same moment the result does; only the button is swapped, never the whole panel, because redrawing it would pull a slider out from under a drag.
+- **Deliberate Re-rendering**: `/api/mix` takes `force`, which processes files that are already up to date. Reachable only through the confirmation, because it is minutes of work that the fingerprint would otherwise correctly skip.
+
+## [v26.08.24.55] - 2026-08-24
+
+### Performance
+- **The Plug-In Now Uses More Than One Core**: dxRevive was measured at 0.98 cores and 7.25× realtime — the plug-in is 97 % of a run, and it was using one of eight cores. The file is now cut into as many pieces as there are workers and the pieces run in parallel on their own plug-in instances. Measured on a real 20-minute microphone file: **168.4 s → 68.3 s, 2.46×**. Scaling is not linear (1 → 7.5×, 2 → 9.5×, 4 → 14.8×, 6 → 20.1× realtime) because the plug-in's inference is memory-bandwidth bound; six workers is where adding more stops paying, and two cores are left for the interface. This is not the forbidden chunked feeding: each piece is its own full `reset=True` run with a five-second margin that is processed and discarded, and the result is written into an array of the original length, so the sample count cannot move. It is not free either — the pieces cannot see each other's context, so the plug-in's slow adaptation differs slightly between them: 25.7 dB below the signal in speech, −84 dBFS absolute in the quiet parts. Because that is not zero, the piece count is adjustable in the panel — a share of the machine's cores by default, capped at the core count, and 1 for a single run over the whole file.
+
+### Added
+- **The Loudness Target Is the Program's, Not One Stem's**: two microphones each normalised to −14 LUFS do not sum to −14. Measured on real material, they summed to −12.2 — the speakers overlap and the microphones hear each other, so the gap is neither the 3 dB of two identical signals nor the 0 dB of perfect alternation. `mix.program_trim` measures the sum of the raw microphones over a bounded window before processing and takes the difference off every file; on the episode it was built for, −1.79 dB, measured in five seconds. The window is anchored to the longest microphone file rather than the middle of the timeline, because in a multicam the parts are consecutive and the midpoint lands inside one of them.
+
+### Fixed
+- **"Process Audio" Did Nothing and Said Nothing**: a processed file was considered up to date whenever it was newer than its source. Nothing else was compared, so changing the plug-in, its controls, the target loudness, the ducking depth or the trim did not invalidate anything: the run skipped every file, returned before the first log line, and left the panel showing exactly the text it showed before the button was pressed. The processed audio on disk stayed as it was rendered days earlier, and the export used it. Freshness is now a fingerprint — the source's path, size and modification time, the plug-in's own modification time, the job's target level, and every setting the result depends on — kept in `~/Library/Caches/autoraffkat/mix/`. A file whose fingerprint is unknown counts as stale, so the first run after this update re-renders everything once. `adopt` uses the same test, so the export never uses a file that processing has just decided to redo.
+- **A Run With Nothing to Do Was Indistinguishable From a Broken Button**: processing now logs each skipped file and a summary line to the terminal, and the interface reports the outcome of a run — "processed *n* files" or "every file was already up to date". A no-op run finishes before the first progress poll, so without this nothing on screen changed at all.
+
+## [v26.08.24.54] - 2026-08-24
+
+### Performance
+- **The Shift Check Cost More Than the Plug-In**: after processing, the result is cross-correlated against the original to catch a plug-in that reports its latency wrongly. It used `np.correlate(..., "full")`, which computes the correlation directly and is O(n²). On a millisecond grid a 20-minute file is 1.2 million bins, and the check took **132 seconds** — longer than dxRevive spent on the same file — while an hour-long file would have spent a quarter of an hour on the check alone. An FFT gives the identical answer in 0.05 seconds. Processing that file now takes 168 s instead of 300 s.
+
+### Added
+- **A Progress Bar for Audio Processing**: the panel now shows a weighted bar, the stage being worked on (plug-in, measuring, dynamics, shift check, writing) and a time estimate, rather than `2/4` alone. Files are weighted by size, so a 20-minute file and a 64-minute one no longer count the same, and the estimate exists from the first stage instead of appearing only after the first file finishes. The bar moves within a single long file: the plug-in cannot be asked how far along it is — it processes a file in one piece because chunking would shorten the result — so stage boundaries are the resolution available.
+- **Progress Survives a Reload**: processing runs in a background thread on the server, but only the browser tab that started it was watching. Reloading the page mid-run left a frozen panel. The interface now resumes watching whenever it loads and finds a run in progress.
+- **Processing Logs to the Terminal**: one line per file and per stage with its duration, plus the normalisation lift and any error. Processing takes minutes in a background thread where nothing was visible, and when it is slow or fails the question is always the same — which file, and which stage.
+
+## [v26.08.24.53] - 2026-08-24
+
+### Added
+- **The Raw Microphone Also Travels With a Flat Cut**: the muted twin now exists in the non-multicam export too. There are no angles there, so it is a connected clip on its own lane with `enabled="0"` and the subrole `dialogue.<Speaker> raw`. Twins sit on the lowest lanes — after the microphones and the room tone — so switching processing on does not move the microphone on lane −1. Only a processed track gets one; without processing there is nothing to fall back from.
+
+## [v26.08.24.52] - 2026-08-24
+
+### Fixed
+- **The Export Used Raw Audio Unless the Button Was Pressed in That Session**: processed audio is written once and stays on disk beside the source, but the fact that it existed lived only in the session's memory. Reopening an episode — or opening a new one whose settings were inherited — and exporting straight away referenced the untouched originals, while the file name still said `audio`. Processed files that are up to date beside their source are now adopted on load and again at export, so the export follows what is on disk rather than which buttons were pressed.
+
+### Added
+- **The Raw Microphone Travels With the Cut**: every processed microphone angle now has a twin in the multicam carrying the untouched original, muted (`active="0"`) and on its own subrole (`dialogue.<Speaker> raw`). Redirecting an asset to the processed file leaves no reference to the original, and a plug-in's mark is heard only by listening — by which time the cut has usually been edited in Final Cut and a fresh export would not bring that work along. The twin is a copy of the angle, so it inherits its timing and bookmark and is in sync to the sample.
+
+### Changed
+- Processing now refuses outright to write to its source path. The target has always been a `[mix]` sibling, but the check now sits at the write itself, because that step is not reversible.
+
+## [v26.08.24.51] - 2026-08-24
+
+### Added
+- **Plug-in Controls**: The external VST3/AU plug-in can now be given its parameters instead of running on whatever preset happened to be its factory default. Choosing a plug-in lists its own controls under the field — slider, checkbox or menu according to the parameter's type — in the plug-in's own units (dB, %, on/off), not the 0–1 raw value underneath. Only touched controls are saved; the rest stay at the plug-in's defaults, and **Plug-in defaults** clears them. The settings belong to the plug-in they were read from, so choosing another plug-in clears them: the same name in another plug-in would land on the wrong control. An unknown or out-of-range name is skipped rather than raised, because settings are inherited from the previous episode, whose plug-in may have been a different one.
+
+## [v26.08.24.50] - 2026-08-24
+
+### Added
+- **Settings in the Export Name**: The export is now named after the controls it was made with — the rhythm preset always, plus any control that deviates from its default (`episode-cut custom 3s louder stay audio.fcpxml`). In Final Cut's browser the file name is the only thing separating one rough cut from the next. New **Settings in the file name** checkbox in the Project section turns it off; the path shown in the interface follows the controls live.
+- **Settings Embedded in the Exported FCPXML**: `<sequence>` now carries a translated one-line `<note>` (version, rhythm, shot lengths, rules, whether the microphones were processed) and a `<metadata>` block with one `<md>` per control plus the complete settings JSON under `fi.autoraffkat.settings`. A cut is reproducible from the file alone, on a machine that never saw the settings file.
+
+### Fixed
+- **Rhythm Preset and Hang Never Reached the Server**: `/api/settings` dropped `rhythm` and `hang` from the incoming payload, so the saved settings kept the defaults no matter what was chosen in the interface.
+- **Hang (L-cut) Did Nothing**: `decide.py` never read `g.hang`. The slider, the rhythm presets and the documentation all promised an L-cut that was not implemented. The hang is now a floor on the cut point — the outgoing speaker's face stays on screen for that long after their speech ceases, so a fast handover becomes an L-cut while a real pause still gets the J-cut lead. It does not apply during overlapping speech, where the outgoing speaker has not stopped.
+- **Brief Overlap Could Cut to a Silent Speaker**: in backchannelling the picture went to the loudest *microphone* rather than the loudest speaker who was actually talking. With three or more people, a hot mic or a large gain on a silent participant took the shot.
+- **Reaction Shot Could Cut to an Angle That Does Not Exist**: the co-host chosen for a reaction shot was not checked against the close-up's availability, so in a multicam the cut could land on an angle missing from that part. The candidate must now be available for the whole insert; otherwise the break goes wide as before.
+- **Programme Edges Were Always Cut at the Slowest Tempo**: the 1/f tempo window was zero-padded, so the first and last 22 seconds measured as the slowest possible material and stretched the shortest shot by a fifth regardless of content. The window now slides inward at the edges instead of being padded with zeros, so the start and end are measured against the same span as the middle, and the mean-rate epsilon no longer skews sparse material by several percent.
+
+### Performance
+- The 1/f tempo window is a summed-area lookup instead of a direct convolution: a two-hour programme decides in 24 ms instead of 90 ms, of which the tempo is now 9 ms instead of 75 ms. The decision layer runs on every slider movement, so this is the interface's response time.
+
+### Changed
+- Export version numbering now runs within one set of settings: a cut made with different controls is a new file, not the next version of the same one.
+
+## [v26.08.22.49] - 2026-08-22
+
+### Documentation
+- Updated `README.md` and `README.fi.md` with headless remote execution guide, cross-platform plugin directories, rhythm presets, L/J cuts, and reaction shots.
+- Updated `DESIGN.md` and `DESIGN.fi.md` architecture notes for 1/f tempo waves and breath-snapped long-take punctuation.
+
+## [v26.08.22.48] - 2026-08-22
+
+### Added
+- **Cross-Platform VST3 Paths**: Added native Linux (`/usr/lib/vst3`, `~/.vst3`, etc.) and Windows (`CommonProgramFiles/VST3`) plugin directory discovery to `audio/chain.py` for headless remote servers.
+- **1/f Dynamic Tempo Modulation**: Local conversation density / turn-taking rate dynamically modulates pacing and dwell times over rolling 45s windows in `decide.py`.
+- **Optional Reaction Shots**: Added `reaction` rule to long-take breaking options (`LONGTAKE_REACTION`), allowing cuts to a silent co-host's close-up during monologues while keeping Wide as the safe default.
+- **Rhythm & Pacing Engine**: Added macro editing presets (`broadcast`, `mellow`, `hectic`, `custom`) for rhythm control.
+- **L-Cut & J-Cut Support**: Added asymmetric lead (J-cut anticipation) and hang (L-cut reaction) controls to `decide.py` and UI.
+- **Pause-Snapped Monologue Punctuation**: Long continuous monologues now snap transitions at natural speech pauses or acoustic breath/energy dips.
+- **Rhythm UI Controls**: Added profile selection radio group and hang slider in both Finnish and English.

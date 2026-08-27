@@ -1,0 +1,446 @@
+"""Reaktiokuvat: mittauksista jaksoiksi.
+
+Nopea kerros. Lukee valmiin mittaustaulukon (``video.measure``) ja
+ruudukon, ja päättää millisekunneissa mitkä sekunnit kelpaavat
+reaktiokuvaksi. **Ei avaa yhtään tiedostoa** — sama sääntö kuin
+``decide.py``:llä, ja samasta syystä: tämä ajetaan säätökierroksella.
+
+**Mitä pisteytetään.** Ei «nyökkäsikö hän»: sekunnin välein otetusta
+näytteestä nyökkäys on yksi piste eikä liike. Kysymys on «onko tämä hyvä
+sekunti olla hänen kasvoillaan», ja se on tila — katse puhujaan päin,
+silmät auki, suupielet ylhäällä, kasvot lähellä ja liikkeessä. Kaikki
+yhdestä ruudusta, ei aikamallista.
+
+Pisteet ovat z-lukuja jakson omasta jakaumasta. Mikään näistä ei ole
+absoluuttisesti luettavissa: «paljon liikettä» riippuu ihmisestä, kamerasta
+ja huoneesta, ja kiinteä kynnys tarkoittaisi eri asiaa joka jaksossa.
+
+**Katseen perusasento mitataan, ei oleteta.** Kamera ei ole kohtisuorassa,
+joten «puhujaan päin» ei ole yaw nolla vaan tämän kameran mediaani. Nollaan
+sidottu ehto hylkäisi kaiken tai hyväksyisi kaiken sen mukaan miten kamera
+sattui olemaan.
+
+Kynnyksen alle jäävistä ei tehdä mitään. Reaktiokuva jossa kuuntelija
+katsoo puhelintaan on huonompi kuin ei reaktiokuvaa lainkaan, joten
+puuttuva löydös on oikea tulos eikä epäonnistuminen.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+
+from .decide import _compute_tempo, _runs
+from .model import HOP
+
+# Pään asennon sallittu poikkeama perusasennosta. Yksikkö on nenän siirtymä
+# silmien välimatkaan suhteutettuna, ei radiaani.
+#
+# **Portti, ei pisteytyksen osa.** Mitattuna oikealla jaksolla: 381
+# ehdokasta ja 23 käsin arvioitua, ja luokat eivät mene lainkaan päällekkäin
+# — huonoin hyväksi merkitty 0,0721, paras huonoksi merkitty 0,0943. Raja
+# asetetaan siihen väliin: 0,080 säilyttää kaikki 12 hyvää, ei päästä
+# yhtään 11 huonosta, ja läpäisee 60 % ehdokkaista eli noin yhdeksän
+# sekuntia minuutissa. Väljempi raja alkaa päästää huonoja, tiukempi hylkää
+# hyviä — ja koska ohi mennyt reaktiokuva ei maksa mitään mutta kelvoton
+# maksaa, luku on välin tiukemmalla puoliskolla.
+#
+# Sama tehtävä Visionin omalla ``yaw``illa oli hyödytön: tiukin raja joka
+# säilytti hyvät päästi läpi 95 % kaikesta ja kolme huonoa — koska ``yaw``
+# on portaittainen, ks. video/detect.py.
+#
+# Yksitoista huonoa on kaikki samalta puhujalta, joten juuri se puoli
+# aineistosta on ohut.
+#
+# Reaktiokuvan rima ei ole «loistava» vaan «ei kelvoton»: valmiissa
+# leikkauksessa useimmat reaktiokuvat ovat mitäänsanomattomia, niiden pitää
+# vain olla nolaamatta. Siksi ratkaisee kynnys eikä järjestys.
+TURN_MAX = 0.080
+
+# Vanha katseen levitys. Jäljellä siksi, että lokeroitu yaw on yhä hyvä
+# karkeaan hylkäykseen — poispäin kääntynyt pää erottuu siitäkin.
+GAZE_SPREAD = 0.35
+
+# Peräkkäisten näytteiden väli, jota kauempaa liikettä ei lasketa: kahden
+# eri ikkunan yli mitattu «liike» on eri hetki, ei elettä.
+MOVE_GAP_S = 4.0
+
+# Etäisyys leikkausrajasta, jota lähemmäs reaktiokuvaa ei laiteta.
+#
+# Ilman tätä sijoitus ei tiennyt leikkauksista mitään, ja mitattuna
+# oikealla jaksolla 18 reaktiokuvaa 121:stä osui alle 0,2 sekunnin päähän
+# leikkausrajasta: kuva vaihtuu, reaktiokuva välähtää, kuva vaihtuu taas.
+# Se ei ole reaktio vaan tärähdys. Sekunti on lyhin väli jossa molemmat
+# leikkaukset ehtii lukea erillisinä — mutta vain **alaraja**: varsinainen
+# marginaali on ohjelman oma ``min_shot``, ks. ``fits``.
+CUT_MARGIN = 1.0
+
+# Kuinka paljon ennen mitattua ruutua leikkaus tehdään.
+#
+# Avainruutuja on **yksi sekunnissa**. Mittaus kertoo siis että kuuntelija
+# näyttää hyvältä jossain tuon sekunnin sisällä, ei milloin ilme alkoi — ja
+# sekunnin alusta leikattuna reaktio on jo käynnissä kun kuva vaihtuu.
+# Sama idea kuin J-cutin ennakolla: kuva ennen tapahtumaa, ei sen jälkeen.
+LEAD = 0.4
+
+# Tauko, jota lyhyempi ei kelpaa leikkauskohdaksi. Verhokäyrän on/off
+# heilahtelee tavurytmissä — mitattuna puhejaksojen mediaani on 0,22 s ja
+# taukojen 0,14 s — joten «sanan raja» ei ole tässä aineistossa olemassa.
+# Kolmasosasekunnin tauko on lauseen raja, ja se on.
+PAUSE = 0.30
+
+# Kuinka kaukaa tauko kelpaa. Kauempaa siirretty leikkaus ei enää liity
+# siihen reaktioon jonka takia se tehdään.
+PAUSE_REACH = 0.5
+
+
+@dataclass
+class Reaction:
+    """Yksi ehdotettu reaktiokuva, aikajanan aikaa.
+
+    ``speaker`` on se jonka kasvot mitattiin — se on syy, ei välttämättä
+    se mitä ruudulla näkyy. ``shot`` on näytettävän raidan avain, tyhjä
+    kun se on puhujan oma lähikuva; ks. ``_vary``.
+    """
+
+    speaker: str
+    start: float
+    end: float
+    score: float
+    shot: str = ""
+
+
+def scores(table: dict, weights: dict) -> np.ndarray:
+    """Pisteet ruuduittain. ``-inf`` niille joista ei löytynyt kasvoja.
+
+    Painot tulevat asetuksista, koska tämä on se osa jota säädetään: purkua
+    ei tarvita uudestaan, kun taulukossa on mittaukset eikä pisteitä.
+    """
+    found = np.asarray(table.get("found"), dtype=bool)
+    n = len(found)
+    out = np.full(n, -np.inf, dtype=np.float64)
+    if not found.any():
+        return out
+
+    def column(name: str) -> np.ndarray:
+        return np.asarray(table.get(name, np.zeros(n)), dtype=np.float64)
+
+    def z(values: np.ndarray) -> np.ndarray:
+        picked = values[found]
+        spread = float(picked.std()) or 1e-9
+        return (values - float(picked.mean())) / spread
+
+    # Pään asento: poikkeama **tämän kameran** perusasennosta. Kamera ei ole
+    # kohtisuorassa, joten «puhujaan päin» ei ole nolla vaan mediaani.
+    # Perusasento vain löytyneistä: nollat sotkisivat mediaanin.
+    turn = column("turn")
+    deviation = np.abs(turn - float(np.median(turn[found])))
+    yaw = column("yaw")
+    gaze = np.exp(-(((yaw - float(np.median(yaw[found]))) / GAZE_SPREAD) ** 2))
+
+    times = column("times")
+    move = np.zeros(n)
+    if n > 1:
+        gap = np.diff(times, prepend=times[0])
+        step = np.hypot(np.diff(column("cx"), prepend=column("cx")[0]),
+                        np.diff(column("cy"), prepend=column("cy")[0]))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            move = np.where(gap > 1e-6, step / np.maximum(gap, 1e-6), 0.0)
+        move[gap > MOVE_GAP_S] = 0.0
+        move[0] = 0.0
+
+    # Portti ensin. Sen läpäisseiden kesken järjestys on **suoruus**: mitä
+    # vähemmän pää on kääntynyt, sitä varmemmin kuva kelpaa. Muut osat ovat
+    # pieniä lisiä, koska mitattuna ne eivät erottele — hymy hieman, silmät
+    # ja koko eivät lainkaan. Silmät oli jopa haitallinen: kova nauru sulkee
+    # silmät, ja «silmät auki» hautasi juuri ne ruudut jotka kelpasivat.
+    limit = float(weights.get("turn_max", TURN_MAX))
+    passes = found & (deviation <= limit)
+    total = (-float(weights.get("turn", 1.0)) * z(deviation)
+             + float(weights.get("gaze", 0.0)) * z(gaze)
+             + float(weights.get("smile", 0.3)) * z(column("smile"))
+             + float(weights.get("eyes", 0.0)) * z(column("eyes"))
+             + float(weights.get("motion", 0.2)) * z(move)
+             + float(weights.get("size", 0.0)) * z(column("size")))
+    out[passes] = total[passes]
+    return out
+
+
+def listening(grid, speaker: str) -> np.ndarray:
+    """Ruudut joissa tämä puhuja on vaiti ja joku toinen äänessä."""
+    names = [lane.name for lane in grid.speakers]
+    if speaker not in names:
+        return np.zeros(0, dtype=bool)
+    active = np.stack([lane.on for lane in grid.speakers])
+    me = names.index(speaker)
+    others = np.zeros_like(active[me])
+    for other in range(len(names)):
+        if other != me:
+            others |= active[other]
+    return others & ~active[me]
+
+
+def to_timeline(item, file_times: np.ndarray) -> np.ndarray:
+    """Tiedostoajat aikajanan ajaksi. ``nan`` niille jotka jäävät ulos.
+
+    Sama muunnos kuin ``mix.closed_ranges``illa mutta toisin päin:
+    tiedostoaika = base + aikajana, joten aikajana = tiedostoaika - base.
+    """
+    out = np.full(len(file_times), np.nan)
+    for placement in item.placements:
+        base = float(placement.start - item.asset_start - placement.offset)
+        stamps = file_times - base
+        inside = (stamps >= float(placement.offset)) & (stamps < float(placement.end))
+        out[inside] = stamps[inside]
+    return out
+
+
+def candidates(grid, roles, timeline, tables: dict, settings,
+               program_start: float) -> list[Reaction]:
+    """Kaikki portin läpäisseet hetket, **harventamatta**.
+
+    Erillään ``find``istä, koska luvut vastaavat eri kysymyksiin: tämä
+    kertoo mitä aineistossa on ja liikkuu portin mukana, ``find`` kertoo
+    montako niistä päätyy vientiin ja on käytännössä ``reaction_spacing``in
+    määräämä. Mitattuna oikealla jaksolla portti 0,03 -> 0,40 vie ehdokkaat
+    461:stä 1875:een mutta vientiin päätyvät 94:stä 131:een — jos vain
+    jälkimmäisen näyttää, säädin näyttää rikkinäiseltä.
+    """
+    return _gather(grid, roles, timeline, tables, settings, program_start)
+
+
+def fits(reaction: Reaction, decision, settings) -> bool:
+    """Sopiiko reaktiokuva leikkaukseen, joka on jo tehty?
+
+    Kolme ehtoa, ja jokainen korjaa mitatun ristiriidan. Nämä eivät ole
+    makuasioita vaan sisäisiä ristiriitoja: leikkaus on jo päätetty, ja
+    reaktiokuva ei saa kiistää sitä.
+
+    **Ei oman puhujan kuvan päälle.** Nymanin reaktio Nymanin lähikuvan
+    päällä on hyppyleikkaus samaan kasvoon. Mitattuna 7 kertaa 121:stä.
+
+    **Ei kiinni leikkausrajassa.** Marginaali on ohjelman oma
+    vähimmäiskesto ``min_shot``, ei erillinen vakio: isäntäkuvan alku- ja
+    loppupala ovat kuvia siinä missä muutkin, ja lyhyempinä ne ovat
+    välähdyksiä. Sama ehto kuin ``decide._force_wide``:n kolmiosaisella
+    jaolla, joka jakaantuu vain jos molemmat puoliskot ylittävät
+    ``min_shot``. Sekunti on silti alaraja: mitattuna 18 reaktiokuvaa
+    121:stä osui alle 0,2 s:n päähän rajasta, ja se on tärähdys kaikilla
+    asetuksilla.
+
+    **Ei kuvaan joka ei mahdu sitä pitämään.** Isäntäkuvan on oltava
+    pidempi kuin reaktio ja molemmat marginaalit, muutenkaan sitä ei voi
+    sijoittaa rajoista erilleen.
+    """
+    if decision is None:
+        return True
+    host = None
+    for segment in decision.segments:
+        if float(segment.start) <= reaction.start < float(segment.end):
+            host = segment
+            break
+    if host is None:
+        return False
+    if host.label == reaction.speaker:
+        return False
+    margin = max(CUT_MARGIN, float(getattr(settings, "min_shot", CUT_MARGIN)))
+    need = (reaction.end - reaction.start) + 2 * margin
+    if float(host.duration) < need:
+        return False
+    return (reaction.start - float(host.start) >= margin
+            and float(host.end) - reaction.end >= margin)
+
+
+def find(grid, roles, timeline, tables: dict, settings, program_start: float,
+         decision=None) -> list[Reaction]:
+    """Vientiin päätyvät reaktiokuvat, aikajärjestyksessä.
+
+    ``tables`` on media-avain -> mittaustaulukko. Puuttuva taulukko ei ole
+    virhe: se tarkoittaa ettei sitä kameraa ole mitattu, ja silloin siitä ei
+    ehdoteta mitään.
+    """
+    found = _gather(grid, roles, timeline, tables, settings, program_start)
+    # Sijoitusehdot **ennen** harvennusta: muuten harvennus varaisi välin
+    # ehdokkaalle joka sitten hylätään, ja sen viereen ei enää mahtuisi
+    # kelvollista. Sama väli, parempi ehdokas.
+    if decision is not None:
+        found = [r for r in found if fits(r, decision, settings)]
+    # Tempo vain jos ruudukko on olemassa: ``find`` kutsutaan myös silloin
+    # kun asetus on pois, ja silloin siitä ei saa kaatua.
+    tempo = None
+    speakers = getattr(grid, "speakers", None) or []
+    if speakers and getattr(grid, "n", 0):
+        tempo = _compute_tempo(np.stack([lane.on for lane in speakers]), grid.n)
+    return _vary(_thin(found, settings, tempo, program_start), grid, decision)
+
+
+def _snap(grid, at: float, program_start: float) -> float:
+    """Siirtää leikkauksen lähimpään taukoon, jos sellainen on lähellä.
+
+    Puheen keskelle osuva leikkaus kuulostaa katkaisulta. Tauko on tässä
+    hetki jolloin **kukaan** ei ole äänessä vähintään ``PAUSE`` ajan —
+    yhden puhujan hiljaisuus ei riitä, koska toinen voi puhua päälle.
+    """
+    if not getattr(grid, "speakers", None) or not getattr(grid, "n", 0):
+        return at
+    quiet = ~np.any(np.stack([lane.on for lane in grid.speakers]), axis=0)
+    need = max(1, int(PAUSE / HOP))
+    reach = int(PAUSE_REACH / HOP)
+    centre = int((at - program_start) / HOP)
+    low, high = max(0, centre - reach), min(grid.n, centre + reach)
+    if high <= low:
+        return at
+    best = None
+    for start, end, silent in _runs(quiet[low:high].astype(np.int8)):
+        if not silent or (end - start) < need:
+            continue
+        # Tauon alku: leikkaus tehdään kun puhe loppuu, ei kesken tauon.
+        cell = low + start
+        distance = abs(cell - centre)
+        if best is None or distance < best[0]:
+            best = (distance, program_start + cell * HOP)
+    return best[1] if best else at
+
+
+def _gather(grid, roles, timeline, tables: dict, settings, program_start: float
+            ) -> list[Reaction]:
+    """Portin läpäisseet hetket ilman harvennusta."""
+    if not getattr(settings, "reactions", False):
+        return []
+    weights = {
+        "turn_max": settings.reaction_turn_max,
+        "turn": settings.reaction_turn,
+        "gaze": settings.reaction_gaze,
+        "smile": settings.reaction_smile,
+        "eyes": settings.reaction_eyes,
+        "motion": settings.reaction_motion,
+        "size": settings.reaction_size,
+    }
+    found: list[Reaction] = []
+    for speaker in [lane.name for lane in grid.speakers]:
+        key = roles.closes.get(speaker)
+        if not key:
+            continue
+        quiet = listening(grid, speaker)
+        if not quiet.any():
+            continue
+        for item in timeline.track_media(key):
+            table = tables.get(item.key)
+            if table is None:
+                continue
+            points = scores(table, weights)
+            stamps = to_timeline(item, np.asarray(table["times"], dtype=np.float64))
+            for index in np.argsort(points)[::-1]:
+                value = points[index]
+                if not np.isfinite(value) or value < settings.reaction_threshold:
+                    break
+                at = stamps[index]
+                if not np.isfinite(at):
+                    continue
+                cell = int((at - program_start) / HOP)
+                if cell < 0 or cell >= len(quiet) or not quiet[cell]:
+                    continue
+                # Ennakko: avainruutu kertoo sekunnin, ei hetkeä. Ilman
+                # tätä kuva vaihtuu vasta kun reaktio on jo käynnissä.
+                lead = float(getattr(settings, "reaction_lead", LEAD))
+                begin = max(program_start,
+                            _snap(grid, at - lead, program_start))
+                found.append(Reaction(speaker, begin,
+                                      begin + settings.reaction_length,
+                                      float(value)))
+    return found
+
+
+def marks(grid, roles, timeline, tables: dict, settings,
+          program_start: float) -> np.ndarray | None:
+    """Mitatut reaktiohetket ruudukkona, ``(puhujia, n)``.
+
+    Tämä on se muoto jossa mittaus saa mennä ``decide.py``:hyn: pelkkä
+    taulukko, ei tiedostonlukua eikä mittausrajapintaa. Päätöskerroksen on
+    pysyttävä millisekunneissa, ja se sääntö on tässä projektissa
+    tärkeämpi kuin yksikään ominaisuus.
+
+    Harventamaton ja sijoitusehdoitta: päätös tarvitsee tietää *missä
+    kelvollisia hetkiä on*, ei sitä mitkä niistä lopulta valitaan. Valinta
+    tehdään vasta kun leikkaus on päätetty, koska se riippuu leikkauksesta.
+    """
+    if not tables or not getattr(grid, "speakers", None):
+        return None
+    names = [lane.name for lane in grid.speakers]
+    out = np.zeros((len(names), grid.n), dtype=bool)
+    wanted = settings
+    if not getattr(settings, "reactions", False):
+        return None
+    for reaction in _gather(grid, roles, timeline, tables, wanted, program_start):
+        if reaction.speaker not in names:
+            continue
+        row = names.index(reaction.speaker)
+        low = int((reaction.start - program_start) / HOP)
+        high = int((reaction.end - program_start) / HOP)
+        low, high = max(0, low), min(grid.n, max(high, low + 1))
+        if high > low:
+            out[row, low:high] = True
+    return out if out.any() else None
+
+
+def _vary(found: list[Reaction], grid, decision) -> list[Reaction]:
+    """Sama kasvo kahdesti peräkkäin: toinen kerta laajana.
+
+    Mittaus kertoo **milloin** kannattaa leikata; mitä ruudulle pannaan on
+    ohjelman oma päätös. Ilman tätä kerros toistaa itseään: mitattuna
+    oikealla jaksolla 49 reaktiokuvaa 83:sta oli sama kasvo kuin edellinen,
+    ja peräkkäin ne ovat lähikuvasta lähikuvaan — juuri se leikkaus jonka
+    ``LONGTAKE_REACTION_WIDE`` pehmentää laajalla. Säännön jälkeen 0/83, ja
+    jakauma on 31 / 28 / 25 kolmen kuvan kesken.
+
+    Laaja maksaa sen mittauksen jonka takia tähän leikattiin — kasvot
+    näkyvät pienenä — joten se on toiston purkaja eikä vuorottelu. Jos
+    isäntäkuva on jo laaja, mitään ei vaihdeta: se olisi leikkaus samaan
+    kuvaan.
+    """
+    wide = getattr(grid, "wide_key", "")
+    if not wide or decision is None:
+        return found
+    previous = ""
+    for reaction in found:
+        host = next((s for s in decision.segments
+                     if float(s.start) <= reaction.start < float(s.end)), None)
+        shown = reaction.speaker
+        if (previous == shown and host is not None
+                and getattr(host, "angle", "") != wide):
+            reaction.shot = wide
+            shown = wide
+        previous = shown
+    return found
+
+
+def _thin(found: list[Reaction], settings, tempo=None,
+          program_start: float = 0.0) -> list[Reaction]:
+    """Karsii päällekkäiset ja liian tiheät, paras ensin.
+
+    Ilman tätä sama hyvä hetki tulisi valituksi monta kertaa peräkkäisistä
+    ruuduista, ja jakso täyttyisi reaktiokuvista siellä missä pisteet
+    sattuvat olemaan korkeat.
+
+    **Väli seuraa keskustelun tempoa**, samoin kuin kuvan vähimmäiskesto
+    ``decide.py``:ssä: ``väli / sqrt(tempo)``, eli tiheässä vuorottelussa
+    tiheämmin ja pitkässä monologissa harvemmin. Kiinteä väli on
+    metronomi — mitattuna välien mediaani oli 37 s ja hajonta 10, eli
+    tasaisempi kuin mikään muu tässä leikkauksessa. Sama 1/f-vaihtelu joka
+    säätää leikkausrytmiä säätää nyt myös näitä, eikä reaktiokerros ole
+    ainoa asia jaksossa jolla on oma vakiotahtinsa.
+    """
+    kept: list[Reaction] = []
+    for candidate in sorted(found, key=lambda r: r.score, reverse=True):
+        gap = settings.reaction_spacing
+        if tempo is not None and len(tempo):
+            cell = int((candidate.start - program_start) / HOP)
+            if 0 <= cell < len(tempo):
+                gap = gap / float(np.sqrt(tempo[cell]))
+        if any(candidate.start < other.end + gap
+               and other.start < candidate.end + gap
+               for other in kept):
+            continue
+        kept.append(candidate)
+    return sorted(kept, key=lambda r: r.start)

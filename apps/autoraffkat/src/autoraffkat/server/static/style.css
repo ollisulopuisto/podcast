@@ -1,0 +1,559 @@
+:root {
+  --bg: #16181c;
+  --panel: #1e2127;
+  --line: #2c313a;
+  --text: #e6e8ec;
+  --muted: #8b93a1;
+  --accent: #6ea8fe;
+  --warn: #f0a35e;
+  --error: #f0736a;
+  --wide: #6b7280;
+  --sp0: #4ea3ff;
+  --sp1: #f2a03d;
+  --sp2: #59c98a;
+  --sp3: #c78bf0;
+  --sp4: #f06a9b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 16px 32px;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+}
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0 12px;
+  background: linear-gradient(var(--bg) 80%, transparent);
+}
+
+h1 { font-size: 17px; margin: 0; font-weight: 600; }
+h2 { font-size: 12px; margin: 0 0 12px; text-transform: uppercase;
+     letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+h3 { font-size: 12px; margin: 20px 0 10px; text-transform: uppercase;
+     letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+p { margin: 0; }
+
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.hidden { display: none !important; }
+
+.actions { display: flex; align-items: center; gap: 10px; }
+
+button {
+  font: inherit;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  padding: 7px 13px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+button:hover { border-color: #3d4450; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #0d1420;
+                 font-weight: 600; }
+button.primary:hover { filter: brightness(1.08); }
+button.ghost { background: transparent; }
+button:disabled { cursor: default; opacity: .65; }
+button:disabled:hover { border-color: var(--line); }
+kbd { font: inherit; opacity: .6; margin-left: 4px; }
+
+/* Työn alla oleva painike: kehä pyörii nimen edessä. Leveys ei saa muuttua
+   tekstin vaihtuessa, koska napit ovat vierekkäin ja rivi hyppäisi. */
+button.busy { position: relative; padding-left: 30px; }
+button.busy::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  margin-top: -6px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  opacity: .8;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+/* Liike pois jos käyttäjä on sen kieltänyt; kehä jää näkyviin merkiksi. */
+@media (prefers-reduced-motion: reduce) {
+  button.busy::before { animation: none; border-top-color: currentColor; opacity: .5; }
+}
+
+/* Äänen käsittelyn edistyminen. Ajo kestää minuutteja ja tapahtuu
+   taustasäikeessä, joten pelkkä «2/4» ei kerro liikkuuko mikään. Osuus on
+   painotettu tiedostokoolla ja vaiheella, joten palkki liikkuu myös yhden
+   pitkän tiedoston aikana. */
+.progress {
+  width: 100%;
+  height: 6px;
+  margin: 10px 0 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width .4s ease;
+}
+/* Ilman osuutta: liike kertoo että jokin käy, vaikka määrää ei tiedetä. */
+.progress-fill.indeterminate {
+  width: 35%;
+  animation: slide 1.4s ease-in-out infinite;
+}
+@keyframes slide {
+  0% { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill { transition: none; }
+  .progress-fill.indeterminate { animation: none; width: 100%; opacity: .4; }
+}
+
+.banner {
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  background: #3a2a22;
+  border: 1px solid #5c4130;
+  color: var(--warn);
+  white-space: pre-line;
+}
+.banner.error { background: #3a2224; border-color: #5c3033; color: var(--error); }
+
+/* Viennin tulosrivi. Tiedostonimi on oma kenttänsä eikä osa lausetta:
+   polun seuraava käyttäjä on aina jokin toinen ohjelma, ja lauseen keskeltä
+   sitä ei saa valituksi kahdella klikkauksella. */
+.exported {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+.exported .said { color: var(--muted); }
+.exported input {
+  flex: 1 1 260px;
+  min-width: 0;
+  font: 12.5px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+.exported input:focus { outline: 1px solid var(--accent); }
+
+main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr);
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+
+/* Kisko: kaksi paneelia, jotka leveällä ruudulla asettuvat rinnakkain.
+
+   Kaksi saraketta jätti kuvan puolelle metrin tyhjää ja ahtoi kaiken muun
+   yhteen pitkään kiskoon, jolloin ääni jäi taitteen alle eikä sitä
+   löytänyt. Kolmas sarake syntyy jakamalla kisko, ei lisäämällä
+   `main`iin saraketta — silloin keskikokoinen ruutu pysyy ennallaan. */
+.rail { display: grid; gap: 0; align-content: start; }
+
+@media (min-width: 1500px) {
+  main { grid-template-columns: minmax(0, 1fr) minmax(700px, .95fr); }
+  .rail { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+  .rail > .panel { margin-bottom: 0; }
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px 18px;
+  margin-bottom: 14px;
+}
+
+/* ------------------------------------------------------------ raidat */
+
+/* Kytkentätaulu. Rivi on paikka: kuva vasemmalla, ääni oikealla ja puhujan
+   nimi kerran keskellä. Pari on siis kahden vierekkäisen solun asia eikä
+   kahden kaukana toisistaan olevan rivin — piuha on vaakasuora viiva, jota ei
+   tarvitse mitata eikä piirtää uudestaan, ja ristiin menevä piuha on
+   mahdottomuus eikä vältettävä tilanne. */
+
+.patch { display: flex; flex-direction: column; gap: 6px; }
+
+.slot {
+  --tint: var(--line);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.patch-head { align-items: end; }
+.col-head {
+  font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600; padding: 0 9px 2px;
+}
+.patch-head .col-head:last-child { text-align: right; }
+
+/* Solu. Tyhjä solu kertoo mitä siihen kuuluu: juuri tyhjä kohta on se jota
+   käyttäjä etsii, ja katkoreuna erottaa sen täytetystä ilman selitystä. */
+.cell {
+  min-width: 0;
+  display: flex; flex-direction: column; justify-content: center; gap: 6px;
+  min-height: 66px;
+  padding: 7px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition: background-color .12s ease, border-color .12s ease;
+}
+.cell.empty { border: 1px dashed var(--line); }
+.cell .placeholder {
+  text-align: center; color: var(--muted);
+  font-size: 11.5px; letter-spacing: .04em;
+}
+
+/* Puhujan väri on koko paikan sävy. Ulkoreunan palkit sulkevat parin väliinsä
+   samalla tavalla kuin rivin reunapalkki ennen sulki yhden raidan. */
+.slot.is-tinted .cell:not(.empty) {
+  background: color-mix(in srgb, var(--tint) 7%, transparent);
+  border-color: color-mix(in srgb, var(--tint) 20%, transparent);
+}
+.slot.is-tinted .cell-video { border-left: 3px solid var(--tint); }
+.slot.is-tinted .cell-audio { border-right: 3px solid var(--tint); }
+
+.cell.is-target { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.cell.is-over {
+  border: 1px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* Keskisarake. Viiva kulkee nimikentän takaa, joten kenttä näyttää siltä
+   mihin piuha on kytketty. Viiva on olemassa vain kun molemmat päät ovat:
+   puuttuva pari on juuri se mikä rivistä pitää nähdä lukematta. */
+.strip {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 8px;
+}
+.strip.linked::before {
+  content: "";
+  position: absolute; left: 1px; right: 1px; top: 50%;
+  height: 7px; margin-top: -3.5px;
+  background:
+    radial-gradient(circle at 3.5px 50%, var(--tint) 3px, transparent 3.5px),
+    radial-gradient(circle at calc(100% - 3.5px) 50%, var(--tint) 3px, transparent 3.5px),
+    linear-gradient(to right, var(--tint), var(--tint));
+  background-size: 100% 100%, 100% 100%, 100% 2px;
+  background-position: 0 0, 0 0, 0 50%;
+  background-repeat: no-repeat;
+  opacity: .9;
+}
+.strip .speaker {
+  position: relative; z-index: 1;
+  text-align: center; font-size: 12.5px; padding: 5px 6px;
+}
+.strip-label {
+  position: relative; z-index: 1;
+  background: var(--panel); padding: 2px 7px; border-radius: 5px;
+  font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Kortti on raita. Se ei ole kiinni missään: sen paikka kertoo roolin ja
+   puhujan, joten siirtäminen on ainoa säädin jota se tarvitsee. */
+.card {
+  min-width: 0;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #191c22;
+  cursor: grab;
+}
+.card:active { cursor: grabbing; }
+.card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card.is-picked { border-color: var(--accent);
+                  box-shadow: 0 0 0 1px var(--accent); }
+.card.is-dragging { opacity: .4; }
+
+.card-head { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.card .thumb {
+  width: 84px; aspect-ratio: 16 / 9; flex: none;
+  object-fit: cover; border-radius: 4px; background: #101216;
+}
+.card .thumb-missing { visibility: hidden; }
+.card .glyph {
+  width: 26px; height: 26px; flex: none;
+  display: grid; place-items: center; color: var(--tint);
+}
+.card .glyph svg { width: 17px; height: 17px; }
+.card .meta { min-width: 0; }
+.card .name { font-weight: 500; font-size: 13px;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .tags { font-size: 11px; color: var(--muted); margin-top: 2px;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .warn { color: var(--warn); font-size: 11.5px; }
+
+/* Mikin säätimet kortin sisällä. Kapeampi kuin paneelissa, koska sarake on
+   puolet entisestä leveydestä. */
+.card .knobs { display: flex; flex-direction: column; gap: 2px; }
+.card .knob { flex: 1 1 auto; gap: 7px; }
+.card .knob label { min-width: 58px; font-size: 11px; }
+.card .knob output { min-width: 44px; font-size: 11px; }
+
+/* Uuden puhujan rivi. Himmeä kunnes siihen ollaan pudottamassa. */
+.slot-new .cell { min-height: 44px; opacity: .55; }
+.slot-new .cell.is-target, .slot-new .cell.is-over { opacity: 1; }
+
+/* Käyttämättömät. Varasto eikä rivi: paikattomalla raidalla ei ole paria. */
+#tray { margin-top: 16px; }
+.tray-head { display: flex; align-items: baseline; justify-content: space-between;
+             gap: 12px; margin-bottom: 6px; }
+.tray-head h3.group {
+  font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); margin: 0; font-weight: 600;
+}
+.tray-box {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  min-height: 56px; padding: 8px;
+  border: 1px dashed var(--line); border-radius: 8px;
+}
+.tray-box.empty { justify-content: center; }
+.tray-box .card { flex: 1 1 240px; max-width: 340px; }
+.tray-box.is-over { border-color: var(--accent);
+                    background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+/* Kapealla ruudulla sarakkeet eivät mahdu vierekkäin. Silloin paikka on
+   pinossa: nimi ensin ja sen alla kuva ja ääni — sama ryhmittely, eri suunta. */
+@media (max-width: 900px) {
+  .slot { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .patch-head { display: none; }
+  .strip { order: -1; justify-content: flex-start; padding: 6px 0 2px; }
+  .strip.linked::before { display: none; }
+  .strip .speaker { text-align: left; width: 170px; }
+  .slot { padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .slot.is-tinted .cell-audio { border-right: 0; border-left: 3px solid var(--tint); }
+}
+
+select, input[type="text"] {
+  font: inherit;
+  background: #14161a;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  width: 100%;
+}
+input[type="text"]:disabled { opacity: .35; }
+
+.knob { display: flex; align-items: center; gap: 8px; flex: 1 1 240px; }
+.knob label { font-size: 12px; color: var(--muted); min-width: 92px; }
+.knob output { font-variant-numeric: tabular-nums; min-width: 58px; text-align: right;
+               font-size: 12px; }
+input[type="range"] { flex: 1; accent-color: var(--accent); min-width: 90px; }
+
+/* ------------------------------------------------------------ globaalit */
+
+.field { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.field > span { font-size: 12px; color: var(--muted); min-width: 150px; }
+
+.rules { display: flex; flex-direction: column; gap: 6px; }
+.rules label { display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
+.rules .hint { color: var(--muted); font-size: 12px; }
+
+/* ------------------------------------------------------------ esikatselu */
+
+.preview-head { display: flex; justify-content: space-between; align-items: baseline;
+                gap: 12px; margin-bottom: 10px; }
+.preview-head h2 { margin: 0; }
+
+#bar { width: 100%; height: 120px; display: block; border-radius: 6px;
+       background: #101216; cursor: crosshair; }
+.ruler { position: relative; height: 16px; margin-top: 4px; font-size: 11px;
+         color: var(--muted); }
+.ruler span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 12px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+            margin-right: 6px; }
+
+/* ------------------------------------------------------------ leikkauslista */
+
+.table-wrap { max-height: 320px; overflow: auto; border: 1px solid var(--line);
+              border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--line);
+         font-size: 13px; }
+th { position: sticky; top: 0; background: #191c22; color: var(--muted);
+     font-weight: 600; font-size: 11px; text-transform: uppercase;
+     letter-spacing: .06em; }
+tbody tr:last-child td { border-bottom: 0; }
+td .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+             margin-right: 7px; }
+
+/* Polkurivit: katkeavat mistä tahansa, koska tiedostonimissä on välilyöntejä
+   eikä rivi mahdu paneeliin. */
+#paths .path { margin-top: .25rem; overflow-wrap: anywhere; }
+#paths .path b { font-weight: 600; opacity: .75; }
+
+/* Valintaruudut äänipaneelissa: sama rytmi kuin liukusäätimillä. */
+.check { display: flex; align-items: center; gap: .5rem; margin: .5rem 0; }
+.check input { margin: 0; }
+#audio-panel button { margin-top: .5rem; }
+
+/* Toissijainen painike säädinryhmän lopussa. */
+button.small { font-size: .85em; padding: 4px 9px; margin-top: .6rem; opacity: .8; }
+button.small:hover { opacity: 1; }
+
+/* Kielivalitsin: kaksi pientä nappia, valittu himmeänä. */
+.langs { display: inline-flex; gap: 4px; }
+.langs .lang { font-size: 11px; padding: 4px 8px; letter-spacing: .04em; }
+.langs .lang:disabled { opacity: .45; }
+
+/* Käsittelypainike kertoo tilansa. Valmis on hillitty eikä kutsu painamaan;
+   vahvistus erottuu, koska sen takana on minuuttien ajo. */
+/* Käsittelynappi on otsikkorivillä «Vie XML»:n vieressä: se on toimenpide
+   eikä ääniasetus, ja sen kertoma vanhentuneiden määrä tarvitaan juuri
+   viennin hetkellä. Otsikkorivi on ahdas, joten teksti ei saa katketa
+   kahdelle riville eikä nappi venyä yli. */
+.mix-run { display: inline-flex; gap: 6px; align-items: center; }
+.mix-run button { white-space: nowrap; }
+@media (max-width: 1100px) {
+  /* Kapealla ruudulla vain toimenpide, ei sen selitystä: paneelin selite
+     kertoo saman pidemmin. */
+  .mix-run button { max-width: 22ch; overflow: hidden; text-overflow: ellipsis; }
+}
+.mix-run button.done { opacity: .75; cursor: default; }
+.mix-run button.done::before { content: "✓ "; color: var(--ok, #4c9); }
+.mix-run button.warn { border-color: var(--warn); color: var(--warn); }
+
+/* --- Ääni-paneelin avautuvat rivit ---------------------------------------
+
+   Paneeli näytti 26 liukusäädintä, joista kahdeksan kuului yhdelle
+   ominaisuudelle. Nyt rivi näyttää nimen, tilan ja sen yhden luvun joka
+   kertoo mitä se tekee; loput avautuvat perusteluineen. Poikkeamamerkki on
+   ehdoton: suljettu rivi ei saa piilottaa sitä, että joku on jo siirtänyt
+   sen sisällä olevaa säädintä. */
+
+.arow { border-top: 1px solid var(--line); }
+.arow:first-of-type { border-top: 0; }
+
+/* Rivin pää: avauspainike ja sen perässä kytkin.
+
+   Korostus koskee vain painiketta. Koko rivin korostaminen valehteli
+   kohteesta silloin kun rivillä on kaksi säädintä, ja rasti vasemmassa
+   reunassa luki otsikon omaksi rastikseen. */
+.arow-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 0 4px;
+}
+
+.arow-open {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 8px;
+  margin: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.arow-open:hover { background: rgba(255, 255, 255, .045); }
+.arow-open:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.arow-toggle {
+  margin: 0 4px 0 0;
+  width: 15px; height: 15px;
+  cursor: pointer;
+}
+.arow-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.arow-name { min-width: 0; }
+.arow-name b { display: block; font-size: 13px; font-weight: 500; }
+.arow-name small {
+  display: block; color: var(--muted); font-size: 11.5px; line-height: 1.45;
+}
+
+.arow-value {
+  font-size: 12px; color: var(--muted); white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.arow-chev {
+  width: 14px; text-align: center; color: var(--muted); font-size: 10px;
+  transition: transform .15s ease;
+}
+.arow.open .arow-chev { transform: rotate(90deg); }
+
+/* Poikkeama näkyy aina tasoa ylempänä — sama periaate kuin
+   `project.name_tag`illa vientitiedoston nimessä. */
+.arow-dev {
+  display: none; margin-top: 3px; font-size: 11px; color: var(--warn);
+}
+.arow.deviates .arow-dev { display: block; }
+
+.arow-body { display: none; padding: 2px 4px 14px 12px; }
+.arow.open .arow-body { display: block; }
+
+.why-knob { padding: 2px 0 6px; }
+.why-knob.moved output { color: var(--warn); }
+.why {
+  margin: 2px 0 0; padding-left: 10px;
+  border-left: 1px solid var(--line);
+  font-size: 11.5px; line-height: 1.5; color: var(--muted);
+}
+
+button.ghost.small { font-size: 11.5px; padding: 4px 10px; margin-bottom: 10px; }
+button.ghost.small[disabled] { opacity: .35; cursor: default; }
+
+@media (prefers-reduced-motion: reduce) {
+  .arow-chev { transition: none; }
+}
+
+/* Selitteen reaktiomerkki: matala palkki kuten palkissakin, ei täysi
+   neliö — muuten se lupaisi yhtä painavaa kerrosta kuin puhujat. */
+.legend i.thin { height: 5px; align-self: center; background: #8b93a1; }
+
+/* Reaktiorivit leikkauslistassa: sisennettyinä ja himmeämpinä, koska ne
+   eivät ole leikkauksia vaan päällyksiä omalla lanellaan. Numerosarake on
+   tyhjä samasta syystä — numerointi on leikkausten juokseva järjestys. */
+tr.reaction td { color: var(--muted); font-size: 12.5px; }
+tr.reaction td:nth-child(2) { padding-left: 22px; }
+.swatch.thin { height: 4px; align-self: center; }
+
+/* Zoomausvihje viivaimen oikeaan reunaan. Absoluuttinen kuten muutkin
+   viivaimen merkinnät, mutta oikeaan reunaan kiinnitettynä. */
+.preview-head .zoomed { color: var(--accent); font-size: 12px; margin-left: auto;
+                        margin-right: 12px; }
+#bar { cursor: ew-resize; touch-action: none; }
+
+/* Reaktiorivit joita ei viedä: sama tieto, mutta ei lupausta. */
+tr.reaction.off td { opacity: .45; font-style: italic; }

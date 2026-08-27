@@ -1,0 +1,668 @@
+'use strict';
+
+/* Käyttöliittymän tekstit. Palvelimen viestit käännetään palvelimella
+   (i18n.py), tässä ovat vain selaimen omat merkkijonot. */
+
+const STRINGS = {
+  fi: {
+    'app.open': 'Avaa XML…',
+    'app.reload': 'Lue uudestaan',
+    'app.reloading': 'Luetaan…',
+    'app.export': 'Vie XML',
+    'app.exporting': 'Viedään…',
+    'app.tracks': 'Raidat',
+    'app.group.video': 'Kuva',
+    'app.group.audio': 'Ääni',
+    'app.globals': 'Globaalit säätimet',
+    'app.longtake': 'Pitkä puheenvuoro',
+    'longtake.rowHint': 'Mitä tehdään kun yksi puhuu pitkään.',
+    'overlap.rowHint': 'Mitä tehdään kun molemmat puhuvat.',
+    'app.overlap': 'Päällekkäispuhe',
+    'app.audio': 'Ääni',
+    'app.project': 'Projekti',
+    'app.name': 'Nimi',
+    'app.nameTags': 'Säätimet tiedostonimeen',
+    'app.preview': 'Esikatselu',
+    'app.cuts': 'Leikkauslista',
+    'app.reset': 'Palauta oletukset',
+    'app.reset.audio': 'Palauta ääniasetukset',
+    'app.speaker': 'Puhuja',
+    'app.decision': 'päätös {ms} ms',
+    'app.shots': '{n} kuvaa',
+    'app.unknownError': 'Tuntematon virhe',
+    'app.noServer': 'Palvelin ei vastaa: {error}',
+    'app.readFailed': 'Lukeminen epäonnistui: {error}',
+    'app.noPicker': 'Tiedostovalitsinta ei ole tässä ympäristössä. Anna polku komentoriviltä.',
+    'app.exportFailed': 'Vienti epäonnistui: {error}',
+    'app.missingFile': 'Tiedostoa ei löydy levyltä: {paths}',
+    'app.envelopes': 'verhokäyrät {done}/{total}',
+    'app.parts': '{n} osaa',
+    'app.angle': 'kulma {name}',
+    'app.channels': '{n} kan.',
+    'app.audioOf': 'ääni {codec} {n} kan.',
+    'panning.title': 'Panorointi',
+    'panning.hint': 'Puhujat kuuluvat sieltä missä he istuvat. Paikka mitataan kuvasta.',
+    'panning.on': 'Käytössä',
+    'panning.place': '{name} {side}',
+    'panning.left': 'vasemmalla',
+    'panning.right': 'oikealla',
+    'panning.centre': 'keskellä',
+    'panning.looking': 'Katsotaan kuvasta…',
+    'why.panning': 'Paikka mitataan pään asennosta: vastakkain istuvat katsovat '
+      + 'toisiaan, joten vasemmalla istuva katsoo oikealle. Paikat jaetaan tasan '
+      + 'järjestyksen mukaan — kulma kertoo järjestyksen mutta ei etäisyyttä. '
+      + 'Leveys on tarkoituksella pieni: puhe kuuluu keskeltä, ja leveä '
+      + 'panorointi tekee keskustelusta radiokuunnelman. Yli viittä puhujaa ei '
+      + 'panoroida lainkaan. Tiedostoihin ei kosketa: tämä on Final Cutin oma '
+      + 'säätö, jonka voi muuttaa jälkikäteen.',
+    'app.exportedCuts': 'Viety, {cuts} kuvaa',
+    'export.openInFcp': 'Avaa Final Cutissa',
+    'export.reveal': 'Näytä Finderissa',
+    'app.exportedMix': ' · {n} käsiteltyä ääntä',
+    'kind.project': 'projekti',
+    'kind.sync-clip': 'synkkaklippi',
+    'kind.multicam': 'monikamera',
+    'meta.fps': '{fps} fps',
+    'meta.tracks': '{n} raitaa',
+    'meta.parts': '{n} osaa',
+    'path.export': 'Vienti',
+    'path.settings': 'Asetukset',
+    'path.inherited': 'Roolit peritty',
+    'patch.shared': 'Yhteiset',
+    'patch.speakerN': 'Puhuja {n}',
+    'patch.newSpeaker': '+ uusi puhuja',
+    'patch.tray': 'Käyttämättömät',
+    'patch.trayEmpty': 'kaikki raidat ovat käytössä',
+    'patch.hint': 'Vedä kortti paikalleen — tai klikkaa kortti ja sitten paikka',
+    'role.wide': 'Laaja',
+    'role.close': 'Lähikuva',
+    'role.mic': 'Mikki',
+    'rhythm.title': 'Rytmi ja profiili',
+    'rhythm.broadcast': 'Tv ja podcast',
+    'rhythm.broadcastHint': 'Luonteva keskustelurytmi (2,5 s minimi, J/L-leikkaukset).',
+    'rhythm.mellow': 'Rauhallinen',
+    'rhythm.mellowHint': 'Dokumentaarinen ja viipyilevä (4,5 s minimi, pitkät hännät).',
+    'rhythm.hectic': 'Korkeatempoinen',
+    'rhythm.hecticHint': 'Nopea viihde- ja väittelyrytmi (1,4 s minimi, nopeat vaihdot).',
+    'rhythm.custom': 'Mukautettu',
+    'rhythm.customHint': 'Käsin säädetyt parametrit.',
+    'knob.sensitivity': 'Herkkyys',
+    'knob.sensitivityUnit': ' dB yli pohjan',
+    'knob.gain': 'Vahvistus',
+    'knob.minShot': 'Lyhin kuvan kesto',
+    'knob.lead': 'Ennakko (J-cut)',
+    'knob.hang': 'Häntä (L-cut)',
+    'knob.confirm': 'Vahvistusaika',
+    'knob.wideEvery': 'Katkaise viimeistään',
+    'knob.wideHold': 'Laajan kesto',
+    'knob.never': 'ei koskaan',
+    'knob.minOverlap': 'Lyhin päällekkäisyys',
+    'knob.dominance': 'Vaadittu ero',
+    'longtake.return': 'Palaa puhujaan',
+    'longtake.returnHint': 'Laaja välissä, sitten takaisin samaan kuvaan.',
+    'longtake.stay': 'Jää laajaan',
+    'longtake.stayHint': 'Laaja jatkuu, kunnes joku toinen saa puheenvuoron.',
+    'longtake.reaction': 'Reaktiokuva',
+    'longtake.reactionWide': 'Reaktio ja laaja',
+    'longtake.reactionWideHint': 'Kuuntelijan reaktio, sitten laaja, sitten '
+      + 'takaisin puhujaan. Paluu lähikuvasta laajan kautta on pehmeämpi kuin '
+      + 'lähikuvasta suoraan lähikuvaan, ja laaja palauttaa maantieteen.',
+    'longtake.reactionHint': 'Toisen puhujan lähikuva välissä, sitten takaisin.',
+    'overlap.wide': 'Laaja',
+    'overlap.wideHint': 'Molemmat äänessä, mennään laajaan.',
+    'overlap.hold': 'Pidä nykyinen',
+    'overlap.holdHint': 'Ei leikata mihinkään.',
+    'overlap.louder': 'Vahvempi voittaa',
+    'overlap.louderHint': 'Kovempi saa kuvan, kun ero on kestänyt.',
+    'audio.enable': 'Käsittele mikit',
+    'audio.plugin': 'Liitännäinen',
+    'audio.pluginHint': 'esim. dxRevive — tyhjä = ei liitännäistä',
+    'audio.pluginEditor': 'Avaa liitännäisen oma ikkuna',
+    'audio.pluginEditorOpen': 'Ikkuna auki (otsikko «Pedalboard») — sulje se '
+      + 'kun olet valmis',
+    'audio.pluginEditorFailed': 'Ikkunaa ei saatu auki',
+    'audio.pluginStateSaved': 'Liitännäisen oma tila on talletettu tähän '
+      + 'jaksoon — myös se mitä sen parametrit eivät kerro, kuten mallin '
+      + 'valinta.',
+    'audio.pluginParams': 'Liitännäisen säätimet',
+    'audio.pluginLoading': 'luetaan liitännäistä…',
+    'audio.pluginNoParams': 'Tässä liitännäisessä ei ole säädettävää.',
+    'audio.pluginFailed': 'Liitännäisen säätimiä ei saatu luettua.',
+    'audio.pluginMore': '{n} säädintä jätetty näyttämättä.',
+    'audio.pluginDefaults': 'Liitännäisen oletukset',
+    'audio.workers': 'Rinnakkaisia paloja',
+    'audio.workersAuto': 'automaattinen ({n})',
+    'audio.targetLufs': 'Tavoiteäänekkyys',
+    'audio.targetPreset': 'Jakelualusta',
+    'audio.target.youtube': 'YouTube',
+    'audio.target.streaming': 'Spotify, Apple',
+    'audio.target.broadcast': 'Lähetys (EBU R128)',
+    'audio.targetCustom': 'oma taso',
+    'audio.highpass': 'Ylipäästö',
+    'audio.highpassOff': 'ei käytössä',
+    'audio.peak': 'Huippujen kynnys',
+    'audio.leveler': 'Tasaajan kynnys',
+    'audio.trim': 'Trimmi',
+    'audio.programTarget': 'Tavoitetaso koskee summaa, ei yksittäistä mikkiä',
+    'audio.declick': 'Maiskausten poisto',
+    'audio.declickSensitivity': 'Naksujen herkkyys',
+    /* Rivien tekstit. Perustelu kertoo *mittauksen* joka asetti oletuksen —
+       se on koko ero vanhaan paneeliin, jossa numero näkyi ilman syytä. */
+    'audio.on': 'päällä',
+    'audio.off': 'pois',
+    'audio.rowChanged': '{names} · muutettu oletuksesta',
+    'audio.rowReset': 'Palauta mitatut oletukset',
+    /* Rivin nimi on lyhyt: se on nimi, ei lause. Valintaruudun teksti sai
+       olla kokonainen käsky, koska ruudun vieressä ei ollut muuta — rivillä
+       on kuvaus omalla rivillään ja arvo perässä. */
+    'audio.pluginRow': 'Palautusliitännäinen',
+    'audio.debleedRow': 'Vuodon poisto',
+    'audio.duckRow': 'Vaimennus',
+    'audio.declickRow': 'Naksunpoisto',
+    'audio.pluginRowHint': 'Ketjun ensimmäinen vaihe.',
+    'audio.pluginNone': 'ei valittu',
+    'audio.debleedRowHint': 'Toisen puhujan ääni pois tästä mikistä.',
+    'audio.duckRowHint': 'Hiljennä mikki toisen puheen alla.',
+    'audio.declickRowHint': 'Huulinaksut ja maiskaukset.',
+    'audio.loudnessRow': 'Äänekkyys',
+    'audio.loudnessRowHint': 'Jakelualustan taso, ei yhden stemin.',
+    'audio.roomRowHint': 'Oma lane, oma taso.',
+    'knobName.plugin_workers': 'Rinnakkaisia paloja',
+    'knobName.duck_db': 'Vaimennus',
+    'knobName.duck_lookahead': 'Ennakko',
+    'knobName.duck_hold': 'Pito',
+    'knobName.duck_min_open': 'Lyhin avaus',
+    'knobName.duck_dominance_db': 'Erotus kovimpaan',
+    'knobName.duck_min_closed': 'Lyhin vaimennus',
+    'knobName.duck_fade': 'Lasku',
+    'knobName.duck_release': 'Paluu',
+    'knobName.declick_sensitivity': 'Herkkyys',
+    'knobName.target_lufs': 'Tavoiteäänekkyys',
+    'knobName.high_pass_hz': 'Ylipäästö',
+    'knobName.peak_threshold_db': 'Huippukynnys',
+    'knobName.leveler_threshold_db': 'Tasaajan kynnys',
+    'knobName.gain_db': 'Trimmi',
+    'knobName.room_db': 'Tilaäänen taso',
+    'knobName.program_target': 'Ohjelmatavoite',
+    'why.plugin_workers': 'Oletus on osuus koneen ytimistä, ei lukua '
+      + 'lähdekoodissa. Mitattuna 20 minuutin tiedostolla 168,4 s → 68,3 s. '
+      + 'Palat eivät näe toistensa kontekstia, joten tulos muuttuu hieman.',
+    'why.duck_db': 'Tämä on rivin ainoa makuasia. Loput ovat ajoituksia, '
+      + 'joiden oletukset on mitattu.',
+    'why.duck_lookahead': 'Avaa ennen sanan alkua, jottei ensitavu katoa.',
+    'why.duck_hold': 'Pitää auki puheen jälkeen, jottei portti sulkeudu tauolla.',
+    'why.duck_min_open': 'Tätä lyhyempi äännähdys ei avaa porttia.',
+    'why.duck_dominance_db': 'Molemmat mikit ylittävät kynnyksen 41 % ajasta, '
+      + 'mutta vuoto on mediaanissa 12,8 dB hiljempaa — auki jää kovin.',
+    'why.duck_min_closed': 'Ilman tätä syntyi 20 millisekunnin kuoppia: '
+      + 'naksahdus, ei vaimennus.',
+    'why.duck_fade': 'Hidas, koska se on peitossa: lasku alkaa vasta kun '
+      + 'toinen ääni on jo tullut.',
+    'why.duck_release': 'Hitaampi kuin lasku, jotta nousukin ehtii tapahtua '
+      + 'peittävän äänen alla.',
+    'why.declick_sensitivity': 'Kynnys on kalibroitu siitä montako löydöstä '
+      + 'sekunnissa syntyy: kertoimella 3,5 niitä oli 316–666, kertoimella 25 '
+      + 'noin yksi. Katto nostaa kynnystä jos löydöksiä tulee silti liikaa.',
+    'why.target_lufs': 'Ohjelman taso. Mitattu trimmi tekee siitä noin '
+      + '−15,8 per stemi, ja summa osuu −13:n tuntumaan.',
+    'why.high_pass_hz': 'Jyrinä pois ennen mittausta, jottei se vie '
+      + 'äänekkyysbudjettia.',
+    'why.peak_threshold_db': 'Seuraa tavoitetta: kynnys on suhteessa '
+      + '−20 LUFS:n viitetasoon eikä absoluuttinen.',
+    'why.leveler_threshold_db': 'Sama viittaus. Kaksi lempeää vaihetta yhden '
+      + 'rajun sijaan, kumpikin enintään 5 dB.',
+    'why.gain_db': 'Vaikuttaa vain siihen miten mikit vertautuvat '
+      + 'päällekkäisessä puheessa — ei herkkyyteen, koska pohja nousee mukana.',
+    'why.room_db': 'Ennustettava taso riippumatta siitä miten kuuma kameran '
+      + 'mikki sattui olemaan.',
+    /* Reaktiokuvat. Portin luku on ainoa säädin: mitattuna järjestys ei
+       ratkaise, kynnys ratkaisee. */
+    'reactions.title': 'Reaktiokuvat',
+    'reactions.hint': 'Kuuntelijan lähikuva kesken toisen puheen, omalle lanelle.',
+    'reactions.measure': 'Mittaa lähikuvat',
+    'reactions.again': 'Mittaa uudestaan',
+    'reactions.measuring': 'mitataan…',
+    'legend.reactions': 'Reaktiokuvat ({n} kpl, oma lane)',
+    'legend.reactionsOff': 'Reaktiokuvat ({n} kpl) — EI VIEDÄ, kytkin on pois',
+    'cuts.reactionsOff': '{n} reaktiokuvaa (ei viedä)',
+    'preview.zoomed': 'lähennetty: {span} — rulla zoomaa, veto siirtää, tuplaklikkaus koko ohjelmaan',
+    'cuts.reaction': 'Reaktio: {name}',
+    'cuts.reactions': '{n} reaktiokuvaa',
+    'reactions.candidates': '{n} hetkeä',
+    'reactions.notMeasured': 'ei mitattu',
+    'reactions.failed': 'Mittaus ei onnistunut',
+    'reactions.needMeasure': 'Lähikuvia ei ole vielä mitattu. Purku kestää '
+      + 'minuutteja, mutta tulos jää välimuistiin — toinen ajo on ilmainen.',
+    'reactions.measuringNote': 'Puretaan avainruutuja ja mitataan kasvot, '
+      + '{percent} %. Vain ne hetket joissa tämä puhuja on vaiti.',
+    'reactions.measuredNote': '{frames} avainruutua {files} tiedostosta, '
+      + 'kasvot löytyi {faces} %:sta. Portin läpäisee {candidates} hetkeä, '
+      + 'ja niistä vientiin päätyy {placed} — määrän ratkaisee väli '
+      + '({spacing} s), ei portti. Portti päättää mitkä hetket kelpaavat, '
+      + 'väli montako niistä käytetään.',
+    'reactions.gate': 'Portti: pään suoruus',
+    'reactions.spacing': 'Lyhin väli',
+    'reactions.length': 'Kuvan kesto',
+    'reactions.lead': 'Ennakko',
+    'why.reaction_lead': 'Kuinka paljon ennen mitattua ruutua leikataan. '
+      + 'Avainruutuja on yksi sekunnissa, joten mittaus kertoo minkä sekunnin '
+      + 'sisällä ilme on — ei milloin se alkoi. Ilman ennakkoa kuva vaihtuu '
+      + 'vasta kun reaktio on jo käynnissä. Sama idea kuin J-cutin ennakolla. '
+      + 'Ennakko siirtää alkua, ei pidennä kuvaa: kestoa säädetään erikseen.',
+    'why.reaction_spacing': 'Tämä ratkaisee **määrän**, ei portti. Portin '
+      + 'läpäisseitä on aina enemmän kuin välejä, joten harvennus ottaa '
+      + 'yhden kustakin välistä: mitattuna portti 0,03 -> 0,40 vei ehdokkaat '
+      + '461:stä 1875:een mutta vientiin päätyvät vain 94:stä 131:een.',
+    'why.reaction_length': 'Kuinka kauan reaktiokuvassa viivytään. 1,6 s '
+      + 'tuntui liian nopealta: reaktio ehtii alkaa ja loppua ennen kuin '
+      + 'katsoja on lukenut kasvot. Lyhyt on vilkaisu, pitkä alkaa olla oma '
+      + 'kuvansa — ja pidempi kuva vie myös enemmän tilaa välistä.',
+    'why.reaction_turn_max': 'Suurin sallittu pään kääntymä puhujasta pois. '
+      + 'Mitattuna 23 käsin arvioidusta ruudusta luokat eivät mene '
+      + 'päällekkäin: huonoin kelvollinen 0,072, paras kelvoton 0,094. '
+      + 'Oletus 0,080 on siinä välissä, tiukemmalla puoliskolla — ohi mennyt '
+      + 'reaktiokuva ei maksa mitään, kelvoton maksaa oton.',
+    'audio.debleed': 'Vähennä toisen puhujan vuoto mikeistä',
+    'audio.debleedHelp': 'Sama ääni kahdessa mikissä muutaman millisekunnin '
+      + 'päässä toisistaan kuuluu metallisena kaikuna, kun raidat soivat '
+      + 'yhdessä. Vuotopolku mitataan niistä kohdista joissa vain toinen '
+      + 'puhuu, ja vähennetään pois.',
+    'audio.duck': 'Vaimenna toinen mikki puheen ulkopuolella',
+    'audio.duckDb': 'Vaimennus',
+    'audio.duckNone': 'ei vaimennusta',
+    'audio.duckLookahead': 'Ennakko',
+    'audio.duckHold': 'Pito',
+    'audio.duckMinOpen': 'Lyhin avaus',
+    'audio.duckDominance': 'Erotus kovimpaan',
+    'audio.duckMinClosed': 'Lyhin vaimennus',
+    'audio.duckFade': 'Lasku',
+    'audio.duckRelease': 'Paluu',
+    'audio.room': 'Tilaääni',
+    'audio.roomOff': 'ei käytössä',
+    'audio.roomDb': 'Tilaäänen taso',
+    'audio.roomDbUnit': ' dB puhetta hiljempaa',
+    'audio.run': 'Käsittele ääni',
+    'audio.runStale': 'Käsittele ääni ({n} vanhentunutta)',
+    'audio.running': 'Käsitellään…',
+    /* Tehty työ näkyy painikkeesta. Ilman tätä painike palasi aina tekstiin
+       «Käsittele ääni», eikä valmiiseen ajoon voinut luottaa katsomalla. */
+    'audio.runDone': 'Ääni käsitelty ({n} tiedostoa)',
+    'audio.runAgain': 'Käsittele uudelleen — vahvista',
+    'app.cancel': 'Peruuta',
+    'audio.left': ' · noin {time} jäljellä',
+    /* Vaiheen nimi kertoo miksi palkki liikkuu hitaasti: liitännäinen on
+       ylivoimaisesti kallein vaihe eikä kerro itsestään mitään. */
+    'audio.stage.read': 'luetaan',
+    'audio.stage.plugin': 'liitännäinen',
+    'audio.stage.cleanup': 'siivous',
+    'audio.stage.measure': 'mittaus',
+    'audio.stage.dynamics': 'dynamiikka',
+    'audio.stage.lag': 'siirtymä',
+    'audio.stage.duck': 'vaimennus',
+    'audio.stage.write': 'kirjoitetaan',
+    'audio.ready': '{n} mikkitiedostoa valmiina',
+    'audio.readyRoom': ' · tilaääni {n}',
+    'audio.readyGain': ' · nosto {low}…{high} dB',
+    'audio.readyProgram': ' · summan trimmi {db} dB',
+    'audio.readyTail': '. Vienti käyttää niitä.',
+    'audio.readyStale': '. {n} on tehty eri asetuksilla — käsittele uudelleen.',
+    'audio.idle': 'Alkuperäisiin tiedostoihin ei kosketa; käsitelty ääni '
+      + 'kirjoitetaan [mix]-kopioiksi niiden viereen.',
+    /* Ajo joka ei tehnyt mitään näyttää muuten täsmälleen rikkinäiseltä
+       painikkeelta: sama teksti ennen ja jälkeen, ei uusia tiedostoja. */
+    'audio.nothingToDo': 'Kaikki tiedostot olivat jo ajan tasalla — '
+      + 'ei käsiteltävää.',
+    'audio.done': 'Käsitelty {n} tiedostoa.',
+    'audio.startFailed': 'Äänen käsittely ei käynnistynyt',
+    'audio.failed': 'Äänen käsittely epäonnistui: {error}',
+    'legend.wide': 'Laaja',
+    'legend.noClose': '{name} (ei lähikuvaa)',
+    'table.index': '#',
+    'table.start': 'Alku',
+    'table.end': 'Loppu',
+    'table.duration': 'Kesto',
+    'table.shot': 'Kuva',
+    'unit.seconds': ' s',
+    'unit.db': ' dB',
+    'unit.hz': ' Hz',
+    'unit.lufs': ' LUFS',
+    'unit.min': '{n} min',
+    'unit.sec': '{n} s',
+    'unit.hourMin': '{h} h {m} min',
+  },
+  en: {
+    'app.open': 'Open XML…',
+    'app.reload': 'Reload',
+    'app.reloading': 'Reading…',
+    'app.export': 'Export XML',
+    'app.exporting': 'Exporting…',
+    'app.tracks': 'Tracks',
+    'app.group.video': 'Picture',
+    'app.group.audio': 'Sound',
+    'app.globals': 'Global controls',
+    'app.longtake': 'Long turn',
+    'longtake.rowHint': 'What happens when one person speaks for a long time.',
+    'overlap.rowHint': 'What happens when both speak at once.',
+    'app.overlap': 'Overlapping speech',
+    'app.audio': 'Audio',
+    'app.project': 'Project',
+    'app.name': 'Name',
+    'app.nameTags': 'Settings in the file name',
+    'app.preview': 'Preview',
+    'app.cuts': 'Cut list',
+    'app.reset': 'Reset to defaults',
+    'app.reset.audio': 'Reset audio settings',
+    'app.speaker': 'Speaker',
+    'app.decision': 'decision {ms} ms',
+    'app.shots': '{n} shots',
+    'app.unknownError': 'Unknown error',
+    'app.noServer': 'The server is not responding: {error}',
+    'app.readFailed': 'Reading failed: {error}',
+    'app.noPicker': 'No file picker in this environment. Pass the path on the command line.',
+    'app.exportFailed': 'Export failed: {error}',
+    'app.missingFile': 'File not found on disk: {paths}',
+    'app.envelopes': 'envelopes {done}/{total}',
+    'app.parts': '{n} parts',
+    'app.angle': 'angle {name}',
+    'app.channels': '{n} ch',
+    'app.audioOf': 'audio {codec} {n} ch',
+    'panning.title': 'Panning',
+    'panning.hint': 'Speakers come from where they sit. The position is measured from the picture.',
+    'panning.on': 'On',
+    'panning.place': '{name} {side}',
+    'panning.left': 'left',
+    'panning.right': 'right',
+    'panning.centre': 'centre',
+    'panning.looking': 'Looking at the picture…',
+    'why.panning': 'The position is measured from head direction: people sitting '
+      + 'opposite each other look at each other, so the one on the left looks '
+      + 'right. Positions are spread evenly by order — the angle gives the '
+      + 'ordering but not the distance. The spread is deliberately small: speech '
+      + 'belongs in the middle, and a wide spread turns a conversation into a '
+      + 'radio play. Above five speakers nothing is panned. The files are not '
+      + 'touched: this is Final Cut’s own setting and can be changed afterwards.',
+    'app.exportedCuts': 'Exported, {cuts} shots',
+    'export.openInFcp': 'Open in Final Cut',
+    'export.reveal': 'Show in Finder',
+    'app.exportedMix': ' · {n} processed audio files',
+    'kind.project': 'project',
+    'kind.sync-clip': 'sync clip',
+    'kind.multicam': 'multicam',
+    'meta.fps': '{fps} fps',
+    'meta.tracks': '{n} tracks',
+    'meta.parts': '{n} parts',
+    'path.export': 'Export',
+    'path.settings': 'Settings',
+    'path.inherited': 'Roles inherited from',
+    'patch.shared': 'Shared',
+    'patch.speakerN': 'Speaker {n}',
+    'patch.newSpeaker': '+ new speaker',
+    'patch.tray': 'Unused',
+    'patch.trayEmpty': 'every track is in use',
+    'patch.hint': 'Drag a card into a slot — or click a card, then a slot',
+    'role.wide': 'Wide',
+    'role.close': 'Close-up',
+    'role.mic': 'Microphone',
+    'rhythm.title': 'Rhythm & Profile',
+    'rhythm.broadcast': 'Broadcast & Podcast',
+    'rhythm.broadcastHint': 'Natural conversation rhythm (2.5s min, J/L-cuts).',
+    'rhythm.mellow': 'Mellow',
+    'rhythm.mellowHint': 'Documentary & leisurely (4.5s min, generous hang).',
+    'rhythm.hectic': 'Hectic',
+    'rhythm.hecticHint': 'Fast-paced debate / punchy entertainment (1.4s min).',
+    'rhythm.custom': 'Custom',
+    'rhythm.customHint': 'Individually adjusted parameters.',
+    'knob.sensitivity': 'Sensitivity',
+    'knob.sensitivityUnit': ' dB over the floor',
+    'knob.gain': 'Gain',
+    'knob.minShot': 'Shortest shot',
+    'knob.lead': 'Lead (J-cut)',
+    'knob.hang': 'Hang (L-cut)',
+    'knob.confirm': 'Confirm time',
+    'knob.wideEvery': 'Break after at most',
+    'knob.wideHold': 'Wide duration',
+    'knob.never': 'never',
+    'knob.minOverlap': 'Shortest overlap',
+    'knob.dominance': 'Required difference',
+    'longtake.return': 'Return to speaker',
+    'longtake.returnHint': 'Wide in between, then back to the same shot.',
+    'longtake.stay': 'Stay wide',
+    'longtake.stayHint': 'The wide continues until somebody else speaks.',
+    'longtake.reaction': 'Reaction shot',
+    'longtake.reactionWide': 'Reaction, then wide',
+    'longtake.reactionWideHint': "The listener's reaction, then the wide, then "
+      + 'back to the speaker. Returning through the wide is a softer cut than '
+      + 'close-up straight to close-up, and the wide restores the geography.',
+    'longtake.reactionHint': 'Cut to co-host reaction, then back to the speaker.',
+    'overlap.wide': 'Wide',
+    'overlap.wideHint': 'Both talking, cut to the wide.',
+    'overlap.hold': 'Hold current',
+    'overlap.holdHint': 'Do not cut at all.',
+    'overlap.louder': 'Louder wins',
+    'overlap.louderHint': 'The louder one gets the shot once the gap holds.',
+    'audio.enable': 'Process microphones',
+    'audio.plugin': 'Plug-in',
+    'audio.pluginHint': 'e.g. dxRevive — empty = no plug-in',
+    'audio.pluginEditor': "Open the plug-in's own window",
+    'audio.pluginEditorOpen': 'Window open (titled “Pedalboard”) — close it '
+      + 'when you are done',
+    'audio.pluginEditorFailed': 'The window could not be opened',
+    'audio.pluginStateSaved': "The plug-in's own state is saved with this "
+      + 'episode — including what its parameters do not expose, such as '
+      + 'the model.',
+    'audio.pluginParams': 'Plug-in controls',
+    'audio.pluginLoading': 'reading the plug-in…',
+    'audio.pluginNoParams': 'This plug-in has nothing to adjust.',
+    'audio.pluginFailed': 'Could not read the plug-in controls.',
+    'audio.pluginMore': '{n} controls not shown.',
+    'audio.pluginDefaults': 'Plug-in defaults',
+    'audio.workers': 'Parallel pieces',
+    'audio.workersAuto': 'automatic ({n})',
+    'audio.targetLufs': 'Target loudness',
+    'audio.targetPreset': 'Destination',
+    'audio.target.youtube': 'YouTube',
+    'audio.target.streaming': 'Spotify, Apple',
+    'audio.target.broadcast': 'Broadcast (EBU R128)',
+    'audio.targetCustom': 'custom level',
+    'audio.highpass': 'High-pass',
+    'audio.highpassOff': 'off',
+    'audio.peak': 'Peak threshold',
+    'audio.leveler': 'Leveller threshold',
+    'audio.trim': 'Trim',
+    'audio.programTarget': 'The target applies to the sum, not to one microphone',
+    'audio.declick': 'Remove mouth clicks',
+    'audio.declickSensitivity': 'Click sensitivity',
+    'audio.on': 'on',
+    'audio.off': 'off',
+    'audio.rowChanged': '{names} · changed from the default',
+    'audio.rowReset': 'Restore the measured defaults',
+    'audio.pluginRow': 'Restoration plug-in',
+    'audio.debleedRow': 'Bleed removal',
+    'audio.duckRow': 'Ducking',
+    'audio.declickRow': 'De-click',
+    'audio.pluginRowHint': 'The first stage of the chain.',
+    'audio.pluginNone': 'none',
+    'audio.debleedRowHint': "The other speaker's voice out of this microphone.",
+    'audio.duckRowHint': "Quiet a microphone under the other person's speech.",
+    'audio.declickRowHint': 'Lip smacks and mouth noise.',
+    'audio.loudnessRow': 'Loudness',
+    'audio.loudnessRowHint': "The platform's level, not one stem's.",
+    'audio.roomRowHint': 'Its own lane, its own level.',
+    'knobName.plugin_workers': 'Parallel pieces',
+    'knobName.duck_db': 'Ducking',
+    'knobName.duck_lookahead': 'Lookahead',
+    'knobName.duck_hold': 'Hold',
+    'knobName.duck_min_open': 'Shortest opening',
+    'knobName.duck_dominance_db': 'Margin to loudest',
+    'knobName.duck_min_closed': 'Shortest duck',
+    'knobName.duck_fade': 'Fade',
+    'knobName.duck_release': 'Release',
+    'knobName.declick_sensitivity': 'Sensitivity',
+    'knobName.target_lufs': 'Target loudness',
+    'knobName.high_pass_hz': 'High-pass',
+    'knobName.peak_threshold_db': 'Peak threshold',
+    'knobName.leveler_threshold_db': 'Leveller threshold',
+    'knobName.gain_db': 'Trim',
+    'knobName.room_db': 'Room level',
+    'knobName.program_target': 'Programme target',
+    'why.plugin_workers': "The default is a share of the machine's cores, not "
+      + 'a number in the source. Measured on a 20-minute file: 168.4 s → '
+      + '68.3 s. The pieces cannot see each other, so the result shifts a little.',
+    'why.duck_db': "This is the row's only taste control. The rest are "
+      + 'timings, and their defaults were measured.',
+    'why.duck_lookahead': 'Opens before the word starts, so the first syllable '
+      + 'is not lost.',
+    'why.duck_hold': 'Keeps it open after speech, so the gate does not shut on '
+      + 'a pause.',
+    'why.duck_min_open': 'A blip shorter than this does not open the gate.',
+    'why.duck_dominance_db': 'Both microphones cross the threshold 41 % of the '
+      + 'time, but the bleed is a median 12.8 dB quieter — the loudest stays open.',
+    'why.duck_min_closed': 'Without this it made 20-millisecond holes: a click, '
+      + 'not a duck.',
+    'why.duck_fade': 'Slow because it is hidden: the fall starts only once the '
+      + 'masking sound has arrived.',
+    'why.duck_release': 'Slower than the fade, so the rise also happens under '
+      + 'the masking sound.',
+    'why.declick_sensitivity': 'Calibrated on how many findings a second '
+      + 'appear: at 3.5× there were 316–666, at 25× about one. A ceiling '
+      + 'raises the threshold if there are still too many.',
+    'why.target_lufs': "The programme's level. The measured trim makes that "
+      + 'about −15.8 per stem, and the sum lands near −13.',
+    'why.high_pass_hz': 'Rumble out before measuring, so it does not eat the '
+      + 'loudness budget.',
+    'why.peak_threshold_db': 'Follows the target: relative to a −20 LUFS '
+      + 'reference, not absolute.',
+    'why.leveler_threshold_db': 'Same reference. Two gentle stages instead of '
+      + 'one hard one, each capped at 5 dB.',
+    'why.gain_db': 'Only affects how the microphones compare during '
+      + 'overlapping speech — not sensitivity, since the floor moves with it.',
+    'why.room_db': 'A predictable level regardless of how hot the camera '
+      + 'microphone happened to be.',
+    'reactions.title': 'Reaction shots',
+    'reactions.hint': "The listener's close-up during the other person's speech, on its own lane.",
+    'reactions.measure': 'Measure the close-ups',
+    'reactions.again': 'Measure again',
+    'reactions.measuring': 'measuring…',
+    'legend.reactions': 'Reaction shots ({n}, own lane)',
+    'legend.reactionsOff': 'Reaction shots ({n}) — NOT EXPORTED, switch is off',
+    'cuts.reactionsOff': '{n} reaction shots (not exported)',
+    'preview.zoomed': 'zoomed: {span} — wheel zooms, drag pans, double-click for the whole programme',
+    'cuts.reaction': 'Reaction: {name}',
+    'cuts.reactions': '{n} reaction shots',
+    'reactions.candidates': '{n} moments',
+    'reactions.notMeasured': 'not measured',
+    'reactions.failed': 'The measurement failed',
+    'reactions.needMeasure': 'The close-ups have not been measured yet. '
+      + 'Decoding takes minutes, but the result is cached — a second run is free.',
+    'reactions.measuringNote': 'Decoding keyframes and measuring faces, '
+      + '{percent} %. Only the moments where this speaker is silent.',
+    'reactions.measuredNote': '{frames} keyframes from {files} files, a face '
+      + 'found in {faces} %. {candidates} moments pass the gate and {placed} '
+      + 'reach the export — the count is decided by the spacing ({spacing} s), '
+      + 'not the gate. The gate decides which moments qualify, the spacing '
+      + 'how many of them get used.',
+    'reactions.gate': 'Gate: how square the head is',
+    'reactions.spacing': 'Shortest interval',
+    'reactions.length': 'Shot length',
+    'reactions.lead': 'Lead',
+    'why.reaction_lead': 'How far before the measured frame the cut is made. '
+      + 'Keyframes come once a second, so the measurement says which second '
+      + 'holds the expression, not when it began. Without a lead the picture '
+      + 'changes only once the reaction is already under way — the same idea '
+      + 'as a J-cut. The lead moves the start, it does not lengthen the shot; '
+      + 'the duration is a separate control.',
+    'why.reaction_spacing': 'This decides the **count**, not the gate. There '
+      + 'are always more qualifying moments than intervals, so thinning takes '
+      + 'one per interval: measured, a gate of 0.03 → 0.40 moved candidates '
+      + 'from 461 to 1875 but the exported count only from 94 to 131.',
+    'why.reaction_length': 'How long the reaction shot holds. 1.6 s read as '
+      + 'too quick: the reaction begins and ends before the viewer has read '
+      + 'the face. Short is a glance, long starts becoming its own shot — and '
+      + 'a longer shot also takes more room out of the interval.',
+    'why.reaction_turn_max': 'The largest head turn away from the speaker that '
+      + 'still passes. Measured over 23 hand-marked frames the classes do not '
+      + 'overlap: worst acceptable 0.072, best unacceptable 0.094. The default '
+      + '0.080 sits in that gap, on the tight half — a reaction shot that never '
+      + 'happens costs nothing, a disqualifying one costs the take.',
+    'audio.debleed': "Remove the other speaker's bleed from the microphones",
+    'audio.debleedHelp': 'The same voice in two microphones a few '
+      + 'milliseconds apart sounds like a metallic reverb when the tracks '
+      + 'play together. The leakage path is measured where only one person '
+      + 'speaks, and subtracted.',
+    'audio.duck': 'Duck the other microphone outside speech',
+    'audio.duckDb': 'Depth',
+    'audio.duckNone': 'no ducking',
+    'audio.duckLookahead': 'Lookahead',
+    'audio.duckHold': 'Hold',
+    'audio.duckMinOpen': 'Shortest opening',
+    'audio.duckDominance': 'Gap to the loudest',
+    'audio.duckMinClosed': 'Shortest duck',
+    'audio.duckFade': 'Fade down',
+    'audio.duckRelease': 'Fade up',
+    'audio.room': 'Room tone',
+    'audio.roomOff': 'off',
+    'audio.roomDb': 'Room tone level',
+    'audio.roomDbUnit': ' dB below speech',
+    'audio.run': 'Process audio',
+    'audio.runStale': 'Process audio ({n} stale)',
+    'audio.running': 'Processing…',
+    'audio.runDone': 'Audio processed ({n} files)',
+    'audio.runAgain': 'Process again — confirm',
+    'app.cancel': 'Cancel',
+    'audio.left': ' · about {time} left',
+    'audio.stage.read': 'reading',
+    'audio.stage.plugin': 'plug-in',
+    'audio.stage.cleanup': 'cleanup',
+    'audio.stage.measure': 'measuring',
+    'audio.stage.dynamics': 'dynamics',
+    'audio.stage.lag': 'shift check',
+    'audio.stage.duck': 'ducking',
+    'audio.stage.write': 'writing',
+    'audio.ready': '{n} microphone files ready',
+    'audio.readyRoom': ' · room tone {n}',
+    'audio.readyGain': ' · lift {low}…{high} dB',
+    'audio.readyProgram': ' · program trim {db} dB',
+    'audio.readyTail': '. The export will use them.',
+    'audio.readyStale': '. {n} of them were made with different settings — process again.',
+    'audio.idle': 'The originals are never touched; processed audio is written '
+      + 'as [mix] copies beside them.',
+    'audio.nothingToDo': 'Every file was already up to date — nothing to do.',
+    'audio.done': 'Processed {n} files.',
+    'audio.startFailed': 'Audio processing did not start',
+    'audio.failed': 'Audio processing failed: {error}',
+    'legend.wide': 'Wide',
+    'legend.noClose': '{name} (no close-up)',
+    'table.index': '#',
+    'table.start': 'Start',
+    'table.end': 'End',
+    'table.duration': 'Length',
+    'table.shot': 'Shot',
+    'unit.seconds': ' s',
+    'unit.db': ' dB',
+    'unit.hz': ' Hz',
+    'unit.lufs': ' LUFS',
+    'unit.min': '{n} min',
+    'unit.sec': '{n} s',
+    'unit.hourMin': '{h} h {m} min',
+  },
+};
+
+let LANG = 'fi';
+
+function setLang(value) {
+  LANG = STRINGS[value] ? value : 'fi';
+}
+
+/* Käännös. Tuntematon avain palautuu sellaisenaan, jotta puuttuva teksti
+   näkyy eikä katoa. */
+function T(key, params) {
+  const table = STRINGS[LANG] || STRINGS.fi;
+  let text = table[key];
+  if (text === undefined) text = (STRINGS.fi[key] !== undefined ? STRINGS.fi[key] : key);
+  if (params) {
+    Object.keys(params).forEach((name) => {
+      text = text.split(`{${name}}`).join(params[name]);
+    });
+  }
+  return text;
+}

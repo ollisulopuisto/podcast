@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="fi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>autoraffkat</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicon.png">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="alternate icon" href="/static/favicon.ico">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="titles">
+    <h1 id="project-name">—</h1>
+    <p id="project-meta" class="muted"></p>
+  </div>
+  <div class="actions">
+    <span id="status" class="muted"></span>
+    <span id="language" class="langs"></span>
+    <button id="open" class="ghost">Avaa XML…</button>
+    <button id="reload" class="ghost">Lue uudestaan</button>
+    <span id="mix-host"></span>
+    <button id="export" class="primary">Vie XML <kbd>⌘E</kbd></button>
+  </div>
+</header>
+
+<div id="banner" class="banner hidden"></div>
+<div id="exported" class="exported hidden"></div>
+
+<main>
+  <section class="panel tracks">
+    <h2 data-t="app.tracks">Raidat</h2>
+    <div id="patch" class="patch"></div>
+    <div id="tray"></div>
+  </section>
+
+  <!-- Kaksi paneelia yhdessä kiskossa: leveällä ruudulla kisko jakautuu
+       kahdeksi sarakkeeksi, jolloin ääni ei jää kuvan alle piiloon, ja
+       kapealla ne latautuvat päällekkäin kuten ennenkin. -->
+  <div class="rail">
+    <section class="panel globals">
+      <h2 data-t="app.globals">Leikkaus</h2>
+
+      <h3 data-t="rhythm.title">Rytmi ja profiili</h3>
+      <div id="rhythm-rules" class="rules"></div>
+      <div id="global-list"></div>
+
+      <div id="cut-rows"></div>
+    </section>
+
+    <section class="panel audio">
+      <h2 data-t="app.audio">Ääni</h2>
+      <div id="audio-panel"></div>
+      <datalist id="plugin-names"></datalist>
+
+      <h3 data-t="app.project">Projekti</h3>
+      <label class="field">
+        <span data-t="app.name">Nimi</span>
+        <input id="project-title" type="text" autocomplete="off">
+      </label>
+      <div id="name-tags"></div>
+      <p class="muted small" id="paths"></p>
+    </section>
+  </div>
+</main>
+
+<section class="panel preview">
+  <div class="preview-head">
+    <h2 data-t="app.preview">Esikatselu</h2>
+    <span id="zoom-note" class="zoomed hidden"></span>
+    <span id="counts" class="muted"></span>
+  </div>
+  <canvas id="bar" height="120"></canvas>
+  <div id="ruler" class="ruler"></div>
+  <div id="legend" class="legend"></div>
+</section>
+
+<section class="panel cuts">
+  <div class="preview-head">
+    <h2 data-t="app.cuts">Leikkauslista</h2>
+    <span id="cut-summary" class="muted"></span>
+  </div>
+  <div class="table-wrap">
+    <table id="cut-table">
+      <thead><tr><th data-t="table.index">#</th><th data-t="table.start">Alku</th><th data-t="table.end">Loppu</th><th data-t="table.duration">Kesto</th><th data-t="table.shot">Kuva</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+
+<script src="/static/i18n.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
