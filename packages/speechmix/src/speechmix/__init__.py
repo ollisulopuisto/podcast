@@ -9,7 +9,7 @@ ainoa olemassaolon syy: kirjasto johon kirjoitetaan koodia jota mikään ei
 kutsu on sama kolme kopiota ketjusta, vain yhden hakemiston sisällä.
 """
 
-from . import chain, debleed, envelopes, freshness, masks, messages
+from . import chain, debleed, envelopes, freshness, masks, messages, programme
 from .messages import set_translator
 
 __all__ = [
@@ -19,5 +19,6 @@ __all__ = [
     "freshness",
     "masks",
     "messages",
+    "programme",
     "set_translator",
 ]

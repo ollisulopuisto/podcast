@@ -135,3 +135,55 @@ def speech_blocks(item, mask, program_start: float, rate: int,
         out[ok] |= mask[cells[ok]]
     return out
 
+
+def geometry(item, frames: int) -> tuple:
+    """Tiedoston sijainti aikajanalla, vertailukelpoisena avaimena.
+
+    Summa lasketaan tiedostoista näyte näytteeltä, mikä on oikein vain jos
+    stemit ovat samassa kohdassa aikajanaa ja yhtä pitkiä. Tämä tekee siitä
+    tarkistettavan asian eikä oletuksen.
+    """
+    return (
+        frames,
+        tuple(
+            (
+                round(float(p.offset), 4),
+                round(float(p.end), 4),
+                round(float(p.start - item.asset_start - p.offset), 4),
+            )
+            for p in item.placements
+        ),
+    )
+
+
+def envelope_gain(item, points, low: int, high: int, rate: int) -> np.ndarray:
+    """Vaimennuksen kerroin tiedoston näyteväliltä ``[low, high)``.
+
+    Käyrä on aikajanan aikaa, tiedosto omaansa. Muunnos on esiintymittäin
+    lineaarinen, sama kaava kuin ``closed_ranges``issa. Ykkösiä silloin kun
+    puhujalle ei ole käyrää: silloin summaan menee tiedosto sellaisenaan.
+    """
+    if not points or item is None:
+        return np.ones(1, dtype=np.float32)
+    gain = np.ones(high - low, dtype=np.float32)
+    for placement in item.placements:
+        base = float(placement.start - item.asset_start - placement.offset)
+        # Tiedostoaika = base + aikajana, joten aikajana = tiedostoaika - base.
+        first = max(low / rate, float(placement.offset) + base)
+        last = min(high / rate, float(placement.end) + base)
+        if last <= first:
+            continue
+        i0, i1 = int(round(first * rate)) - low, int(round(last * rate)) - low
+        i0, i1 = max(0, i0), min(len(gain), i1)
+        if i1 <= i0:
+            continue
+        times = (np.arange(i0, i1, dtype=np.float64) + low) / rate - base
+        curve = np.interp(
+            times,
+            [t for t, _ in points],
+            [v for _, v in points],
+            left=0.0,
+            right=0.0,
+        )
+        gain[i0:i1] = (10.0 ** (curve / 20.0)).astype(np.float32)
+    return gain
