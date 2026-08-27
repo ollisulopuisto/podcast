@@ -1,11 +1,5 @@
 # Podcast Magic
 
-> **Siirtynyt.** Kehitys jatkuu repositoriossa
-> [ollisulopuisto/podcast](https://github.com/ollisulopuisto/podcast)
-> hakemistossa `apps/podcast-magic`, autoraffkatin, automixerin ja jaetun
-> `packages/speechmix`-paketin rinnalla. Tämä repositorio on arkisto: alla
-> oleva koodi on täydellinen ja ajettava, mutta sitä ei enää päivitetä.
-
 Kaksi Hindenburg-työvaihetta omalla Macilla Google Colabin sijaan: istunnon
 äänipoolin litterointi ja hiljaisten kohtien vaimennus. Yksi ikkuna, yksi
 istuntotiedosto, kaksi työkalua — ja tilaa kolmannelle.

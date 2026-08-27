@@ -1,8 +1,5 @@
 # Podcast Magic
 
-> Arkisto. Kehitys jatkuu `ollisulopuisto/podcast`in hakemistossa
-> `apps/podcast-magic`. Älä tee muutoksia tänne.
-
 Hindenburgin istunto sisään, Hindenburgin istunto ulos. Kaksi työkalua
 saman `.nhsx`-tiedoston ympärillä, tilaa kolmannelle.
 
