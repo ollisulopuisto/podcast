@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="fi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Podcast Magic</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="titles">
+    <h1>Podcast Magic</h1>
+    <p class="muted small" id="version"></p>
+  </div>
+  <nav id="tabs" class="tabs"></nav>
+  <div class="actions">
+    <span id="language" class="langs"></span>
+  </div>
+</header>
+
+<div id="banner" class="banner hidden"></div>
+
+<section class="panel source">
+  <h2 data-t="app.session">Istunto</h2>
+  <div class="picker">
+    <input id="session" type="text" spellcheck="false" autocomplete="off"
+           placeholder="…/jakso.nhsx">
+    <button id="browse" class="ghost" data-t="app.browse">Selaa…</button>
+  </div>
+  <p id="session-note" class="muted small"></p>
+  <div id="browser" class="browser hidden"></div>
+</section>
+
+<main id="panels"></main>
+
+<section class="panel job hidden" id="job">
+  <div class="job-head">
+    <h2 data-t="app.progress">Työn kulku</h2>
+    <span id="job-step" class="muted"></span>
+    <button id="cancel" class="ghost" data-t="app.cancel">Keskeytä</button>
+  </div>
+  <div class="progress"><div id="job-fill" class="progress-fill"></div></div>
+  <pre id="job-log" class="log"></pre>
+  <div id="job-result" class="exported hidden"></div>
+</section>
+
+<script src="/static/i18n.js"></script>
+<script src="/static/app.js"></script>
+<script src="/static/mod_transcribe.js"></script>
+<script src="/static/mod_silence.js"></script>
+<script>PM.start();</script>
+</body>
+</html>
