@@ -19,6 +19,25 @@ dependencies = [
 ]
 
 [project.scripts]
-automixer = "src.automixer.cli_mix:main"
-autoanalyze = "src.automixer.cli_analyze:main"
-autotui = "src.automixer.app:main"
+automixer = "automixer.cli_mix:main"
+autoanalyze = "automixer.cli_analyze:main"
+autotui = "automixer.app:main"
+
+# The importable package is `automixer`, living under src/.  Spelling the build
+# out rather than relying on setuptools' auto-discovery keeps the installed
+# name identical whether this is installed on its own or as a member of the
+# podcast workspace -- the ambiguity is what let `src.automixer` survive: it
+# resolves as a namespace package whenever the repository root happens to be on
+# sys.path, and only fails once the package is really installed.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/automixer"]
+
+[tool.pytest.ini_options]
+# The tests import `automixer`, the installed package -- not a path relative to
+# the checkout.  Run them with `uv run pytest`, which installs the project into
+# the environment first.
+testpaths = ["tests"]

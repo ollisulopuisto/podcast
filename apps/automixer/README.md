@@ -30,7 +30,7 @@ The easiest way to use the automixer is via the interactive dashboard:
 ```bash
 autotui
 ```
-*(Or `uv run python -m src.automixer.app` if running from source)*
+*(Or `uv run python -m automixer.app` if running from source)*
 
 **TUI Workflow:**
 1.  **Audio Assets**: Select files from the current directory and mark them as `SPEECH` or `MUSIC`.
@@ -74,6 +74,19 @@ automixer --speech mic1.wav mic2.wav --music theme_THEME.wav -o episode1.wav --t
 ### **Utility Commands**
 - **Analyze Ad Spots**: `autoanalyze <file> <output_spots>`
 - **Launch TUI**: `autotui`
+
+### **Running the tests**
+```bash
+uv sync        # installs the project, so `import automixer` resolves
+uv run pytest
+```
+The tests import `automixer`, the installed package -- not a path relative to
+the checkout. A bare `pytest` from the repository root will not find it, and
+that is deliberate: importing through the checkout path is what hid a broken
+package layout for as long as it did.
+
+On anything that is not Apple Silicon, `mlx` has no Metal backend; add
+`uv pip install "mlx[cpu]"` after `uv sync` to run them.
 
 ---
 
