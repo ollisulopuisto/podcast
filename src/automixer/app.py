@@ -32,8 +32,8 @@ from textual.containers import Vertical, Horizontal
 from textual.binding import Binding
 from textual.screen import ModalScreen
 
-from automixer.analyzer import SpotAnalyzer
-from automixer.cli_mix import Mixer
+from src.automixer.analyzer import SpotAnalyzer
+from src.automixer.cli_mix import Mixer
 
 
 class LogScreen(ModalScreen):

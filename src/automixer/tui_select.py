@@ -108,7 +108,7 @@ class SpotSelectionApp(App):
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print("Usage: python -m automixer.tui_select <spots_file> <config_file>")
+        print("Usage: python -m src.automixer.tui_select <spots_file> <config_file>")
         sys.exit(1)
 
     app = SpotSelectionApp(sys.argv[1], sys.argv[2])

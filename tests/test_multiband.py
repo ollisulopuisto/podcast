@@ -1,6 +1,6 @@
 import mlx.core as mx
 import numpy as np
-from automixer.domain.processor import MultibandCompressorProcessor
+from src.automixer.domain.processor import MultibandCompressorProcessor
 
 
 def test_multiband_summation():

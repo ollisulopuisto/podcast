@@ -2,8 +2,8 @@ import pytest
 import mlx.core as mx
 import numpy as np
 import soundfile as sf
-from automixer.domain.processor import LimiterProcessor, GainProcessor
-from automixer.domain.track import Track
+from src.automixer.domain.processor import LimiterProcessor, GainProcessor
+from src.automixer.domain.track import Track
 
 
 def test_limiter_brickwall():

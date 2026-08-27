@@ -8,7 +8,7 @@ using SpotAnalyzer, and writes the resulting timestamps to an output text file.
 import os
 import sys
 import soundfile as sf
-from automixer.analyzer import SpotAnalyzer
+from src.automixer.analyzer import SpotAnalyzer
 
 
 def main():
@@ -19,7 +19,7 @@ def main():
     to detect silences, and outputs the detected timestamps to the specified text file.
     """
     if len(sys.argv) < 2:
-        print("Usage: python -m automixer.cli_analyze <audio_file> [output_file]")
+        print("Usage: python -m src.automixer.cli_analyze <audio_file> [output_file]")
         sys.exit(1)
 
     audio_path = sys.argv[1]

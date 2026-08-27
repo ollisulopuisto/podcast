@@ -1,33 +1,24 @@
-# Workspace root for the podcast tooling.
-#
-# The pipeline changed ten times in one day, and every change was driven by a
-# measurement that invalidated the previous behaviour.  With a separately
-# versioned package, each of those is a release plus a bump in every consumer,
-# and the consumers drift in between -- which is the problem this layout exists
-# to solve.  One repository, one atomic change, one test run.
-#
-#   packages/speechmix   the chain, de-bleeding, envelope analysis, the
-#                        programme ceiling, the duck/rider envelope
-#                        computation, and the measurement tests
-#   apps/automixer       session reader, render
-#
-# Room is left for the sibling apps (autoraffkat's FCPXML reader/writer and
-# cutting decisions, and whatever the next session-based app turns out to be):
-# they drop in as further members of `apps/`.
-#
-# Split speechmix into a real PyPI package when the pipeline stops moving, or
-# when a fourth consumer appears outside these three.  Splitting later is
-# cheap; un-splitting is not.
+[project]
+name = "automixer"
+version = "2026.4.5.37"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "mlx>=0.30.6",
+    "numpy>=2.4.2",
+    "pedalboard>=0.9.22",
+    "psutil>=7.2.2",
+    "pyloudnorm>=0.2.0",
+    "pytest>=9.0.2",
+    "pyyaml>=6.0.3",
+    "scipy>=1.17.1",
+    "sounddevice>=0.5.5",
+    "soundfile>=0.13.1",
+    "textual>=8.0.0",
+]
 
-[tool.uv.workspace]
-members = ["packages/*", "apps/*"]
-
-[tool.uv.sources]
-speechmix = { workspace = true }
-automixer = { workspace = true }
-
-[dependency-groups]
-dev = ["pytest>=9.0.2", "ruff>=0.6"]
-
-[tool.pytest.ini_options]
-testpaths = ["packages/speechmix/tests", "apps/automixer/tests"]
+[project.scripts]
+automixer = "src.automixer.cli_mix:main"
+autoanalyze = "src.automixer.cli_analyze:main"
+autotui = "src.automixer.app:main"

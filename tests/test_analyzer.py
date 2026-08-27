@@ -1,5 +1,5 @@
 import numpy as np
-from automixer.analyzer import SpotAnalyzer
+from src.automixer.analyzer import SpotAnalyzer
 
 
 def generate_mock_audio(duration_sec, sr, silences):
