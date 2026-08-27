@@ -116,8 +116,6 @@ DEESS_SMOOTH_MS = 3.0
 #: yli — rajoitin on viimeinen vaihe ja saa tehdä hieman enemmän, muttei
 #: eri lajissa. Budjetin täytyttyä taso jää tavoitteesta, ja se on oikea
 #: lopputulos: taso on korjattavissa yhdellä liu'ulla, tiivistetty puhe ei.
-LIMITER_BUDGET_DB = 6.0
-
 CEILING_DB = -1.5
 LIMITER_OVERSAMPLE = 4
 LIMITER_LOOKAHEAD_MS = 5.0
@@ -1306,34 +1304,9 @@ def process(
         # samaan lukemaan. Yksi kierros riittää, koska korjaus on pieni ja
         # rajoitin ajetaan sen perään uudestaan.
         #
-        # Rajoittimen työ pidetään kirjaa ja rajataan: se on ainoa vaihe
-        # jolla ei ollut kattoa, ja tavoitetaso ajoi sen läpi niin paljon
-        # kuin materiaali sattui vaatimaan. Ks. ``LIMITER_BUDGET_DB``.
-        budget = float(getattr(settings, "limiter_budget_db", LIMITER_BUDGET_DB))
-
-        def within_budget(block, spent: float):
-            """Rajoitus budjetin sisällä: ylimenevä osa otetaan tasosta.
-
-            Vaimennus ennen rajoitinta vähentää vaadittua rajoitusta yksi
-            yhteen — huiput tulevat alas saman verran — joten ylimenevä osa
-            siirtyy tasoksi eikä tiivistykseksi. Tämä on koko korjaus: ilman
-            sitä tavoitetaso ajoi rajoittimen läpi niin paljon vahvistusta
-            kuin materiaali sattui vaatimaan.
-            """
-            need = limiter_gain(block, rate)
-            asked = -float(20.0 * np.log10(max(float(need.min()), 1e-9)))
-            over = asked - (budget + spent)
-            if over > 0:
-                block = _board(pedalboard.Gain(gain_db=-over))(
-                    block, rate, reset=True
-                )
-            else:
-                over = 0.0
-            block, did = limiter(block, rate)
-            return block, did, -over
-
-        audio, limiter_db, backed_off = within_budget(audio, 0.0)
-        lift += backed_off
+        # Rajoittimen työstä pidetään kirjaa: se päätyy ``ChainResult``iin,
+        # koska se on ainoa vaihe jolla ei ole kattoa eikä sitä nähnyt mikään.
+        audio, limiter_db = limiter(audio, rate)
         # Rajoitin syö äänekkyyttä sen verran kuin se leikkaa, ja korjaus
         # nostaa huiput takaisin rajoittimen kynsiin — yksi kierros jää siis
         # vajaaksi. Kolme riittää: mitattuna ensimmäinen kierros jäi 1–2 dB
@@ -1346,21 +1319,11 @@ def process(
             settled = loudness(audio.mean(axis=0), rate)
             if settled is None or abs(target_lufs - settled) <= 0.3:
                 break
-            if -limiter_db >= budget:
-                # Budjetti täynnä. Nostaminen tästä eteenpäin ei tuo
-                # äänekkyyttä vaan tiivistystä: rajoitin ottaa saman verran
-                # takaisin, ja mitattuna silmukka ei koskaan päässyt 0,3
-                # dB:n sisään vaan pysähtyi kierroslukuun.
-                reached = False
-                break
             step = float(target_lufs - settled)
             audio = _board(pedalboard.Gain(gain_db=step))(audio, rate, reset=True)
-            audio, round_db, backed_off = within_budget(audio, -limiter_db)
-            limiter_db = min(limiter_db, limiter_db + round_db)
-            lift += step + backed_off
-            if backed_off:
-                reached = False
-                break
+            audio, round_db = limiter(audio, rate)
+            limiter_db = min(limiter_db, round_db)
+            lift += step
         else:
             settled = loudness(audio.mean(axis=0), rate) if target_lufs else None
             reached = settled is None or abs(target_lufs - settled) <= 0.3
