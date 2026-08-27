@@ -57,6 +57,35 @@ class BackgroundServer:
         self.server.should_exit = True
 
 
+APP_NAME = "Podcast Magic"
+
+
+def name_the_app() -> None:
+    """Nimi valikkoriville ja telakkaan.
+
+    macOS lukee molemmat nipun ``CFBundleName``ista, ei ikkunan otsikosta.
+    Kehityksessä ajava nippu on Pythonin oma, joten valikossa lukee «Python»
+    vaikka ikkunan otsikko on oikein. Pakatussa ``.app``:ssa avain on jo
+    kohdallaan ja tämä kirjoittaa siihen saman arvon.
+
+    Kutsuttava ennen kuin ``NSApplication`` rakentaa valikon, eli ennen
+    ``webview.start()``ia — sen jälkeen nimi on jo luettu.
+    """
+    if sys.platform != "darwin":
+        return
+    try:
+        from Foundation import NSBundle
+
+        bundle = NSBundle.mainBundle()
+        info = bundle.localizedInfoDictionary() or bundle.infoDictionary()
+        if info is not None:
+            info["CFBundleName"] = APP_NAME
+    # Nimi on kosmetiikkaa kuten kuvake: väärä nimi valikossa on pienempi
+    # haitta kuin ikkuna joka ei aukea.
+    except Exception:
+        pass
+
+
 class DesktopApi:
     """Selaimen ja Pythonin välinen silta natiiveille valintaikkunoille."""
 
@@ -86,6 +115,7 @@ def launch(
     """Käynnistää palvelimen ja avaa ikkunan. Palaa vasta kun ikkuna suljetaan."""
     import webview
 
+    name_the_app()
     app = create_app(start_dir=start_dir, session=session)
     server = BackgroundServer(app, host=host, port=free_port(port))
     server.start()
