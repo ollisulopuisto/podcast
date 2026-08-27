@@ -15,12 +15,22 @@ was merged, and nobody noticed until someone measured.
 
 ```
 uv sync --all-packages
-uv run --directory apps/autoraffkat pytest -q
-uv run --directory apps/automixer   pytest -q
-uv run --directory apps/podcast-magic pytest -q
-uv run pytest packages/speechmix/tests -q
 uv run ruff check .
+uv run pytest tests -q                              # jäsenet ovat samaa mieltä
+uv run --directory packages/speechmix pytest -q
+uv run --directory apps/autoraffkat   pytest -q
+uv run --directory apps/automixer     pytest -q
+uv run --directory apps/podcast-magic pytest -q
 ```
+
+Sama muoto jokaiselle jäsenelle, myös `packages/speechmix`ille: se sai
+`testpaths`in jota siltä puuttui, ja ilman sitä tuo rivi keräsi
+`reference/`-hakemiston ja kaatui kokoamiseen.
+
+ruff ja pytest tulevat juuren `dev`-ryhmästä. Ne eivät ole yhdenkään
+sovelluksen riippuvuuksia: kiinnittämätön lintti on portti joka päästää läpi
+eri asioita eri koneilla, ja `uv run ruff` ilman asennusta hakee ohjelman
+PATHista — kehityskoneelta se löytyy, CI-ajurilta ei.
 
 An app depends on the pipeline through the workspace, not through a
 release:
@@ -36,21 +46,18 @@ window in which the apps disagree about what the chain does.
 
 ## Rules
 
-* **Red-green.** The failing test comes first. If the fix is already
-  written, restore the old behaviour and watch the test fail before
-  believing it.
-* **Lint passes.** `uv run ruff check .` before committing. A rule that
-  does not fit gets a written reason in `ignore`, never a bare `# noqa`.
-* **CalVer**, `YYYY.M.D.N`, per app. Tags carry the app's name —
-  `autoraffkat-v2026.8.28.1`, not `v2026.8.28.1` — because three apps now
-  share one tag space and a bare `v*` would match any of them. The release
-  workflow keys off that prefix.
-* **Workflows live in the repo root.** GitHub only runs `.github/workflows`
-  at the top level, so a workflow left inside `apps/<name>/.github/` is an
-  inert file that looks like a working pipeline. autoraffkat's release build
-  is `build-autoraffkat.yml`; podcast-magic still has a `build_app.py` and
-  no workflow, which is a gap rather than a decision.
-* **Numbers in comments.** A constant that came from a measurement says
-  what was measured. The bugs here are silent — valid output, clean
-  import, no exception, wrong result — and the number is what lets the
-  next reader tell an improvement from a regression.
+Ne ovat **`CLAUDE.md`**:ssä, yhdessä paikassa: punavihreä, kiinnitetty
+lintti, CalVer sovelluskohtaisesti, työnkulut juuressa, mittausluvut
+kommenteissa. `tests/` väittää koneellisesti tarkistettavat niistä ja
+kaatuu kun ne lakkaavat pitämästä paikkaansa.
+
+Versionosto:
+
+```
+uv run python scripts/bump_version.py autoraffkat
+git tag autoraffkat-v2026.8.28.1
+```
+
+Tagi käynnistää `build-<sovellus>.yml`in. Paketoitavia sovelluksia on kaksi
+(autoraffkat, podcast-magic); automixer on komentorivityökalu eikä sillä ole
+`.spec`iä, joten sillä ei ole julkaisuputkeakaan.
