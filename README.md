@@ -14,7 +14,8 @@ the file — it is **tracks placed on a programme timeline**, which `.fcpxml`,
 
 `packages/speechmix` is the pipeline itself. It turns samples into other
 samples and knows nothing about any session format — see its README for the
-seam and `SHARED-AUDIO.md` for the measurements behind every stage.
+seam and `apps/autoraffkat/SHARED-AUDIO.md` for the measurements behind every
+stage.
 
 ## Running one of them
 
@@ -30,9 +31,13 @@ uv run autoraffkat                        # Final Cut: cut the picture
 uv run automixer                          # render a mix
 ```
 
-automixer is still mid-move into this repository — one test fails on the
-workspace's mlx and CI carries it as declared debt — so treat that last line
-as the one to check before relying on it.
+All three run the same chain. automixer was the last one in and the last to
+get all of it: the shared pipeline reaches the timeline through *tracks with
+spans*, that shape used to be buildable only from FCPXML, and so the four
+stages that need it were locked to one app. They are not any more —
+`packages/speechmix/README.md` describes the seam and
+`apps/automixer/SPEECHMIX-INVENTORY.md` records what changed when automixer
+crossed it.
 
 **`uv sync` belongs at the root, with `--all-packages`.** The three apps and
 the shared pipeline are members of one uv workspace over one environment, so:

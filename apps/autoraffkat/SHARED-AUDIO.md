@@ -12,6 +12,16 @@ material. The numbers are the argument; please don't re-derive them.
 
 ---
 
+> **Status, later.** Everything §1 proposes is built. The three projects are
+> one uv workspace (§2), `packages/speechmix` is the chain, and the `Track`
+> with spans that §1 describes is `speechmix/session.py` — written from this
+> section, down to the formula. `mix.py` no longer knows about
+> `item.placements`: `MediaItem.as_track` converts once, and every host
+> downstream of that point runs the same code. automixer builds the same
+> `Track` from a wav file and a start time, which is what finally gave it
+> de-bleeding, ducking and the level rider (§3.2, §3.7, §3.8). The findings
+> below have not changed and still travel with the code.
+
 ## 1. Where the seam already is
 
 `chain.py` **is already a library.** It takes `(audio ndarray, rate, settings,
