@@ -37,9 +37,15 @@ class Progress:
         self._job.append_log(message)
 
     def step(self, label: str, done: int | None = None, total: int | None = None) -> None:
-        """Vaihe vaihtui. Osuus nollataan, koska se koski edellistä vaihetta."""
+        """Vaihe vaihtui. Osuus nollataan, koska se koski edellistä vaihetta.
+
+        Myös kello nollataan: vaiheen ikä on se mistä «kauanko tämä tiedosto
+        vielä kestää» lasketaan, eikä koko ajon ikä kelpaa siihen — tiedostot
+        ovat eri mittaisia, ja edellisen kesto vetäisi arvion väärään.
+        """
         with self._job.lock:
             self._job.step_label = label
+            self._job.step_started = time.time()
             if done is not None:
                 self._job.steps_done = done
             if total is not None:
@@ -79,6 +85,7 @@ class Job:
     log: list[str] = field(default_factory=list)
     result: dict = field(default_factory=dict)
     started: float = field(default_factory=time.time)
+    step_started: float = field(default_factory=time.time)
     finished: float = 0.0
 
     def append_log(self, message: str) -> None:
@@ -105,6 +112,7 @@ class Job:
                 "log": list(self.log),
                 "result": dict(self.result),
                 "elapsed": (self.finished or time.time()) - self.started,
+                "stepElapsed": (self.finished or time.time()) - self.step_started,
             }
 
 
