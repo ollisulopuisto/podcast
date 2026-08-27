@@ -16,12 +16,12 @@ from podcastmagic.nhsx.write import paragraphs, set_transcription, tidy
 
 def kinds(result, name="olli.wav"):
     """Vain viat. Huomiot ovat epäiltyjä, eivät mittaustuloksia."""
-    report = [r for r in result["files"] if r["name"] == name][0]
+    report = next(r for r in result["files"] if r["name"] == name)
     return {f["kind"]: f["count"] for f in report["findings"] if f["severity"] == "vika"}
 
 
 def notes(result, name="olli.wav"):
-    report = [r for r in result["files"] if r["name"] == name][0]
+    report = next(r for r in result["files"] if r["name"] == name)
     return {f["kind"] for f in report["findings"] if f["severity"] == "huomio"}
 
 
@@ -134,7 +134,6 @@ def test_paragraphs_break_on_pauses_and_on_length():
 def _write_raw(file_elem, triples):
     """Kirjoittaa sanat ohi siivouksen, kuten muistikirja teki."""
     from lxml import etree
-
     from podcastmagic.nhsx.read import localname
 
     for old in [c for c in file_elem if localname(c) == "Transcription"]:

@@ -10,6 +10,16 @@
 [tool.uv.workspace]
 members = ["packages/*", "apps/*"]
 
+# Lintti on työtilan oma työkalu, ei sovellusten. Se on täällä kahdesta
+# syystä. Ensinnäkin `uv run ruff` etsii ohjelman PATHista jos sitä ei ole
+# ympäristössä: kehityskoneella se löytyy, CI-ajurilla ei, ja lintti kaatui
+# «Failed to spawn: ruff» ‑riviin joka ainoassa ajossa repositorion
+# ensimmäisestä päivästä lähtien — sääntöjä ei ole kertaakaan tarkistettu.
+# Toiseksi versio on osa sääntöjä: eri ruff näkee eri virheet, joten
+# kiinnittämätön lintti on portti joka päästää läpi eri asioita eri koneilla.
+[dependency-groups]
+dev = ["ruff==0.15.8"]
+
 [tool.ruff]
 line-length = 90
 target-version = "py312"

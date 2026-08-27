@@ -10,13 +10,37 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: brew install ffmpeg
-      - run: uv sync --all-packages
+
+      # Node on podcast-magicin käyttöliittymän savutestiä varten. Ilman sitä
+      # testi ohittuu — ja juuri se testi suojaa siltä virheluokalta jota
+      # Python ei näe: viittaus kenttään jota ei ole keskeyttää piirron
+      # hiljaa, eikä ruudulle jää kuin tyhjä paneeli.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Lisät, koska podcast-magicin molemmat Whisper-moottorit ovat
+      # valinnaisia: mlx ei asennu Intelille eikä Linuxille, joten se ei voi
+      # olla perusriippuvuus. Ilman lisiä kumpaakaan moottoria ei asenneta,
+      # testit menevät läpi koskematta niihin, ja moottorin hajoaminen
+      # huomataan vasta koneella.
+      - run: uv sync --all-packages --extra mlx --extra faster
 
       # Lintti ennen testejä: määrittelemätön nimi tai kuollut argumentti ei
       # kaada testejä, se vain jättää jonkin kohdan tekemättä mitään — ja
       # juuri se on näissä projekteissa toistuva vika.
       - name: Lint
-        run: uv run ruff check .
+        run: uv run ruff check packages/speechmix apps/autoraffkat apps/podcast-magic
+
+      # automixer on kesken muutossa, sama velka kuin sen testeillä alla:
+      # 44 virhettä, joista yksikään ei ole tässä muutoksessa syntynyt.
+      # Erillisenä askeleena eikä `ruff check .`:na, jotta se ei estä muiden
+      # sääntöjen tarkistusta — koko lintti oli tähän asti kaatunut ennen
+      # kuin ehti tarkistaa mitään. Yhdistä takaisin `ruff check .`:ksi kun
+      # automixer on siivottu.
+      - name: Lint (automixer)
+        continue-on-error: true
+        run: uv run ruff check apps/automixer
 
       - name: speechmix
         run: uv run pytest packages/speechmix/tests -q
@@ -38,3 +62,27 @@ jobs:
 
       - name: podcast-magic
         run: uv run --directory apps/podcast-magic pytest -q
+
+      # Ohittunut testi on vihreä testi. Savutesti ohittuu jos ajurilta
+      # puuttuu node, eikä siitä sanota mitään — joten sen ajaminen
+      # tarkistetaan erikseen eikä luoteta yllä olevaan riviin.
+      - name: podcast-magic — savutesti myös ajettiin
+        run: |
+          uv run --directory apps/podcast-magic \
+            pytest tests/test_ui.py -q --no-header -rs | tee /tmp/ui.log
+          if grep -q "skipped" /tmp/ui.log; then
+            echo "Käyttöliittymän savutesti ohittui — node puuttuu ajurilta."
+            exit 1
+          fi
+
+      # Moottori, jota ei voi tuoda, ei ole hidas vaan poissa. Testit menevät
+      # läpi kummankin puuttuessa, koska ne käyttävät valemoottoria; tämä on
+      # se kohta joka lukee oikean tilanteen ajurilta.
+      - name: podcast-magic — molemmat moottorit tuotavissa
+        run: |
+          uv run --directory apps/podcast-magic python -c "
+          from podcastmagic.transcribe.backends import infos
+          for info in infos():
+              print(info.key, info.available, info.reason)
+              assert info.available, info.reason
+          "

@@ -5,10 +5,10 @@ Molempien moduulien yhteinen selkäranka: litterointi kirjoittaa sanat
 """
 
 from .read import (
+    FileInfo,
     NhsxError,
     Session,
     TrackInfo,
-    FileInfo,
     Word,
     locate,
     read,
@@ -18,15 +18,15 @@ from .read import (
 from .write import set_transcription, write
 
 __all__ = [
+    "FileInfo",
     "NhsxError",
     "Session",
     "TrackInfo",
-    "FileInfo",
     "Word",
-    "read",
     "locate",
+    "read",
     "seconds_to_time",
-    "time_to_seconds",
     "set_transcription",
+    "time_to_seconds",
     "write",
 ]

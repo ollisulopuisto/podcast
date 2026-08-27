@@ -148,7 +148,9 @@ class Runner:
                     job.cancelled = True
                     job.error = "Keskeytetty."
                 job.append_log("Keskeytetty.")
-            except Exception as exc:  # noqa: BLE001 — virhe kuuluu käyttöliittymään
+            # Virhe kuuluu käyttöliittymään, ei lokiin: työ on käyttäjän, ja
+            # hiljaa kuollut työ näyttää valmiilta.
+            except Exception as exc:
                 with job.lock:
                     job.error = f"{type(exc).__name__}: {exc}"
                 job.append_log(job.error)

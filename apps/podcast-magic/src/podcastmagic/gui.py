@@ -115,7 +115,8 @@ def launch(
             image = AppKit.NSImage.alloc().initByReferencingFile_(icon_str)
             if image and image.isValid():
                 AppKit.NSApplication.sharedApplication().setApplicationIconImage_(image)
-        except Exception:  # noqa: BLE001 — kuvake on koriste, ei ehto
+        # Kuvake on koriste, ei ehto: mikä tahansa vika siinä on ohitettava.
+        except Exception:
             pass
 
     try:

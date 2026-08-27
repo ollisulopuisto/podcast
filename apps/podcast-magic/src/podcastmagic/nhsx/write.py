@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from itertools import pairwise
 from pathlib import Path
 
 from lxml import etree
@@ -46,7 +47,7 @@ def tidy(words: list[Word]) -> tuple[list[Word], int, int]:
     se mihin toistokohdistin osuu, joten niitä ei muuteta.
     """
     ordered = sorted(words, key=lambda w: w.start)
-    moved = sum(1 for a, b in zip(words, ordered) if a is not b)
+    moved = sum(1 for a, b in zip(words, ordered, strict=True) if a is not b)
 
     out: list[Word] = []
     shortened = 0
@@ -77,7 +78,7 @@ def paragraphs(words: list[Word], gap: float = PARAGRAPH_GAP,
     if not words:
         return []
     groups: list[list[Word]] = [[words[0]]]
-    for previous, word in zip(words, words[1:]):
+    for previous, word in pairwise(words):
         if word.start - previous.end >= gap or len(groups[-1]) >= max_words:
             groups.append([word])
         else:
