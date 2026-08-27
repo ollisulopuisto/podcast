@@ -684,3 +684,42 @@ def test_a_reachable_target_is_still_reached():
     )
     assert measured == pytest.approx(-20.0, abs=0.5)
     assert info.reached_target is True
+
+
+def test_the_budget_moves_the_excess_into_level_not_compression():
+    """Budjetti pitää crestin ja antaa tason periksi.
+
+    Stemi jonka crest on 32 dB ei mahdu -14 LUFS:iin: huiput osuisivat
+    +18 dBFS:ään. Jompikumpi antaa periksi, ja taso on se joka on
+    korjattavissa yhdellä liu'ulla — summan katosta huolehtii silti
+    `programme.shared_gain`, joten stemin ei tarvitse olla kattoa vasten.
+    """
+    audio = _spiky()
+    loose = AudioSettings()
+    loose.limiter_budget_db = 6.0
+    tight, _ = chain.process(_spiky(), RATE, AudioSettings(), 0.0, True, -14.0, None)
+    kept, info = chain.process(audio, RATE, loose, 0.0, True, -14.0, None)
+
+    assert _crest_db(kept) > _crest_db(tight) + 6.0, (
+        _crest_db(kept), _crest_db(tight)
+    )
+    assert info.reached_target is False, "tason jäämistä ei kerrottu"
+    assert chain.sustained_reduction_db(kept, RATE) <= 6.5
+
+
+def test_sustained_reduction_reads_the_distribution_not_the_extreme():
+    """Prosenttipiste, ei minimi — ja se on aina minimin sisäpuolella.
+
+    Käyrän minimi on **yhden näytteen** vaatimus. Koko tiedoston
+    vaimentaminen sen mukaan on se staattinen vaimennus jonka rajoitin
+    korvasi: mitattuna 9–12 dB, ja se teki puhujien tasapainosta
+    sattumanvaraisen. Ero on oikealla materiaalilla iso ja puhujakohtainen —
+    minimi 22,1 dB vs. promillepiste 14,0 (wancke), 28,0 vs. 9,9 (nyman) —
+    eli juuri se osa jota minimi ei kerro.
+    """
+    audio = _spiky(30.0) * 40.0
+    worst = -20 * np.log10(max(float(chain.limiter_gain(audio, RATE).min()), 1e-9))
+    tail = chain.sustained_reduction_db(audio, RATE, percentile=0.1)
+    body = chain.sustained_reduction_db(audio, RATE, percentile=2.0)
+    assert 0.0 <= body <= tail <= worst + 1e-9, (body, tail, worst)
+    assert body < worst - 3.0, "prosenttipiste seurasi yksittäistä huippua"
