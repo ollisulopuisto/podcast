@@ -292,6 +292,11 @@ class AudioSettings:
     # kuluttaja saa nyt saman numeron eikä omaansa.
     peak_threshold_db: float = chain.PEAK_THRESHOLD_DB
     leveler_threshold_db: float = chain.LEVELER_THRESHOLD_DB
+    # Kuinka paljon rajoitin saa tehdä työtä tavoitetason eteen, dB. Sama
+    # peruste kuin kynnyksille: oletus tulee ketjulta. Ks.
+    # `chain.LIMITER_BUDGET_DB` — rajoitin oli ketjun ainoa rajaton vaihe,
+    # ja mitattuna se vei crestistä 32,1 -> 16,7 dB yksin.
+    limiter_budget_db: float = chain.LIMITER_BUDGET_DB
     # Tasonkuljettaja: hidas tason tasaus **ennen** kompressoreita, se
     # vaihe joka käsityönä tehdyssä miksauksessa on ensin. Ks.
     # chain.rider_gain — ilman puhemaskia sitä ei ajeta lainkaan.

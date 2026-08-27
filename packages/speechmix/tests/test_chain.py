@@ -619,3 +619,62 @@ def test_the_bands_sum_back_to_the_original():
 
     assert len(parts) == 3
     np.testing.assert_allclose(sum(parts), audio, atol=1e-6)
+
+
+def _spiky(seconds=20.0, rate=RATE):
+    """Puhetta jossa on yksittäisiä huippuja: iso crest, kuten oikea mikki.
+
+    Oikealla materiaalilla mitattu crest on 37–41 dB. Tasainen siniburst ei
+    kelpaa tähän: sen crest on kolme desibeliä, eikä rajoittimella ole silloin
+    mitään tehtävää — eli testi olisi vihreä myös rikkinäisellä ketjulla.
+    """
+    out = speech_like(seconds, rate)[0]
+    for at in np.arange(1.0, seconds - 1.0, 2.5):
+        i = int(at * rate)
+        out[i : i + 40] += np.linspace(0.30, 0.0, 40).astype(np.float32)
+    return out[None, :]
+
+
+def _crest_db(audio):
+    mono = np.asarray(audio).mean(axis=0)
+    peak = 20 * np.log10(float(np.abs(mono).max()) + 1e-12)
+    rms = 20 * np.log10(float(np.sqrt(np.mean(mono**2))) + 1e-12)
+    return peak - rms
+
+
+def test_the_limiter_has_a_budget_like_every_other_stage():
+    """Rajoitin oli ketjun ainoa rajaton vaihe.
+
+    Kompressorit ottavat kukin enintään ``MAX_GR_DB``. Rajoittimella ei ollut
+    kattoa lainkaan, ja tavoitetaso ajoi sen läpi mistä tahansa: mitattuna
+    oikealla mikillä ketjun kevyet vaiheet veivät crestiä 37,4 -> 32,1 dB ja
+    **rajoitin yksin 32,1 -> 16,7**, minkä jälkeen hakusilmukka vielä 12,8:aan.
+    Kolme kertaa kaikki muu yhteensä, yhdessä vaiheessa jolla ei ollut rajaa.
+
+    Budjetin täytyttyä taso jää tavoitteesta, ja se on oikea lopputulos: taso
+    on korjattavissa yhdellä liu'ulla, tiivistetty puhe ei ole.
+    """
+    audio = _spiky()
+    settings = AudioSettings()
+    settings.limiter_budget_db = 6.0
+    before = _crest_db(audio)
+    out, info = chain.process(audio, RATE, settings, 0.0, True, -14.0, None)
+
+    assert info.limiter_db <= 0.0
+    assert info.limiter_db >= -settings.limiter_budget_db - 0.01, info.limiter_db
+    assert _crest_db(out) > before - 20.0, (before, _crest_db(out))
+
+
+def test_a_reachable_target_is_still_reached():
+    """Budjetti ei saa estää tavoitetta silloin kun se on saavutettavissa."""
+    pyln = pytest.importorskip("pyloudnorm")
+    settings = AudioSettings()
+    settings.limiter_budget_db = 6.0
+    out, info = chain.process(
+        speech_like(20.0), RATE, settings, 0.0, True, -20.0, None
+    )
+    measured = pyln.Meter(RATE).integrated_loudness(
+        np.asarray(out[0], dtype=np.float64)
+    )
+    assert measured == pytest.approx(-20.0, abs=0.5)
+    assert info.reached_target is True
