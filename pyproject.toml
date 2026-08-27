@@ -13,6 +13,8 @@ members = ["packages/*", "apps/*"]
 [tool.ruff]
 line-length = 90
 target-version = "py312"
+# Vertailukohdaksi säilytetty rinnakkaistoteutus, jota mikään ei tuo sisään.
+exclude = ["packages/speechmix/reference"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "C4", "SIM", "RET", "ARG",
