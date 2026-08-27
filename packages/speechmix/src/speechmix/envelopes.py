@@ -1,157 +1,137 @@
-"""Gain *decisions*, not gain changes.
+"""Vaimennus **päätöksinä**, ei näytteinä.
 
-This is the second seam, and the more valuable of the two.
+``duck_envelopes`` palauttaa ``{puhuja: [(aika, dB), …]}``. autoraffkat
+kirjoittaa ne Final Cutin ``<adjust-volume>``-keyframeiksi, jolloin leikkaaja
+voi yhä muuttaa niitä; isäntä jolla ei ole mitään mihin automaatio
+kirjoitetaan polttaa saman käyrän näytteisiin. Sama laskenta, eri emissio.
 
-``duck_envelopes`` returns ``{speaker: [(time, dB), ...]}``.  One host writes
-those into an FCPXML as Final Cut ``<adjust-volume>`` keyframes, so the editor
-can still change them.  Another has nothing downstream to write automation
-into, so it bakes the same curve into samples.  Same computation, different
-emission.
+    Tasopäätökset jotka tulevat ketjun **jälkeen** voivat olla automaatiota.
+    Tasopäätökset jotka tulevat sitä **ennen** on poltettava sisään.
 
-The general rule that fell out of it:
+``closed_ranges`` ja ``speech_blocks`` muuntavat ruudukon aikajanalta
+tiedostoaikaan. Ne tarvitsevat esiintymät — mikä tahansa olio jolla on
+``placements`` ja ``asset_start`` kelpaa — koska muunnos on esiintymän sisällä
+lineaarinen, ja se on ainoa aikajanatieto jota ketju tarvitsee.
 
-    Level decisions that come **after** the chain can be automation.
-    Level decisions that come **before** it must be baked in.
-
-Ducking is after, so it can be automation.  A level rider is before, so it
-cannot.
-
-Ducking must never fail quietly.  It depends on the analysis, and pressing the
-button before the analysis finished left the masks empty with nothing said: the
-setting read -9 dB and the output had none.  ``duck_envelopes`` raises
-``EmptyResult`` in that case.
-
-Two more things worth carrying, both measured:
-
-* Ducking is decided on the **raw** files.  A compressor raises the noise floor
-  between words and flattens the difference between microphones -- the two
-  things the decision depends on.
-* What ducking buys, on real material (gap between own speech and own
-  non-speech): a clean-ish microphone 17.8 dB raw, 24.2 dB after the chain,
-  25.5 dB with ducking; a leaky one 13.4 / 13.3 / 15.0.  What limits the leaky
-  track is bleed, not compression -- its non-speech sits 13 dB down because it
-  contains the other person's voice.  De-bleeding is the answer to that, not
-  more ducking.
+Siirretty autoraffkatin ``audio/mix.py``:stä, ei kopioitu.
 """
-
-from dataclasses import dataclass
-from typing import Dict, List, Tuple
 
 import numpy as np
 
-from . import dsp
-from .errors import EmptyResult
-
-#: How far a microphone is pulled down while its owner is not speaking.
-DEFAULT_DEPTH_DB = -9.0
-
-#: The envelope is a decision about turn-taking, so it moves at the speed of
-#: turn-taking, not of syllables.
-DEFAULT_ATTACK_SEC = 0.15
-DEFAULT_RELEASE_SEC = 0.40
-
-#: Breakpoints closer in level than this are dropped: a host writing keyframes
-#: wants the shape, not one point per analysis frame.
-POINT_TOLERANCE_DB = 0.25
+from .masks import HOP, duck_masks, runs
 
 
-@dataclass
-class DuckSettings:
-    depth_db: float = DEFAULT_DEPTH_DB
-    attack_sec: float = DEFAULT_ATTACK_SEC
-    release_sec: float = DEFAULT_RELEASE_SEC
+def duck_envelopes(grid, settings: object,
+                   program_start: float) -> dict[str, list]:
+    """Vaimennus käyränä, aikajanan aikaa: ``puhuja -> [(t, dB), …]``.
 
+    Vaimennus ei kuulu tiedostoihin. Se on tasopäätös siinä missä
+    panorointikin, ja poltettuna se on ainoa asia koko ketjussa jota
+    leikkaaja ei voi enää muuttaa katsomatta: liian syvä vaimennus vaatii
+    minuuttien ajon, kun se käyränä on yhden liu'un veto. Sama peruste kuin
+    reaktiokuvien omalla lanella.
 
-Envelope = List[Tuple[float, float]]
+    Muoto vastaa ``chain.apply_duck``ia piste pisteeltä, koska tulos ei saa
+    muuttua sen mukaan kummalla tavalla se tehdään: liu'ut ovat **jakson
+    sisällä** — lasku alkaa jakson alusta, nousu päättyy sen loppuun — ja
+    epäsymmetriset, koska lasku osuu toisen puhujan aloitukseen ja jää sen
+    alle, kun taas nousu osuu hiljaisuuteen jossa mikään ei peitä sitä.
+    Liuku on desibeleissä, ja niin on Final Cutin keyframe-parametrikin.
 
-
-def _thin(times, values, tolerance_db=POINT_TOLERANCE_DB) -> Envelope:
-    """Reduce a per-frame curve to breakpoints, keeping the corners."""
-    if times.size == 0:
-        return []
-    points = [(float(times[0]), float(values[0]))]
-    for t, v in zip(times[1:-1], values[1:-1], strict=True):
-        last_v = points[-1][1]
-        # Keep this point if a straight line from the last kept point to the
-        # next frame would miss it by more than the tolerance.
-        if abs(v - last_v) >= tolerance_db:
-            points.append((float(t), float(v)))
-    points.append((float(times[-1]), float(values[-1])))
-    return points
-
-
-def duck_envelopes(grid, settings=None, program_start=0.0):
-    """Compute the ducking decision for every microphone in the grid.
-
-    Args:
-        grid: A :class:`~speechmix.grid.SpeechGrid`, built on raw audio.
-        settings: :class:`DuckSettings`.  ``depth_db = 0`` means no ducking.
-        program_start: Added to every time, so the envelopes can be handed
-            straight to a host that thinks in programme time.
-
-    Returns:
-        ``{speaker: [(time_seconds, gain_db), ...]}``.
-
-    Raises:
-        EmptyResult: If ducking is enabled and no microphone matched a mask.
-            "The setting is on and no microphone matched a mask" is an error,
-            not a silence.
+    Pelkkää laskentaa ruudukon päällä: ei tiedostoja, joten tämä saa olla
+    myös esikatselussa.
     """
-    settings = settings or DuckSettings()
-    if settings.depth_db == 0.0:
-        return {speaker: [] for speaker in grid.speakers}
+    depth = float(settings.duck_db)
+    if not settings.duck or depth >= 0:
+        return {}
+    fade = float(settings.duck_fade)
+    release = float(settings.duck_release or settings.duck_fade)
+    out: dict[str, list] = {}
+    for name, mask in duck_masks(grid, settings).items():
+        points: list[tuple[float, float]] = []
+        for start, end, value in runs(np.asarray(mask).astype(np.int8)):
+            if not value:
+                continue
+            t0 = program_start + start * HOP
+            t1 = program_start + end * HOP
+            span = t1 - t0
+            head = min(fade, span / 2.0)
+            tail = min(release, span - head)
+            points.append((t0, 0.0))
+            points.append((t0 + head, depth))
+            points.append((t1 - tail, depth))
+            points.append((t1, 0.0))
+        if points:
+            out[name] = points
+    return out
 
-    hop_sec = grid.hop_samples / grid.rate
-    n_frames = grid.n_frames
-    times = program_start + np.arange(n_frames) * hop_sec
+def envelope_at(points: list, when: float) -> float:
+    """Käyrän arvo hetkellä ``when``, desibeleinä. Väleissä lineaarinen.
 
-    anyone = np.zeros(n_frames, dtype=bool)
-    for flags in grid.speaking.values():
-        anyone |= flags
-
-    envelopes: Dict[str, Envelope] = {}
-    moved = False
-    for speaker in grid.speakers:
-        mine = grid.speaking[speaker]
-        # Down while somebody else has the floor, unity while this speaker
-        # does, and unity in the silences: ducking a microphone in a pause
-        # where nobody is talking only pumps the room tone.
-        target = np.where(mine | ~anyone, 0.0, settings.depth_db)
-        attack_frames = max(1.0, settings.attack_sec / hop_sec)
-        release_frames = max(1.0, settings.release_sec / hop_sec)
-        # The fall follows the attack constant; the return to unity follows the
-        # slower release, so a microphone does not flap open between words.
-        falling = dsp.one_pole(target, attack_frames)
-        rising = dsp.one_pole(falling, release_frames)
-        curve = np.minimum(falling, rising)
-        if np.any(curve < -POINT_TOLERANCE_DB):
-            moved = True
-        envelopes[speaker] = _thin(times, curve)
-
-    if not moved:
-        raise EmptyResult(
-            f"ducking is set to {settings.depth_db:.1f} dB and no microphone "
-            "matched a mask, so the output would have none; the setting is on "
-            "and the result is empty, which is an error, not a silence"
-        )
-    return envelopes
-
-
-def envelope_to_samples(points, rate, n_samples, program_start=0.0):
-    """Render a breakpoint envelope into a per-sample linear gain curve.
-
-    For a host with nothing downstream to write automation into: the decision
-    is identical, only the emission differs.
+    Käyrän ulkopuolella nolla: vaimennus on paikallinen tapahtuma, ei tila.
     """
     if not points:
-        return np.ones(n_samples)
-    times = np.array([t - program_start for t, _ in points]) * rate
-    values = np.array([v for _, v in points])
-    curve_db = np.interp(np.arange(n_samples), times, values)
-    return dsp.db_to_lin(curve_db)
+        return 0.0
+    if when <= points[0][0] or when >= points[-1][0]:
+        return 0.0
+    times = [t for t, _ in points]
+    index = np.searchsorted(times, when)
+    if index <= 0:
+        return float(points[0][1])
+    t0, v0 = points[index - 1]
+    t1, v1 = points[min(index, len(points) - 1)]
+    if t1 <= t0:
+        return float(v1)
+    return float(v0 + (v1 - v0) * (when - t0) / (t1 - t0))
 
+def closed_ranges(
+    item, closed, program_start: float, rate: int
+) -> list[tuple[int, int]]:
+    """Missä tiedoston kohdissa mikki on kiinni, näyteväleinä.
 
-def apply_envelope(audio, rate, points, program_start=0.0):
-    """Bake a breakpoint envelope into samples.  Sample count is preserved."""
-    x = dsp.as_mono(audio, "envelope target")
-    return x * envelope_to_samples(points, rate, x.size, program_start)
+    Ruudukko on aikajanan aikaa, tiedosto omaansa. Muunnos tehdään
+    esiintymittäin, koska kunkin palan sisällä kuvaus on lineaarinen.
+    Ruudukon ulkopuolelle jäävää osaa ei vaimenneta: siitä ei ole tietoa, eikä
+    vienti käytä sitä.
+    """
+    out: list[tuple[int, int]] = []
+    for start, end, value in runs(closed.astype(np.int8)):
+        if not value:
+            continue
+        low = program_start + start * HOP
+        high = program_start + end * HOP
+        for placement in item.placements:
+            first = max(low, float(placement.offset))
+            last = min(high, float(placement.end))
+            if last <= first:
+                continue
+            # tiedostoaika = klipin start - assetin start + (aikajana - offset)
+            base = float(placement.start - item.asset_start - placement.offset)
+            out.append(
+                (int(round((base + first) * rate)), int(round((base + last) * rate)))
+            )
+    return out
+
+def speech_blocks(item, mask, program_start: float, rate: int,
+                  block: int, count: int) -> np.ndarray:
+    """Puhujan oma puhe lohkoittain tässä tiedostossa.
+
+    Ruudukko on aikajanan aikaa, tiedosto omaansa; muunnos on
+    esiintymittäin lineaarinen, sama kaava kuin ``closed_ranges``issa.
+    Tasonkuljettaja tarvitsee juuri tämän eikä signaalista pääteltyä
+    puhetta — ks. ``chain.rider_gain``.
+    """
+    out = np.zeros(count, dtype=bool)
+    mask = np.asarray(mask, dtype=bool)
+    for placement in item.placements:
+        base = float(placement.start - item.asset_start - placement.offset)
+        # Lohkon keskikohta tiedostoajassa -> aikajana -> ruudukon solu.
+        times = (np.arange(count) + 0.5) * block / rate
+        timeline = times - base
+        inside = ((timeline >= float(placement.offset))
+                  & (timeline < float(placement.end)))
+        cells = ((timeline - program_start) / HOP).astype(int)
+        ok = inside & (cells >= 0) & (cells < mask.shape[0])
+        out[ok] |= mask[cells[ok]]
+    return out
+

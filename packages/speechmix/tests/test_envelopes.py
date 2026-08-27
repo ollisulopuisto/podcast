@@ -1,83 +1,97 @@
-"""Ducking as gain *decisions*, not gain changes.
+"""Vaimennus päätöksinä.
 
-One host writes them into an FCPXML as `<adjust-volume>` keyframes so the
-editor can still change them; another bakes the same curve into samples. Same
-computation, different emission.
+``duck_envelopes`` palauttaa käyrän, ei ääntä. Sama laskenta kelpaa sekä
+Final Cutin keyframeiksi että näytteisiin poltettavaksi, ja juuri siksi se on
+kirjastossa eikä kummassakaan isännässä.
 """
 
 import numpy as np
-import pytest
-from speechmix import envelopes, grid
-from speechmix.errors import EmptyResult
-
-RATE = 48000
+from speechmix import envelopes
 
 
-def _grid(seconds=20.0):
-    n = int(RATE * seconds)
-    t = np.arange(n) / RATE
-    rng = np.random.default_rng(11)
-
-    def voice(f0):
-        return sum(np.sin(2 * np.pi * f0 * k * t) / k for k in range(1, 9)) * 0.1
-
-    half = n // 2
-    gate_a = np.zeros(n, dtype=bool)
-    gate_b = np.zeros(n, dtype=bool)
-    gate_a[:half] = True
-    gate_b[half:] = True
-    a = (voice(118.0) + rng.normal(0, 3e-3, n)) * gate_a
-    b = (voice(197.0) + rng.normal(0, 3e-3, n)) * gate_b
-    mic_a = a + 0.12 * np.roll(b, 144)
-    return grid.speech_grid({"a": mic_a, "b": b + 0.10 * np.roll(a, 150)}, RATE), mic_a
+class _Lane:
+    def __init__(self, name, on, level=None):
+        self.name = name
+        self.on = np.asarray(on, dtype=bool)
+        self.level = np.full(self.on.shape, -20.0) if level is None else level
 
 
-def test_the_result_is_breakpoints_not_audio():
-    speech, _ = _grid()
-    result = envelopes.duck_envelopes(speech)
+class _Grid:
+    def __init__(self, *lanes):
+        self.speakers = list(lanes)
 
-    assert set(result) == {"a", "b"}
-    for points in result.values():
-        assert all(len(p) == 2 for p in points)
+
+class _Settings:
+    duck = True
+    duck_db = -9.0
+    duck_fade = 0.25
+    duck_release = 0.40
+    duck_dominance_db = 6.0
+    duck_lookahead = 0.15
+    duck_hold = 0.40
+    duck_min_open = 0.20
+    duck_min_closed = 0.60
+
+
+class _Placement:
+    def __init__(self, offset, end, start):
+        self.offset, self.end, self.start = offset, end, start
+        self.duration = end - offset
+
+
+class _Item:
+    def __init__(self, placements, asset_start=0.0):
+        self.placements, self.asset_start = placements, asset_start
+
+
+def _turn_taking(n=800):
+    a = np.zeros(n, dtype=bool)
+    b = np.zeros(n, dtype=bool)
+    a[:n // 2] = True
+    b[n // 2:] = True
+    return _Grid(_Lane("a", a), _Lane("b", b))
+
+
+def test_ducking_off_means_no_points():
+    class Off(_Settings):
+        duck = False
+
+    assert envelopes.duck_envelopes(_turn_taking(), Off(), 0.0) == {}
+
+
+def test_the_curve_goes_down_and_comes_back_to_unity():
+    """Vaimennus on paikallinen tapahtuma, ei tila."""
+    out = envelopes.duck_envelopes(_turn_taking(), _Settings(), 0.0)
+    assert out, "vuorottelevilla puhujilla pitäisi syntyä vaimennusta"
+    for points in out.values():
+        values = [db for _, db in points]
+        assert min(values) == -9.0
+        assert points[0][1] == 0.0 and points[-1][1] == 0.0
         times = [t for t, _ in points]
         assert times == sorted(times)
-    assert min(db for _, db in result["a"]) == pytest.approx(envelopes.DEFAULT_DEPTH_DB, abs=0.1)
 
 
-def test_the_same_decision_can_be_baked_instead():
-    """The host decides emission; the computation does not change."""
-    speech, mic_a = _grid()
-    points = envelopes.duck_envelopes(speech)["a"]
-    baked = envelopes.apply_envelope(mic_a, RATE, points)
-
-    assert baked.size == mic_a.size
-    half = mic_a.size // 2
-    quiet = 20 * np.log10(
-        np.sqrt(np.mean(baked[half + RATE :] ** 2))
-        / np.sqrt(np.mean(mic_a[half + RATE :] ** 2))
-    )
-    assert quiet < -6.0, "the microphone was not ducked while the other person had the floor"
+def test_the_value_between_points_is_linear_and_zero_outside():
+    points = [(10.0, 0.0), (10.25, -9.0), (12.0, -9.0), (12.4, 0.0)]
+    assert envelopes.envelope_at(points, 9.0) == 0.0
+    assert envelopes.envelope_at(points, 13.0) == 0.0
+    assert envelopes.envelope_at(points, 11.0) == -9.0
+    assert envelopes.envelope_at(points, 10.125) == -4.5
+    assert envelopes.envelope_at([], 1.0) == 0.0
 
 
-def test_depth_of_zero_means_no_ducking():
-    speech, _ = _grid()
-    result = envelopes.duck_envelopes(speech, envelopes.DuckSettings(depth_db=0.0))
-    assert all(points == [] for points in result.values())
+def test_programme_time_becomes_file_time_per_placement():
+    """Ruudukko on aikajanan aikaa, tiedosto omaansa."""
+    closed = np.zeros(200, dtype=bool)
+    closed[50:100] = True  # 1.0 s … 2.0 s ohjelma-ajassa
+    item = _Item([_Placement(offset=0.0, end=10.0, start=5.0)], asset_start=0.0)
+    ranges = envelopes.closed_ranges(item, closed, program_start=0.0, rate=48000)
+    assert ranges == [(int(6.0 * 48000), int(7.0 * 48000))]
 
 
-def test_a_setting_that_produced_nothing_is_an_error():
-    """Pressing the button before the analysis finished left the masks empty
-    with nothing said: the setting read -9 dB and the output had none.
-    """
-    n = RATE * 20
-    t = np.arange(n) / RATE
-    # One speaker with ordinary pauses: the grid itself is fine, there is
-    # simply nobody to duck against.  A microphone is not ducked in a silence
-    # -- that would only pump the room tone.
-    speaking = (np.sin(2 * np.pi * 0.2 * t) > 0.0).astype(float)
-    tone = np.sin(2 * np.pi * 150 * t) * 0.1 * speaking
-    speech = grid.speech_grid({"a": tone}, RATE)
-    assert speech.coverage("a") > 0.2, "the grid must be valid for this to test envelopes"
-    with pytest.raises(EmptyResult) as excinfo:
-        envelopes.duck_envelopes(speech)
-    assert "not a silence" in str(excinfo.value)
+def test_a_span_outside_the_placement_is_not_touched():
+    """Ruudukon ulkopuolelle jäävästä ei ole tietoa, eikä vienti käytä sitä."""
+    closed = np.zeros(200, dtype=bool)
+    closed[:20] = True
+    item = _Item([_Placement(offset=50.0, end=60.0, start=0.0)])
+    assert envelopes.closed_ranges(item, closed, program_start=0.0, rate=48000) == []

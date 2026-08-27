@@ -13,6 +13,23 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+# Maskiapurit ovat kirjastossa: sama logiikka ohjaa kuvan leikkausta ja
+# äänen vaimennusta, eikä siitä saa olla kahta kopiota.
+from speechmix.masks import (  # noqa: F401
+    drop_short,
+    open_windows,
+    trim_end,
+)
+from speechmix.masks import (
+    hops as _hops,
+)
+from speechmix.masks import (
+    open_runs as _open_runs,
+)
+from speechmix.masks import (
+    runs as _runs,
+)
+
 from .model import (
     HOP,
     LONGTAKE_REACTION,
@@ -38,17 +55,6 @@ WIDE_LABEL = "Laaja"
 # ------------------------------------------------------------------ apurit
 
 
-def _runs(values: np.ndarray) -> list[tuple[int, int, int]]:
-    """Jaksot (alku, loppu, arvo). Loppu on poissulkeva."""
-    if values.size == 0:
-        return []
-    change = np.flatnonzero(values[1:] != values[:-1]) + 1
-    bounds = np.concatenate(([0], change, [values.size]))
-    return [
-        (int(bounds[i]), int(bounds[i + 1]), int(values[bounds[i]]))
-        for i in range(bounds.size - 1)
-    ]
-
 
 def _close_gaps(mask: np.ndarray, k: int) -> np.ndarray:
     """Täyttää k:ta lyhyemmät epätodet jaksot. Estää sanavälien pilkkomisen."""
@@ -61,74 +67,8 @@ def _close_gaps(mask: np.ndarray, k: int) -> np.ndarray:
     return out
 
 
-def _open_runs(mask: np.ndarray, k: int) -> np.ndarray:
-    """Poistaa k:ta lyhyemmät todet jaksot. Tämä on vahvistusaika."""
-    if k <= 1 or mask.size == 0:
-        return mask
-    out = mask.copy()
-    for start, end, value in _runs(mask.astype(np.int8)):
-        if value and (end - start) < k:
-            out[start:end] = False
-    return out
 
 
-def open_windows(
-    on: np.ndarray, lookahead: float, hold: float, min_open: float
-) -> np.ndarray:
-    """Mistä mikki on auki, kun ``on`` on kynnyksen ylitys.
-
-    Kynnyksen ylitys sellaisenaan on kelvoton portin ohjaukseksi: se välkkyy
-    tavuvälien yli ja reagoi yksittäiseen yskäisyyn. Kolme muunnosta tekevät
-    siitä käyttökelpoisen, ja ne vastaavat kolmea säädintä:
-
-    * ``min_open`` pudottaa liian lyhyet jaksot — yskäisy ja naksahdus eivät
-      avaa mikkiä.
-    * ``lookahead`` avaa portin ennen puheen alkua. Tämä on mahdollista vain
-      koska käsittely on jälkikäteistä; reaaliaikainen portti ei voi avautua
-      ennen kuin ääni on jo tullut, ja siksi siltä katoaa sanojen alkuja.
-    * ``hold`` pitää portin auki puheen jälkeen, jolloin lauseen häntä ja
-      hengitys jäävät mukaan eikä väleihin tule pumppausta.
-
-    Silmukka kulkee jaksojen yli, ei näytteiden.
-    """
-    if on.size == 0:
-        return on
-    mask = _open_runs(on, _hops(min_open)) if min_open > 0 else on
-    before = _hops(lookahead) if lookahead > 0 else 0
-    after = _hops(hold) if hold > 0 else 0
-    if not (before or after):
-        return mask
-    out = np.zeros_like(mask)
-    for start, end, value in _runs(mask.astype(np.int8)):
-        if value:
-            out[max(0, start - before) : min(mask.size, end + after)] = True
-    return out
-
-
-def trim_end(mask: np.ndarray, seconds: float) -> np.ndarray:
-    """Lyhentää jokaista totta jaksoa lopusta annetun verran.
-
-    Tätä tarvitaan vaimennuksen paluuseen: liu'un on ehdittävä loppuun ennen
-    kuin peittävä ääni loppuu, muuten se kuuluu hiljaisuudessa.
-    """
-    if seconds <= 0 or mask.size == 0:
-        return mask
-    cut = _hops(seconds)
-    out = np.zeros_like(mask)
-    for start, end, value in _runs(mask.astype(np.int8)):
-        if value and end - start > cut:
-            out[start : end - cut] = True
-    return out
-
-
-def drop_short(mask: np.ndarray, seconds: float) -> np.ndarray:
-    """Pudottaa annettua lyhyemmät todet jaksot pois."""
-    return _open_runs(mask, _hops(seconds)) if seconds > 0 else mask
-
-
-def _hops(seconds: float) -> int:
-    """Sekunnit ruudukon askeliksi, aina vähintään yksi."""
-    return max(1, int(round(seconds / HOP)))
 
 
 # ------------------------------------------------------------------ syöte

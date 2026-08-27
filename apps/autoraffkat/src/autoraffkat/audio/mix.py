@@ -35,8 +35,19 @@ from pathlib import Path
 import numpy as np
 from speechmix import chain
 from speechmix.chain import ChainError
+from speechmix.envelopes import (  # noqa: F401  julkinen rajapinta säilyy
+    closed_ranges,
+    duck_envelopes,
+    envelope_at,
+    speech_blocks,
+)
+from speechmix.freshness import FINGERPRINT_FIELDS, FINGERPRINT_VERSION
+from speechmix.masks import (
+    duck_masks,
+    solo_masks,
+    speech_masks,
+)
 
-from ..decide import _runs, drop_short, open_windows, trim_end
 from ..i18n import t
 from ..model import HOP, AudioSettings
 from .binaries import get_binary_path
@@ -90,46 +101,6 @@ def is_current(source: str, target: str) -> bool:
     return os.path.getmtime(target) >= os.path.getmtime(source)
 
 
-# Asetukset joista lopputulos riippuu. ``enabled`` ja ``room_track``
-# päättävät tehdäänkö työtä lainkaan, eivät miltä tulos kuulostaa, joten ne
-# eivät ole mukana. Lista on tahallaan kirjoitettu auki eikä johdettu
-# kentistä: uusi säädin ei saa livahtaa mukaan tai pois huomaamatta, ja
-# ``test_fingerprint_covers_every_setting`` kaatuu jos niin käy.
-FINGERPRINT_FIELDS = (
-    "high_pass_hz",
-    "target_lufs",
-    "peak_threshold_db",
-    "leveler_threshold_db",
-    "rider",
-    "declick",
-    "declick_sensitivity",
-    "plugin_path",
-    "plugin_params",
-    # Vaimennuksen luvut **eivät** ole tässä, ja se on tarkoitus: ne eivät
-    # enää kosketa tiedostoon vaan menevät vientiin käyränä. Vaimennuksen
-    # syvyyden muuttaminen on siis ilmaista — vie uudestaan, älä käsittele.
-    "gain_db",
-    "room_db",
-    "program_target",
-    "plugin_workers",
-    "debleed",
-    "plugin_state",
-)
-
-# Kasvatetaan kun ketju itse muuttuu niin että vanha tulos ei enää vastaa
-# samoilla asetuksilla syntyvää. Sama tarkoitus kuin verhokäyrän
-# ``CACHE_VERSION``:illa.
-#
-# 8: ristivuoto ratkeaa myös pitkissä osissa.
-# 7: tasonkuljettaja ennen kompressoreita.
-# 6: vaimennusta ei enää polteta tiedostoon.
-# 5: ketjun kolmas kompressori oli kuollut ja on nyt elossa.
-# 4: liitännäisen oma tila on osa lopputulosta.
-# 3: ristivuodon vähennys ajetaan ennen liitännäistä.
-# 2: naksunpoiston kynnys. Vanhat tiedostot on tehty detektorilla joka
-#    korjasi 2 % kaikista näytteistä; ne eivät ole ajan tasalla millään
-#    asetuksella, ja ilman tätä painike olisi kertonut päinvastaista.
-FINGERPRINT_VERSION = 8
 
 
 def stamp_dir() -> Path:
@@ -567,128 +538,6 @@ def _drop(path: str) -> None:
         os.remove(path)
 
 
-def closed_ranges(
-    item, closed, program_start: float, rate: int
-) -> list[tuple[int, int]]:
-    """Missä tiedoston kohdissa mikki on kiinni, näyteväleinä.
-
-    Ruudukko on aikajanan aikaa, tiedosto omaansa. Muunnos tehdään
-    esiintymittäin, koska kunkin palan sisällä kuvaus on lineaarinen.
-    Ruudukon ulkopuolelle jäävää osaa ei vaimenneta: siitä ei ole tietoa, eikä
-    vienti käytä sitä.
-    """
-    out: list[tuple[int, int]] = []
-    for start, end, value in _runs(closed.astype(np.int8)):
-        if not value:
-            continue
-        low = program_start + start * HOP
-        high = program_start + end * HOP
-        for placement in item.placements:
-            first = max(low, float(placement.offset))
-            last = min(high, float(placement.end))
-            if last <= first:
-                continue
-            # tiedostoaika = klipin start - assetin start + (aikajana - offset)
-            base = float(placement.start - item.asset_start - placement.offset)
-            out.append(
-                (int(round((base + first) * rate)), int(round((base + last) * rate)))
-            )
-    return out
-
-
-def speech_blocks(item, mask, program_start: float, rate: int,
-                  block: int, count: int) -> np.ndarray:
-    """Puhujan oma puhe lohkoittain tässä tiedostossa.
-
-    Ruudukko on aikajanan aikaa, tiedosto omaansa; muunnos on
-    esiintymittäin lineaarinen, sama kaava kuin ``closed_ranges``issa.
-    Tasonkuljettaja tarvitsee juuri tämän eikä signaalista pääteltyä
-    puhetta — ks. ``chain.rider_gain``.
-    """
-    out = np.zeros(count, dtype=bool)
-    mask = np.asarray(mask, dtype=bool)
-    for placement in item.placements:
-        base = float(placement.start - item.asset_start - placement.offset)
-        # Lohkon keskikohta tiedostoajassa -> aikajana -> ruudukon solu.
-        times = (np.arange(count) + 0.5) * block / rate
-        timeline = times - base
-        inside = ((timeline >= float(placement.offset))
-                  & (timeline < float(placement.end)))
-        cells = ((timeline - program_start) / HOP).astype(int)
-        ok = inside & (cells >= 0) & (cells < mask.shape[0])
-        out[ok] |= mask[cells[ok]]
-    return out
-
-
-def speech_masks(grid) -> dict:
-    """Puhuja -> milloin hän on äänessä, ruudukon tarkkuudella."""
-    return {lane.name: np.asarray(lane.on, dtype=bool)
-            for lane in getattr(grid, "speakers", [])}
-
-
-def duck_envelopes(grid, settings: AudioSettings,
-                   program_start: float) -> dict[str, list]:
-    """Vaimennus käyränä, aikajanan aikaa: ``puhuja -> [(t, dB), …]``.
-
-    Vaimennus ei kuulu tiedostoihin. Se on tasopäätös siinä missä
-    panorointikin, ja poltettuna se on ainoa asia koko ketjussa jota
-    leikkaaja ei voi enää muuttaa katsomatta: liian syvä vaimennus vaatii
-    minuuttien ajon, kun se käyränä on yhden liu'un veto. Sama peruste kuin
-    reaktiokuvien omalla lanella.
-
-    Muoto vastaa ``chain.apply_duck``ia piste pisteeltä, koska tulos ei saa
-    muuttua sen mukaan kummalla tavalla se tehdään: liu'ut ovat **jakson
-    sisällä** — lasku alkaa jakson alusta, nousu päättyy sen loppuun — ja
-    epäsymmetriset, koska lasku osuu toisen puhujan aloitukseen ja jää sen
-    alle, kun taas nousu osuu hiljaisuuteen jossa mikään ei peitä sitä.
-    Liuku on desibeleissä, ja niin on Final Cutin keyframe-parametrikin.
-
-    Pelkkää laskentaa ruudukon päällä: ei tiedostoja, joten tämä saa olla
-    myös esikatselussa.
-    """
-    depth = float(settings.duck_db)
-    if not settings.duck or depth >= 0:
-        return {}
-    fade = float(settings.duck_fade)
-    release = float(settings.duck_release or settings.duck_fade)
-    out: dict[str, list] = {}
-    for name, mask in duck_masks(grid, settings).items():
-        points: list[tuple[float, float]] = []
-        for start, end, value in _runs(np.asarray(mask).astype(np.int8)):
-            if not value:
-                continue
-            t0 = program_start + start * HOP
-            t1 = program_start + end * HOP
-            span = t1 - t0
-            head = min(fade, span / 2.0)
-            tail = min(release, span - head)
-            points.append((t0, 0.0))
-            points.append((t0 + head, depth))
-            points.append((t1 - tail, depth))
-            points.append((t1, 0.0))
-        if points:
-            out[name] = points
-    return out
-
-
-def envelope_at(points: list, when: float) -> float:
-    """Käyrän arvo hetkellä ``when``, desibeleinä. Väleissä lineaarinen.
-
-    Käyrän ulkopuolella nolla: vaimennus on paikallinen tapahtuma, ei tila.
-    """
-    if not points:
-        return 0.0
-    if when <= points[0][0] or when >= points[-1][0]:
-        return 0.0
-    times = [t for t, _ in points]
-    index = np.searchsorted(times, when)
-    if index <= 0:
-        return float(points[0][1])
-    t0, v0 = points[index - 1]
-    t1, v1 = points[min(index, len(points) - 1)]
-    if t1 <= t0:
-        return float(v1)
-    return float(v0 + (v1 - v0) * (when - t0) / (t1 - t0))
 
 
 def _jobs(timeline, roles, settings: AudioSettings) -> list[dict]:
@@ -1103,86 +952,6 @@ def adopt(timeline, roles, settings: AudioSettings) -> MixResult:
     return result
 
 
-def duck_masks(grid, settings: AudioSettings) -> dict:
-    """Puhujakohtaiset «mikki kiinni» -maskit ruudukossa.
-
-    Ohjaus on sama puheentunnistus kuin kuvan leikkauksessa — se on jo säädetty
-    herkkyyssäätimillä ja näkyy esikatselupalkissa — mutta omilla ajoillaan.
-
-    Kolme sääntöä, joista jokainen korjaa yhden tavan kuulostaa pahalta:
-
-    **Vaimennus tapahtuu vain toisen puheen alla.** Jos kukaan ei puhu, kaikki
-    mikit jäävät auki. Hiljaisuuteen laskeva portti kuuluu aina, koska mikään
-    ei peitä sitä; toisen puhujan aloituksen alla lasku katoaa kuulumattomiin.
-    Tämä on syy siihen että maskeri lasketaan **ilman ennakkoa**: lasku ei saa
-    alkaa ennen kuin peittävä ääni on jo tullut.
-
-    **Kovin voittaa.** Kaksi mikkiä samassa huoneessa kuulevat molemmat
-    puhujat, joten kumpikin ylittää kynnyksen — mitattuna 41 % ajasta yhtä
-    aikaa. Vuoto on kuitenkin mediaanissa 12,8 dB hiljempaa, joten auki jää
-    kovin ja ne jotka ovat ``duck_dominance_db``:n sisällä siitä.
-
-    **Lyhyitä vaimennuksia ei tehdä.** Ilman tätä syntyi 20 millisekunnin
-    kuoppia: naksahdus, ei vaimennus.
-    """
-    if grid is None or not settings.duck or len(grid.speakers) < 2:
-        return {}
-    active = np.stack([lane.on for lane in grid.speakers])
-    levels = np.stack([lane.level for lane in grid.speakers])
-    # Vain äänessä olevat kilpailevat; hiljainen ei voi olla kovin.
-    loudest = np.where(active, levels, -300.0).max(axis=0)
-    keep = active & (levels >= loudest - settings.duck_dominance_db)
-
-    # Auki: ennakko mukana, jotta sanan alku ei katoa.
-    opened = [
-        open_windows(
-            keep[i], settings.duck_lookahead, settings.duck_hold, settings.duck_min_open
-        )
-        for i in range(len(grid.speakers))
-    ]
-    # Peittävä puhe. Ilman ennakkoa, koska tämä ajoittaa laskun: lasku ei saa
-    # alkaa ennen kuin peittävä ääni on tullut. Lopusta leikataan pito ja
-    # paluun mitta pois, jotta myös nousu ehtii tapahtua peittävän äänen alla
-    # eikä sen jälkeisessä hiljaisuudessa.
-    masking = [
-        trim_end(
-            open_windows(keep[i], 0.0, settings.duck_hold, settings.duck_min_open),
-            settings.duck_hold + settings.duck_release,
-        )
-        for i in range(len(grid.speakers))
-    ]
-
-    out = {}
-    for i, lane in enumerate(grid.speakers):
-        others = np.zeros_like(opened[i])
-        for j in range(len(grid.speakers)):
-            if j != i:
-                others |= masking[j]
-        closed = others & ~opened[i]
-        out[lane.name] = drop_short(closed, settings.duck_min_closed)
-    return out
-
-
-def solo_masks(grid) -> dict:
-    """Puhujakohtaiset «vain minä äänessä» -maskit ruudukossa.
-
-    Ristivuodon estimointi tarvitsee juuri nämä: jaksot joissa kohdemikin
-    oma puhuja on vaiti ja lähde puhuu ovat ainoa paikka jossa kohteessa
-    kuuluva ääni on **pelkkää** vuotoa. Muualta estimoitu suodin vähentäisi
-    kohteen omaa puhetta, koska sekin korreloi lähteen kanssa aina kun
-    puhujat menevät päällekkäin.
-    """
-    if grid is None or len(grid.speakers) < 2:
-        return {}
-    active = np.stack([lane.on for lane in grid.speakers])
-    out = {}
-    for i, lane in enumerate(grid.speakers):
-        others = np.zeros_like(active[i])
-        for j in range(len(grid.speakers)):
-            if j != i:
-                others |= active[j]
-        out[lane.name] = active[i] & ~others
-    return out
 
 
 def _mask_samples(item, mask, program_start: float, rate: int, frames: int):
