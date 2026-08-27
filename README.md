@@ -1,5 +1,11 @@
 # Podcast Magic
 
+> **Moved.** Development continues in
+> [ollisulopuisto/podcast](https://github.com/ollisulopuisto/podcast) under
+> `apps/podcast-magic`, next to autoraffkat, automixer and the shared
+> `packages/speechmix`. This repository is an archive: the code below is
+> complete and runnable, but it is no longer updated.
+
 Two Hindenburg chores, done on your own Mac instead of in Google Colab:
 transcribing the session's audio pool, and muting everything nobody says.
 One window, one session file, two tools — and room for a third.
