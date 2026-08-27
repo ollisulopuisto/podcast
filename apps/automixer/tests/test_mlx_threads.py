@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import mlx.core as mx
 import numpy as np
+
 from automixer.domain.bus import Bus
 from automixer.domain.processor import GainProcessor, MultibandCompressorProcessor
 from automixer.domain.track import Track

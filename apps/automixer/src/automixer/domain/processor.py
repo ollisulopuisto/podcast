@@ -293,10 +293,7 @@ class SpectralCarverProcessor(Processor):
             t_win = t_seg[win_indices]  # (num_windows, n_fft)
 
             # Apply analysis window
-            if n_ch > 1:
-                s_win = s_win * window[None, :, None]
-            else:
-                s_win = s_win * window[None, :]
+            s_win = s_win * (window[None, :, None] if n_ch > 1 else window[None, :])
             t_win = t_win * window[None, :]
 
             # FFT
@@ -309,10 +306,7 @@ class SpectralCarverProcessor(Processor):
             mask = mx.clip(1.0 - (self.strength * (t_mag / t_max)), 0.1, 1.0)
 
             # Apply mask & IFFT
-            if n_ch > 1:
-                carved_fft = s_fft * mask[:, :, None]
-            else:
-                carved_fft = s_fft * mask
+            carved_fft = s_fft * (mask[:, :, None] if n_ch > 1 else mask)
             carved_win = mx.fft.ifft(carved_fft, axis=1).real
 
             # Fast Overlap-Add in MLX using .at[...].add(...)
@@ -430,7 +424,7 @@ class ExternalPluginProcessor(Processor):
     Loads and applies an external VST3 or AudioUnit plugin via Pedalboard.
     """
 
-    def __init__(self, plugin_path: str, parameters: dict = None):
+    def __init__(self, plugin_path: str, parameters: dict | None = None):
         """
         Initializes the ExternalPluginProcessor.
 
@@ -455,7 +449,7 @@ class ExternalPluginProcessor(Processor):
                     else:
                         found = False
                         if hasattr(self.plugin, "parameters"):
-                            for p_name, p_obj in self.plugin.parameters.items():
+                            for p_name in self.plugin.parameters:
                                 if name.lower() == p_name.lower().replace(" ", "_"):
                                     setattr(self.plugin, p_name, value)
                                     print(f"  - Set {p_name} = {value}")
@@ -467,10 +461,7 @@ class ExternalPluginProcessor(Processor):
                 print(f"[PLUGIN ERROR] {self.plugin_path}: {e}")
                 return signal
         sig_np = np.array(signal)
-        if len(sig_np.shape) > 1:
-            sig_pb = sig_np.T
-        else:
-            sig_pb = sig_np[None, :]
+        sig_pb = sig_np.T if len(sig_np.shape) > 1 else sig_np[None, :]
         processed_pb = self.plugin.process(sig_pb, sr)
         if len(sig_np.shape) > 1:
             return mx.array(processed_pb.T)

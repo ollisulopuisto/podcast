@@ -5,12 +5,14 @@ This script uses the Textual framework to present a list of potential ad spots
 found by the analyzer, allowing the user to select one and save it to the configuration.
 """
 
-from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, ListView, ListItem, Label
-from textual.binding import Binding
-import yaml
-import sys
 import os
+import sys
+from typing import ClassVar
+
+import yaml
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.widgets import Footer, Header, Label, ListItem, ListView
 
 
 class SpotSelectionApp(App):
@@ -35,7 +37,7 @@ class SpotSelectionApp(App):
     }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[Binding]] = [
         Binding("q", "quit", "Quit"),
         Binding("enter", "select", "Select Spot"),
     ]

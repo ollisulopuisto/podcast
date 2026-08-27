@@ -1,8 +1,9 @@
-import pytest
 import mlx.core as mx
 import numpy as np
+import pytest
 import soundfile as sf
-from automixer.domain.processor import LimiterProcessor, GainProcessor
+
+from automixer.domain.processor import GainProcessor, LimiterProcessor
 from automixer.domain.track import Track
 
 

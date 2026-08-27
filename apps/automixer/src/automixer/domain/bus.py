@@ -118,7 +118,7 @@ class Bus:
         # trap is in `processor.py` and `cli_mix.py`.
         processed_signals = [proc_track(t) for t in self.tracks]
 
-        for i, (t, sig) in enumerate(zip(self.tracks, processed_signals)):
+        for i, (t, sig) in enumerate(zip(self.tracks, processed_signals, strict=True)):
             if progress_callback:
                 progress_callback(
                     0.1 + 0.4 * (i / len(self.tracks)), f"Mixing track {t.name}..."

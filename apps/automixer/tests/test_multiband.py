@@ -1,5 +1,6 @@
 import mlx.core as mx
 import numpy as np
+
 from automixer.domain.processor import MultibandCompressorProcessor
 
 
@@ -7,7 +8,8 @@ def test_multiband_summation():
     """Ensures that the 3-band crossover sums back to (roughly) the original signal when auto-gain is disabled."""
     sr = 44100
     duration = 1.0
-    noise_np = np.random.normal(0, 0.1, int(duration * sr)).astype(np.float32)
+    rng = np.random.default_rng(20260827)
+    noise_np = rng.normal(0, 0.1, int(duration * sr)).astype(np.float32)
     noise_mx = mx.array(noise_np)
 
     # We need a way to disable auto-gain.
