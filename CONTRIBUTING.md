@@ -41,7 +41,15 @@ window in which the apps disagree about what the chain does.
   believing it.
 * **Lint passes.** `uv run ruff check .` before committing. A rule that
   does not fit gets a written reason in `ignore`, never a bare `# noqa`.
-* **CalVer**, `YYYY.M.D.N`, per app.
+* **CalVer**, `YYYY.M.D.N`, per app. Tags carry the app's name —
+  `autoraffkat-v2026.8.28.1`, not `v2026.8.28.1` — because three apps now
+  share one tag space and a bare `v*` would match any of them. The release
+  workflow keys off that prefix.
+* **Workflows live in the repo root.** GitHub only runs `.github/workflows`
+  at the top level, so a workflow left inside `apps/<name>/.github/` is an
+  inert file that looks like a working pipeline. autoraffkat's release build
+  is `build-autoraffkat.yml`; podcast-magic still has a `build_app.py` and
+  no workflow, which is a gap rather than a decision.
 * **Numbers in comments.** A constant that came from a measurement says
   what was measured. The bugs here are silent — valid output, clean
   import, no exception, wrong result — and the number is what lets the

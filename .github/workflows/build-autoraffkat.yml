@@ -1,12 +1,14 @@
-name: build
+name: build autoraffkat
 
 # Paketointi ajetaan tageista ja käsin, ei jokaisesta puskusta: käännös hakee
 # ffmpegin verkosta ja kestää minuutteja, kun taas testit ovat sekunteja.
-# Tagi `v*` julkaisee levykuvan GitHubin Releaseen.
+# Tagi `autoraffkat-v*` julkaisee levykuvan GitHubin Releaseen.
+# Nimetty sovelluksen mukaan, koska monorepossa kolme sovellusta
+# jakaa saman tagiavaruuden ja pelkkä `v*` osuisi mihin tahansa.
 on:
   workflow_dispatch:
   push:
-    tags: ["v*"]
+    tags: ["autoraffkat-v*"]
 
 permissions:
   contents: read
@@ -19,6 +21,9 @@ jobs:
     # `uv run python scripts/build_app.py --dmg`. Arkkitehtuuri luetaan
     # ajurilta eikä kirjoiteta tähän, jottei tiedoston nimi voi valehdella.
     runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: apps/autoraffkat
     steps:
       - uses: actions/checkout@v4
 
@@ -47,8 +52,8 @@ jobs:
       - name: Cache bundled ffmpeg
         uses: actions/cache@v4
         with:
-          path: bin
-          key: ffmpeg-${{ runner.arch }}-${{ hashFiles('scripts/fetch_binaries.py') }}
+          path: apps/autoraffkat/bin
+          key: ffmpeg-${{ runner.arch }}-${{ hashFiles('apps/autoraffkat/scripts/fetch_binaries.py') }}
 
       - name: Build app and disk image
         run: uv run python scripts/build_app.py --dmg
@@ -73,11 +78,14 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: autoraffkat-${{ steps.inside.outputs.arch }}
-          path: dist/autoraffkat-*.dmg
+          path: apps/autoraffkat/dist/autoraffkat-*.dmg
           if-no-files-found: error
 
   windows:
     runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/autoraffkat
     steps:
       - uses: actions/checkout@v4
 
@@ -95,7 +103,7 @@ jobs:
       - name: Cache bundled ffmpeg
         uses: actions/cache@v4
         with:
-          path: bin
+          path: apps/autoraffkat/bin
           key: ffmpeg-windows-${{ runner.arch }}-${{ hashFiles('scripts/fetch_binaries.py') }}
 
       - name: Fetch binaries
@@ -106,7 +114,7 @@ jobs:
       # ajaa `ffmpeg`in suoraan polusta.
       - name: Put bundled ffmpeg on PATH
         shell: pwsh
-        run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\bin"
+        run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\apps\autoraffkat\bin"
 
       - name: Tests
         run: uv run pytest -q
@@ -131,20 +139,23 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: autoraffkat-windows-x64
-          path: dist/autoraffkat-windows-x64.zip
+          path: apps/autoraffkat/dist/autoraffkat-windows-x64.zip
           if-no-files-found: error
 
   release:
     # Vain tagista. Käsin ajettu käännös jää artefaktiksi, ei julkaisuksi.
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/autoraffkat-v')
     needs: [macos, windows]
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/autoraffkat
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: dist
+          path: apps/autoraffkat/dist
           merge-multiple: true
 
       - name: Publish release
