@@ -10,6 +10,12 @@
 [tool.uv.workspace]
 members = ["packages/*", "apps/*"]
 
+# Juuren omat testit väittävät, että jäsenet ovat samaa mieltä työkaluista,
+# kirjastorajoista, versionumeroista ja julkaisuputkista. Ne eivät tuo
+# yhtään pakettia, vain lukevat `pyproject.toml`ia — ks. tests/.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 # Lintti on työtilan oma työkalu, ei sovellusten. Se on täällä kahdesta
 # syystä. Ensinnäkin `uv run ruff` etsii ohjelman PATHista jos sitä ei ole
 # ympäristössä: kehityskoneella se löytyy, CI-ajurilla ei, ja lintti kaatui

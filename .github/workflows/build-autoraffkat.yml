@@ -55,8 +55,19 @@ jobs:
           path: apps/autoraffkat/bin
           key: ffmpeg-${{ runner.arch }}-${{ hashFiles('apps/autoraffkat/scripts/fetch_binaries.py') }}
 
+      # Versio ympäristöstä, jotta paketti kantaa saman numeron kuin
+      # `pyproject.toml`. `.spec`in oletus on sama luku, ja
+      # `tests/test_workspace_agrees.py` vahtii ettei se jää jälkeen.
       - name: Build app and disk image
-        run: uv run python scripts/build_app.py --dmg
+        env:
+          AR_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          if [ -n "$AR_VERSION" ]; then
+            export AR_VERSION="${AR_VERSION#autoraffkat-v}"
+          else
+            unset AR_VERSION
+          fi
+          uv run python scripts/build_app.py --dmg
 
       # Mitä pakettiin oikeasti päätyi. Niputettu ffmpeg tulee ulkopuolelta ja
       # allekirjoitus voi rikkoutua kopioinnissa; kumpikin selviäisi ilman tätä

@@ -29,35 +29,26 @@ jobs:
       # Lintti ennen testejä: määrittelemätön nimi tai kuollut argumentti ei
       # kaada testejä, se vain jättää jonkin kohdan tekemättä mitään — ja
       # juuri se on näissä projekteissa toistuva vika.
+      #
+      # Yksi `ruff check .` ilman poikkeuksia. Se oli jaettu kahtia niin kauan
+      # kuin automixerillä oli 44 virhettä; ne on nyt korjattu, ja jaettu
+      # portti oli tarkoitettu väliaikaiseksi.
       - name: Lint
-        run: uv run ruff check packages/speechmix apps/autoraffkat apps/podcast-magic
+        run: uv run ruff check .
 
-      # automixer on kesken muutossa, sama velka kuin sen testeillä alla:
-      # 44 virhettä, joista yksikään ei ole tässä muutoksessa syntynyt.
-      # Erillisenä askeleena eikä `ruff check .`:na, jotta se ei estä muiden
-      # sääntöjen tarkistusta — koko lintti oli tähän asti kaatunut ennen
-      # kuin ehti tarkistaa mitään. Yhdistä takaisin `ruff check .`:ksi kun
-      # automixer on siivottu.
-      - name: Lint (automixer)
-        continue-on-error: true
-        run: uv run ruff check apps/automixer
+      # Ensin: ovatko jäsenet samaa mieltä. Kirjastorajojen, versionumeroiden
+      # ja työkalujen ajautuminen ei kaada yhtään testiä alla — se vain tekee
+      # niistä eri testit eri koneilla.
+      - name: workspace
+        run: uv run pytest tests -q
 
       - name: speechmix
-        run: uv run pytest packages/speechmix/tests -q
+        run: uv run --directory packages/speechmix pytest -q
 
       - name: autoraffkat
         run: uv run --directory apps/autoraffkat pytest -q
 
-      # automixer on kesken muutossa monorepoon. Yksi testi kaatuu, koska
-      # työtila jakaa yhden lukitustiedoston ja siten yhden mlx:n: automixer
-      # on testattu 0.30.6:lla, työtila ratkaisee 0.32.2:n, ja
-      # `test_multiband_dynamics` kaatuu «There is no Stream(gpu, 3)».
-      #
-      # Ei estä muita: punainen CI ensimmäisestä päivästä opettaa
-      # ohittamaan CI:n. Poista tämä rivi kun automixer on siirtynyt ja
-      # kirjastot yhdenmukaistettu — se on ainoa este täysin vihreälle.
       - name: automixer
-        continue-on-error: true
         run: uv run --directory apps/automixer pytest -q
 
       - name: podcast-magic

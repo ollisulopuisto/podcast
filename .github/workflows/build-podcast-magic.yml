@@ -1,0 +1,136 @@
+name: build podcast-magic
+
+# Sama muoto kuin `build-autoraffkat.yml`illa, ja tarkoituksella: kaksi
+# paketoitavaa sovellusta samassa repositoriossa julkaistaan samalla tavalla,
+# tai toinen niistä alkaa ajautua. Paketointi ajetaan tageista ja käsin, ei
+# jokaisesta puskusta: käännös hakee ffmpegin verkosta ja kestää minuutteja,
+# kun taas testit ovat sekunteja.
+#
+# Tagi `podcast-magic-v*` julkaisee levykuvan GitHubin Releaseen. Nimetty
+# sovelluksen mukaan, koska monorepossa kolme sovellusta jakaa saman
+# tagiavaruuden ja pelkkä `v*` osuisi mihin tahansa.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["podcast-magic-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    # Vain macOS. Ohjelma on macOS-ohjelma: `.nhsx` on Hindenburgin
+    # istuntoformaatti, ja nopein moottori (mlx) ajaa Applen näytönohjaimella.
+    # Ajuri on Apple Siliconia, joten myös mlx asentuu — ilman sitä nopein
+    # moottori jäisi paketista pois eikä siitä sanottaisi mitään.
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: apps/podcast-magic
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: brew install ffmpeg
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Molemmat moottorit mukaan: kumpikin on valinnainen lisä, ja ilman
+      # niitä syntyisi paketti jonka käyttöliittymä toimii mutta litterointi
+      # kertoo puuttuvasta moottorista.
+      - name: Install
+        run: uv sync --all-extras
+
+      # Testit ennen pakkausta. Rikkinäinen binääri on pahempi kuin hidas
+      # käännös: sen ehtii ladata ennen kuin kukaan huomaa.
+      - name: Tests
+        run: uv run pytest -q
+
+      # Niputettavat ffmpeg-binäärit ovat iso lataus ulkopuoliselta
+      # palvelimelta. Välimuisti pitää käännöksen pystyssä silloinkin kun se
+      # palvelin on nurin.
+      - name: Cache bundled ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: apps/podcast-magic/bin
+          key: ffmpeg-${{ runner.arch }}-${{ hashFiles('apps/podcast-magic/scripts/fetch_binaries.py') }}
+
+      # Versio ympäristöstä, jotta paketti kantaa saman numeron kuin
+      # `pyproject.toml`. `.spec`in oletus on sama luku, ja
+      # `tests/test_workspace_agrees.py` vahtii ettei se jää jälkeen.
+      - name: Build app and disk image
+        env:
+          PM_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          if [ -n "$PM_VERSION" ]; then
+            export PM_VERSION="${PM_VERSION#podcast-magic-v}"
+          else
+            unset PM_VERSION
+          fi
+          uv run python scripts/build_app.py --dmg
+
+      # Mitä pakettiin oikeasti päätyi. Niputettu ffmpeg tulee ulkopuolelta ja
+      # allekirjoitus voi rikkoutua kopioinnissa; kumpikin selviäisi ilman tätä
+      # vasta käyttäjän koneelta. Arkkitehtuurien pitää täsmätä.
+      - name: Report what is inside
+        id: inside
+        run: |
+          arch=$(uname -m)
+          echo "arch=$arch" >> "$GITHUB_OUTPUT"
+          echo "sovellus: $(file -b "dist/Podcast Magic.app/Contents/MacOS/podcast-magic")"
+          echo "ffmpeg:   $(file -b bin/ffmpeg)"
+          codesign --verify --deep --strict "dist/Podcast Magic.app"
+          echo "allekirjoitus kelpaa"
+
+      # Arkkitehtuuri nimeen, jotta Releaseen mahtuu myöhemmin toinenkin.
+      # Väli nimessä ei kestä latauslinkkiä, joten paketti nimetään uudelleen.
+      - name: Name the image by architecture
+        run: mv "dist/Podcast Magic.dmg" "dist/podcast-magic-${{ steps.inside.outputs.arch }}.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: podcast-magic-${{ steps.inside.outputs.arch }}
+          path: apps/podcast-magic/dist/podcast-magic-*.dmg
+          if-no-files-found: error
+
+  release:
+    # Vain tagista. Käsin ajettu käännös jää artefaktiksi, ei julkaisuksi.
+    if: startsWith(github.ref, 'refs/tags/podcast-magic-v')
+    needs: [macos]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/podcast-magic
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: apps/podcast-magic/dist
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<'NOTES'
+          ### macOS
+          Levykuva ei ole Applen notarisoima, koska siihen tarvitaan Developer
+          ID. Ensimmäisellä avauksella: oikea klikkaus paketin päällä ja
+          «Avaa», tai `xattr -d com.apple.quarantine "Podcast Magic.app"`.
+
+          The disk image is not notarised by Apple — that needs a Developer ID.
+          On first launch: right-click the app and choose "Open", or run
+          `xattr -d com.apple.quarantine "Podcast Magic.app"`.
+          NOTES
+          gh release create "$GITHUB_REF_NAME" dist/*.dmg \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            --generate-notes
