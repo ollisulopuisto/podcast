@@ -39,8 +39,6 @@ line-length = 90
 # Alin tuettu Python, ei se jolla ajetaan. Sama luku kuin jokaisen jäsenen
 # `requires-python`issa — ks. juuren `.python-version`.
 target-version = "py313"
-# Vertailukohdaksi säilytetty rinnakkaistoteutus, jota mikään ei tuo sisään.
-exclude = ["packages/speechmix/reference"]
 
 [tool.ruff.lint]
 select = [
