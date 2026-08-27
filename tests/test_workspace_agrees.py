@@ -184,9 +184,9 @@ def test_every_member_configures_pytest_the_same_way():
     """Ilman `testpaths` pytest kerää koko hakemiston.
 
     speechmixiltä lohko puuttui, ja `uv run --directory packages/speechmix
-    pytest` — se muoto jota CONTRIBUTING opettaa — keräsi
-    `reference/automixer-parallel/`in ja kaatui kokoamiseen. ruff sulki
-    saman hakemiston jo pois; kahden portin on nähtävä sama puu.
+    pytest` — se muoto jota CONTRIBUTING opettaa — keräsi kaiken mitä
+    hakemistossa sattui olemaan ja kaatui kokoamiseen. Rajaus on se, mikä
+    tekee ajosta saman riippumatta siitä mistä se käynnistetään.
     """
     for member in MEMBERS:
         options = manifest(member).get("tool", {}).get("pytest", {}).get("ini_options")
@@ -196,8 +196,73 @@ def test_every_member_configures_pytest_the_same_way():
 
 
 # --------------------------------------------------------------------------
-# Julkaisut
+# Jaettu paketti
 # --------------------------------------------------------------------------
+
+
+def imports_in(path: Path) -> set[str]:
+    """Jokainen `import`illa mainittu nimi, `ast`illa eikä grepillä.
+
+    Kommentissa tai merkkijonossa mainittu moduulin nimi ei ole kuluttaja,
+    ja juuri se ero on tässä koko kysymys. Ottaa tiedoston tai hakemiston.
+    """
+    import ast
+
+    sources = [path] if path.is_file() else sorted(path.rglob("*.py"))
+    found: set[str] = set()
+    for source in sources:
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    found.update(alias.name.split("."))
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    found.update(node.module.split("."))
+                found.update(alias.name for alias in node.names)
+    return found
+
+
+def test_every_shared_module_has_a_consumer():
+    """Kirjasto johon kirjoitetaan koodia jota mikään ei kutsu ei ole kirjasto.
+
+    Se on sama kolme kopiota ketjusta, vain yhden hakemiston sisällä — ja se
+    on tarkalleen se vika jonka takia tämä repositorio on olemassa. Viisi
+    moduulia kertyi tänne ilman yhtäkään tuojaa (`ceiling`, `loudness`,
+    `fingerprint`, `timeline`, `verify`), ja kaksi niistä oli toisinto
+    koodista joka oli yhä autoraffkatin `mix.py`:ssä. `fingerprint` oli oman
+    sisarensa `freshness` toisinto, eri `FINGERPRINT_VERSION`illa (1 vastaan
+    8) ja yhteensopimattomilla kenttänimillä — kaksi eri vastausta siihen
+    mikä tekee välimuistista vanhentuneen.
+
+    Mikään niistä ei kaatanut mitään. Ne vain olivat.
+
+    `__init__.py` ei kelpaa kuluttajaksi: se tuo kaiken julkisen, joten sen
+    laskeminen tekisi tästä testin joka ei voi koskaan kaatua.
+    """
+    package = ROOT / "packages" / "speechmix" / "src" / "speechmix"
+    modules = {p.stem for p in package.glob("*.py")} - {"__init__"}
+
+    from_apps = imports_in(ROOT / "apps")
+    siblings = {
+        sibling.stem: imports_in(sibling)
+        for sibling in package.glob("*.py")
+        if sibling.stem != "__init__"
+    }
+
+    orphans = sorted(
+        module
+        for module in modules
+        if module not in from_apps
+        and not any(module in names for stem, names in siblings.items() if stem != module)
+    )
+    assert not orphans, orphans
+
+
+    assert not orphans, orphans
+
+
+
 
 
 def declared_version(member: Path) -> str:
