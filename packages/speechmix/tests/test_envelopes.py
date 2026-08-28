@@ -86,14 +86,16 @@ def test_the_curve_is_programme_time_not_grid_time():
 def test_the_curve_matches_the_mask_point_for_point():
     """Neljä pistettä jaksoa kohden, ja liu'ut jakson **sisällä**.
 
-    Lasku osuu toisen puhujan aloitukseen ja jää sen alle; nousu osuu
-    hiljaisuuteen jossa mikään ei peitä sitä. Siksi ne ovat eri mittaiset
-    ja siksi kumpikaan ei ala jakson ulkopuolelta.
+    Nousu osuu aina hiljaisuuteen jossa mikään ei peitä sitä, joten se on
+    aina hidas. Lasku on nopea vain kun se osuu peittävän puhujan aloitukseen
+    ja jää sen alle; muuten se on yhtä hidas kuin nousu. Kumpikaan ei ala
+    jakson ulkopuolelta.
     """
     from speechmix import masks
 
     grid, settings = _turn_taking(), _Settings()
     out = envelopes.duck_envelopes(grid, settings, 0.0)
+    covering = masks.covering_masks(grid, settings)
 
     for name, mask in masks.duck_masks(grid, settings).items():
         if name not in out:
@@ -103,7 +105,9 @@ def test_the_curve_matches_the_mask_point_for_point():
             if not value:
                 continue
             t0, t1 = start * envelopes.HOP, end * envelopes.HOP
-            head = min(settings.duck_fade, (t1 - t0) / 2.0)
+            peitossa = envelopes._under_onset(covering.get(name), start)
+            fall = settings.duck_fade if peitossa else settings.duck_release
+            head = min(fall, (t1 - t0) / 2.0)
             tail = min(settings.duck_release, (t1 - t0) - head)
             expected += [
                 (pytest.approx(t0), 0.0),
@@ -309,3 +313,45 @@ def test_program_fades_ignore_the_blip_at_the_grid_edge():
     assert out, "reunan välähdys esti häivytyksen"
     assert out["a"][0] == (0.0, envelopes.FADE_FLOOR_DB)
     assert out["a"][-1] == (1500 * envelopes.HOP, envelopes.FADE_FLOOR_DB)
+
+
+def _first_fall(points):
+    """Ensimmäisen laskun kesto sekunteina."""
+    from itertools import pairwise
+
+    for (t0, v0), (t1, v1) in pairwise(points):
+        if v1 < v0 - 0.5:
+            return round(t1 - t0, 3)
+    raise AssertionError(f"ei laskua: {points[:6]}")
+
+
+def test_a_fall_under_the_other_speakers_onset_is_fast():
+    """Peitossa oleva lasku saa olla nopea: toisen aloitus peittää sen."""
+    n = 1200
+    a_on = np.zeros(n, dtype=bool)
+    b_on = np.zeros(n, dtype=bool)
+    a_on[:300] = True
+    b_on[800:1100] = True          # alkaa vasta kun a on jo vaiennut
+    grid = _Grid(_Lane("a", a_on, np.full(n, -18.0)),
+                 _Lane("b", b_on, np.full(n, -18.0)))
+    out = envelopes.duck_envelopes(grid, _Settings(), 0.0)
+    assert _first_fall(out["a"]) == _Settings.duck_fade
+
+
+def test_an_exposed_fall_is_as_slow_as_the_rise():
+    """Kun peittävä ääni on jo käynnissä, laskua ei peitä mikään.
+
+    Nopea lasku on perusteltu vain toisen puhujan aloituksen alla — siinä
+    aloitus peittää sen. Jos vaimennus alkaa siksi että **tämä** puhuja
+    vaikeni kesken toisen puheen, aloitusta ei ole, ja sama nopea lasku on
+    kuultava tasohyppy keskellä puhetta.
+    """
+    n = 1200
+    a_on = np.zeros(n, dtype=bool)
+    b_on = np.zeros(n, dtype=bool)
+    a_on[:300] = True
+    b_on[100:1100] = True          # käynnissä jo pitkään kun a vaikenee
+    grid = _Grid(_Lane("a", a_on, np.full(n, -18.0)),
+                 _Lane("b", b_on, np.full(n, -18.0)))
+    out = envelopes.duck_envelopes(grid, _Settings(), 0.0)
+    assert _first_fall(out["a"]) == _Settings.duck_release

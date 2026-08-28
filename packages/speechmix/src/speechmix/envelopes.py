@@ -27,7 +27,7 @@ Siirretty autoraffkatin ``audio/mix.py``:stä, ei kopioitu.
 
 import numpy as np
 
-from .masks import HOP, drop_short, duck_masks, runs
+from .masks import HOP, covering_masks, drop_short, duck_masks, runs
 from .timeline import Track
 
 
@@ -41,11 +41,22 @@ def duck_envelopes(grid, settings: object,
     minuuttien ajon, kun se käyränä on yhden liu'un veto. Sama peruste kuin
     reaktiokuvien omalla lanella.
 
-    Muoto vastaa ``chain.apply_duck``ia piste pisteeltä, koska tulos ei saa
-    muuttua sen mukaan kummalla tavalla se tehdään: liu'ut ovat **jakson
-    sisällä** — lasku alkaa jakson alusta, nousu päättyy sen loppuun — ja
-    epäsymmetriset, koska lasku osuu toisen puhujan aloitukseen ja jää sen
-    alle, kun taas nousu osuu hiljaisuuteen jossa mikään ei peitä sitä.
+    ``duck_gain`` lukee samat pisteet ja tekee niistä näytteittäisen käyrän,
+    joten emissiot eivät voi erota: geometria on kirjoitettuna yhteen paikkaan
+    eikä kahteen. (``chain.apply_duck`` oli toinen kappale samasta muodosta,
+    omine liukuineen ja omine ``fade``-parametreineen. Sillä ei ollut yhtään
+    kutsujaa, ja tämän ehdon myötä se olisi ajautunut erilleen ensimmäisenä.)
+    Liu'ut ovat **jakson sisällä**: lasku alkaa jakson alusta, nousu päättyy
+    sen loppuun.
+
+    Lasku on nopea vain kun se on peitossa. Perustelu nopealle laskulle on
+    aina ollut että se osuu toisen puhujan aloitukseen ja jää sen alle, mutta
+    ehtoa ei tarkistettu missään: sama nopea lasku ajettiin myös silloin kun
+    vaimennus alkaa siksi että **tämä** puhuja vaikeni kesken toisen puheen.
+    Silloin aloitusta ei ole, mikään ei peitä, ja lasku on kuultava tasohyppy
+    keskellä puhetta. Ehto on nyt luettu: osuuko jakson alku peittävän maskin
+    nousuun. Jos ei, lasku on yhtä hidas kuin nousu — nousu on aina ollut
+    hidas juuri siksi että se osuu hiljaisuuteen jossa mikään ei peitä sitä.
     Liuku on desibeleissä, ja niin on Final Cutin keyframe-parametrikin.
 
     Pelkkää laskentaa ruudukon päällä: ei tiedostoja, joten tämä saa olla
@@ -56,8 +67,10 @@ def duck_envelopes(grid, settings: object,
         return {}
     fade = float(settings.duck_fade)
     release = float(settings.duck_release or settings.duck_fade)
+    covering = covering_masks(grid, settings)
     out: dict[str, list] = {}
     for name, mask in duck_masks(grid, settings).items():
+        cover = covering.get(name)
         points: list[tuple[float, float]] = []
         for start, end, value in runs(np.asarray(mask).astype(np.int8)):
             if not value:
@@ -65,7 +78,7 @@ def duck_envelopes(grid, settings: object,
             t0 = program_start + start * HOP
             t1 = program_start + end * HOP
             span = t1 - t0
-            head = min(fade, span / 2.0)
+            head = min(fade if _under_onset(cover, start) else release, span / 2.0)
             tail = min(release, span - head)
             points.append((t0, 0.0))
             points.append((t0 + head, depth))
@@ -74,6 +87,27 @@ def duck_envelopes(grid, settings: object,
         if points:
             out[name] = points
     return out
+
+#: Kuinka monta solua ennen vaimennuksen alkua peittävä puhe saa alkaa,
+#: jotta lasku lasketaan peitossa olevaksi. Nolla olisi liian tiukka: maskin
+#: siivous (`close_gaps`, `drop_short`) voi siirtää jakson alkua solulla tai
+#: kahdella, eikä lasku silti ole yhtään vähemmän peitossa.
+ONSET_SLACK = 3
+
+
+def _under_onset(cover, start: int) -> bool:
+    """Alkaako peittävä puhe tässä kohtaa, eli jääkö lasku sen alle."""
+    if cover is None:
+        return False
+    cover = np.asarray(cover, dtype=bool)
+    if start >= cover.size or not cover[start]:
+        return False
+    low = max(0, start - ONSET_SLACK)
+    if low == 0:
+        return True
+    # Nousu ikkunan sisällä: sitä ennen vaiti, jakson alkaessa äänessä.
+    return not cover[low - 1]
+
 
 #: Ohjelman päiden häivytys. Pituudet ovat leikkauskonventio eivätkä mittaus:
 #: sisääntulo lyhyt, jotta ohjelma alkaa heti, ulostulo pidempi, koska loppuun

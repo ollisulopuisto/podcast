@@ -123,6 +123,59 @@ def speech_masks(grid) -> dict:
     return {lane.name: np.asarray(lane.on, dtype=bool)
             for lane in getattr(grid, "speakers", [])}
 
+def _gates(grid, settings: object) -> tuple[list, list]:
+    """Portit joita vaimennus lukee: ``(auki, peittävä)`` puhujittain.
+
+    Erillään, koska sekä ``duck_masks`` että ``covering_masks`` tarvitsevat
+    juuri nämä. Kaksi kappaletta samasta portista ajautuisi erilleen, ja ero
+    näkyisi vasta siinä että lasku ajoittuu eri kohtaan kuin vaimennus alkaa.
+    """
+    active = np.stack([lane.on for lane in grid.speakers])
+    levels = np.stack([lane.level for lane in grid.speakers])
+    # Vain äänessä olevat kilpailevat; hiljainen ei voi olla kovin.
+    loudest = np.where(active, levels, -300.0).max(axis=0)
+    keep = active & (levels >= loudest - settings.duck_dominance_db)
+    # Auki: ennakko mukana, jotta sanan alku ei katoa.
+    opened = [
+        open_windows(
+            keep[i], settings.duck_lookahead, settings.duck_hold, settings.duck_min_open
+        )
+        for i in range(len(grid.speakers))
+    ]
+    # Peittävä puhe. Ilman ennakkoa, koska tämä ajoittaa laskun: lasku ei saa
+    # alkaa ennen kuin peittävä ääni on tullut. Lopusta leikataan pito ja
+    # paluun mitta pois, jotta myös nousu ehtii tapahtua peittävän äänen alla
+    # eikä sen jälkeisessä hiljaisuudessa.
+    masking = [
+        trim_end(
+            open_windows(keep[i], 0.0, settings.duck_hold, settings.duck_min_open),
+            settings.duck_hold + settings.duck_release,
+        )
+        for i in range(len(grid.speakers))
+    ]
+    return opened, masking
+
+
+def covering_masks(grid, settings: object) -> dict:
+    """Milloin **jonkun muun** puhe peittää tämän puhujan.
+
+    Sama ``others`` jota ``duck_masks`` käyttää, mutta ulospäin: laskun
+    nopeus riippuu siitä osuuko vaimennuksen alku tämän maskin **nousuun**.
+    Osuu = peittävän puhujan aloitus on juuri siinä, ja lasku jää sen alle.
+    """
+    if grid is None or not settings.duck or len(grid.speakers) < 2:
+        return {}
+    _, masking = _gates(grid, settings)
+    out = {}
+    for i, lane in enumerate(grid.speakers):
+        others = np.zeros_like(masking[i])
+        for j in range(len(grid.speakers)):
+            if j != i:
+                others |= masking[j]
+        out[lane.name] = others
+    return out
+
+
 def duck_masks(grid, settings: object) -> dict:
     """Puhujakohtaiset «mikki kiinni» -maskit ruudukossa.
 
@@ -156,30 +209,7 @@ def duck_masks(grid, settings: object) -> dict:
     """
     if grid is None or not settings.duck or len(grid.speakers) < 2:
         return {}
-    active = np.stack([lane.on for lane in grid.speakers])
-    levels = np.stack([lane.level for lane in grid.speakers])
-    # Vain äänessä olevat kilpailevat; hiljainen ei voi olla kovin.
-    loudest = np.where(active, levels, -300.0).max(axis=0)
-    keep = active & (levels >= loudest - settings.duck_dominance_db)
-
-    # Auki: ennakko mukana, jotta sanan alku ei katoa.
-    opened = [
-        open_windows(
-            keep[i], settings.duck_lookahead, settings.duck_hold, settings.duck_min_open
-        )
-        for i in range(len(grid.speakers))
-    ]
-    # Peittävä puhe. Ilman ennakkoa, koska tämä ajoittaa laskun: lasku ei saa
-    # alkaa ennen kuin peittävä ääni on tullut. Lopusta leikataan pito ja
-    # paluun mitta pois, jotta myös nousu ehtii tapahtua peittävän äänen alla
-    # eikä sen jälkeisessä hiljaisuudessa.
-    masking = [
-        trim_end(
-            open_windows(keep[i], 0.0, settings.duck_hold, settings.duck_min_open),
-            settings.duck_hold + settings.duck_release,
-        )
-        for i in range(len(grid.speakers))
-    ]
+    opened, masking = _gates(grid, settings)
 
     out = {}
     for i, lane in enumerate(grid.speakers):
