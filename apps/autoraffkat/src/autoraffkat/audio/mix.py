@@ -407,48 +407,12 @@ def _geometry(item, frames: int) -> tuple:
     return envelopes.geometry(track_of(item), frames)
 
 
-def _program_boost(jobs: list[dict], ducks: dict, settings: AudioSettings) -> float:
-    """Kuinka paljon valmis ohjelma on jakelutason alla, desibeleinä.
-
-    Mitataan **kirjoitetuista** stemeistä ja vaimennuskäyrät mukaan luettuina:
-    trimmi ja katto on jo tehty, ja juuri se summa on se mitä isäntä soittaa.
-    Ikkuna on sama rajattu pala kuin ``program_trim``illa — koko ohjelman
-    lukeminen toiseen kertaan maksaisi minuutteja eikä muuttaisi lukemaa kuin
-    murto-osan desibelistä.
-    """
-    from pedalboard.io import AudioFile
-
-    target = float(getattr(settings, "program_lufs", 0.0) or 0.0)
-    if not target:
-        return 0.0
-    mics = [j for j in jobs if j.get("speech") and j.get("item") is not None
-            and os.path.exists(j.get("target", ""))]
-    if not mics:
-        return 0.0
-    rate, total = 0, None
-    for job in mics:
-        frames = frame_count(job["target"])
-        if not frames:
-            continue
-        with AudioFile(job["target"]) as handle:
-            rate = int(handle.samplerate)
-            take = min(frames, int(programme.PROGRAM_WINDOW * rate))
-            handle.seek(max(0, (frames - take) // 2))
-            block = handle.read(take).mean(axis=0)
-        gain = _envelope_block(job, ducks, 0, len(block), rate)
-        heard = block * (gain[: len(block)] if gain.size > 1 else 1.0)
-        total = heard if total is None else total[: len(heard)] + heard[: len(total)]
-    if total is None or not rate:
-        return 0.0
-    return programme.boost_to(total, rate, target)
-
-
-#: Kuinka monta kierrosta jakelutasoa haetaan, ja kuinka lähelle on päästävä.
-#: Rajoitin vie osan noston tuomasta äänekkyydestä, joten yksi kierros jää
-#: aina alle — mutta ero pienenee kertaluokan kierrosta kohden, joten kolme
-#: riittää. Toleranssi on sama 0,3 LU jota ketjun oma normalisointi käyttää.
+#: Kuinka monta kierrosta jakelutasoa haetaan. Rajoitin vie osan noston
+#: tuomasta äänekkyydestä, joten yksi kierros jää aina alle — mutta ero
+#: pienenee kertaluokan kierrosta kohden, joten kolme riittää.
 DELIVER_ROUNDS = 3
-DELIVER_TOLERANCE = 0.3
+#: Oletustoleranssi jos asetuksissa ei ole omaa, LU.
+DELIVER_TOLERANCE = 0.5
 
 
 def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
@@ -484,10 +448,20 @@ def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
     tolerance = float(getattr(settings, "program_tolerance", DELIVER_TOLERANCE))
     short_target = float(getattr(settings, "program_short_term_db", 0.0) or 0.0)
 
-    first = IntegratedMeter(rate)
-    measured = _program_level(jobs, ducks, rate, first)
-    boost, ride, step_sec = 0.0, None, first.step_seconds()
-    meter = first
+    # Ensimmäinen lukema tulee katon omasta ajosta, ei erillisestä
+    # lukukierroksesta. Katto ajetaan joka tapauksessa, se virtaa jokaisen
+    # stemin läpi ja osaa jo täyttää mittarin — erillinen mittauskierros
+    # olisi gigatavu luettavaa eikä yhtään desibeliä enempää tietoa.
+    #
+    # Sama syy miksi lukemaa ei kerätä stemeittäin kirjoituksen yhteydessä:
+    # summan äänekkyys ei ole stemien äänekkyyksien summa, ja mikkien
+    # välinen vuoto on korreloitunutta, joten tehojen laskeminen yhteen
+    # olisi arvio eikä mittaus. Mitataan se mikä soi.
+    meter = IntegratedMeter(rate)
+    program_ceiling(jobs, result, ducks, extra, 0.0, ceiling, meter)
+    measured = meter.value()
+    boost, ride, step_sec = 0.0, None, meter.step_seconds()
+    extra = None  # jaettu peruutus on jo tehty ensimmäisellä ajolla
     for round_number in range(DELIVER_ROUNDS):
         if measured is None:
             break
@@ -508,9 +482,8 @@ def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
             ride[: len(wanted)] + wanted if wanted is not None else ride
         )
         meter = IntegratedMeter(rate)
-        program_ceiling(jobs, result, ducks, extra if not round_number else None,
-                        boost, ceiling, meter, ride, step_sec if ride is not None
-                        else 0.0)
+        program_ceiling(jobs, result, ducks, None, boost, ceiling, meter,
+                        ride, step_sec if ride is not None else 0.0)
         measured = meter.value()
         _log(f"jakelutaso kierros {round_number + 1}: nosto {boost:+.2f} dB"
              + (f", veto {ride.min():.2f} dB" if ride is not None else "")
@@ -530,39 +503,6 @@ def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
                   got=f"{measured:.1f}")
             )
             break
-
-
-def _program_level(jobs: list[dict], ducks: dict, rate: int,
-                   meter=None) -> float | None:
-    """Ohjelman äänekkyys nyt: vaimennettu summa koko pituudeltaan."""
-    from pedalboard.io import AudioFile
-
-    mics = [j for j in jobs if j.get("speech") and j.get("item") is not None
-            and os.path.exists(j.get("target", ""))]
-    if len(mics) < 2:
-        return None
-    meter = meter if meter is not None else IntegratedMeter(rate)
-    frames = min(filter(None, (frame_count(j["target"]) for j in mics)), default=0)
-    if not frames:
-        return None
-    handles = [AudioFile(j["target"]) for j in mics]
-    try:
-        step = int(programme.CEILING_CHUNK * rate)
-        for position in range(0, frames, step):
-            take = min(step, frames - position)
-            total = None
-            for job, handle in zip(mics, handles, strict=True):
-                handle.seek(position)
-                block = handle.read(take)
-                heard = block * _envelope_block(
-                    job, ducks, position, position + take, rate
-                )
-                total = heard if total is None else total + heard
-            meter.add(total.mean(axis=0) if total.ndim > 1 else total)
-    finally:
-        for handle in handles:
-            handle.close()
-    return meter.value()
 
 
 def program_ceiling(jobs: list[dict], result: "MixResult",
@@ -1288,12 +1228,10 @@ def process(
         # että tason muuttaminen ei tee **mitään** kun stemit ovat ajan
         # tasalla: säädin liikkuu, lokiin ei tule mitään, ääni ei muutu.
         if settings.program_lufs and grid is not None:
-            ducks = duck_envelopes(grid, settings, program_start)
-            boost = _program_boost(jobs, ducks, settings)
-            if boost:
-                result.program_boost = boost
-                _log(f"jakelutaso: +{boost:.2f} dB summaan, katto hoitaa huiput")
-                program_ceiling(jobs, result, ducks, None, boost)
+            program_deliver(
+                jobs, result, duck_envelopes(grid, settings, program_start),
+                {}, settings,
+            )
         return result
 
     try:
