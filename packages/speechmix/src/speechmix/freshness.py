@@ -25,6 +25,9 @@ FINGERPRINT_FIELDS = (
     "peak_threshold_db",
     "leveler_threshold_db",
     "rider",
+    # Kuljettajan alue on **mukana**, toisin kuin jakelutaso: se muuttaa
+    # tiedostoon kirjoitettua ääntä, joten sen muuttaminen vanhentaa stemit.
+    "rider_max_db",
     "declick",
     "declick_sensitivity",
     "plugin_path",

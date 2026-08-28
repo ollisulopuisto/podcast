@@ -723,3 +723,38 @@ def test_sustained_reduction_reads_the_distribution_not_the_extreme():
     body = chain.sustained_reduction_db(audio, RATE, percentile=2.0)
     assert 0.0 <= body <= tail <= worst + 1e-9, (body, tail, worst)
     assert body < worst - 3.0, "prosenttipiste seurasi yksittäistä huippua"
+
+
+def test_the_rider_range_is_a_setting_not_a_constant():
+    """Kuljettajan katto riippuu materiaalista, ei ketjusta.
+
+    Mitattuna 77 minuutin jaksolla: puheenvuoro kestää mediaanissa 36 s ja
+    **päättyy 7,2 dB hiljaisempana kuin alkaa** (Nyman; Wancke 2,6 dB).
+    Nymanin vuoroista 59 % laskee yli kuusi desibeliä, eli kuljettaja on
+    katossaan suurimman osan hänen puheajastaan — se on juuri se kaari jota
+    varten kuljettaja on olemassa, ja se jää puoliksi ajamatta.
+
+    Katto on silti tarpeen: kuljettaja nostaa vuoron loppua ja sen mukana
+    huoneen. Siksi luku on säädin eikä uusi vakio.
+    """
+    rate = RATE
+    rng = np.random.default_rng(5)
+    n = 40 * rate
+    # Puheenvuoro joka hiipuu 10 dB matkan varrella.
+    ramp = 10 ** (np.linspace(0.0, -10.0, n) / 20.0)
+    audio = (rng.standard_normal(n).astype(np.float32) * 0.05 * ramp)[None, :]
+    speaking = np.ones(n // int(chain.RIDER_BLOCK_S * rate), dtype=bool)
+
+    # `ride` muokkaa taulukkoa paikan päällä, joten kopiot: samalla
+    # taulukolla toinen ajo kuljettaisi jo kuljetettua signaalia.
+    tight = chain.ride(audio.copy(), rate, speaking, max_db=3.0)
+    loose = chain.ride(audio.copy(), rate, speaking, max_db=12.0)
+
+    def slope(a):
+        m = np.abs(a[0])
+        head = 20 * np.log10(np.mean(m[: 5 * rate]) + 1e-12)
+        tail = 20 * np.log10(np.mean(m[-5 * rate :]) + 1e-12)
+        return head - tail
+
+    assert slope(loose) < slope(tight) - 2.0, (slope(tight), slope(loose))
+    assert slope(audio) > slope(tight), "kuljettaja ei tehnyt mitään"

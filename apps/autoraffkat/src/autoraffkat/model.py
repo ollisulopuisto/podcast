@@ -307,6 +307,12 @@ class AudioSettings:
     # vaihe joka käsityönä tehdyssä miksauksessa on ensin. Ks.
     # chain.rider_gain — ilman puhemaskia sitä ei ajeta lainkaan.
     rider: bool = True
+    # Kuinka paljon kuljettaja saa korjata, dB. Ks. `chain.RIDER_MAX_DB`:
+    # mitattuna puheenvuoro kestää mediaanissa 36 s ja päättyy 7,2 dB
+    # hiljaisempana kuin alkaa, joten kuudella kuljettaja on katossaan
+    # suurimman osan puheajasta. Oletus on silti varovainen: kuljettaja
+    # nostaa vuoron loppua ja sen mukana huoneen.
+    rider_max_db: float = chain.RIDER_MAX_DB
     declick: bool = False  # maiskaukset ja huulinaksut pois
     # Naksujen herkkyys. Tämä riippuu puhujasta enemmän kuin mikään muu
     # ketjun arvo: toiset maiskuttavat, toiset eivät lainkaan.

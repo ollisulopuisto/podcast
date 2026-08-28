@@ -775,13 +775,26 @@ RIDER_WINDOW_S = 3.0
 RIDER_SPEED_S = 4.0
 # Kuinka paljon saa nostaa tai laskea. Kuudesta desibelistä ylöspäin ollaan
 # jo siinä että hiljainen kohta oli hiljainen syystä.
+#: Kuinka paljon kuljettaja saa korjata, dB. Oletus on varovainen, ja
+#: isäntä saa nostaa sitä: kaari on materiaalin ominaisuus eikä ketjun.
+#:
+#: Mitattuna 77 minuutin jaksolla, puheenvuoro = lauseet 1,5 s aukot umpeen:
+#:
+#:     puhuja  vuoroja yli 12 s  mediaanipituus  lasku alusta loppuun
+#:     Nyman              61          36 s              +7,2 dB
+#:     Wancke            103          25 s              +2,6 dB
+#:
+#: Nymanin vuoroista 75 % laskee yli 3 dB ja 59 % yli 6 dB, eli kuudella
+#: kuljettaja on katossaan suurimman osan hänen puheajastaan. Katto on silti
+#: tarpeen: kuljettaja nostaa vuoron loppua ja sen mukana huoneen.
 RIDER_MAX_DB = 6.0
 # Lohkon pituus tason mittaukseen.
 RIDER_BLOCK_S = 0.1
 
 
 def rider_gain(audio: np.ndarray, rate: int,
-               speech: np.ndarray | None = None) -> tuple[np.ndarray, int]:
+               speech: np.ndarray | None = None,
+               max_db: float = RIDER_MAX_DB) -> tuple[np.ndarray, int]:
     """Tasonkuljettajan vahvistus lohkoittain, dB. ``(gain, lohkon koko)``.
 
     ``speech`` kertoo lohkoittain milloin **tämän raidan oma puhuja** on
@@ -842,7 +855,7 @@ def rider_gain(audio: np.ndarray, rate: int,
     smooth = np.convolve(np.pad(voiced, pad, mode="edge"), kernel,
                          mode="same")[pad:pad + count]
     target = float(np.median(smooth[speech]))
-    want = np.clip(target - smooth, -RIDER_MAX_DB, RIDER_MAX_DB)
+    want = np.clip(target - smooth, -max_db, max_db)
     # **Nollaan oman puheen ulkopuolella**, ei edelliseen arvoon.
     #
     # Pitäminen tuntuu oikealta — se on se mitä yhden mikin kuljettaja
@@ -858,7 +871,8 @@ def rider_gain(audio: np.ndarray, rate: int,
 
 
 def ride(audio: np.ndarray, rate: int,
-         speech: np.ndarray | None = None) -> np.ndarray:
+         speech: np.ndarray | None = None,
+         max_db: float = RIDER_MAX_DB) -> np.ndarray:
     """Ajaa tasonkuljettajan. Pituus ei muutu.
 
     Kerroin lasketaan lohkoittain ja levitetään näytteille lineaarisesti
@@ -866,7 +880,7 @@ def ride(audio: np.ndarray, rate: int,
     rakenneta: tunnin mikki on 184 miljoonaa näytettä, ja float-taulukko
     sen päälle olisi kolme neljäsosaa gigatavusta.
     """
-    gain_db, block = rider_gain(audio, rate, speech)
+    gain_db, block = rider_gain(audio, rate, speech, max_db)
     if not len(gain_db) or not np.any(gain_db):
         return audio
     gain = (10.0 ** (gain_db / 20.0)).astype(np.float32)
@@ -1265,7 +1279,8 @@ def process(
     #
     # Ilman maskia ei kuljeteta: ks. ``rider_gain``.
     if speaking is not None and getattr(settings, "rider", True):
-        audio = ride(audio, rate, speaking)
+        audio = ride(audio, rate, speaking,
+                     float(getattr(settings, "rider_max_db", RIDER_MAX_DB)))
 
     # 4. Normalisointi siivotusta signaalista.
     measured = loudness(audio.mean(axis=0), rate) if target_lufs is not None else None
