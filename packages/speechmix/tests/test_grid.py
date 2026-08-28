@@ -70,3 +70,52 @@ def test_an_empty_grid_is_an_error_not_an_empty_mask():
         grid.speech_grid({}, RATE)
     with pytest.raises(EmptyResult):
         grid.speech_grid({"a": np.zeros(RATE * 5), "b": np.zeros(RATE * 5)}, RATE)
+
+
+def test_the_grid_feeds_the_masks_that_already_existed():
+    """Kaksi ruudukkoa yhdessä paketissa on kaksi vastausta samaan kysymykseen.
+
+    ``masks.duck_masks`` ja ``envelopes.duck_envelopes`` lukevat kaistoja:
+    nimi, ``on`` ja ``level``. ``SpeechGrid`` tietää kaikki kolme — se laskee
+    tasot päättääkseen kuka on kovin — mutta ei kertonut niitä, joten
+    vaimennus ei päässyt käsiksi siihen ruudukkoon jonka tämä moduuli
+    rakentaa. Näkymä on se puuttuva lenkki, ei uusi laskenta.
+    """
+    from speechmix import envelopes, masks
+
+    rate = 8000
+    seconds = 12.0
+    rng = np.random.default_rng(2)
+    n = int(rate * seconds)
+    quiet = rng.normal(size=n) * 1e-4
+    mic_a = quiet.copy()
+    mic_b = quiet.copy()
+    for lo, hi in ((1.0, 4.0), (8.0, 11.0)):
+        mic_a[int(lo * rate) : int(hi * rate)] += rng.normal(size=int((hi - lo) * rate))
+    for lo, hi in ((4.5, 7.5),):
+        mic_b[int(lo * rate) : int(hi * rate)] += rng.normal(size=int((hi - lo) * rate))
+
+    speech = grid.speech_grid({"a": mic_a, "b": mic_b}, rate)
+    lanes = speech.speakers
+
+    assert [lane.name for lane in lanes] == ["a", "b"]
+    assert speech.names == ("a", "b"), "nimet ovat nimiä, kaistat kaistoja"
+    assert lanes[0].on.shape == lanes[0].level.shape == (speech.n_frames,)
+    assert lanes[0].on[int(2.0 / grid.HOP_SEC)], "a puhuu sekunnilla 2"
+    assert not lanes[0].on[int(6.0 / grid.HOP_SEC)], "sekunnilla 6 puhuu b"
+
+    class Settings:
+        duck = True
+        duck_db = masks.DUCK_DB
+        duck_fade = masks.DUCK_FADE
+        duck_release = masks.DUCK_RELEASE
+        duck_hold = masks.DUCK_HOLD
+        duck_lookahead = masks.DUCK_LOOKAHEAD
+        duck_min_open = masks.DUCK_MIN_OPEN
+        duck_min_closed = masks.DUCK_MIN_CLOSED
+        duck_dominance_db = masks.DUCK_DOMINANCE_DB
+
+    closed = masks.duck_masks(speech, Settings())
+    assert closed, "vuorottelevilla puhujilla pitäisi syntyä vaimennusta"
+    points = envelopes.duck_envelopes(speech, Settings(), 0.0)
+    assert points, "ja siitä pitäisi syntyä käyrä"

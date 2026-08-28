@@ -15,7 +15,7 @@ the level heuristic called 74 % of one track's blocks speech when 53 % were its
 owner's, agreeing only 38 % of the time.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Mapping
 
 import numpy as np
@@ -38,6 +38,20 @@ DOMINANCE_DB = 6.0
 
 
 @dataclass
+class Lane:
+    """One microphone's row of the grid, in the shape the masks read.
+
+    ``masks.duck_masks`` and ``envelopes.duck_envelopes`` ask for exactly
+    three things — a name, whether the owner is speaking, and how loud the
+    microphone is — and pick the loudest when two are active at once.
+    """
+
+    name: str
+    on: np.ndarray
+    level: np.ndarray
+
+
+@dataclass
 class SpeechGrid:
     """Per-frame speech decisions for every microphone in a session."""
 
@@ -45,9 +59,40 @@ class SpeechGrid:
     hop_samples: int
     n_samples: int
     speaking: Dict[str, np.ndarray]
+    #: Per-frame level in dB, the measurement the decision was made from.
+    #: Kept rather than discarded because the ducking rule needs it too: "the
+    #: loudest microphone wins" is a comparison, and without the levels this
+    #: grid could not feed it.
+    levels: Dict[str, np.ndarray] = field(default_factory=dict)
 
     @property
     def speakers(self):
+        """This grid in the shape ``masks`` and ``envelopes`` read.
+
+        The package had two grids and nothing joined them: this module built
+        one from raw stems, and the masks read lanes that only a host could
+        assemble. Same information, two shapes, and so the ducking could not
+        reach the grid this module makes. The view is the missing link, not a
+        second computation.
+
+        The name is ``speakers`` because that is what every other reader in
+        the workspace already calls it — ``decide``, ``reactions``,
+        ``preview`` and the masks all walk ``grid.speakers`` expecting lanes.
+        This class alone returned bare names, which is one word meaning two
+        things in one package; the names are ``names`` now.
+        """
+        return [
+            Lane(
+                name=name,
+                on=flags,
+                level=self.levels.get(name, np.zeros(flags.shape, dtype=float)),
+            )
+            for name, flags in self.speaking.items()
+        ]
+
+    @property
+    def names(self):
+        """Whose microphones these are, in order."""
         return tuple(self.speaking)
 
     @property
@@ -151,4 +196,10 @@ def speech_grid(
             "one would quietly do nothing"
         )
 
-    return SpeechGrid(rate=rate, hop_samples=hop, n_samples=n_samples, speaking=speaking)
+    return SpeechGrid(
+        rate=rate,
+        hop_samples=hop,
+        n_samples=n_samples,
+        speaking=speaking,
+        levels=levels,
+    )

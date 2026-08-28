@@ -19,7 +19,7 @@ import pyloudnorm as pyln
 import soundfile as sf
 import yaml
 
-from automixer.domain import shared
+from automixer.domain import room, shared
 from automixer.domain.bus import Bus
 from automixer.domain.processor import (
     CeilingProcessor,
@@ -28,6 +28,7 @@ from automixer.domain.processor import (
     ExternalPluginProcessor,
     GainProcessor,
     HighPassProcessor,
+    MicDuckProcessor,
     SpectralCarverProcessor,
     SpeechChainProcessor,
     SpeechSettings,
@@ -126,11 +127,21 @@ class Mixer:
         speech_bus = Bus("speech")
         music_bus = Bus("music")
 
+        buses_cfg = self.config.get("buses", {})
+        speech_cfg = buses_cfg.get("speech", {})
+
         # 1. Parallel Track Loading
         # If previewing, we only load the segment.
         tracks_to_load = []
         for t_cfg in self.config.get("tracks", []):
-            t = Track(t_cfg["name"], t_cfg["path"], t_cfg["type"])
+            # `start_sec` on aikajanan siirtymä, ja se on nyt luettava:
+            # puheruudukko ja väylän summaus lukevat saman luvun, ja jos
+            # ruudukko ei tietäisi siirtymää, vaimennus osuisi väärään
+            # kohtaan juuri niillä raidoilla joilla siirtymä on.
+            t = Track(
+                t_cfg["name"], t_cfg["path"], t_cfg["type"],
+                start_sec=float(t_cfg.get("start_sec", 0.0)),
+            )
             tracks_to_load.append(t)
 
         update_progress(10, f"Loading and profiling {len(tracks_to_load)} tracks...")
@@ -159,6 +170,54 @@ class Mixer:
                     tracks_to_load,
                 )
             )
+
+        # Puheruudukko raa'asta äänestä, ennen kuin mikään on käsitellyt sitä.
+        # Analyysi ajetaan aina raa'asta: kompressori nostaa pohjakohinaa
+        # sanojen välissä ja tasoittaa mikkien keskinäisen eron, ja juuri
+        # niihin kahteen herkkyys ja «kovin voittaa» nojaavat.
+        speech_files = [t for t in tracks_to_load if t.type == "speech"]
+        # Nothing here resamples, so a file at another rate would put every
+        # mask at the wrong moment -- silently, because the mix still renders.
+        # Same rule as autoraffkat's, which skips the programme trim when the
+        # microphones disagree about the rate.
+        on_rate = [
+            t for t in speech_files if t.samples is not None and t.sr == self.sr
+        ]
+        for t in speech_files:
+            if t.samples is not None and t.sr != self.sr:
+                update_progress(
+                    11,
+                    f"  ! '{t.name}' is {t.sr} Hz, not {self.sr}: left out of "
+                    f"the speech grid (no de-bleed, ducking or rider for it)",
+                )
+        heard = None
+        if len(on_rate) > 1:
+            heard = room.listen(
+                [
+                    room.Mic(t.name, t.samples, start_sec=t.start_sec, path=t.path)
+                    for t in on_rate
+                ],
+                self.sr,
+            )
+            update_progress(
+                12, f"Speech grid: {len(heard.grid.speakers)} microphones"
+            )
+
+        # Ristivuoto pois **ennen liitännäistä ja ennen mlx:ää**. Järjestys ei
+        # ole makuasia: liitännäinen on generatiivinen eikä säilytä raitojen
+        # välistä lineaarista suhdetta, ja sen jälkeen vuotoa ei enää voi
+        # vähentää millään suotimella.
+        if heard is not None and speech_cfg.get("debleed_enabled", True):
+            for t in on_rate:
+                others = {o.name: o.samples for o in on_rate if o is not t}
+                cleaned, notes = heard.debleed(t.name, t.samples, others)
+                t.replace_samples(cleaned)
+                for note in notes:
+                    update_progress(13, f"  ! de-bleed {t.name} <- {note}")
+
+        # Vasta nyt mlx:ään. Muunnos ajetaan **kutsujan säikeellä**: mlx:n
+        # oletusvirta on säiekohtainen, ja työntekijällä tehty taulukko
+        # kaatuu ensimmäisellä käytöllä täällä.
         for t in tracks_to_load:
             t.to_mlx()
 
@@ -181,8 +240,22 @@ class Mixer:
         # 2. Channel Strip Config
         update_progress(20, "Auto-configuring dynamics...")
         reference_lufs = -23.0
-        buses_cfg = self.config.get("buses", {})
-        speech_cfg = buses_cfg.get("speech", {})
+
+        # Vaimennus koko ruudukosta kerralla: se on puhujien **välinen**
+        # päätös, ei yhden raidan ominaisuus, ja siksi sitä ei voi laskea
+        # raita kerrallaan.
+        mic_ducks = {}
+        if heard is not None and speech_cfg.get("mic_duck_enabled", True):
+            # Syvyys on säädin, loput mitattuja oletuksia kirjastosta.
+            duck = room.DuckSettings()
+            if speech_cfg.get("mic_duck_db") is not None:
+                duck.duck_db = float(speech_cfg["mic_duck_db"])
+            mic_ducks = heard.duck_envelopes(duck)
+            if mic_ducks:
+                update_progress(
+                    22, f"Microphone ducking: {len(mic_ducks)} of "
+                    f"{len(speech_track_list)} microphones close under others"
+                )
 
         for t in speech_track_list:
             # External plugins first: clean up before you amplify. Same order
@@ -208,6 +281,16 @@ class Mixer:
             # the target (`offset = target - THRESHOLD_REFERENCE_LUFS`), so
             # this -23 reference gives -15 / -21 / -25 -- and -15 is exactly
             # where automixer's fast stage already sat.
+            #
+            # Tasonkuljettajan maski tulee **ruudukosta**, ei signaalista.
+            # Kahden mikin nauhoituksessa puolet siitä mikä on kovaa raidalla
+            # on toinen ihminen: mitattuna heuristiikka kutsui 74 % lohkoista
+            # puheeksi kun 53 % oli omaa, ja kuljettaja nosti vuotoa niin että
+            # tasonvaihtelu huononi. Ilman ruudukkoa maski on `None` ja
+            # kirjasto ohittaa vaiheen sen sijaan että arvaisi.
+            speaking = None
+            if heard is not None and t.name in heard.tracks:
+                speaking = heard.rider_blocks(t.name, len(t.samples))
             t.add_processor(
                 SpeechChainProcessor(
                     target_lufs=reference_lufs,
@@ -221,9 +304,23 @@ class Mixer:
                         declick_sensitivity=float(
                             speech_cfg.get("desmack_sensitivity", 0.5)
                         ),
+                        rider=speech_cfg.get("rider_enabled", True),
                     ),
+                    speaking=speaking,
                 )
             )
+
+            # Vaimennus ketjun **jälkeen**: tasopäätökset jotka tulevat ketjun
+            # jälkeen voivat olla automaatiota, sitä ennen tulevat on
+            # poltettava sisään. autoraffkat kirjoittaa tämän saman käyrän
+            # Final Cutin keyframeiksi; automixerilla ei ole mitään mihin
+            # automaatio kirjoitettaisiin, joten se menee näytteisiin.
+            if mic_ducks and t.name in mic_ducks:
+                t.add_processor(
+                    MicDuckProcessor(
+                        heard.duck_gain(t.name, mic_ducks[t.name], len(t.samples))
+                    )
+                )
 
         for t in music_bus.tracks:
             l_val = t.loudness if t.loudness is not None else -30.0
@@ -427,8 +524,34 @@ def main():
         default=0.5,
         help="De-Smacker sensitivity (0.0-1.0)",
     )
+    # Three stages that need the speech grid, and could not exist before it.
+    parser.add_argument(
+        "--no-debleed",
+        action="store_false",
+        dest="speech_debleed",
+        help="Disable cross-bleed removal between microphones",
+    )
+    parser.add_argument(
+        "--no-rider",
+        action="store_false",
+        dest="speech_rider",
+        help="Disable the slow level rider ahead of the compressors",
+    )
+    parser.add_argument(
+        "--no-mic-duck",
+        action="store_false",
+        dest="speech_mic_duck",
+        help="Do not close a microphone while its owner is silent",
+    )
+    parser.add_argument(
+        "--mic-duck-db",
+        type=float,
+        default=None,
+        help="How far a closed microphone drops, dB (default: the measured -9)",
+    )
     parser.set_defaults(
-        speech_hp=True, speech_peak=True, speech_lev=True, speech_desmack=True
+        speech_hp=True, speech_peak=True, speech_lev=True, speech_desmack=True,
+        speech_debleed=True, speech_rider=True, speech_mic_duck=True,
     )
 
     # New options: Music Bus
@@ -480,6 +603,9 @@ def main():
         args.speech_peak = False
         args.speech_lev = False
         args.speech_desmack = False
+        args.speech_debleed = False
+        args.speech_rider = False
+        args.speech_mic_duck = False
         args.music_carve = False
         args.music_duck = False
 
@@ -561,6 +687,10 @@ def main():
                 "multiband_enabled": args.speech_multiband,
                 "desmack_enabled": args.speech_desmack,
                 "desmack_sensitivity": args.speech_desmack_sensitivity,
+                "debleed_enabled": args.speech_debleed,
+                "rider_enabled": args.speech_rider,
+                "mic_duck_enabled": args.speech_mic_duck,
+                "mic_duck_db": args.mic_duck_db,
                 "processors": build_proc_list(args.speech_plugins),
             },
             "music": {

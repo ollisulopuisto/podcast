@@ -308,3 +308,28 @@ def test_program_fades_ignore_the_blip_at_the_grid_edge():
     assert out, "reunan välähdys esti häivytyksen"
     assert out["a"][0] == (0.0, envelopes.FADE_FLOOR_DB)
     assert out["a"][-1] == (1500 * envelopes.HOP, envelopes.FADE_FLOOR_DB)
+
+
+def test_mask_samples_is_closed_ranges_painted_out():
+    """Sama muunnos totuusarvotaulukkona: vuodon estimointi lukee tätä.
+
+    Oli autoraffkatin ``mix._mask_samples``. Vuodon estimointi tarvitsee
+    näytekohtaiset «vain tämä puhuja» -jaksot, ja se on sama muunnos kuin
+    ``closed_ranges``illa — vain toisessa muodossa.
+    """
+    import numpy as np
+
+    from speechmix import envelopes as env
+    from speechmix.masks import HOP
+    from speechmix.timeline import Span, Track
+
+    rate = 48000
+    track = Track("mic.wav", "olli", [Span(0.0, 4.0, 0.0)])
+    mask = np.zeros(int(4.0 / HOP), dtype=bool)
+    mask[int(1.0 / HOP) : int(2.0 / HOP)] = True
+
+    out = env.mask_samples(track, mask, 0.0, rate, 4 * rate)
+
+    assert out[:rate].sum() == 0
+    assert out[rate : 2 * rate].all()
+    assert out[2 * rate :].sum() == 0

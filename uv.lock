@@ -57,7 +57,7 @@ wheels = [
 
 [[package]]
 name = "automixer"
-version = "2026.4.5.37"
+version = "2026.8.27.2"
 source = { editable = "apps/automixer" }
 dependencies = [
     { name = "mlx" },
@@ -2013,7 +2013,7 @@ wheels = [
 
 [[package]]
 name = "speechmix"
-version = "2026.8.27.1"
+version = "2026.8.27.3"
 source = { editable = "packages/speechmix" }
 dependencies = [
     { name = "numpy" },

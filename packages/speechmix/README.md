@@ -6,8 +6,8 @@ any session format.
 
 ## The seam
 
-The host gives the library **tracks with placements on a programme
-timeline** — not FCPXML assets, not session rows:
+The host gives the library **tracks with spans on a programme timeline** —
+not FCPXML assets, not session rows. It is `timeline.py`:
 
 ```python
 Track:
@@ -15,7 +15,7 @@ Track:
     speaker: str      # whose microphone this is
     mono: bool        # always True for microphones
     bit_depth: int
-    spans: [(programme_start, programme_end, file_offset)]
+    spans: [Span(programme_start, programme_end, file_offset)]
 ```
 
 Within a span the mapping is linear, and that one formula is all the timeline
@@ -25,12 +25,42 @@ knowledge the pipeline needs:
 file_time = span.file_offset + (programme_time - span.programme_start)
 ```
 
+Everything downstream — ducking, cross-bleed removal, the level rider, the
+programme ceiling — is that formula applied to something. Which is why the
+seam matters more than it looks: while those functions read `item.placements`
+instead, they were in the library but reachable by exactly one host, and
+automixer went without all four.
+
+Building a `Track` is the host's job and the only part that cannot be shared.
+autoraffkat has `mix.track_of`; a host with one file at one offset builds a
+`Track` with a single `Span`, which is automixer's whole conversion.
+
+## Who is talking
+
+`grid.py` turns raw microphone stems into the **speech grid** — one row per
+microphone, saying when its owner is speaking and how loudly. Every masking
+decision in the package reads it and nothing else, so a host that can build a
+grid gets ducking, solo masks and the rider mask without writing any of them.
+
+The decision is a *comparison across microphones*, not a threshold on one: on
+a two-microphone recording half of what is loud on a track is the other
+person. `SpeechGrid.speakers` is the view the masks read, and it exists
+because they and this module described the same thing in two shapes that
+nothing joined.
+
+`rms.py` is the other way in, for a host that has a file rather than samples
+in memory: ffmpeg decodes, the envelope is cached, and the decision layer
+reads only the finished table.
+
 ## The second seam: decisions, not samples
 
 `duck_envelopes()` returns `{speaker: [(time, dB)]}`. autoraffkat writes
 those into FCPXML as Final Cut volume keyframes so the editor can still
 change them; automixer has nothing downstream to write automation into, so it
-bakes the same curve into samples. Same computation, different emission.
+multiplies the same curve into samples with `envelope_gain`. Same
+computation, two emissions, and the shapes are asserted to match — a duck
+that depended on which host made it would be a different feature under one
+name.
 
 > Level decisions that come **after** the chain can be automation.
 > Level decisions that come **before** it must be baked in.
@@ -43,4 +73,4 @@ Every constant in this package came from measuring real material, and the
 comment next to it says what was measured. The bugs this pipeline has had
 were all silent — valid output, clean import, no exception, wrong result —
 and the number is what lets the next reader tell whether a change is an
-improvement. `SHARED-AUDIO.md` at the repo root carries the full list.
+improvement. `apps/autoraffkat/SHARED-AUDIO.md` carries the full list.

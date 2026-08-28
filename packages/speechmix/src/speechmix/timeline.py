@@ -12,6 +12,8 @@ needs.
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+import numpy as np
+
 from .errors import NotMono
 
 
@@ -89,3 +91,67 @@ class Track:
         """File time for a programme time, or None where this track is not placed."""
         span = self.span_at(programme_time)
         return None if span is None else span.to_file_time(programme_time)
+
+
+def overlaps(one: Track, other: Track) -> bool:
+    """Ovatko kaksi raitaa yhtään hetkeä yhtä aikaa ohjelmassa.
+
+    Monikamerassa osat ovat peräkkäin, joten toisen osan mikki ei voi vuotaa
+    tämän osan tiedostoon. Ilman tätä se tarjottiin silti vuotolähteeksi,
+    ``aligned`` palautti pelkkää nollaa, ja lokiin tuli «vuotopolkua ei saatu
+    ratkaistua» pariutumisesta joka ei ollut koskaan mahdollinen. Vienti ei
+    mennyt siitä rikki — oikea kumppani käsiteltiin erikseen — mutta sama
+    tiedosto näytti lokissa sekä onnistuvan että epäonnistuvan, ja se peitti
+    alleen oikean vian pitkissä osissa. Virheilmoitus jota ei voi uskoa on
+    huonompi kuin ei ilmoitusta.
+
+    Raja on kosketus eikä päällekkäisyys: peräkkäiset osat jakavat hetken.
+    """
+    for mine in one.spans:
+        for theirs in other.spans:
+            if (mine.programme_start < theirs.programme_end
+                    and theirs.programme_start < mine.programme_end):
+                return True
+    return False
+
+
+def aligned(target: Track, source: Track, source_audio, rate: int,
+            frames: int) -> np.ndarray:
+    """Lähdemikin ääni kohdetiedoston näytepaikoille.
+
+    Tiedostot ovat eri pituisia ja alkavat ohjelmassa eri kohdista, joten
+    vuotoa ei voi vähentää ennen kuin ne ovat samassa aikapohjassa. Kuvaus on
+    jakson sisällä lineaarinen ja näytetaajuus sama, joten tämä on
+    kokonaisluvun siirto — ei uudelleennäytteistystä, joka siirtäisi vaihetta
+    ja pilaisi juuri sen mitä vuodon estimoinnissa yritetään mitata.
+
+    Missään kohtaamaton kumppani kohdistuu nolliksi. Se on oikea vastaus eikä
+    virhe: ``overlaps`` on se joka päättää kannattaako paria edes kokeilla.
+    """
+    out = np.zeros(frames, dtype=np.float64)
+    samples = np.asarray(source_audio, dtype=np.float64).reshape(-1)
+    for mine in target.spans:
+        for theirs in source.spans:
+            low = max(mine.programme_start, theirs.programme_start)
+            high = min(mine.programme_end, theirs.programme_end)
+            if high <= low:
+                continue
+            t0 = int(round(mine.to_file_time(low) * rate))
+            t1 = int(round(mine.to_file_time(high) * rate))
+            # Kuinka kaukana lähdetiedosto on kohdetiedostosta samalla
+            # ohjelman hetkellä. Molemmat kuvaukset ovat kulmakertoimeltaan
+            # yksi, joten erotus on sama joka hetkellä paikan sisällä.
+            shift = int(
+                round((theirs.to_file_time(low) - mine.to_file_time(low)) * rate)
+            )
+            t0, t1 = max(0, t0), min(frames, t1)
+            s0, s1 = t0 + shift, t1 + shift
+            if s1 <= 0 or s0 >= samples.size or t1 <= t0:
+                continue
+            cut = max(0, -s0)
+            s0, t0 = s0 + cut, t0 + cut
+            cut = max(0, s1 - samples.size)
+            s1, t1 = s1 - cut, t1 - cut
+            if t1 > t0:
+                out[t0:t1] = samples[s0:s1]
+    return out
