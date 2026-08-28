@@ -415,6 +415,10 @@ def _geometry(item, frames: int) -> tuple:
 DELIVER_ROUNDS = 3
 #: Oletustoleranssi jos asetuksissa ei ole omaa, LU.
 DELIVER_TOLERANCE = 0.5
+#: Kuinka kaukana tavoitteesta jakso lasketaan «hiljaiseksi», LU. Tätä
+#: lähempänä olevaan ei kosketa: nosto on tarkoitettu ohjelman pohjalle eikä
+#: sen tavalliselle tasolle, ja liian korkea lattia litistäisi kaiken.
+LIFT_WINDOW_LU = 8.0
 
 
 def _anyone_speaking(grid, program_start: float):
@@ -509,6 +513,21 @@ def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
     measured, meter, cost = run(0.0, None)
     step_sec = meter.step_seconds()
     boost, ride = 0.0, None
+
+    # Pohja ylös **ensin**, ei viimeisenä keinona. Nosto tuo äänekkyyttä
+    # koskematta huippuihin, joten jokainen desibeli joka saadaan täältä on
+    # desibeli jota tasainen nosto ei tarvitse — ja siis rajoitusta joka jää
+    # tekemättä. Jälkikäteen tehtynä se ei ehtisi vaikuttaa mihinkään:
+    # silmukka on jo ostanut saman äänekkyyden katosta.
+    if lift_db > 0 and measured is not None:
+        rise = programme.short_term_lift(
+            meter.short_term(), target - LIFT_WINDOW_LU, step_sec, lift_db
+        )
+        if rise.any():
+            ride = rise
+            measured, meter, cost = run(0.0, ride)
+            _log(f"pohjan nosto {rise.max():.2f} dB hiljaisiin jaksoihin "
+                 f"-> {measured:.2f} LUFS")
     for round_number in range(DELIVER_ROUNDS):
         if measured is None:
             break
@@ -534,21 +553,6 @@ def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
             measured, meter, cost = run(boost, ride)
             _log(f"rajoitinbudjetti täynnä: nosto {boost:+.2f} dB, "
                  f"hinta {cost:.2f} LU -> {measured:.2f} LUFS")
-            # Loppumatka pohjasta, ei katosta. Huippuja painamalla se
-            # maksaisi transientteja; hiljaisia jaksoja nostamalla se ei
-            # maksa rajoitusta lainkaan, koska niissä on huippuvaraa.
-            short = target - measured if measured is not None else 0.0
-            if lift_db > 0 and short > tolerance:
-                floor = target - max(tolerance, short)
-                rise = programme.short_term_lift(
-                    meter.short_term(), floor, step_sec, lift_db
-                )
-                if rise.any():
-                    ride = rise if ride is None else ride[: len(rise)] + rise
-                    measured, meter, cost = run(boost, ride)
-                    _log(f"pohjan nosto {rise.max():.2f} dB hiljaisiin "
-                         f"jaksoihin -> {measured:.2f} LUFS "
-                         f"(rajoitin {cost:.2f} LU)")
             break
         _log(f"jakelutaso kierros {round_number + 1}: nosto {boost:+.2f} dB"
              + (f", veto {ride.min():.2f} dB" if ride is not None else "")
