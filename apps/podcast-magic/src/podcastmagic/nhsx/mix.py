@@ -89,26 +89,37 @@ def pan_gains(pan: float) -> tuple[float, float]:
     return (math.cos(angle), math.sin(angle))
 
 
-def envelope(length: float, sample_rate: int, fade_in: float, fade_out: float) -> np.ndarray:
-    """Leikkeen häivytyskäyrä, ``length`` sekuntia ``sample_rate``:lla.
+def fit_fades(length: float, fade_in: float, fade_out: float) -> tuple[float, float]:
+    """Häivytykset leikkeen sisään, suhteessa kutistaen.
 
-    Häivytykset **skaalataan** jos ne yhdessä ovat leikettä pidempiä. Näin
-    käy pilkotussa istunnossa: ``apply.py`` jättää lyhyitä paloja, ja
-    alueen häivytys sellaisenaan perittynä olisi paloa pidempi. Vaihtoehto
-    olisi antaa käyrien mennä ristiin, jolloin summa painuisi nollan ali ja
+    Leikettä pidemmät häivytykset syntyvät pilkkomisesta: ``apply.py``
+    jättää lyhyitä paloja, ja alueen häivytys sellaisenaan perittynä on
+    paloa pidempi. Ristiin menevien käyrien summa painuisi nollan ali, eli
     leike kääntyisi vaiheeltaan keskeltä.
-    """
-    n = int(round(length * sample_rate))
-    if n <= 0:
-        return np.zeros(0, dtype=np.float32)
 
+    Tämä on **yksi funktio kahdelle kutsujalle** eikä sama sääntö kahdesti.
+    ``plan`` soveltaa sen, jolloin jokainen ``Clip`` pitää lupauksen
+    ``fade_in + fade_out <= length``; ``envelope`` soveltaa sen uudestaan,
+    mikä on tyhjä operaatio jo mahtuville luvuille mutta pitää funktion
+    turvallisena myös suoraan kutsuttuna. Kaksi kopiota säännöstä olisi
+    täsmälleen se ajautuminen jota vastaan tämä repositorio on.
+    """
     fade_in = max(0.0, fade_in)
     fade_out = max(0.0, fade_out)
     total = fade_in + fade_out
     if total > length and total > 0:
         scale = length / total
-        fade_in *= scale
-        fade_out *= scale
+        return (fade_in * scale, fade_out * scale)
+    return (fade_in, fade_out)
+
+
+def envelope(length: float, sample_rate: int, fade_in: float, fade_out: float) -> np.ndarray:
+    """Leikkeen häivytyskäyrä, ``length`` sekuntia ``sample_rate``:lla."""
+    n = int(round(length * sample_rate))
+    if n <= 0:
+        return np.zeros(0, dtype=np.float32)
+
+    fade_in, fade_out = fit_fades(length, fade_in, fade_out)
 
     env = np.ones(n, dtype=np.float32)
     n_in = min(n, int(round(fade_in * sample_rate)))
@@ -131,6 +142,10 @@ class Clip:
     Vaimennettua leikettä ei ole: ``plan`` pudottaa ne ja laskee ne
     erikseen. Näin «miksauksessa oleva leike» tarkoittaa aina «tämä
     kuuluu», eikä jokaisen lukijan tarvitse muistaa tarkistaa lippua.
+
+    Samasta syystä häivytykset **mahtuvat aina**:
+    ``fade_in + fade_out <= length``. Lukijan ei tarvitse tietää
+    kutistussääntöä — myöskään sen lukijan, joka on toista kieltä.
     """
 
     path: str
@@ -263,6 +278,11 @@ def plan(session: Session, extra_dir: str = "") -> Mix:
                 gain, pan = _gain_and_pan(elem, KNOWN_REGION_ATTRS, mixdown.unknown)
                 fade_in, fade_out = _fades(elem, mixdown.unknown)
 
+            # Kutistetaan tässä, jotta jokainen lukija — myös QuickLookin
+            # Swift-puoli, joka ei jaa tämän kanssa riviäkään — saa
+            # valmiiksi mahtuvat luvut eikä sääntöä opeteltavakseen.
+            fits_in, fits_out = fit_fades(region.length, fade_in, fade_out)
+
             if track_muted or (elem is not None and _truthy(elem.get("Muted"))):
                 mixdown.muted += 1
                 continue
@@ -287,8 +307,8 @@ def plan(session: Session, extra_dir: str = "") -> Mix:
                     gain=gain * track_gain,
                     # Raidan panorointi siirtää leikkeen omaa, ei korvaa sitä.
                     pan=max(-1.0, min(1.0, pan + track_pan)),
-                    fade_in=fade_in,
-                    fade_out=fade_out,
+                    fade_in=fits_in,
+                    fade_out=fits_out,
                 )
             )
 

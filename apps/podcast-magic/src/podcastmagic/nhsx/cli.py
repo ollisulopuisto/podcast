@@ -45,11 +45,29 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--plan", action="store_true", help="kerro mitä kuuluisi, älä renderöi")
     parser.add_argument("--json", action="store_true", help="sama koneluettavana")
     parser.add_argument("--inspect", action="store_true", help="kartoita formaatti")
+    parser.add_argument(
+        "--conformance",
+        action="store_true",
+        help="suunnitelma ilman koneen omia polkuja — kahden toteutuksen yhteinen muoto",
+    )
     return parser
+
+
+# Suunnitelman muoto. Nostetaan kun kenttä katoaa tai vaihtaa merkitystä —
+# ei kun uusi kenttä ilmestyy, sillä lukija saa jättää tuntemattoman
+# huomiotta. QuickLook-esikatselu kieltäytyy versiosta jota se ei tunne
+# mieluummin kuin lukee sen väärin.
+PLAN_VERSION = 1
+
+# Montako desimaalia konetarkistettavassa suunnitelmassa. Kuudella kaksi eri
+# kielellä laskettua `10 ** (dB / 20)` on varmasti sama luku; ilman
+# pyöristystä vertailu olisi liukulukujen viimeisen bitin varassa.
+CONFORMANCE_DIGITS = 6
 
 
 def _plan_as_dict(mixdown: mix.Mix) -> dict:
     return {
+        "version": PLAN_VERSION,
         "duration": mixdown.duration,
         "muted": mixdown.muted,
         "missing": mixdown.missing,
@@ -58,6 +76,9 @@ def _plan_as_dict(mixdown: mix.Mix) -> dict:
         "clips": [
             {
                 "path": clip.path,
+                # Poolin nimi polun rinnalla: polku on koneen oma, nimi on
+                # istunnon. Esikatselu paikantaa tiedostot itse.
+                "file": Path(clip.path).name,
                 "speaker": clip.speaker,
                 "start": clip.start,
                 "length": clip.length,
@@ -66,6 +87,43 @@ def _plan_as_dict(mixdown: mix.Mix) -> dict:
                 "pan": clip.pan,
                 "fade_in": clip.fade_in,
                 "fade_out": clip.fade_out,
+            }
+            for clip in mixdown.clips
+        ],
+    }
+
+
+def conformance_dict(mixdown: mix.Mix) -> dict:
+    """Suunnitelma ilman mitään koneen omaa, pyöristettynä.
+
+    Tämä on se muoto, jonka **molempien** toteutusten on tuotettava samasta
+    istunnosta: tämä ja QuickLook-esikatselun Swift-jäsennin. Ne eivät jaa
+    riviäkään koodia, joten ainoa tapa pitää ne samaa mieltä on istunto,
+    jonka vastaus on kirjoitettu muistiin ja jota molemmat testaavat itseään
+    vasten. Sama sääntö kuin työtilan jäsenillä, kielirajan yli.
+
+    Poluista jää nimi: absoluuttinen polku on sen koneen oma jolla testi
+    ajettiin, eikä se kuulu yhteiseen totuuteen. `missing` jää pois samasta
+    syystä — se kertoo levystä, ei istunnosta.
+    """
+    digits = CONFORMANCE_DIGITS
+    return {
+        "version": PLAN_VERSION,
+        "duration": round(mixdown.duration, digits),
+        "muted": mixdown.muted,
+        "unknown": mixdown.unknown,
+        "speakers": mixdown.speakers,
+        "clips": [
+            {
+                "file": Path(clip.path).name,
+                "speaker": clip.speaker,
+                "start": round(clip.start, digits),
+                "length": round(clip.length, digits),
+                "file_offset": round(clip.file_offset, digits),
+                "gain": round(clip.gain, digits),
+                "pan": round(clip.pan, digits),
+                "fade_in": round(clip.fade_in, digits),
+                "fade_out": round(clip.fade_out, digits),
             }
             for clip in mixdown.clips
         ],
@@ -107,6 +165,10 @@ def main(argv: list[str] | None = None, decode: Callable[..., object] | None = N
         return 0
 
     mixdown = mix.plan(session, args.audio_dir)
+
+    if args.conformance:
+        print(json.dumps(conformance_dict(mixdown), indent=2, ensure_ascii=False))
+        return 0
 
     if args.json:
         print(json.dumps(_plan_as_dict(mixdown), indent=2, ensure_ascii=False))

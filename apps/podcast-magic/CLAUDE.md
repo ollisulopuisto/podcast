@@ -228,6 +228,31 @@ mitään. Kun muoto mitataan, se vaihdetaan yhdessä funktiossa (`envelope`).
 Leikettä pidemmät häivytykset **skaalataan** — pilkkominen jättää lyhyitä
 paloja, ja perittynä käyrät menisivät ristiin ja summa nollan ali.
 
+### `nhsx/`:llä on toinen toteutus, ja se on toista kieltä
+
+`quicklook/` on QuickLook-esikatselu: `.nhsx` sisään, aikajana ja ääni ulos
+Finderin välilyönnistä. Se **jäsentää istunnon uudestaan Swiftillä** eikä
+kutsu tätä koodia. Se ei ole valinta: macOS-laajennus on hiekkalaatikossa
+eikä voi käynnistää `nhsx-render`iä.
+
+Kaksi toteutusta samasta formaatista on täsmälleen se ajautuminen jota
+vastaan tämä repositorio on — mutta tätä ei voi ratkaista jakamalla koodi.
+Mitä voi jakaa on **vastaus**: `quicklook/Conformance/session.nhsx` on
+istunto, joka erottaa jokaisen kohdan jossa kaksi jäsennintä voi mennä eri
+mieltä huomaamatta, ja `plan.json` on sen kirjattu vastaus. Molemmat
+toteutukset testaavat itseään sitä vasten
+(`tests/test_conformance.py` täällä, `Tests/NhsxKitTests/` siellä).
+
+**Kun muutat `nhsx/read.py`:tä tai `nhsx/mix.py`:tä, muutat sopimusta.**
+Jos vastaus muuttuu, se luodaan uudestaan tahallaan ja diffi luetaan —
+muuttunut luku on joko korjaus tai regressio — ja Swift-puoli muutetaan
+samassa hengessä. Muuten esikatselu näyttää eri jakson kuin `nhsx-render`
+renderöi, eikä kumpikaan kaadu.
+
+`quicklook/` **ei ole työtilan jäsen** eikä voi olla: `apps/*` vaatii
+`pyproject.toml`in, ja Swift-hakemisto siellä kaataa `uv sync`in koko
+työtilalta. Siksi se on juuressa ja sillä on oma työnkulkunsa.
+
 ### Purkaja on parametri — ja siksi tarvitaan myös päästä päähän -testi
 
 `render.blocks` ottaa purkajan argumenttina. Ilman sitä jokainen summauksen

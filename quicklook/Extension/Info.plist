@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDisplayName</key>
+  <string>NHSX Quick Look</string>
+  <key>CFBundleIdentifier</key>
+  <string>fi.sulopuisto.nhsx-quicklook.preview</string>
+  <key>CFBundlePackageType</key>
+  <string>XPC!</string>
+  <key>NSExtension</key>
+  <dict>
+    <key>NSExtensionPointIdentifier</key>
+    <string>com.apple.quicklook.preview</string>
+    <key>NSExtensionPrincipalClass</key>
+    <string>NhsxQuickLook.PreviewViewController</string>
+    <key>NSExtensionAttributes</key>
+    <dict>
+      <!-- Mitä tämä osaa näyttää. Ks. README: `.nhsx`:n tyyppitunniste ei
+           ole järjestelmän tuntema, joten sovellus tuo sen itse. -->
+      <key>QLSupportedContentTypes</key>
+      <array>
+        <string>com.hindenburg.nhsx</string>
+      </array>
+      <!-- Istunto luetaan kerralla eikä säikeiden kesken jaeta. -->
+      <key>QLSupportsSearchableItems</key>
+      <false/>
+    </dict>
+  </dict>
+</dict>
+</plist>

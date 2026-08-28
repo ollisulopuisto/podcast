@@ -229,6 +229,39 @@ def test_a_fade_child_element_is_read_as_a_fade(tmp_path):
     assert clip.fade_out == pytest.approx(1.0)
 
 
+def test_the_fades_in_the_plan_already_fit_the_clip(tmp_path):
+    """Kutistus kuuluu suunnitelmaan, ei vasta renderöintiin.
+
+    Sääntö oli ennen vain `envelope`ssa, eli renderöinnin sisällä. Silloin
+    suunnitelma kertoi kahden sekunnin häivytykset sekunnin mittaisesta
+    leikkeestä, ja jokaisen lukijan piti tietää kutistaa ne itse — myös
+    QuickLook-esikatselun, joka on toista kieltä eikä jaa riviäkään koodia.
+    Sääntö, joka on kerrottava jokaiselle lukijalle erikseen, on sääntö jota
+    joku lukija ei noudata.
+
+    Nyt `Clip` pitää lupauksen `fade_in + fade_out <= length`, ja
+    `envelope` saa valmiiksi mahtuvat luvut.
+    """
+    s = session_with(
+        '<Region Ref="1" Start="0" Length="1.0"><Fade In="2.0" Out="2.0"/></Region>',
+        tmp_path=tmp_path,
+    )
+    clip = mix.plan(s).clips[0]
+    assert clip.fade_in == pytest.approx(0.5)
+    assert clip.fade_out == pytest.approx(0.5)
+    assert clip.fade_in + clip.fade_out <= clip.length
+
+
+def test_fades_that_already_fit_are_left_alone(tmp_path):
+    s = session_with(
+        '<Region Ref="1" Start="0" Length="10.0"><Fade In="1.5" Out="3.0"/></Region>',
+        tmp_path=tmp_path,
+    )
+    clip = mix.plan(s).clips[0]
+    assert clip.fade_in == pytest.approx(1.5)
+    assert clip.fade_out == pytest.approx(3.0)
+
+
 def test_a_gain_attribute_is_read_as_decibels(tmp_path):
     s = session_with('<Region Ref="1" Start="0" Length="4" Gain="-6.02"/>', tmp_path=tmp_path)
     assert mix.plan(s).clips[0].gain == pytest.approx(0.5, abs=0.001)

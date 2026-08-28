@@ -1,0 +1,58 @@
+# Xcode-projekti generoidaan tästä XcodeGenillä, eikä `.xcodeproj`ia
+# säilytetä repositoriossa.
+#
+# Syy on sama kuin muuallakin täällä: `.xcodeproj` on konetuotettua XML:ää,
+# jonka diffiä ei voi lukea. Kaksi haaraa, jotka molemmat lisäävät
+# tiedoston, tuottavat ristiriidan jota ei voi ratkaista katsomalla — ja
+# ratkaisu, joka näyttää oikealta, voi pudottaa kohteen käännöksestä ilman
+# että mikään kaatuu.
+#
+#     brew install xcodegen && xcodegen generate
+name: NhsxQuickLook
+options:
+  bundleIdPrefix: fi.sulopuisto
+  deploymentTarget:
+    macOS: "12.0"
+  createIntermediateGroups: true
+
+packages:
+  NhsxKit:
+    path: .
+
+targets:
+
+  # Isäntäsovellus. Ei tee mitään paitsi kanna laajennusta — ks.
+  # `App/AppDelegate.swift`.
+  NhsxQuickLookApp:
+    type: application
+    platform: macOS
+    sources: [App]
+    info:
+      path: App/Info.plist
+    settings:
+      PRODUCT_NAME: NHSX Quick Look
+      PRODUCT_BUNDLE_IDENTIFIER: fi.sulopuisto.nhsx-quicklook
+      MARKETING_VERSION: "2026.8.28"
+      CURRENT_PROJECT_VERSION: "1"
+      ENABLE_HARDENED_RUNTIME: YES
+    dependencies:
+      - target: NhsxQuickLookExtension
+        embed: true
+        codeSign: true
+
+  # Itse laajennus. Menee sovelluksen `Contents/PlugIns/`iin.
+  NhsxQuickLookExtension:
+    type: app-extension
+    platform: macOS
+    sources: [Extension]
+    info:
+      path: Extension/Info.plist
+    settings:
+      PRODUCT_NAME: NhsxQuickLook
+      PRODUCT_BUNDLE_IDENTIFIER: fi.sulopuisto.nhsx-quicklook.preview
+      MARKETING_VERSION: "2026.8.28"
+      CURRENT_PROJECT_VERSION: "1"
+      ENABLE_HARDENED_RUNTIME: YES
+    dependencies:
+      - package: NhsxKit
+        product: NhsxKit
