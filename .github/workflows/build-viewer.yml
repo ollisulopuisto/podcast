@@ -79,6 +79,18 @@ jobs:
           grep -q "app-sandbox" /tmp/ent.txt \
             || { echo "Laajennukselta puuttuu hiekkalaatikko — se ei rekisteröidy."; exit 1; }
 
+          # `get-task-allow` päästää virheenjäljittimen kiinni sovellukseen ja
+          # on Applen notarisoinnissa suora hylkäys. Xcode lisää sen itse kun
+          # allekirjoitus on «Sign to Run Locally», joten sen poissaolo on
+          # väitettävä — se palaisi hiljaa yhdestä asetusmuutoksesta.
+          for part in "$app" "$app/Contents/PlugIns/NhsxQuickLook.appex"; do
+            if codesign -d --entitlements - "$part" 2>/dev/null | grep -q "get-task-allow"; then
+              echo "$part kantaa get-task-allow'ta — sitä ei jaeta."
+              exit 1
+            fi
+          done
+          echo "Ei get-task-allow'ta kummassakaan."
+
       - name: Disk image
         working-directory: viewer
         run: |
