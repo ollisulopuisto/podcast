@@ -217,3 +217,57 @@ def test_the_shown_name_distinguishes_exports():
         for n in range(2, 6)
     }
     assert len(names) == 4
+
+
+def test_two_exports_to_the_same_path_are_still_told_apart():
+    """Nimen erottelu ei saa nojata siihen mitä levylle jäi.
+
+    `next_output_path` numeroi vasta silloin kun edellinen vienti on yhä
+    paikallaan. Tuotu vienti siirretään arkistoon tai poistetaan — se on
+    tavallista eikä väärin — ja seuraava vienti saa silloin saman
+    tiedostonimen, saman tunnuksen ja saman projektin nimen. Final Cutissa
+    on kaksi samannimistä projektia eikä kumpikaan kerro kummasta on kyse.
+
+    Vika on hiljainen: tiedosto on kelvollinen, tuonti onnistuu, ja nimi
+    näyttää oikealta yksinään katsottuna.
+    """
+    from autoraffkat.project import fcp_project_name
+
+    path = "/x/jakso-cut broadcast audio.fcpxml"
+    first = fcp_project_name("Rough cut", path, stamp="28.8. 9:09")
+    second = fcp_project_name("Rough cut", path, stamp="28.8. 11:41")
+    assert first != second, (first, second)
+    assert "28.8. 9:09" in first
+
+
+def test_the_export_stamps_the_name_it_writes():
+    """Sovellus antaa leiman, ei vain voisi antaa.
+
+    Valinnainen parametri jota kutsuja ei anna on sama kuin parametria ei
+    olisi, ja juuri tässä funktiossa se tarkoittaa taas kahta samannimistä
+    projektia.
+    """
+    import inspect
+
+    from autoraffkat.server import app as server_app
+
+    source = inspect.getsource(server_app)
+    at = source.index("fcp_project_name(")
+    assert "stamp=" in source[at : at + 200], "vienti ei anna leimaa"
+
+
+def test_the_stamp_does_not_mangle_the_clock():
+    """Nollien riisuminen merkkijonosta osuu myös kellonaikaan.
+
+    `strftime("%d.%m. %H:%M")` antaa «01.09. 10:05», ja siitä nollat pois
+    siivoava `replace(".0", ".")` teki «1.9. 10:5» — väärä kellonaika kerran
+    kymmenessä minuutissa, eikä mikään kaadu.
+    """
+    import time as _time
+
+    from autoraffkat.project import stamp_now
+
+    when = _time.struct_time((2026, 9, 1, 10, 5, 0, 1, 244, -1))
+    assert stamp_now(when) == "1.9. 10:05"
+    noon = _time.struct_time((2026, 12, 28, 9, 9, 0, 0, 363, -1))
+    assert stamp_now(noon) == "28.12. 9:09"

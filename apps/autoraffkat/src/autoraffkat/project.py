@@ -10,6 +10,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import time
 from dataclasses import dataclass, field
 
 from .model import (
@@ -118,7 +119,18 @@ def _output_base(xml_path: str, tag: str) -> str:
     return f"{base} {tag}" if tag else base
 
 
-def fcp_project_name(name: str, out_path: str) -> str:
+def stamp_now(when: time.struct_time | None = None) -> str:
+    """Viennin hetki lyhyesti, «28.8. 9:09».
+
+    Kentät poimitaan eikä nollia riisuta merkkijonosta: ``strftime``in
+    tulosta siivoava ``replace(".0", ".")`` osuu myös kellonaikaan, ja
+    «10.05» olisi muuttunut «10.5»:ksi kerran kymmenessä minuutissa.
+    """
+    t = when or time.localtime()
+    return f"{t.tm_mday}.{t.tm_mon}. {t.tm_hour}:{t.tm_min:02d}"
+
+
+def fcp_project_name(name: str, out_path: str, stamp: str = "") -> str:
     """Nimi jonka Final Cut näyttää selaimessaan.
 
     Tiedostonimi kantaa tagin ja numeron, mutta Final Cut ei näytä
@@ -129,13 +141,22 @@ def fcp_project_name(name: str, out_path: str) -> str:
 
     Nimeen liitetään siis se osa tiedoston nimestä joka erottaa sen muista:
     tagi ja numero, esimerkiksi «broadcast audio v8».
+
+    **Ja leima**, koska pelkkä tiedostonimi ei riitä. ``next_output_path``
+    numeroi vasta silloin kun edellinen vienti on yhä paikallaan, ja tuotu
+    vienti siirretään arkistoon tai poistetaan — se on tavallista eikä
+    väärin. Seuraava vienti saa silloin saman tiedostonimen, saman tunnuksen
+    ja saman nimen, ja Final Cutissa on kaksi samannimistä projektia. Vika on
+    hiljainen: tiedosto on kelvollinen, tuonti onnistuu, ja nimi näyttää
+    oikealta yksinään katsottuna. Leima ei riipu siitä mitä levylle jäi.
     """
     stem = os.path.splitext(os.path.basename(out_path))[0]
     marker = ""
     at = stem.find(OUTPUT_SUFFIX)
     if at >= 0:
         marker = stem[at + len(OUTPUT_SUFFIX) :].strip()
-    return f"{name} · {marker}" if marker else name
+    parts = [p for p in (name, marker, stamp) if p]
+    return " · ".join(parts)
 
 
 def next_output_path(xml_path: str, tag: str = "") -> str:

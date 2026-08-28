@@ -1291,7 +1291,9 @@ def create_app(state: AppState) -> FastAPI:
             # erotteleva osa on liitettävä siihen tai tuonnit ovat
             # selaimessa erottamattomia.
             shown_name = project.fcp_project_name(
-                state.settings.globals.project_name, out_path
+                state.settings.globals.project_name,
+                out_path,
+                stamp=project.stamp_now(),
             )
             if os.path.abspath(out_path) == os.path.abspath(state.xml_path):
                 raise HTTPException(400, t("export.would_overwrite"))
