@@ -224,6 +224,21 @@ def closed_ranges(
     return out
 
 
+def mask_samples(track: Track, mask, program_start: float, rate: int,
+                 frames: int) -> np.ndarray:
+    """Ruudukon maski tämän tiedoston näytteiksi. Sama muunnos, maalattuna.
+
+    Vuodon estimointi lukee tätä: se tarvitsee näytekohtaiset «vain tämä
+    puhuja» -jaksot, ja ``closed_ranges`` antaa saman asian väleinä.
+    """
+    out = np.zeros(frames, dtype=bool)
+    for first, last in closed_ranges(track, mask, program_start, rate):
+        low, high = max(0, first), min(frames, last)
+        if high > low:
+            out[low:high] = True
+    return out
+
+
 def speech_blocks(track: Track, mask, program_start: float, rate: int,
                   block: int, count: int) -> np.ndarray:
     """Puhujan oma puhe lohkoittain tässä tiedostossa.

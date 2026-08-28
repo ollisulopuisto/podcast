@@ -109,6 +109,91 @@ def test_the_constants_come_from_the_library_too():
     assert shared.MAX_GR_DB is chain.MAX_GR_DB
 
 
+@pytest.mark.parametrize(
+    "method,module,name",
+    [
+        ("duck_envelopes", "envelopes", "duck_envelopes"),
+        ("duck_gain", "envelopes", "duck_gain"),
+        ("solo_masks", "masks", "solo_masks"),
+        ("speech_masks", "masks", "speech_masks"),
+        ("debleed", "debleed", "remove"),
+    ],
+)
+def test_the_decision_layer_is_the_librarys_too(method, module, name, monkeypatch):
+    """`room.py` on sauma, ei toteutus.
+
+    Ketjun vaiheet olivat jaettuja jo ennen tätä; päätöskerros ei ollut,
+    koska sen tie aikajanalle kulki FCPXML:n ``item.placements``in kautta.
+    Nyt se on jaettu, ja tämä on se väite jota ei saa purkaa: jokainen
+    `Room`in metodi kutsuu kirjaston omaa funktiota, joten autoraffkatin
+    puolella mitattu korjaus tulee tänne samassa commitissa.
+
+    Kirjaston funktio korvataan ja katsotaan kutsuttiinko sitä. Lähdekoodin
+    lukeminen kelpaisi kanssa, mutta se menisi rikki muotoilusta; tämä menee
+    rikki vain siitä mistä pitääkin, eli jos laskenta siirtyy tänne.
+    """
+    import importlib
+
+    from automixer.domain import room
+
+    called = []
+    library = importlib.import_module(f"speechmix.{module}")
+    original = getattr(library, name)
+
+    def spy(*args, **kwargs):
+        called.append(True)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(library, name, spy)
+
+    heard = room.listen(
+        [
+            room.Mic("A", speech()),
+            room.Mic("B", (speech() * 0.25).astype(np.float32)),
+        ],
+        RATE,
+    )
+    {
+        "duck_envelopes": lambda: heard.duck_envelopes(room.DuckSettings()),
+        "duck_gain": lambda: heard.duck_gain("A", [(0.0, 0.0), (1.0, -9.0)], RATE),
+        "solo_masks": heard.solo_masks,
+        "speech_masks": heard.speech_masks,
+        "debleed": lambda: heard.debleed(
+            "A", heard.samples_of("A"), {"B": heard.samples_of("B")}
+        ),
+    }[method]()
+
+    assert called, f"Room.{method} ei kutsunut speechmix.{module}.{name}"
+
+
+def test_the_duck_defaults_are_the_measured_ones():
+    """Mitattu luku kopioituna on kaksi vastausta samaan kysymykseen.
+
+    Vaimennuksen ajat ja syvyys mitattiin oikealla aineistolla ja olivat
+    autoraffkatin ``AudioSettings``issa. Jos automixer kirjoittaisi omansa,
+    ne eivät kaataisi mitään — ne alkaisivat vain erota, ja kaksi eri
+    vaimennusta yhden nimen alla on tarkalleen se vika jota vastaan tämä
+    työtila on.
+
+    autoraffkatin puolella on tämän peilikuva. Kumpikin sovellus
+    tarkistetaan **kirjastoa** vastaan eikä toista sovellusta vastaan:
+    kirjasto on se yksi paikka jossa muutos tehdään, eikä kummankaan testin
+    tarvitse tuoda toista sovellusta sisään.
+    """
+    from automixer.domain.room import DuckSettings
+    from speechmix import masks
+
+    made = DuckSettings()
+    assert made.duck_db == masks.DUCK_DB
+    assert made.duck_fade == masks.DUCK_FADE
+    assert made.duck_release == masks.DUCK_RELEASE
+    assert made.duck_hold == masks.DUCK_HOLD
+    assert made.duck_lookahead == masks.DUCK_LOOKAHEAD
+    assert made.duck_min_open == masks.DUCK_MIN_OPEN
+    assert made.duck_min_closed == masks.DUCK_MIN_CLOSED
+    assert made.duck_dominance_db == masks.DUCK_DOMINANCE_DB
+
+
 # --------------------------------------------------------------------------
 # 1. Naksunpoisto tekee jotain
 # --------------------------------------------------------------------------

@@ -5,10 +5,13 @@ that. The conversion between programme time and file time is linear inside a
 span, and that one formula is all the timeline knowledge the pipeline needs.
 """
 
+import numpy as np
 import pytest
 
 from speechmix.errors import NotMono
-from speechmix.timeline import Span, Track
+from speechmix.timeline import Span, Track, aligned, overlaps
+
+RATE = 48000
 
 
 def test_programme_time_maps_to_file_time():
@@ -38,3 +41,57 @@ def test_a_microphone_is_always_mono():
     """
     with pytest.raises(NotMono):
         Track("mic.wav", "olli", [], mono=False)
+
+
+def test_two_parts_of_a_multicam_never_overlap():
+    """Peräkkäisten osien mikit eivät voi vuotaa toisiinsa.
+
+    Ilman tätä toisen osan tiedosto tarjottiin silti vuotolähteeksi,
+    ``aligned`` palautti pelkkää nollaa, ja lokiin tuli «vuotopolkua ei
+    saatu ratkaistua» pariutumisesta joka ei ollut koskaan mahdollinen.
+    Virheilmoitus jota ei voi uskoa on huonompi kuin ei ilmoitusta.
+
+    Oli autoraffkatin ``mix.overlaps``. Se on puhdasta jaksogeometriaa eikä
+    tunne FCPXML:ää, ja automixerin vuodonvähennys tarvitsee saman säännön.
+    """
+    first = Track("a.wav", "olli", [Span(0.0, 819.0)])
+    second = Track("b.wav", "olli", [Span(819.0, 4632.0)])
+
+    assert overlaps(first, first)
+    assert not overlaps(first, second), "eri osat eivät ole päällekkäin"
+    assert not overlaps(second, first)
+    # Raja on kosketus, ei päällekkäisyys: peräkkäiset osat jakavat hetken.
+    assert not overlaps(Track("", "", [Span(0.0, 10.0)]), Track("", "", [Span(10.0, 20.0)]))
+    assert overlaps(Track("", "", [Span(0.0, 10.0)]), Track("", "", [Span(9.0, 20.0)]))
+
+
+def test_the_partner_lands_on_the_same_timeline_moment():
+    """Eri tiedostot, eri alut — vuotoa ei voi vähentää ennen kohdistusta.
+
+    Kuvaus on jakson sisällä lineaarinen ja näytetaajuus sama, joten tämä on
+    kokonaisluvun siirto. Uudelleennäytteistys siirtäisi vaihetta ja pilaisi
+    juuri sen mitä vuodon estimoinnissa yritetään mitata.
+
+    Oli autoraffkatin ``mix._aligned``, jonne automixer ei ylety.
+    """
+    # Kohde on aikajanan hetkellä 0 tiedostonsa hetkestä 0.
+    target = Track("target.wav", "a", [Span(0.0, 4.0, 0.0)])
+    # Lähde on samassa kohdassa aikajanaa mutta alkaa tiedostossaan
+    # sekunnin myöhemmin.
+    source = Track("source.wav", "b", [Span(0.0, 4.0, 1.0)])
+
+    out = aligned(target, source, np.arange(4 * RATE, dtype=np.float64), RATE, 4 * RATE)
+
+    # Aikajanan hetki 0 on lähdetiedoston hetki 1 s.
+    assert out[0] == pytest.approx(float(RATE))
+    assert out[RATE] == pytest.approx(float(2 * RATE))
+
+
+def test_a_partner_that_is_never_present_aligns_to_silence():
+    """Nolla on oikea vastaus, ja se on eri asia kuin virhe."""
+    target = Track("t.wav", "a", [Span(0.0, 4.0)])
+    elsewhere = Track("s.wav", "b", [Span(100.0, 104.0)])
+
+    out = aligned(target, elsewhere, np.ones(4 * RATE), RATE, 4 * RATE)
+
+    assert not out.any()

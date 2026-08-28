@@ -202,6 +202,30 @@ class Track:
         self._samples = data_mono.astype(np.float32)
         return self._samples
 
+    @property
+    def samples(self) -> np.ndarray:
+        """What `read` put in memory, before mlx sees it.
+
+        The de-bleeder and the speech grid both work on raw numpy, and both
+        run before `to_mlx`: the leakage between two microphones is linear
+        only until something generative touches it, and the grid is measured
+        from the raw audio because a compressor lifts the noise floor
+        between words and flattens the difference between microphones.
+        """
+        return self._samples
+
+    def replace_samples(self, samples: np.ndarray) -> None:
+        """Puts cleaned samples back, keeping the sample count.
+
+        The count is not negotiable: the bus sums tracks by offset, so a
+        track that changed length would move everything after it.
+        """
+        if self._samples is not None and len(samples) != len(self._samples):
+            raise ValueError(
+                f"{self.name}: {len(self._samples)} -> {len(samples)} samples"
+            )
+        self._samples = np.asarray(samples, dtype=np.float32)
+
     def load(self, start_time: float = 0.0, duration: float = -1.0) -> mx.array:
         """
         Reads the file and converts it, both on the calling thread.

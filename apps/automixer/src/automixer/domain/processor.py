@@ -352,11 +352,14 @@ class SpeechSettings:
     leveler_threshold_db: float = shared.LEVELER_THRESHOLD_DB
     declick: bool = True
     declick_sensitivity: float = 0.5
-    # Tasonkuljettaja tarvitsee puhemaskin (`speaking`), ja sellaista
-    # automixer ei rakenna: se ei tunne mikrofoneja vaan raitoja. Ilman
-    # maskia `chain.process` ohittaa vaiheen joka tapauksessa; tämä on
-    # tässä siksi, ettei sen puuttuminen näytä unohdukselta.
-    rider: bool = False
+    # Tasonkuljettaja: hidas tason tasaus **ennen** kompressoreita, se vaihe
+    # joka käsityönä tehdyssä miksauksessa on ensin. Se tarvitsee puhemaskin,
+    # ja `domain/room.py` rakentaa sellaisen automixerin omista raidoista —
+    # tämä oli `False` niin kauan kuin sitä ei ollut. Ilman maskia
+    # `chain.process` ohittaa vaiheen joka tapauksessa eikä arvaa signaalista:
+    # mitattuna tasoheuristiikka kutsui 74 % lohkoista puheeksi kun 53 % oli
+    # omaa, ja kuljettaja nosti toisen puhujan vuotoa.
+    rider: bool = True
 
 
 class SpeechChainProcessor(Processor):
@@ -379,15 +382,22 @@ class SpeechChainProcessor(Processor):
     tänne. -15 on tarkalleen se kynnys jolla automixerin nopea vaihe jo oli.
     """
 
-    def __init__(self, target_lufs: float, settings: SpeechSettings | None = None):
+    def __init__(self, target_lufs: float, settings: SpeechSettings | None = None,
+                 speaking=None):
         """
         Args:
             target_lufs (float): Taso johon raita normalisoidaan; myös se
                 mistä kynnysten siirtymä lasketaan.
             settings (SpeechSettings, optional): Ketjun asetukset.
+            speaking (optional): Tasonkuljettajan maski lohkoittain — milloin
+                **tämän raidan oma puhuja** on äänessä. `domain/room.py`
+                rakentaa sen puheruudukosta. ``None`` ohittaa vaiheen; se on
+                oikea vastaus silloin kun ruudukkoa ei ole, koska signaalista
+                pääteltynä puolet «puheesta» olisi toisen mikin vuotoa.
         """
         self.target_lufs = target_lufs
         self.settings = settings or SpeechSettings()
+        self.speaking = speaking
 
     def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
         audio = shared.as_channels(signal)
@@ -405,8 +415,51 @@ class SpeechChainProcessor(Processor):
             speech=True,
             target_lufs=self.target_lufs,
             stage=stage,
+            speaking=self.speaking,
         )
         return shared.from_channels(out, signal)
+
+
+class MicDuckProcessor(Processor):
+    """Mikin sulkeminen kun sen omistaja on hiljaa, näytteisiin poltettuna.
+
+    Älä sekoita tätä `DuckingProcessor`iin. Se sivuketjuttaa **musiikkipedin**
+    summatusta puheesta; tämä sulkee **mikrofonin** toisen puhujan puheen alla.
+    Molempia halutaan, ja vain jälkimmäinen on kirjastossa.
+
+    Käyrä tulee `speechmix.envelopes.duck_envelopes`ista, eli se on sama
+    laskenta jonka autoraffkat kirjoittaa Final Cutin äänenvoimakkuuden
+    keyframeiksi. Ero on emissiossa: automixer vie valmiin wavin, jossa ei ole
+    mitään mihin automaatio kirjoitettaisiin, joten se kertoo käyrän
+    näytteisiin. Sama päätös, ja siksi sama tulos.
+
+    Tämä ajetaan ketjun **jälkeen**: tasopäätökset jotka tulevat ketjun
+    jälkeen voivat olla automaatiota, sitä ennen tulevat on poltettava sisään.
+    Vaimennus on jälkeen, tasonkuljettaja ennen.
+    """
+
+    def __init__(self, gain: np.ndarray):
+        """
+        Args:
+            gain (np.ndarray): Kerroin näytettä kohden, `Room.duck_gain`ista.
+                Yhden alkion taulukko tarkoittaa «ei vaimennusta»: se
+                levittyy, eikä koko ohjelman mittaista ykköstaulukkoa
+                kannata varata.
+        """
+        self.gain = np.asarray(gain, dtype=np.float32)
+
+    def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
+        if self.gain.size <= 1:
+            return signal * float(self.gain[0]) if self.gain.size else signal
+        n = signal.shape[0]
+        gain = self.gain[:n]
+        if gain.size < n:
+            # Käyrä loppuu ennen raitaa vain jos näytemäärä on muuttunut
+            # matkalla. Ykkösiä perään: vaimennuksen puuttuminen on
+            # korjattavissa, väärään kohtaan osunut ei.
+            gain = np.pad(gain, (0, n - gain.size), constant_values=1.0)
+        curve = mx.array(gain)
+        return signal * (curve[:, None] if len(signal.shape) > 1 else curve)
 
 
 class CeilingProcessor(Processor):

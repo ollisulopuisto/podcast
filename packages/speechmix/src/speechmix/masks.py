@@ -23,6 +23,38 @@ from .grid import HOP_SEC
 #: molemmat sovellukset tuovat sen täältä.
 HOP = HOP_SEC
 
+# Vaimennuksen mitatut oletukset. Ne olivat autoraffkatin ``AudioSettings``issa,
+# eli jokainen toinen isäntä olisi kirjoittanut omansa — ja kaksi melkein samaa
+# lukua ajautuu erilleen täsmälleen kuten kolme kopiota ketjusta ajautui.
+# Isäntä omistaa yhä asetukset; nämä ovat ne luvut joista se lähtee.
+
+#: Kuinka paljon hiljemmalle, 0 = ei mitään. Yhdeksän desibeliä on tahallisen
+#: matala: vuoto on jo valmiiksi ~13 dB puheen alla, joten syvempi vaimennus
+#: muuttaa summaa mitatusti alle 0,1 dB. Kaikki hyöty tulee ajoituksesta, ei
+#: syvyydestä — ja matala vaimennus tekee vähemmän vahinkoa jos tunnistus
+#: joskus erehtyy.
+DUCK_DB = -9.0
+#: Avaa näin paljon ennen puheen alkua, s. Mahdollista vain koska käsittely on
+#: jälkikäteistä; reaaliaikaiselta portilta katoaa sanojen alkuja.
+DUCK_LOOKAHEAD = 0.15
+#: Pidä auki näin kauan puheen jälkeen, s — lauseen häntä ja hengitys mukaan.
+DUCK_HOLD = 0.40
+#: Tätä lyhyempi jakso ei avaa porttia, s. Yskäisy ei ole puheenvuoro.
+DUCK_MIN_OPEN = 0.20
+#: Kuinka lähellä kovinta mikin on oltava pysyäkseen auki. Tämä on se säädin
+#: joka erottaa puhujat: pelkkä kynnys ei riitä, koska molemmat mikit kuulevat
+#: molemmat puhujat — mitattuna 41 % ajasta yhtä aikaa, ja vuoto on
+#: mediaanissa 12,8 dB hiljempaa.
+DUCK_DOMINANCE_DB = 6.0
+#: Lasku, s. Piiloutuu toisen mikin avautumisen taakse, joten se saa olla hidas.
+DUCK_FADE = 0.25
+#: Paluu, s. Hitaampi kuin lasku, koska se osuu hiljaisuuteen jossa mikään ei
+#: peitä sitä.
+DUCK_RELEASE = 0.40
+#: Tätä lyhyempää vaimennusta ei tehdä, s. Ilman tätä syntyi 20 millisekunnin
+#: kuoppia: naksahdus, ei vaimennus.
+DUCK_MIN_CLOSED = 0.60
+
 
 def runs(values: np.ndarray) -> list[tuple[int, int, int]]:
     """Jaksot (alku, loppu, arvo). Loppu on poissulkeva."""
