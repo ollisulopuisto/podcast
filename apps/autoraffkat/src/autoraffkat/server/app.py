@@ -887,12 +887,23 @@ def _audio_warnings(state: AppState, roles, replacements: dict) -> list[str]:
         for item in state.timeline.track_media(key)
         if item.path
     }
+    # Muistiinpanot ensin: ne kertovat mitä jäi tekemättä vaikka tiedosto
+    # syntyi — ohitettu liitännäinen, tavoitetaso johon ei osuttu. Tiedostot
+    # ovat paikallaan, joten alla oleva tarkistus ei huomaisi niistä mitään.
+    said: list[str] = []
+    for notes in state.mix_result.notes.values():
+        for note in notes:
+            if note not in said:
+                said.append(note)
+
     missing = expected - set(replacements)
     if not missing:
-        return []
+        return said
     if state.mix_progress.get("running"):
-        return [t("export.audio_running", missing=len(missing), total=len(expected))]
-    return [t("export.audio_missing", missing=len(missing), total=len(expected))]
+        return [*said,
+                t("export.audio_running", missing=len(missing), total=len(expected))]
+    return [*said,
+            t("export.audio_missing", missing=len(missing), total=len(expected))]
 
 
 def _track_json(state: AppState, track) -> dict:

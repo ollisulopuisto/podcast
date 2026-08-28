@@ -494,8 +494,16 @@ def test_disabled_does_nothing(fixture_dir):
 def test_missing_plugin_is_reported_not_raised(fixture_dir):
     """Puuttuva liitännäinen on viesti käyttöliittymään, ei poikkeus.
 
-    Virhe tulee ennen kuin yhtään tiedostoa on käsitelty: minuuttien
-    odottaminen ja vasta sitten kaatuminen olisi huonoin vaihtoehto.
+    Sääntö muuttui: ennen ajo **pysähtyi** ja `errors["plugin"]` kertoi
+    syyn. Nyt ajo jatkuu ilman liitännäistä ja viesti on muistiinpano.
+    Peruste: liitännäinen on yksi vaihe ketjussa, ja sen puuttuminen vei
+    mukanaan äänekkyyden, kompressorit ja rajoittimen joilla ei ole sen
+    kanssa mitään tekemistä — siirretty tai päivittynyt liitännäinen ei ole
+    syy jättää jaksoa käsittelemättä. Ks.
+    `test_a_missing_plugin_does_not_stop_the_run`.
+
+    Se mikä **ei** muuttunut: viesti tulee joka tapauksessa, eikä poikkeus
+    nouse käyttäjän silmille.
     """
     from autoraffkat.analysis import resolve_roles
     from autoraffkat.fcpxml.read import read_fcpxml
@@ -508,9 +516,9 @@ def test_missing_plugin_is_reported_not_raised(fixture_dir):
         resolve_roles(timeline, tracks),
         AudioSettings(enabled=True, plugin_path="/ei/ole/mitaan.vst3"),
     )
-    assert not result.ok
-    assert "liitännäistä ei löydy" in " ".join(result.errors.values()).lower()
-    assert result.processed == 0
+    said = " ".join(n for notes in result.notes.values() for n in notes).lower()
+    assert "liitännäistä ei löydy" in said, result.notes
+    assert "plugin" not in result.errors, result.errors
 
 
 def test_plugins_are_found_by_extension(tmp_path, monkeypatch):
@@ -995,3 +1003,81 @@ def test_a_partner_from_another_part_is_not_a_leakage_source():
     # Raja on kosketus, ei päällekkäisyys: peräkkäiset osat jakavat hetken.
     assert not mix.overlaps(Item(0.0, 10.0), Item(10.0, 20.0))
     assert mix.overlaps(Item(0.0, 10.0), Item(9.0, 20.0))
+
+
+@needs_ffmpeg
+def test_a_missing_plugin_does_not_stop_the_run(fixture_dir, monkeypatch):
+    """Liitännäisen puuttuminen ei saa pysäyttää koko käsittelyä.
+
+    Ennen: `load_pool` heitti, `process` kirjasi virheen ja palasi heti.
+    Yhtään tiedostoa ei käsitelty, eli siirretty tai päivittynyt liitännäinen
+    vei koko ketjun mukanaan — myös äänekkyyden, kompressorit ja rajoittimen,
+    joilla ei ole liitännäisen kanssa mitään tekemistä.
+
+    Nyt ajo jatkuu ilman liitännäistä ja **kertoo siitä**. Hiljainen paluu
+    olisi pahempi kuin pysähtyminen: tulos olisi kelvollinen, oikean
+    mittainen ja käsittelemätön siltä osin kuin liitännäinen olisi tehnyt.
+    """
+    from autoraffkat.analysis import resolve_roles
+    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.model import ROLE_MIC, TrackConfig
+
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    tracks = {
+        t.key: TrackConfig(role=ROLE_MIC, speaker=t.key.split()[0].capitalize())
+        for t in tl.tracks
+        if not t.has_video
+    }
+    settings = AudioSettings(
+        enabled=True, plugin_path="/ei/ole/olemassa.vst3", debleed=False
+    )
+    try:
+        result = mix.process(tl, resolve_roles(tl, tracks), settings)
+    finally:
+        for item in tl.media:
+            if item.path and item.path.endswith(".wav"):
+                pathlib.Path(mix.sibling(item.path, mix.MIX_SUFFIX)).unlink(
+                    missing_ok=True
+                )
+    assert result.processed, "ajo pysähtyi liitännäisen takia"
+    assert result.replacements, "yhtään käsiteltyä tiedostoa ei syntynyt"
+    assert "plugin" not in result.errors, result.errors
+    assert any("plugin" in n or "liitänn" in n.lower()
+               for notes in result.notes.values() for n in notes), result.notes
+
+
+@needs_ffmpeg
+def test_the_stamp_says_the_plugin_did_not_run(fixture_dir):
+    """Ohitettu liitännäinen ei saa jäädä leimaan päälle.
+
+    `plugin_path` on `FINGERPRINT_FIELDS`issä. Jos ohitettu ajo leimataan
+    asetetulla polulla, tiedostot näyttävät tuoreilta sitten kun liitännäinen
+    taas löytyy — eikä niitä käsitellä uudestaan koskaan. Vika on juuri sitä
+    lajia jota ei huomaa: tiedosto on olemassa, leima täsmää, ääni on väärä.
+    """
+    from autoraffkat.analysis import resolve_roles
+    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.model import ROLE_MIC, TrackConfig
+
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    tracks = {
+        t.key: TrackConfig(role=ROLE_MIC, speaker=t.key.split()[0].capitalize())
+        for t in tl.tracks
+        if not t.has_video
+    }
+    roles = resolve_roles(tl, tracks)
+    broken = AudioSettings(
+        enabled=True, plugin_path="/ei/ole/olemassa.vst3", debleed=False
+    )
+    try:
+        mix.process(tl, roles, broken)
+        # Sama asetus uudestaan: leiman pitää yhä olla vanhentunut, koska
+        # liitännäistä ei ajettu.
+        again = mix.adopt(tl, roles, broken)
+        assert not again.replacements, "ohitettu ajo leimattiin tuoreeksi"
+    finally:
+        for item in tl.media:
+            if item.path and item.path.endswith(".wav"):
+                pathlib.Path(mix.sibling(item.path, mix.MIX_SUFFIX)).unlink(
+                    missing_ok=True
+                )

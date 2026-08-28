@@ -29,7 +29,7 @@ import json
 import os
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -1096,8 +1096,28 @@ def process(
         if plugin is not None and workers > 1:
             _log(f"liitännäinen {workers} rinnakkaisena palana")
     except ChainError as exc:
-        result.errors["plugin"] = str(exc)
-        return result
+        # Ohi mennään, ei pysähdytä. Liitännäinen on yksi vaihe ketjussa, ja
+        # sen puuttuminen vei aiemmin mukanaan äänekkyyden, kompressorit ja
+        # rajoittimen, joilla ei ole sen kanssa mitään tekemistä. Siirretty
+        # tai päivittynyt liitännäinen ei ole syy jättää jakso käsittelemättä.
+        #
+        # Mutta **kerrotaan**. Hiljainen ohitus olisi pahempi kuin
+        # pysähtyminen: tulos on kelvollinen, oikean mittainen ja siltä osin
+        # käsittelemätön kuin liitännäinen olisi tehnyt, eikä sitä kuule
+        # ennen kuin Final Cutissa.
+        plugin = None
+        for job in jobs:
+            result.notes.setdefault(job["key"], []).append(
+                t("audio.plugin_skipped", error=str(exc))
+            )
+        _log(f"liitännäinen ohitettu: {exc}")
+        # Leima kertoo mitä **tehtiin**, ei mitä pyydettiin. `plugin_path` on
+        # `FINGERPRINT_FIELDS`issä, joten asetetulla polulla leimattu ohitus
+        # näyttäisi tuoreelta sitten kun liitännäinen taas löytyy — eikä
+        # tiedostoja käsiteltäisi uudestaan koskaan.
+        settings = replace(
+            settings, plugin_path="", plugin_params={}, plugin_state=""
+        )
 
     solos = solo_masks(grid) if settings.debleed else {}
     if settings.debleed and not solos:
