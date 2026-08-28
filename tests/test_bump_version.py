@@ -72,9 +72,15 @@ def test_nothing_is_written_when_one_place_does_not_match(tmp_path):
     )
     # Kaksi osumaa yhdessä tiedostossa: kumpi niistä on se oikea ei ole
     # skriptin pääteltävissä, joten se kieltäytyy.
+    #
+    # `BUNDLE(` on tässä, koska skripti kirjoittaa version vain `.app`in
+    # kokoaviin `.spec`eihin — komentorivibinääri kertoo versionsa
+    # paketista. Ilman tätä riviä fikstuuri ohitettaisiin kokonaan ja
+    # tämä testi olisi vihreä tarkistamatta mitään.
     (member / "esimerkki.spec").write_text(
         'a = os.environ.get("EX_VERSION", "2026.1.1.1")\n'
-        'b = os.environ.get("EX_VERSION", "2026.1.1.1")\n',
+        'b = os.environ.get("EX_VERSION", "2026.1.1.1")\n'
+        "app = BUNDLE(exe, name='Esimerkki.app')\n",
         encoding="utf-8",
     )
 

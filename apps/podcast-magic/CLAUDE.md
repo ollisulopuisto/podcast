@@ -163,6 +163,128 @@ toisin päin: hännän lisääminen ensin sulkisi tauot pituuteen
 * **Mallien painoja ei paketoida.** `large-v3-turbo` on gigatavun luokkaa;
   se ladataan ensimmäisellä ajolla ja jää käyttäjän välimuistiin.
 
+## Istunnon kuuleminen: mikä on mitattu ja mikä arvattu
+
+`nhsx/mix.py` sijoittaa alueet ohjelma-aikajanalle tasoineen, häivytyksineen
+ja panorointeineen; `nhsx/render.py` summaa ne WAViksi. Yhdessä ne ovat se,
+mikä tekee istunnosta kuunneltavan **ilman Hindenburgia** — tiedosto on XML
+ja äänipooli on WAVeja levyllä, eikä muuta tarvita.
+
+**Mitattua on geometria.** `Start`, `Length`, `Offset` ja `Muted` ovat
+attribuutteja joita tämä repositorio on lukenut ja kirjoittanut alusta asti.
+
+**Arvattua on kaikki muu.** `Gain`, `Pan` ja `<Fade In= Out=>` ovat
+uskottavia nimiä eivätkä todettuja: kummassakaan repositoriossa ei ole
+yhtään istuntoa, jossa faderia olisi liikutettu, eikä formaattia ole
+dokumentoitu. `<Fade>` on se nimi jolla `tests/test_silence.py` rakentaa
+alueen lapsielementin ja `apply.py` sanoo lapsielementeistä «esimerkiksi
+häivytyksiä» — se on huomio, ei mittaus.
+
+Siksi kaksi asiaa. `KNOWN_REGION_ATTRS` on **käsin kirjoitettu** lista, sama
+vartija kuin litteroinnin tunnisteella: uusi nimi ei livahda tunnettujen
+joukkoon ilman että joku päätti niin. Ja tuntematon attribuutti
+**kerrotaan** — `Mix.unknown`, ja `nhsx-render` varoittaa siitä — koska
+miksaus joka ohitti faderin on kelvollinen WAV väärällä tasolla, eli
+täsmälleen tämän talon hiljainen vika.
+
+`nhsx/prospect.py` on se joka vaihtaa arvauksen mittaukseksi. Aja
+`nhsx-render jakso.nhsx --inspect` istuntoon, jossa taso, panorointi ja
+häivytys **on asetettu**, ja se kertoo nimet — ja esimerkkiarvot, koska
+«Gain» ei kerro onko se desibeliä vai kerroin. Sama kuvio kuin
+`verify.py`:llä: formaattia ei arvata, siitä kysytään tiedostolta.
+
+Mitä tässä ei ole eikä pidä olla: taajuuskorjaus, kompressointi ja
+Hindenburgin oma tasonsäätö. Esikatselu on geometria, taso, häivytys ja
+panorointi — ja siksi se voi olla nopea. Se ei siis kuulosta Hindenburgin
+toistolta silloin kun istunnossa on käytetty ääniprofiileja.
+
+### Lohkoraja on renderöinnin vaarallinen kohta
+
+Ohjelmaa ei pidetä muistissa: tunnin jakso on 48 kHz:llä stereona
+liukulukuina 1,4 GB, ja lähteitä on lisäksi yksi per raita. `render.blocks`
+antaa ohjelman 30 sekunnin paloina ja `to_wav` kirjoittaa jokaisen heti.
+Lähteestä puretaan vain se kohta jota tarvitaan (`-ss` **ennen** `-i`:tä,
+muuten tunnin nauhan lopusta otettu kolmen sekunnin leike on tunnin työ).
+
+Jokainen lohkon raja on paikka, jossa leike voi katketa, häivytys alkaa
+alusta tai lähteestä luetaan väärä kohta. Mikään niistä ei kaada mitään:
+tulos on kelvollinen WAV, jossa on naksahdus puolen minuutin välein. Siksi
+verhokäyrä lasketaan **koko leikkeelle** ja viipaloidaan lohkoon, kaikki
+paikat lasketaan näyteindekseinä eikä sekunteina, ja
+`test_the_block_size_does_not_change_the_result` ajaa saman miksauksen
+kahdella lohkokoolla. Se on se yksi testi joka näkee ne kaikki kerralla.
+
+### Panorointi on vakiotehoinen, häivytys lineaarinen
+
+Lineaarisella panorointilailla keskellä oleva raita on summassa 3 dB
+kovempaa kuin laidoille ajettu, ja miksaus kallistuu keskelle sitä mukaa kun
+raitoja on enemmän. `pan_gains` pitää `vasen² + oikea² = 1`, jolloin keski on
+−3,01 dB molemmilla puolilla. Asteikon ulkopuolinen arvo **rajataan** eikä
+kierretä: arvo tulee mittaamattomasta attribuutista, ja kierrettynä se
+antaisi negatiivisen vahvistuksen eli vaihekäännöksen.
+
+Häivytyksen muotoa ei tiedetä, ja lineaarinen on niistä se joka ei väitä
+mitään. Kun muoto mitataan, se vaihdetaan yhdessä funktiossa (`envelope`).
+Leikettä pidemmät häivytykset **skaalataan** — pilkkominen jättää lyhyitä
+paloja, ja perittynä käyrät menisivät ristiin ja summa nollan ali.
+
+### `nhsx/`:llä on toinen toteutus, ja se on toista kieltä
+
+`viewer/` on NHSX Viewer: `.nhsx` sisään, aikajana ja ääni ulos — sovelluksen
+ikkunassa ja Finderin välilyönnillä samasta näkymästä. Se **jäsentää istunnon uudestaan Swiftillä** eikä
+kutsu tätä koodia. Se ei ole valinta: macOS-laajennus on hiekkalaatikossa
+eikä voi käynnistää `nhsx-render`iä.
+
+Kaksi toteutusta samasta formaatista on täsmälleen se ajautuminen jota
+vastaan tämä repositorio on — mutta tätä ei voi ratkaista jakamalla koodi.
+Mitä voi jakaa on **vastaus**: `viewer/Conformance/session.nhsx` on
+istunto, joka erottaa jokaisen kohdan jossa kaksi jäsennintä voi mennä eri
+mieltä huomaamatta, ja `plan.json` on sen kirjattu vastaus. Molemmat
+toteutukset testaavat itseään sitä vasten
+(`tests/test_conformance.py` täällä, `Tests/NhsxKitTests/` siellä).
+
+**Kun muutat `nhsx/read.py`:tä tai `nhsx/mix.py`:tä, muutat sopimusta.**
+Jos vastaus muuttuu, se luodaan uudestaan tahallaan ja diffi luetaan —
+muuttunut luku on joko korjaus tai regressio — ja Swift-puoli muutetaan
+samassa hengessä. Muuten esikatselu näyttää eri jakson kuin `nhsx-render`
+renderöi, eikä kumpikaan kaadu.
+
+`viewer/` **ei ole työtilan jäsen** eikä voi olla: `apps/*` vaatii
+`pyproject.toml`in, ja Swift-hakemisto siellä kaataa `uv sync`in koko
+työtilalta. Siksi se on juuressa ja sillä on oma työnkulkunsa.
+
+### Purkaja on parametri — ja siksi tarvitaan myös päästä päähän -testi
+
+`render.blocks` ottaa purkajan argumenttina. Ilman sitä jokainen summauksen
+testi tarvitsisi ffmpegin, ja ffmpegiä tarvitseva testi on vihreä siellä
+missä ffmpegiä ei ole — eli sama kuin ettei sitä olisi. Renderöinnin viat
+ovat summauksessa, eivät purussa.
+
+**Mutta silloin oikea polku jää ajamatta, ja siellä oli vika.** 24-bittinen
+näyte pakattiin int32:n kolmesta **ylimmästä** tavusta kolmen alimman
+sijaan, eli jokainen ohjelma kirjoitettiin **48 dB** (256×) liian hiljaa.
+Mikään ei kaatunut: WAV oli kelvollinen, kesto oikea, kanavat oikein — ja
+`Report.peak` kertoi oikean huipun, koska se mitataan liukuluvuista **ennen**
+pakkausta. Ohjelma sanoi «huippu −6,7 dBFS» tiedostosta, jonka huippu oli
+−54,7. Yksikään yksikkötesti ei lukenut 24-bittisiä tavuja takaisin, vain
+16-bittiset.
+
+Siksi `tests/test_render_endtoend.py`: oikeat lähteet, oikea ffmpeg, oikea
+WAV levylle ja tavut luettuna takaisin käsin. Lähteet tehdään niin, että
+**taajuus kertoo sekunnin** (sekunti `s` on siniä taajuudella `400 + 200·s`),
+jolloin renderistä näkee suoraan mistä kohtaa lähdettä kukin ohjelmasekunti
+tuli. Tiedosto-offsetin voi laskea väärin niin, että tulos on joka muulla
+tavalla kelvollinen.
+
+Ohittunut testi on vihreä testi, joten CI tarkistaa erikseen ettei se
+ohittunut — sama kuvio kuin käyttöliittymän savutestillä.
+
+`-ss` **ennen** `-i`:tä ei ole tarkistettavissa tuloksesta: väärällä puolella
+se antaa täsmälleen saman äänen, se vain puretaan alusta asti ja heitetään
+pois. Kellosta eron näkisi vasta tiedostolla joka on liian iso testattavaksi,
+joten komentorivi on oma funktionsa (`decode_command`) ja järjestys
+väitetään siitä.
+
 ## Ääniketju tulee joskus, ei vielä
 
 `nhsx/pipeline.py` on sauma autoraffkatin mitatulle puheenkäsittelyketjulle:

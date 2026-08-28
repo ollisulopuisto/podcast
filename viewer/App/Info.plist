@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDisplayName</key>
+  <string>NHSX Viewer</string>
+  <key>CFBundleIdentifier</key>
+  <string>fi.sulopuisto.nhsx-viewer</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>12.0</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.utilities</string>
+
+  <!-- `.nhsx` ei ole järjestelmän tuntema tyyppi. Se **tuodaan** eikä
+       viedä: tiedostomuoto on Hindenburgin, ei tämän sovelluksen, ja
+       viety määrittely väittäisi omistajuutta. Jos Hindenburg itse
+       julistaa saman päätteen toisella tunnisteella, järjestelmä
+       suosii sitä — ks. README, siellä on komento jolla oikean
+       tunnisteen näkee omalta koneelta. -->
+  <!-- Sovellus avaa `.nhsx`:n: kaksoisklikkaus Finderissä tulee tänne, ja
+       ilman tätä macOS ei tiedä että se osaa. `Viewer`-rooli eikä `Editor`,
+       koska tämä ei kirjoita istuntoa. -->
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Hindenburg-istunto</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>com.hindenburg.nhsx</string>
+      </array>
+    </dict>
+  </array>
+
+  <key>UTImportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>com.hindenburg.nhsx</string>
+      <key>UTTypeDescription</key>
+      <string>Hindenburg-istunto</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.xml</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>nhsx</string>
+        </array>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>

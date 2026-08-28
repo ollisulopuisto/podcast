@@ -1,0 +1,87 @@
+# Xcode-projekti generoidaan tästä XcodeGenillä, eikä `.xcodeproj`ia
+# säilytetä repositoriossa.
+#
+# Syy on sama kuin muuallakin täällä: `.xcodeproj` on konetuotettua XML:ää,
+# jonka diffiä ei voi lukea. Kaksi haaraa, jotka molemmat lisäävät
+# tiedoston, tuottavat ristiriidan jota ei voi ratkaista katsomalla — ja
+# ratkaisu, joka näyttää oikealta, voi pudottaa kohteen käännöksestä ilman
+# että mikään kaatuu.
+#
+#     brew install xcodegen && xcodegen generate
+name: NhsxViewer
+options:
+  bundleIdPrefix: fi.sulopuisto
+  deploymentTarget:
+    macOS: "12.0"
+  createIntermediateGroups: true
+
+packages:
+  NhsxViewerPackage:
+    path: .
+
+targets:
+
+  # Katselin. Tämä on tuote: avaa `.nhsx`, näytä raidat, soita miksaus.
+  # Laajennus on saman näkymän toinen pinta, ei toisin päin.
+  NhsxViewerApp:
+    type: application
+    platform: macOS
+    sources: [App]
+    info:
+      path: App/Info.plist
+    settings:
+      PRODUCT_NAME: NHSX Viewer
+      PRODUCT_BUNDLE_IDENTIFIER: fi.sulopuisto.nhsx-viewer
+      MARKETING_VERSION: "2026.8.28"
+      CURRENT_PROJECT_VERSION: "1"
+      ENABLE_HARDENED_RUNTIME: YES
+      CODE_SIGN_ENTITLEMENTS: App/App.entitlements
+      # Xcode lisää itse `com.apple.security.get-task-allow`in kun
+      # allekirjoitus on «Sign to Run Locally», ja se päätyi julkaistavaan
+      # pakettiin asti. Se antaa minkä tahansa prosessin liittää
+      # virheenjäljittimen sovellukseen — hiekkalaatikko ja karaistu ajoaika
+      # menettävät sillä suuren osan merkitystään — ja Applen notarisointi
+      # hylkää binäärin joka kantaa sitä. Löytyi käännöslokista, ei
+      # lukemalla: käännös oli vihreä.
+      CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+      # Ad-hoc allekirjoitus. Developer ID:tä ei ole, joten notarisointia ei
+      # ole; allekirjoittamaton laajennus taas ei rekisteröidy lainkaan.
+      # Ks. README: ensimmäisellä avauksella tarvitaan «Avaa silti».
+      CODE_SIGN_IDENTITY: "-"
+      CODE_SIGNING_REQUIRED: YES
+      CODE_SIGNING_ALLOWED: YES
+    dependencies:
+      - package: NhsxViewerPackage
+        product: NhsxViewer
+      - target: NhsxQuickLookExtension
+        embed: true
+        codeSign: true
+
+  # Itse laajennus. Menee sovelluksen `Contents/PlugIns/`iin.
+  NhsxQuickLookExtension:
+    type: app-extension
+    platform: macOS
+    sources: [Extension]
+    info:
+      path: Extension/Info.plist
+    settings:
+      PRODUCT_NAME: NhsxQuickLook
+      PRODUCT_BUNDLE_IDENTIFIER: fi.sulopuisto.nhsx-viewer.preview
+      MARKETING_VERSION: "2026.8.28"
+      CURRENT_PROJECT_VERSION: "1"
+      ENABLE_HARDENED_RUNTIME: YES
+      CODE_SIGN_ENTITLEMENTS: Extension/NhsxQuickLook.entitlements
+      # Xcode lisää itse `com.apple.security.get-task-allow`in kun
+      # allekirjoitus on «Sign to Run Locally», ja se päätyi julkaistavaan
+      # pakettiin asti. Se antaa minkä tahansa prosessin liittää
+      # virheenjäljittimen sovellukseen — hiekkalaatikko ja karaistu ajoaika
+      # menettävät sillä suuren osan merkitystään — ja Applen notarisointi
+      # hylkää binäärin joka kantaa sitä. Löytyi käännöslokista, ei
+      # lukemalla: käännös oli vihreä.
+      CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+      CODE_SIGN_IDENTITY: "-"
+      CODE_SIGNING_REQUIRED: YES
+      CODE_SIGNING_ALLOWED: YES
+    dependencies:
+      - package: NhsxViewerPackage
+        product: NhsxViewer

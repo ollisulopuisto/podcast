@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Hiekkalaatikko on laajennukselle **pakollinen**, ei valinta.
+
+       Tämä ei ole teoriaa: julkaistuja Quick Look -laajennuksia on jäänyt
+       toimimattomiksi juuri tämän puuttuessa, vaikka paikallisesti käännetty
+       sama koodi toimi. Vika on siitä hankalinta lajia, että se ei näy
+       kehityskoneella lainkaan — se näkyy vasta jonkun toisen koneella,
+       eikä silloinkaan virheenä vaan siten ettei välilyönti tee mitään. -->
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+
+  <!-- Luku, ei kirjoitusta. Esikatselu ei muuta istuntoa millään tavalla:
+       se lukee `.nhsx`:n ja äänipoolin ja soittaa. Kirjoitusoikeus olisi
+       oikeus jota se ei käytä, ja ainoa mitä sillä voisi tehdä on vahinko. -->
+  <key>com.apple.security.files.user-selected.read-only</key>
+  <true/>
+</dict>
+</plist>

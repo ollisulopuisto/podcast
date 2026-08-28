@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Yhteinen totuus kahdelle toteutukselle.
+
+     Tämä istunto ei ole näyte oikeasta jaksosta vaan lista niistä kohdista,
+     joissa kaksi eri kielellä kirjoitettua jäsennintä voi mennä eri mieltä
+     huomaamatta. Jokainen alue on tässä siksi, että se erottaa jonkin
+     päätöksen — ks. `plan.json` ja `README.md`.
+
+     Äänipoolin tiedostoja ei ole mukana: suunnitelma ei lue ääntä, vain
+     tarkistaa että tiedosto on olemassa. Molemmat testit tekevät ne itse. -->
+<Session Name="conformance">
+  <AudioPool Path="">
+    <File Id="1" Name="olli.wav" Path="olli.wav"/>
+    <File Id="2" Name="panu.wav" Path="panu.wav"/>
+    <File Id="3" Name="musiikki.wav" Path="musiikki.wav"/>
+  </AudioPool>
+  <Tracks>
+
+    <!-- 1. Tavallinen alue, jolla on offset: ohjelma-aika ja tiedostoaika
+            ovat eri asia, ja tämä on se ero.
+         2. Sama tiedosto toisen kerran aikajanalla, eri kohdasta.
+         3. Vaimennettu alue: ei kuulu, mutta ei lyhennä ohjelmaa.
+         4. Nollan mittainen alue: aikajanan jäänne, ei leike. -->
+    <Track Name="Olli">
+      <Region Ref="1" Start="2.000" Length="8.000" Offset="30.000"/>
+      <Region Ref="1" Start="12.000" Length="4.000" Offset="120.500"/>
+      <Region Ref="1" Start="20.000" Length="5.000" Offset="0.000" Muted="True"/>
+      <Region Ref="1" Start="26.000" Length="0.000" Offset="0.000"/>
+    </Track>
+
+    <!-- 5. Raidan vahvistus kertautuu alueen vahvistuksen kanssa.
+         6. Raidan panorointi siirtää alueen omaa.
+         7. `Muted="1"`: sama asia kuin `"True"`, eri istunnoissa eri tavalla.
+         8. Aika kaksoispistemuodossa — vanhemmat istunnot kirjoittavat näin. -->
+    <Track Name="Panu" Gain="-6.020600" Pan="0.200000">
+      <Region Ref="2" Start="1.000" Length="6.000" Offset="0.000" Gain="-6.020600" Pan="0.100000"/>
+      <Region Ref="2" Start="9.000" Length="3.000" Offset="0.000" Muted="1"/>
+      <Region Ref="2" Start="00:00:14.000" Length="00:00:02.500" Offset="00:00:05.250"/>
+    </Track>
+
+    <!-- 9.  Häivytykset lapsielementtinä.
+         10. Leikettä pidemmät häivytykset: kutistetaan suhteessa, ei anneta
+             mennä ristiin.
+         11. Tuntematon attribuutti: kerrotaan, ei ohiteta. -->
+    <Track Name="Musiikki" Gain="-12.041200">
+      <Region Ref="3" Start="0.000" Length="10.000" Offset="0.000" Pan="-0.500000">
+        <Fade In="1.500" Out="3.000"/>
+      </Region>
+      <Region Ref="3" Start="30.000" Length="1.000" Offset="0.000" Volyymi="0.7">
+        <Fade In="2.000" Out="2.000"/>
+      </Region>
+    </Track>
+
+    <!-- 12. Vaimennettu raita: sen alueet eivät kuulu, vaikka ne itse eivät
+             ole vaimennettuja. -->
+    <Track Name="Varalla" Muted="True">
+      <Region Ref="3" Start="0.000" Length="40.000" Offset="0.000"/>
+    </Track>
+
+  </Tracks>
+</Session>
