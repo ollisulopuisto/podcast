@@ -457,18 +457,21 @@ def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
     # summan äänekkyys ei ole stemien äänekkyyksien summa, ja mikkien
     # välinen vuoto on korreloitunutta, joten tehojen laskeminen yhteen
     # olisi arvio eikä mittaus. Mitataan se mikä soi.
+    # Kierrokset ovat **kuivia**: ne lukevat ja mittaavat muttei kirjoita.
+    # Silmukka etsii oikean noston, ja vasta valittu nosto kirjoitetaan
+    # kerran. Kirjoittavat kierrokset rajoittivat jo rajoitettua, ja
+    # tiivistys kertyi kierroksittain — mitattuna LRA 5,1 kun kerran ajettuna
+    # se on lähes kolme yksikköä enemmän. Nosto on siksi myös absoluuttinen
+    # eikä askel: jokainen kierros lähtee samasta tilanteesta.
     meter = IntegratedMeter(rate)
-    program_ceiling(jobs, result, ducks, extra, 0.0, ceiling, meter)
+    program_ceiling(jobs, result, ducks, extra, 0.0, ceiling, meter,
+                    dry_run=True)
     measured = meter.value()
     boost, ride, step_sec = 0.0, None, meter.step_seconds()
-    extra = None  # jaettu peruutus on jo tehty ensimmäisellä ajolla
     for round_number in range(DELIVER_ROUNDS):
         if measured is None:
             break
         step = target - measured
-        # Lyhytaikainen katto on **raja**, ei tavoite: se lasketaan joka
-        # kierroksella siitä mitä nosto on juuri tekemässä, koska nosto
-        # siirtää myös ylitykset.
         wanted = None
         if short_target:
             wanted = programme.short_term_ride(
@@ -477,17 +480,23 @@ def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
             wanted = wanted if wanted.any() else None
         if abs(step) <= tolerance and wanted is None:
             break
-        boost = round(min(programme.MAX_PROGRAM_BOOST, boost + step), 2)
-        ride = wanted if ride is None else (
-            ride[: len(wanted)] + wanted if wanted is not None else ride
-        )
+        boost = round(max(-programme.MAX_PROGRAM_BOOST,
+                          min(programme.MAX_PROGRAM_BOOST, boost + step)), 2)
+        ride = wanted if wanted is not None else ride
         meter = IntegratedMeter(rate)
-        program_ceiling(jobs, result, ducks, None, boost, ceiling, meter,
-                        ride, step_sec if ride is not None else 0.0)
+        program_ceiling(jobs, result, ducks, extra, boost, ceiling, meter,
+                        ride, step_sec if ride is not None else 0.0,
+                        dry_run=True)
         measured = meter.value()
         _log(f"jakelutaso kierros {round_number + 1}: nosto {boost:+.2f} dB"
              + (f", veto {ride.min():.2f} dB" if ride is not None else "")
              + f" -> {measured:.2f} LUFS")
+
+    # Yksi kirjoittava ajo valitulla nostolla.
+    meter = IntegratedMeter(rate)
+    program_ceiling(jobs, result, ducks, extra, boost, ceiling, meter,
+                    ride, step_sec if ride is not None else 0.0)
+    measured = meter.value()
     result.program_boost = boost
     result.program_lufs = measured if measured is not None else 0.0
     result.program_range = meter.range()
@@ -512,7 +521,8 @@ def program_ceiling(jobs: list[dict], result: "MixResult",
                     ceiling_db: float = chain.CEILING_DB,
                     meter=None,
                     ride_db=None,
-                    ride_step: float = 0.0) -> None:
+                    ride_step: float = 0.0,
+                    dry_run: bool = False) -> None:
     """Huippukatto **ohjelmalle**, ei yhdelle stemille.
 
     Sama virhe kuin äänekkyydessä, jonka ``program_trim`` jo korjaa: ketju
@@ -563,7 +573,7 @@ def program_ceiling(jobs: list[dict], result: "MixResult",
         try:
             worst = _ceiling_pass(
                 members, frames, AudioFile, envelopes, extra, boost_db,
-                ceiling_db, meter, ride_db, ride_step,
+                ceiling_db, meter, ride_db, ride_step, dry_run,
             )
         except (OSError, ValueError) as exc:
             for job in members:
@@ -582,7 +592,8 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                   ceiling_db: float = chain.CEILING_DB,
                   meter=None,
                   ride_db=None,
-                  ride_step: float = 0.0) -> float:
+                  ride_step: float = 0.0,
+                  dry_run: bool = False) -> float:
     """Yksi ryhmä: summa paloittain, sama käyrä jokaiseen stemiin.
 
     ``envelopes`` on vaimennus puhujittain aikajanan aikana. Se **on**
@@ -609,7 +620,11 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
             raise ValueError("stemien näytetaajuudet eroavat")
         chunk = int(programme.CEILING_CHUNK * rate)
         margin = int(programme.CEILING_MARGIN * rate)
-        outs = [
+        # Kuiva ajo lukee ja mittaa muttei kirjoita. Silmukka etsii oikean
+        # noston sillä, ja vasta valittu nosto kirjoitetaan — muuten jokainen
+        # kierros rajoittaisi jo rajoitettua, ja tiivistys kertyisi
+        # kierroksittain. Mitattuna kertyvänä LRA 5,1, kerran ajettuna 7,x.
+        outs = [] if dry_run else [
             AudioFile(job["target"] + ".ceil.tmp.wav", "w", rate,
                       int(h.num_channels), bit_depth=job.get("bit_depth", 24))
             for job, h in zip(members, handles, strict=True)
@@ -658,9 +673,10 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                     played = sum(h * gain for h in heard)
                     meter.add(played[..., head:tail].mean(axis=0)
                               if played.ndim > 1 else played[head:tail])
-                for out, block in zip(outs, blocks, strict=True):
-                    out.write(np.ascontiguousarray(
-                        (block * gain)[:, head:tail]))
+                if not dry_run:
+                    for out, block in zip(outs, blocks, strict=True):
+                        out.write(np.ascontiguousarray(
+                            (block * gain)[:, head:tail]))
                 position += chunk
         finally:
             for out in outs:
@@ -669,6 +685,8 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
         for handle in handles:
             handle.close()
 
+    if dry_run:
+        return worst
     for job in members:
         tmp = job["target"] + ".ceil.tmp.wav"
         written = frame_count(tmp)

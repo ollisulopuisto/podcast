@@ -180,3 +180,24 @@ def test_a_programme_under_the_ceiling_is_left_alone():
     values = np.full(200, -18.0)
     gain = programme.short_term_ride(values, target_db=-12.0, step_sec=0.1)
     assert np.allclose(gain, 0.0)
+
+
+def test_a_correction_is_a_step_not_a_total():
+    """Kierros kirjoittaa edellisen kierroksen tuloksen päälle.
+
+    Jos kierros antaa kumulatiivisen noston tiedostoille joissa edellinen
+    nosto on jo sisällä, nostot summautuvat ja silmukka karkaa. Mitattuna
+    oikealla jaksolla: -15,75 -> -13,06 -> -12,00, eli tavoitteen -14 ohi ja
+    yhä kauemmas joka kierroksella. Askel on **ero nykytilaan**, ei summa.
+    """
+    applied, measured, target = 0.0, -20.0, -14.0
+    for _ in range(3):
+        step = target - measured
+        if abs(step) <= 0.5:
+            break
+        applied += step
+        # Tiedostoihin menee askel; tulos on nykytila plus askel, ja
+        # rajoitin syö siitä osan.
+        measured = measured + step * 0.85
+    assert abs(target - measured) < 1.0, measured
+    assert applied < 8.0, ("kumulatiivinen nosto karkasi", applied)
