@@ -120,6 +120,56 @@ renderöidyssä tiedostossa. Oma laki vaatisi jokaisen leikkeen lukemisen
 puskuriin, eli juuri sen nopeuden jonka takia tämä on olemassa.
 `Conformance/plan.json` sitoo suunnitelman, ei toiston viimeistä desibeliä.
 
+## Asentaminen
+
+Julkaisuista (`quicklook-v*`) latautuu kaksi asiaa:
+
+**`NHSX-Quick-Look.dmg`** — vedä `NHSX Quick Look.app` Ohjelmat-kansioon ja
+**avaa se kerran**. Avaaminen on se, mikä rekisteröi laajennuksen; ilman sitä
+välilyönti ei tee mitään. Ikkunan saa sen jälkeen sulkea, ja esikatselu
+toimii niin kauan kuin sovellus on Ohjelmat-kansiossa.
+
+**`nhsx-render-macos-*.tar.gz`** — yksi binääri, ffmpeg mukana:
+
+```
+tar xzf nhsx-render-macos-*.tar.gz
+xattr -d com.apple.quarantine nhsx-render
+./nhsx-render "jakso 8.nhsx"
+```
+
+### Ensimmäinen avaus, ja miksi se on hankala
+
+Kumpikaan ei ole Applen notarisoima: siihen tarvitaan Developer ID, jota
+tällä repositoriolla ei ole. Sama koskee `autoraffkat`ia ja Podcast Magicia,
+eli tämä ei ole tässä uutta.
+
+Sovellus: oikea klikkaus ja «Avaa», tai Järjestelmäasetukset → Tietosuoja ja
+turvallisuus → «Avaa silti». Komentorivityökalu:
+`xattr -d com.apple.quarantine nhsx-render`.
+
+Jos esikatselu ei ilmesty avaamisen jälkeenkään:
+
+```
+qlmanage -r          # Quick Look lukee laajennukset uudestaan
+```
+
+Laajennus on **ad-hoc-allekirjoitettu ja hiekkalaatikossa**. Kumpikin on
+pakollinen eikä valinta: allekirjoittamaton laajennus ei rekisteröidy, ja
+julkaistuja Quick Look -laajennuksia on jäänyt toimimattomiksi juuri
+`com.apple.security.app-sandbox`in puuttuessa — paikallisesti käännettynä
+sama koodi toimi. Käännös tarkistaa molemmat (`build-quicklook.yml`).
+
+### Yksi avoin kysymys, jota ei ole voitu mitata
+
+Hiekkalaatikko antaa laajennukselle pääsyn **esikatseltavaan tiedostoon**.
+Äänipooli on eri tiedostoja saman kansion sisällä, eikä ole varmaa antaako
+järjestelmä niihin pääsyä samalla.
+
+Jos ei anna, aikajana piirtyy normaalisti (se on pelkkää XML:ää) mutta
+toisto vaikenee, ja `MixPlayer` kertoo mitkä tiedostot eivät auenneet — se
+näkyy esikatselun alarivillä. Tämä selviää ensimmäisellä ajolla oikealla
+Macilla; täältä sitä ei voi mitata.
+
 ## Kääntäminen
 
 ```

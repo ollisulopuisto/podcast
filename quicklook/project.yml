@@ -35,6 +35,13 @@ targets:
       MARKETING_VERSION: "2026.8.28"
       CURRENT_PROJECT_VERSION: "1"
       ENABLE_HARDENED_RUNTIME: YES
+      CODE_SIGN_ENTITLEMENTS: App/App.entitlements
+      # Ad-hoc allekirjoitus. Developer ID:tä ei ole, joten notarisointia ei
+      # ole; allekirjoittamaton laajennus taas ei rekisteröidy lainkaan.
+      # Ks. README: ensimmäisellä avauksella tarvitaan «Avaa silti».
+      CODE_SIGN_IDENTITY: "-"
+      CODE_SIGNING_REQUIRED: YES
+      CODE_SIGNING_ALLOWED: YES
     dependencies:
       - target: NhsxQuickLookExtension
         embed: true
@@ -53,6 +60,10 @@ targets:
       MARKETING_VERSION: "2026.8.28"
       CURRENT_PROJECT_VERSION: "1"
       ENABLE_HARDENED_RUNTIME: YES
+      CODE_SIGN_ENTITLEMENTS: Extension/NhsxQuickLook.entitlements
+      CODE_SIGN_IDENTITY: "-"
+      CODE_SIGNING_REQUIRED: YES
+      CODE_SIGNING_ALLOWED: YES
     dependencies:
       - package: NhsxKit
         product: NhsxKit

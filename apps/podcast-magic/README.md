@@ -217,6 +217,21 @@ a time, straight to the file, and decodes only the piece of each source it
 needs — so an hour of session costs about as much memory as a minute of it.
 Nothing is overwritten: an existing `episode 8.wav` becomes `episode 8 v2.wav`.
 
+### As a download, with nothing installed
+
+`nhsx-render` is also published as a single binary with ffmpeg inside it, in
+the `quicklook-v*` releases. No Python, no uv, no this repository:
+
+```
+tar xzf nhsx-render-macos-*.tar.gz
+xattr -d com.apple.quarantine nhsx-render
+./nhsx-render "episode 8.nhsx"
+```
+
+It ships alongside **NHSX Quick Look.app**, which previews the same sessions
+in Finder. Both are unsigned — see `quicklook/README.md` for the first-launch
+steps.
+
 ### One caveat worth knowing
 
 Region geometry and mute are certain — this tool has read and written them
