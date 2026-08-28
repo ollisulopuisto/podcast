@@ -113,6 +113,36 @@ def shared_backoff(backoffs) -> dict:
             for key, v in backoffs.items()}
 
 
+#: Kuinka paljon jakelutason eteen saa nostaa. Rajaton nosto olisi sama vika
+#: kuin rajaton rajoitin: hiljainen tai tyhjä mittausikkuna pyytäisi
+#: kymmeniä desibelejä, ja jaettu käyrä maksaisi ne crestinä.
+MAX_PROGRAM_BOOST = 12.0
+
+
+def boost_to(summed: np.ndarray, rate: int, target_lufs: float | None,
+             max_boost: float = MAX_PROGRAM_BOOST) -> float:
+    """Kuinka paljon **summa** on jakelutason alla, desibeleinä (≥ 0).
+
+    Stemin tavoite ja jakelun tavoite ovat eri asia, ja niiden sekoittaminen
+    on koko tiivistysongelman juuri: -14 LUFS on jakelutason luku, ja
+    stemiltä pyydettynä se vaatii crestin jota puheella ei ole. Summasta
+    pyydettynä sama luku maksaa rajoitusta vain siellä missä huiput osuvat
+    yhteen — ja sen hoitaa ``shared_gain``, sama jaettu käyrä joka pitää
+    katon, eikä yksikään stemi maksa toisen puolesta.
+
+    ``None`` tai nolla on pois päältä eikä nollaan normalisointia: jakelutaso
+    on valinta, ja valitsematta jättäminen tarkoittaa että taso tulee
+    stemeistä kuten ennenkin.
+    """
+    if not target_lufs:
+        return 0.0
+    measured = chain.loudness(np.asarray(summed).mean(axis=0)
+                              if np.ndim(summed) > 1 else np.asarray(summed), rate)
+    if measured is None:
+        return 0.0
+    return round(max(0.0, min(float(max_boost), float(target_lufs) - measured)), 2)
+
+
 def trim_to_target(summed: np.ndarray, rate: int, target_lufs: float,
                    max_trim: float = MAX_PROGRAM_TRIM) -> float:
     """Kuinka paljon mikkien summa on tavoitteen yli, desibeleinä (≤ 0).

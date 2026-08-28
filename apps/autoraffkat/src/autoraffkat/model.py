@@ -372,6 +372,12 @@ class AudioSettings:
     # ja stemit jäävät sen verran hiljemmalle; pois päältä jokainen tiedosto
     # osuu tavoitteeseen yksinään. Ks. ``mix.program_trim``.
     program_target: bool = True
+    # Jakelutaso: mihin **ohjelman** pitää osua, ei stemin. Nolla = pois.
+    # Nosto tehdään summaan katon yhteydessä, jolloin rajoitus osuu vain
+    # sinne missä huiput osuvat yhteen. Stemin oma `target_lufs` on tason
+    # lähtökohta ja pysyy ennallaan; niiden sekoittaminen on koko
+    # tiivistysongelman juuri.
+    program_lufs: float = 0.0
     # Liitännäinen käyttää yhtä ydintä, joten tiedosto pilkotaan tämän verran
     # paloiksi jotka ajetaan rinnakkain omilla instansseillaan. ``0`` on
     # automaattinen eli osuus koneen ytimistä (``chain.WORKER_SHARE``), ``1``

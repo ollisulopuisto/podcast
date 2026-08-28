@@ -189,7 +189,13 @@ def test_fingerprint_covers_every_setting():
     # testi vartioi, vain toisin päin.
     ducking = {name for name in fields if name.startswith("duck")}
     assert ducking, "vaimennuksen kentät ovat kadonneet"
-    outside = {"enabled", "room_track"} | ducking
+    # `program_lufs` on ulkopuolella samasta syystä kuin vaimennus: se ei ole
+    # ketjun työtä vaan katon yhteydessä tehtävä nosto, ja nosto **mitataan**
+    # joka ajolla siitä mitä levyllä nyt on. Toinen ajo mittaa tavoitteen ja
+    # nostaa nollan, eli se on idempotentti; ja `process` ajaa katon myös
+    # silloin kun muuta tehtävää ei ole, jottei tason muuttaminen jää hiljaa
+    # tekemättä. Ks. `test_the_delivery_target_still_works_when_nothing_is_stale`.
+    outside = {"enabled", "room_track", "program_lufs"} | ducking
     assert fields - outside == set(mix.FINGERPRINT_FIELDS)
     assert not ducking & set(mix.FINGERPRINT_FIELDS)
 
@@ -1075,6 +1081,46 @@ def test_the_stamp_says_the_plugin_did_not_run(fixture_dir):
         # liitännäistä ei ajettu.
         again = mix.adopt(tl, roles, broken)
         assert not again.replacements, "ohitettu ajo leimattiin tuoreeksi"
+    finally:
+        for item in tl.media:
+            if item.path and item.path.endswith(".wav"):
+                pathlib.Path(mix.sibling(item.path, mix.MIX_SUFFIX)).unlink(
+                    missing_ok=True
+                )
+
+
+@needs_ffmpeg
+def test_the_delivery_target_still_works_when_nothing_is_stale(fixture_dir):
+    """Tason muuttaminen ei saa jäädä hiljaa tekemättä.
+
+    `process` palaa heti kun jokainen stemi on ajan tasalla. Jakelutaso ei ole
+    stemin käsittelyä vaan katon yhteydessä tehtävä nosto, joten siitä
+    palaaminen tarkoittaisi että säädin liikkuu, lokiin ei tule mitään ja ääni
+    pysyy samana — tämän projektin tavallisin vikaluokka.
+    """
+    from autoraffkat.analysis import build_grid, resolve_roles
+    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.model import ROLE_MIC, TrackConfig
+
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    tracks = {
+        t.key: TrackConfig(role=ROLE_MIC, speaker=t.key.split()[0].capitalize())
+        for t in tl.tracks
+        if not t.has_video
+    }
+    roles = resolve_roles(tl, tracks)
+    settings = AudioSettings(enabled=True, plugin_path="", debleed=False)
+    from autoraffkat.analysis import analyze
+
+    grid, start, _ = build_grid(analyze(tl), tracks, roles)
+    try:
+        first = mix.process(tl, roles, settings, grid=grid, program_start=float(start))
+        assert first.processed, first.errors
+        settings.program_lufs = -3.0
+        again = mix.process(tl, roles, settings, grid=grid,
+                            program_start=float(start))
+        assert again.processed == 0, "stemejä käsiteltiin turhaan"
+        assert again.program_boost > 0, "jakelutaso jäi tekemättä"
     finally:
         for item in tl.media:
             if item.path and item.path.endswith(".wav"):

@@ -13,7 +13,7 @@ nosta.
 import numpy as np
 import pytest
 
-from speechmix import programme
+from speechmix import chain, programme
 
 RATE = 48000
 
@@ -125,3 +125,31 @@ def test_the_backoff_is_shared_so_the_balance_cannot_move():
 def test_no_backoff_means_no_change():
     assert programme.shared_backoff({}) == {}
     assert programme.shared_backoff({"a": 0.0, "b": 0.0}) == {"a": 0.0, "b": 0.0}
+
+
+def test_the_boost_to_a_delivery_target_is_limited_on_the_sum():
+    """Jakelutaso otetaan summasta, ja huiput maksetaan kerran.
+
+    Stemin tavoite ja jakelun tavoite ovat eri asia. Stemikohtaisesti
+    nostettuna jokainen mikki maksaa crestiä siitä mitä *toinen* tiedosto
+    sattuu tekemään — mitattuna ketjun oma rajoitin vei 32,1 -> 16,7 dB.
+    Summasta nostettuna rajoitusta tarvitaan vain siellä missä huiput osuvat
+    yhteen, ja se on sama jaettu käyrä joka pitää katon.
+    """
+    rate = 48000
+    rng = np.random.default_rng(11)
+    quiet = (rng.standard_normal((1, rate)) * 0.02).astype(np.float32)
+    boosted = programme.boost_to(quiet, rate, target_lufs=-16.0)
+    assert boosted > 0, "hiljaista ohjelmaa piti nostaa"
+
+    louder = quiet * (10 ** (boosted / 20))
+    gain = programme.shared_gain([louder], rate)
+    peak = float(np.abs(louder * gain).max())
+    assert peak <= 10 ** (chain.CEILING_DB / 20) + 1e-6, peak
+
+
+def test_no_delivery_target_means_no_boost():
+    """Nolla on pois päältä, ei nollaan normalisointia."""
+    rate = 48000
+    block = (np.random.default_rng(3).standard_normal((1, rate)) * 0.02).astype("f4")
+    assert programme.boost_to(block, rate, target_lufs=None) == 0.0

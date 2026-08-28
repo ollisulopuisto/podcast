@@ -337,6 +337,8 @@ class MixResult:
     # Tasapaino korjataan näistä yhtenä jaettuna päätöksenä, ks.
     # `programme.shared_backoff`.
     backoffs: dict[str, float] = field(default_factory=dict)
+    # Jakelutason nosto, joka tehtiin summaan katon yhteydessä.
+    program_boost: float = 0.0
 
     @property
     def ok(self) -> bool:
@@ -399,9 +401,46 @@ def _geometry(item, frames: int) -> tuple:
     return envelopes.geometry(track_of(item), frames)
 
 
+def _program_boost(jobs: list[dict], ducks: dict, settings: AudioSettings) -> float:
+    """Kuinka paljon valmis ohjelma on jakelutason alla, desibeleinä.
+
+    Mitataan **kirjoitetuista** stemeistä ja vaimennuskäyrät mukaan luettuina:
+    trimmi ja katto on jo tehty, ja juuri se summa on se mitä isäntä soittaa.
+    Ikkuna on sama rajattu pala kuin ``program_trim``illa — koko ohjelman
+    lukeminen toiseen kertaan maksaisi minuutteja eikä muuttaisi lukemaa kuin
+    murto-osan desibelistä.
+    """
+    from pedalboard.io import AudioFile
+
+    target = float(getattr(settings, "program_lufs", 0.0) or 0.0)
+    if not target:
+        return 0.0
+    mics = [j for j in jobs if j.get("speech") and j.get("item") is not None
+            and os.path.exists(j.get("target", ""))]
+    if not mics:
+        return 0.0
+    rate, total = 0, None
+    for job in mics:
+        frames = frame_count(job["target"])
+        if not frames:
+            continue
+        with AudioFile(job["target"]) as handle:
+            rate = int(handle.samplerate)
+            take = min(frames, int(programme.PROGRAM_WINDOW * rate))
+            handle.seek(max(0, (frames - take) // 2))
+            block = handle.read(take).mean(axis=0)
+        gain = _envelope_block(job, ducks, 0, len(block), rate)
+        heard = block * (gain[: len(block)] if gain.size > 1 else 1.0)
+        total = heard if total is None else total[: len(heard)] + heard[: len(total)]
+    if total is None or not rate:
+        return 0.0
+    return programme.boost_to(total, rate, target)
+
+
 def program_ceiling(jobs: list[dict], result: "MixResult",
                     envelopes: dict | None = None,
-                    extra: dict | None = None) -> None:
+                    extra: dict | None = None,
+                    boost_db: float = 0.0) -> None:
     """Huippukatto **ohjelmalle**, ei yhdelle stemille.
 
     Sama virhe kuin äänekkyydessä, jonka ``program_trim`` jo korjaa: ketju
@@ -450,7 +489,9 @@ def program_ceiling(jobs: list[dict], result: "MixResult",
             continue
         frames = key[0]
         try:
-            worst = _ceiling_pass(members, frames, AudioFile, envelopes, extra)
+            worst = _ceiling_pass(
+                members, frames, AudioFile, envelopes, extra, boost_db
+            )
         except (OSError, ValueError) as exc:
             for job in members:
                 result.notes.setdefault(job["key"], []).append(str(exc))
@@ -463,7 +504,8 @@ def program_ceiling(jobs: list[dict], result: "MixResult",
 
 def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                   envelopes: dict | None = None,
-                  extra: dict | None = None) -> float:
+                  extra: dict | None = None,
+                  boost_db: float = 0.0) -> float:
     """Yksi ryhmä: summa paloittain, sama käyrä jokaiseen stemiin.
 
     ``envelopes`` on vaimennus puhujittain aikajanan aikana. Se **on**
@@ -504,11 +546,15 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                 blocks = []
                 for job, handle in zip(members, handles, strict=True):
                     handle.seek(low)
+                    # Jakelutason nosto on jokaiselle sama, ja se tehdään
+                    # **ennen** jaettua käyrää: silloin rajoitus osuu vain
+                    # sinne missä huiput osuvat yhteen, eikä yksikään stemi
+                    # maksa crestiä toisen puolesta.
                     # Jaettu peruutus samaan ajoon: tämä pass lukee ja
                     # kirjoittaa stemin joka tapauksessa.
                     blocks.append(
                         handle.read(high - low)
-                        * _linear((extra or {}).get(job["key"], 0.0))
+                        * _linear((extra or {}).get(job["key"], 0.0) + boost_db)
                     )
                 heard = [
                     block * _envelope_block(job, envelopes, low, high, rate)
@@ -1083,6 +1129,17 @@ def process(
         # palkkia, ei uusia tiedostoja — eikä mitään mikä kertoisi että ajo
         # todella tapahtui ja oli valmis ennen kuin se alkoi.
         _log(f"ei mitään tehtävää: {len(jobs)} tiedostoa on jo ajan tasalla")
+        # Jakelutaso on silti tehtävä. Se ei ole tiedostojen käsittelyä vaan
+        # katon yhteydessä tehtävä nosto, ja tästä palaaminen tarkoittaisi
+        # että tason muuttaminen ei tee **mitään** kun stemit ovat ajan
+        # tasalla: säädin liikkuu, lokiin ei tule mitään, ääni ei muutu.
+        if settings.program_lufs and grid is not None:
+            ducks = duck_envelopes(grid, settings, program_start)
+            boost = _program_boost(jobs, ducks, settings)
+            if boost:
+                result.program_boost = boost
+                _log(f"jakelutaso: +{boost:.2f} dB summaan, katto hoitaa huiput")
+                program_ceiling(jobs, result, ducks, None, boost)
         return result
 
     try:
@@ -1168,7 +1225,14 @@ def process(
     extra = programme.shared_backoff(result.backoffs)
     if any(extra.values()):
         _log(f"jaettu peruutus: {extra}")
-    program_ceiling(jobs, result, ducks, extra)
+    # Jakelutaso mitataan **vaimennetusta summasta**, koska se on ohjelma
+    # jonka isäntä soittaa. Stemin oma tavoite jää siksi ennalleen: se on
+    # tason lähtökohta, tämä on jakelun luku, eivätkä ne ole sama asia.
+    boost = _program_boost(jobs, ducks, settings)
+    if boost:
+        result.program_boost = boost
+        _log(f"jakelutaso: +{boost:.2f} dB summaan, katto hoitaa huiput")
+    program_ceiling(jobs, result, ducks, extra, boost)
     return out
 
 
