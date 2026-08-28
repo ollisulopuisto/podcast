@@ -195,7 +195,7 @@ def test_fingerprint_covers_every_setting():
     # nostaa nollan, eli se on idempotentti; ja `process` ajaa katon myös
     # silloin kun muuta tehtävää ei ole, jottei tason muuttaminen jää hiljaa
     # tekemättä. Ks. `test_the_delivery_target_still_works_when_nothing_is_stale`.
-    outside = {"enabled", "room_track", "program_lufs"} | ducking
+    outside = {"enabled", "room_track", "program_lufs", "program_peak_db"} | ducking
     assert fields - outside == set(mix.FINGERPRINT_FIELDS)
     assert not ducking & set(mix.FINGERPRINT_FIELDS)
 

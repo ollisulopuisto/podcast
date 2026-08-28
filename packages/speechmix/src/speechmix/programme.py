@@ -33,7 +33,8 @@ PROGRAM_WINDOW = 720.0
 MAX_PROGRAM_TRIM = 6.0
 
 
-def shared_gain(blocks, rate: int) -> np.ndarray:
+def shared_gain(blocks, rate: int,
+                ceiling_db: float = chain.CEILING_DB) -> np.ndarray:
     """Yksi rajoittimen käyrä stemien **summasta**.
 
     Tämä on koko korjaus yhtenä rivinä. Kaksi stemiä joiden huiput on
@@ -49,13 +50,17 @@ def shared_gain(blocks, rate: int) -> np.ndarray:
 
     Idempotentti rakenteeltaan: käyrä on ``min(1, katto/huippu)``, joten
     summalle joka jo noudattaa kattoa se on ykkönen kaikkialla.
+
+    ``ceiling_db`` on oletuksena ketjun oma stemikatto. Jakelussa se on eri
+    luku: stemin katto jättää varaa summalle, ohjelman katto on se johon
+    valmis miksaus rajataan.
     """
     total = None
     for block in blocks:
         total = block if total is None else total + block
     if total is None:
         raise ValueError("ohjelmakatto ilman stemejä")
-    return chain.limiter_gain(total, rate)
+    return chain.limiter_gain(total, rate, ceiling_db)
 
 
 def reduction_db(gain: np.ndarray) -> float:

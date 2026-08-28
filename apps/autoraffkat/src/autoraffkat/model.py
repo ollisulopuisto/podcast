@@ -384,6 +384,9 @@ class AudioSettings:
     # lähtökohta ja pysyy ennallaan; niiden sekoittaminen on koko
     # tiivistysongelman juuri.
     program_lufs: float = 0.0
+    # Jakelun huippukatto, dBTP. Ketjun oma `CEILING_DB` on stemin katto ja
+    # jättää varaa summalle; tämä on se luku johon **ohjelma** rajataan.
+    program_peak_db: float = -1.0
     # Liitännäinen käyttää yhtä ydintä, joten tiedosto pilkotaan tämän verran
     # paloiksi jotka ajetaan rinnakkain omilla instansseillaan. ``0`` on
     # automaattinen eli osuus koneen ytimistä (``chain.WORKER_SHARE``), ``1``

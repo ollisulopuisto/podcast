@@ -48,6 +48,7 @@ from speechmix.masks import (
     solo_masks,
     speech_masks,
 )
+from speechmix.meter import IntegratedMeter
 
 # Trimmin katto luetaan tämän moduulin kautta (`tests/test_mix.py` vertaa
 # siihen), joten nimi on osa mix.py:n rajapintaa vaikka moduuli itse lukee sen
@@ -339,6 +340,8 @@ class MixResult:
     backoffs: dict[str, float] = field(default_factory=dict)
     # Jakelutason nosto, joka tehtiin summaan katon yhteydessä.
     program_boost: float = 0.0
+    # Mitattu ohjelman äänekkyys jakelun jälkeen, LUFS. Nolla = ei mitattu.
+    program_lufs: float = 0.0
 
     @property
     def ok(self) -> bool:
@@ -437,10 +440,100 @@ def _program_boost(jobs: list[dict], ducks: dict, settings: AudioSettings) -> fl
     return programme.boost_to(total, rate, target)
 
 
+#: Kuinka monta kierrosta jakelutasoa haetaan, ja kuinka lähelle on päästävä.
+#: Rajoitin vie osan noston tuomasta äänekkyydestä, joten yksi kierros jää
+#: aina alle — mutta ero pienenee kertaluokan kierrosta kohden, joten kolme
+#: riittää. Toleranssi on sama 0,3 LU jota ketjun oma normalisointi käyttää.
+DELIVER_ROUNDS = 3
+DELIVER_TOLERANCE = 0.3
+
+
+def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
+                    extra: dict, settings: AudioSettings) -> None:
+    """Ohjelma jakelutasoon: mittaa, nosta, rajoita, mittaa uudestaan.
+
+    Tämä on se työ jonka moni tekee erillisellä työkalulla viennin jälkeen —
+    rajoitin ja äänekkyyskorjaus valmiin miksauksen päälle. Se kuuluu tänne,
+    koska tässä on ainoa paikka jossa **summa** on olemassa: stemit
+    kirjoitetaan erikseen ja isäntä soittaa niiden summan, joten jokainen
+    muu paikka joutuisi arvaamaan sen.
+
+    Silmukka on tarpeen eikä varovaisuutta. Nosto tuo äänekkyyttä, rajoitin
+    vie osan siitä takaisin, ja yksi kierros jää siksi aina tavoitteen alle.
+    Ero pienenee nopeasti, joten kolme kierrosta riittää.
+
+    Mittaus on koko ohjelmasta eikä ikkunasta: ``IntegratedMeter`` kerää
+    lukeman samasta virrasta jonka katto kirjoittaa, joten koko pituus
+    maksaa yhden lisäkierroksen eikä yhtään ylimääräistä lukukertaa.
+    """
+    target = float(getattr(settings, "program_lufs", 0.0) or 0.0)
+    if not target:
+        program_ceiling(jobs, result, ducks, extra)
+        return
+    ceiling = float(getattr(settings, "program_peak_db", chain.CEILING_DB))
+    rate = 48000
+    for job in jobs:
+        if os.path.exists(job.get("target", "")):
+            with __import__("pedalboard").io.AudioFile(job["target"]) as handle:
+                rate = int(handle.samplerate)
+            break
+
+    boost, measured = 0.0, _program_level(jobs, ducks, rate)
+    for round_number in range(DELIVER_ROUNDS):
+        if measured is None:
+            break
+        step = target - measured
+        if abs(step) <= DELIVER_TOLERANCE:
+            break
+        boost = round(min(programme.MAX_PROGRAM_BOOST, boost + step), 2)
+        meter = IntegratedMeter(rate)
+        program_ceiling(jobs, result, ducks, extra if not round_number else None,
+                        boost, ceiling, meter)
+        measured = meter.value()
+        _log(f"jakelutaso kierros {round_number + 1}: "
+             f"nosto {boost:+.2f} dB -> {measured:.2f} LUFS")
+    result.program_boost = boost
+    result.program_lufs = measured if measured is not None else 0.0
+
+
+def _program_level(jobs: list[dict], ducks: dict, rate: int) -> float | None:
+    """Ohjelman äänekkyys nyt: vaimennettu summa koko pituudeltaan."""
+    from pedalboard.io import AudioFile
+
+    mics = [j for j in jobs if j.get("speech") and j.get("item") is not None
+            and os.path.exists(j.get("target", ""))]
+    if len(mics) < 2:
+        return None
+    meter = IntegratedMeter(rate)
+    frames = min(filter(None, (frame_count(j["target"]) for j in mics)), default=0)
+    if not frames:
+        return None
+    handles = [AudioFile(j["target"]) for j in mics]
+    try:
+        step = int(programme.CEILING_CHUNK * rate)
+        for position in range(0, frames, step):
+            take = min(step, frames - position)
+            total = None
+            for job, handle in zip(mics, handles, strict=True):
+                handle.seek(position)
+                block = handle.read(take)
+                heard = block * _envelope_block(
+                    job, ducks, position, position + take, rate
+                )
+                total = heard if total is None else total + heard
+            meter.add(total.mean(axis=0) if total.ndim > 1 else total)
+    finally:
+        for handle in handles:
+            handle.close()
+    return meter.value()
+
+
 def program_ceiling(jobs: list[dict], result: "MixResult",
                     envelopes: dict | None = None,
                     extra: dict | None = None,
-                    boost_db: float = 0.0) -> None:
+                    boost_db: float = 0.0,
+                    ceiling_db: float = chain.CEILING_DB,
+                    meter=None) -> None:
     """Huippukatto **ohjelmalle**, ei yhdelle stemille.
 
     Sama virhe kuin äänekkyydessä, jonka ``program_trim`` jo korjaa: ketju
@@ -490,7 +583,8 @@ def program_ceiling(jobs: list[dict], result: "MixResult",
         frames = key[0]
         try:
             worst = _ceiling_pass(
-                members, frames, AudioFile, envelopes, extra, boost_db
+                members, frames, AudioFile, envelopes, extra, boost_db,
+                ceiling_db, meter,
             )
         except (OSError, ValueError) as exc:
             for job in members:
@@ -505,7 +599,9 @@ def program_ceiling(jobs: list[dict], result: "MixResult",
 def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                   envelopes: dict | None = None,
                   extra: dict | None = None,
-                  boost_db: float = 0.0) -> float:
+                  boost_db: float = 0.0,
+                  ceiling_db: float = chain.CEILING_DB,
+                  meter=None) -> float:
     """Yksi ryhmä: summa paloittain, sama käyrä jokaiseen stemiin.
 
     ``envelopes`` on vaimennus puhujittain aikajanan aikana. Se **on**
@@ -560,10 +656,18 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                     block * _envelope_block(job, envelopes, low, high, rate)
                     for job, block in zip(members, blocks, strict=True)
                 ]
-                gain = programme.shared_gain(heard, rate)
+                gain = programme.shared_gain(heard, rate, ceiling_db)
                 worst = min(worst, programme.reduction_db(gain))
                 head = position - low
                 tail = head + min(chunk, frames - position)
+                if meter is not None:
+                    # Mitataan **vaimennettu** summa rajoituksen jälkeen, eli
+                    # juuri se ohjelma jonka isäntä soittaa. Sama ajo kirjoittaa
+                    # ja mittaa: erillinen mittauskierros olisi gigatavu lisää
+                    # luettavaa eikä yhtään desibeliä enempää tietoa.
+                    played = sum(h * gain for h in heard)
+                    meter.add(played[..., head:tail].mean(axis=0)
+                              if played.ndim > 1 else played[head:tail])
                 for out, block in zip(outs, blocks, strict=True):
                     out.write(np.ascontiguousarray(
                         (block * gain)[:, head:tail]))
@@ -1228,11 +1332,7 @@ def process(
     # Jakelutaso mitataan **vaimennetusta summasta**, koska se on ohjelma
     # jonka isäntä soittaa. Stemin oma tavoite jää siksi ennalleen: se on
     # tason lähtökohta, tämä on jakelun luku, eivätkä ne ole sama asia.
-    boost = _program_boost(jobs, ducks, settings)
-    if boost:
-        result.program_boost = boost
-        _log(f"jakelutaso: +{boost:.2f} dB summaan, katto hoitaa huiput")
-    program_ceiling(jobs, result, ducks, extra, boost)
+    program_deliver(jobs, result, ducks, extra, settings)
     return out
 
 
