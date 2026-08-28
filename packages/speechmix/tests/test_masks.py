@@ -131,3 +131,42 @@ def test_a_plosive_does_not_reopen_the_ducked_microphone():
     out = masks.duck_masks(grid, _Settings())
     assert out["leak"][100:250].all(), "vaimennus ei alkanut lainkaan"
     assert out["leak"][300:310].all(), "plosiivi avasi mikin kesken vaimennuksen"
+
+
+def test_the_duck_does_not_lift_for_a_breath_in_the_other_speaker():
+    """Vaimennus nousee vain jos vaimennettu puhuja tosiaan puhuu.
+
+    Aukko vaimennuksessa syntyy joko siitä että **tämä** puhuja avaa mikkinsä
+    tai siitä että peittävä puhe loppui. Jälkimmäinen loppuu myös
+    sisäänhengitykseen: mitattuna jaksolla peittävän puhujan taso käy
+    -57…-62 dB:ssä puolen sekunnin ajan kesken lausetta, peittävä jakso
+    katkeaa siihen, ja vaimennettu mikki nousee täyteen tasoon hengityksen
+    ajaksi. Kukaan ei puhu, ja huone nousee kuuluviin.
+
+    Ehto on sisällössä eikä kestossa: jos tämän puhujan portti ei aukea
+    aukon aikana kertaakaan, aukolle ei ole syytä eikä sitä tehdä. Se
+    selviää ilman kynnystä, joten se kestää myös jakson vaihtumisen.
+    """
+    n = 1200
+    a_on = np.zeros(n, dtype=bool)          # a on vaimennettava, ei puhu
+    b_on = np.ones(n, dtype=bool)           # b puhuu koko ajan...
+    b_on[500:560] = False                   # ...paitsi 1,2 s hengitys
+    grid = _Grid(_Lane("a", a_on, np.full(n, -60.0)),
+                 _Lane("b", b_on, np.full(n, -18.0)))
+    out = masks.duck_masks(grid, _Settings())
+    assert out["a"][300:480].all(), "vaimennus ei alkanut"
+    assert out["a"][500:560].all(), "hengitys nosti vaimennetun mikin"
+
+
+def test_the_duck_still_lifts_when_the_speaker_actually_talks():
+    """Sisältöehto ei saa jättää mikkiä kiinni silloin kun puhuja puhuu."""
+    n = 1200
+    a_on = np.zeros(n, dtype=bool)
+    b_on = np.ones(n, dtype=bool)
+    a_on[500:800] = True                    # a ottaa vuoron
+    levels_a = np.full(n, -60.0)
+    levels_a[500:800] = -18.0
+    grid = _Grid(_Lane("a", a_on, levels_a),
+                 _Lane("b", b_on, np.full(n, -18.0)))
+    out = masks.duck_masks(grid, _Settings())
+    assert not out["a"][560:760].any(), "oma vuoro jäi vaimennetuksi"

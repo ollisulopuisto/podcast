@@ -100,6 +100,32 @@ def drop_short(mask: np.ndarray, seconds: float) -> np.ndarray:
     """Pudottaa annettua lyhyemmät todet jaksot pois."""
     return open_runs(mask, hops(seconds)) if seconds > 0 else mask
 
+def close_gaps_without(mask: np.ndarray, reason: np.ndarray) -> np.ndarray:
+    """Täyttää ne aukot joiden aikana ``reason`` ei ole kertaakaan tosi.
+
+    Kestoehdon sijaan sisältöehto. Aukko vaimennuksessa syntyy joko siitä
+    että tämän puhujan portti aukeaa tai siitä että peittävä puhe loppui, ja
+    vain edellinen on syy nostaa mikkiä. Jälkimmäinen loppuu myös
+    sisäänhengitykseen, ja silloin mikki nousee täyteen tasoon hetkeksi
+    jolloin kukaan ei puhu.
+
+    Ilman kynnystä, koska kynnys olisi väärä luku joka jaksossa: hengityksen
+    pituus vaihtelee puhujan ja vireystilan mukaan, mutta «puhuiko hän
+    aukon aikana» ei vaihtele lainkaan.
+
+    Reunat eivät ole aukkoja, kuten ``close_gaps``issa.
+    """
+    if mask.size == 0:
+        return mask
+    out = mask.copy()
+    reason = np.asarray(reason, dtype=bool)
+    for start, end, value in runs(mask.astype(np.int8)):
+        if value or start == 0 or end == mask.size:
+            continue
+        if not reason[start:end].any():
+            out[start:end] = True
+    return out
+
 def close_gaps(mask: np.ndarray, seconds: float) -> np.ndarray:
     """Täyttää annettua lyhyemmät epätodet jaksot. ``drop_short``in duaali.
 
@@ -198,6 +224,13 @@ def duck_masks(grid, settings: object) -> dict:
     **Lyhyitä vaimennuksia ei tehdä.** Ilman tätä syntyi 20 millisekunnin
     kuoppia: naksahdus, ei vaimennus.
 
+    **Eikä aukkoja joille ei ole syytä.** Vaimennus nousee vain jos
+    vaimennettava puhuja tosiaan avaa mikkinsä. Peittävän jakson loppuminen
+    ei riitä syyksi, koska se loppuu myös sisäänhengitykseen: mitattuna
+    peittävän puhujan taso käy -57…-62 dB:ssä puolen sekunnin ajan kesken
+    lausetta, jakso katkeaa siihen, ja vaimennettu mikki nousee täyteen
+    tasoon hengityksen ajaksi. Kukaan ei puhu, ja huone nousee kuuluviin.
+
     **Eikä lyhyitä aukkoja niiden sisään.** Hystereesi oli yksipuolinen:
     lyhyet vaimennukset pudotettiin, lyhyitä aukkoja ei poistanut mikään.
     Vuoto on mediaanissa 12,8 dB hiljempaa, mutta plosiivi tai naurahdus käy
@@ -221,7 +254,14 @@ def duck_masks(grid, settings: object) -> dict:
         # Aukot umpeen ennen kuin lyhyet vaimennukset pudotetaan: vaimennus
         # jonka välähdys katkaisee on **yksi** vaimennus, ja se on
         # arvioitava sellaisena.
+        #
+        # Kaksi sääntöä, koska aukolla on kaksi syytä. Välähdys avaa portin
+        # hetkeksi — se on kesto, ja `duck_min_gap` mittaa sen. Peittävän
+        # puhujan hengitys taas katkaisee peittävän jakson avaamatta porttia
+        # lainkaan — sille ei ole kestoa joka kelpaisi jokaisessa jaksossa,
+        # mutta «aukeaako portti aukon aikana» kelpaa aina.
         closed = close_gaps(closed, settings.duck_min_gap)
+        closed = close_gaps_without(closed, opened[i])
         out[lane.name] = drop_short(closed, settings.duck_min_closed)
     return out
 
