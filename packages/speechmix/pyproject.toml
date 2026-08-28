@@ -1,6 +1,6 @@
 [project]
 name = "speechmix"
-version = "2026.8.27.3"
+version = "2026.8.28.1"
 description = "Speech-mixing pipeline: samples in, samples out, no session format"
 requires-python = ">=3.13"
 dependencies = [
