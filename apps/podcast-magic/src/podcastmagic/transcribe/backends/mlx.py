@@ -13,6 +13,9 @@ litterointi toimisi kehityskoneella ja kaatuisi valmiissa .app-paketissa.
 
 from __future__ import annotations
 
+import contextlib
+import os
+
 import numpy as np
 
 from ...jobs import Cancelled, Progress
@@ -24,6 +27,76 @@ from .base import Backend, BackendInfo, TranscriptResult, words_from_segments
 # puheeksi. mlx-whisperissä ei ole VAD-suodinta; tämä on sen tilalla ja
 # vaikuttaa samaan ongelmaan: taukoon ilmestyvään «Tekstitys: YLE».
 HALLUCINATION_SILENCE_S = 2.0
+
+
+# Mallin painoja ei paketoida — `large-v3-turbo` on gigatavun luokkaa — joten
+# ensimmäinen ajo hakee ne Hugging Facesta. Ilman näitä kolmea funktiota se
+# tapahtuu hiljaa: mlx-whisper lataa mallin ennen ensimmäistäkään
+# edistymispalkkia, eli loki on tyhjä ja palkki nollassa juuri sen ajan kun
+# odotus on pisimmillään. Se on sama oire kuin jumiin mennyt ohjelma.
+#
+# Tunnisteena on painotiedosto — `weights.npz` tai `weights.safetensors`, mikä
+# repossa sattuu olemaan — koska se on niistä se iso: jos se on välimuistissa,
+# lataamista ei ole jäljellä. `config.json` on kolmas merkki, ja mitattu
+# tosiasia on että turbon välimuistista löytyy juuri se eikä kumpikaan
+# painonimi. Puolittain ladattu malli
+# menee tässä «valmiiksi» ja mlx-whisper hoitaa loput itse — se on hiljainen
+# tapaus, mutta paljon lyhyempi kuin koko lataus.
+def model_is_cached(repo: str) -> bool:
+    """Onko malli jo levyllä — ilman verkkoa."""
+    if os.path.isdir(repo):
+        return True
+    try:
+        from huggingface_hub import try_to_load_from_cache
+    # Ilman `huggingface_hub`ia ei voi tietää, eikä silloin pidä luvata
+    # latausta josta ei tiedä. Moottori hoitaa ja on hiljaa, kuten ennen.
+    except Exception:
+        return True
+    for name in ("weights.npz", "weights.safetensors", "config.json"):
+        try:
+            if isinstance(try_to_load_from_cache(repo, name), str):
+                return True
+        except Exception:
+            return True
+    return False
+
+
+def download_model(repo: str) -> str:
+    """Hakee mallin välimuistiin ja palauttaa polun."""
+    from huggingface_hub import snapshot_download
+
+    return snapshot_download(repo)
+
+
+def ensure_model(repo: str, progress: Progress) -> None:
+    """Kertoo latauksesta ennen sitä, ei sen jälkeen.
+
+    Jälkikäteen kerrottu lataus on sama kuin kertomatta jätetty: rivi tulee
+    näkyviin vasta kun odotus on jo ohi.
+    """
+    if model_is_cached(repo):
+        return
+    progress.log(f"Ladataan malli {repo} — kertaluontoinen, gigatavun luokkaa…")
+    # Osuus tuntemattomaksi: nollassa seisova palkki näyttää jumilta, ja
+    # latauksen osuutta ei tästä näe.
+    progress.fraction(None)
+    path = download_model(repo)
+    progress.log(f"  malli levyllä{_size_note(path)}")
+
+
+def _size_note(path: str | None) -> str:
+    """Ladatun mallin koko, jos se on luettavissa.
+
+    Mitattu luku eikä arvio: seuraava lukija näkee paljonko se todella oli.
+    """
+    if not path or not os.path.isdir(path):
+        return "."
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for name in files:
+            with contextlib.suppress(OSError):
+                total += os.stat(os.path.join(root, name)).st_size
+    return f", {total / 1e9:.1f} GB." if total else "."
 
 
 class _Bar:
@@ -110,6 +183,7 @@ class MlxWhisper(Backend):
         transcribe_module = sys.modules.get("mlx_whisper.transcribe")
 
         repo = model_choice(options.model).mlx
+        ensure_model(repo, progress)
 
         decode: dict = {}
         if options.fillers:
