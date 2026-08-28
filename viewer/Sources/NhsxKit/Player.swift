@@ -80,11 +80,42 @@ public final class MixPlayer {
 
     public private(set) var isPlaying = false
 
+    /// Mistä ohjelma-ajan kohdasta nykyinen ajastus alkoi.
+    private var origin: Double = 0
+
+    /// Asetettu kun toisto on tauolla. Silloin `currentTime` on tämä:
+    /// pysähtynyt solmu ei kerro aikaansa.
+    private var paused: Double?
+
+    public var isPaused: Bool { paused != nil }
+
     public init(mix: Mix) {
         self.mix = mix
     }
 
     public var duration: Double { mix.duration }
+
+    /// Toiston kohta ohjelma-aikana.
+    ///
+    /// Luetaan äänimoottorin omasta kellosta eikä seinäkellosta. `Timer`
+    /// ja ääni ajautuvat erilleen — eri kellot, eri tarkkuus — ja se
+    /// ajautuminen näkyy juuri siinä mitä osoitin on olemassa
+    /// näyttämään: osoitin ei ole siinä mistä ääni kuuluu. Ero kasvaa
+    /// jakson mittaan, joten tunnin istunnossa se on iso.
+    public var currentTime: Double {
+        if let paused { return paused }
+        guard let node = nodes.first,
+              let nodeTime = node.lastRenderTime,
+              let played = node.playerTime(forNodeTime: nodeTime)
+        else { return origin }
+        // Ajastus alkaa `zero`sta, joka on hieman tulevaisuudessa: ennen
+        // sitä solmun oma aika on negatiivinen.
+        let seconds = max(0, Double(played.sampleTime) / played.sampleRate)
+        return min(origin + seconds, duration)
+    }
+
+    /// Onko jakso soitettu loppuun. Näkymä nollaa säätimet tästä.
+    public var hasReachedEnd: Bool { isPlaying && currentTime >= duration }
 
     /// Avaa lähteet ja rakentaa graafin. Ei vielä soita.
     public func prepare() throws {
@@ -146,12 +177,66 @@ public final class MixPlayer {
     }
 
     /// Soittaa ohjelman kohdasta `from` (ohjelma-aikaa sekunteina).
-    public func play(from origin: Double = 0) {
-        guard !isPlaying else { return }
-        let rate = engine.mainMixerNode.outputFormat(forBus: 0).sampleRate
+    ///
+    /// Kutsuttavissa myös kesken toiston: silloin tämä on kelaus.
+    public func play(from time: Double = 0) {
+        // `stop()` pysäyttää moottorin; uusi soitto käynnistää sen taas.
+        // Ilman tätä toinen soitto samalla soittimella olisi hiljaisuutta.
+        if !engine.isRunning { try? engine.start() }
+        origin = min(max(time, 0), duration)
+        paused = nil
+        scheduleAll()
+        isPlaying = true
+    }
+
+    /// Tauko. Kohta jää muistiin, eikä graafia pureta.
+    public func pause() {
+        guard isPlaying else { return }
+        paused = currentTime
+        for node in nodes { node.pause() }
+        isPlaying = false
+    }
+
+    /// Jatkaa tauolta.
+    ///
+    /// Ajastetaan uudestaan sen sijaan että solmut vain käynnistettäisiin.
+    /// `AVAudioPlayerNode`n oma aika tauon yli on asia jota ei voi täältä
+    /// mitata, ja jos se laskisi tauon mukaan, osoitin hyppäisi jatkaessa
+    /// tauon verran eteenpäin. Uudelleenajastus on halpa — `scheduleSegment`
+    /// lukee levyltä virtana — ja se on oikein tietämättä.
+    public func resume() {
+        guard let at = paused else { return }
+        play(from: at)
+    }
+
+    /// Kelaa. Soiva jatkaa soimista, tauolla oleva jää tauolle.
+    public func seek(to time: Double) {
+        let wasPlaying = isPlaying
+        play(from: time)
+        if !wasPlaying { pause() }
+    }
+
+    private func scheduleAll() {
+        // Solmun pysäytys tyhjentää aiemman ajastuksen ja nollaa sen oman
+        // kellon. Kelaus ilman tätä soittaisi vanhan ja uuden päällekkäin.
+        for node in nodes { node.stop() }
+
         // Yhteinen nollahetki kaikille solmuille: ilman sitä jokainen alkaisi
         // omasta käynnistyshetkestään ja raidat lipsuisivat toisistaan.
-        let zero = AVAudioTime(sampleTime: AVAudioFramePosition(rate * 0.1), atRate: rate)
+        //
+        // Hetki lasketaan **nykyisestä** rendausajasta eikä vakiosta.
+        // Vakio riitti niin kauan kuin soitin oli kertakäyttöinen ja
+        // moottori juuri käynnistetty. Kelaus soittaa saman soittimen
+        // uudestaan, ja silloin menneisyydessä oleva hetki tarkoittaa
+        // «heti» — eri solmuille eri hetkellä, eli juuri se lipsuminen
+        // jota vastaan yhteinen nollahetki on.
+        let mixRate = engine.mainMixerNode.outputFormat(forBus: 0).sampleRate
+        let reference = nodes.first?.lastRenderTime
+        let valid = reference?.isSampleTimeValid == true
+        let rate = valid ? (reference?.sampleRate ?? mixRate) : mixRate
+        let base = valid ? (reference?.sampleTime ?? 0) : 0
+        let zero = AVAudioTime(
+            sampleTime: base + AVAudioFramePosition(rate * 0.1), atRate: rate)
 
         for (node, clips) in groupedClips {
             for clip in clips where clip.end > origin {
@@ -159,7 +244,6 @@ public final class MixPlayer {
             }
             node.play(at: zero)
         }
-        isPlaying = true
     }
 
     private func schedule(
@@ -234,10 +318,14 @@ public final class MixPlayer {
     }
 
     public func stop() {
-        guard isPlaying else { return }
+        // Myös tauolta: muuten tauolle jäänyt soitin jäisi pystyyn
+        // pitämään äänilaitetta, eikä `paused` nollautuisi.
+        guard isPlaying || paused != nil else { return }
         for node in nodes { node.stop() }
         engine.stop()
         isPlaying = false
+        paused = nil
+        origin = 0
     }
 
     deinit { stop() }

@@ -120,6 +120,38 @@ Häivytetyt leikkeet ovat poikkeus — häivytystä ei voi ajastaa solmun
 ominaisuutena palakohtaisesti — joten ne luetaan puskuriin ja verhokäyrä
 kerrotaan sisään. Niitä on käytännössä musiikkipohjan alku ja loppu.
 
+## Toistosäätimet
+
+Soita ja tauko, kello (`kulunut / kesto`), ja aikajanalla osoitin joka
+seuraa ääntä. Aikajanaa klikkaamalla tai raahaamalla kelataan; kelaus
+toimii myös ennen ensimmäistä soittoa, jolloin soitto alkaa siitä mihin
+osoitettiin.
+
+Kolme asiaa, jotka näyttäisivät pikkuseikoilta mutta eivät ole:
+
+**Osoittimen aika luetaan äänimoottorilta**, ei seinäkellosta.
+`MixPlayer.currentTime` kysyy solmun omaa kelloa. `Timer` ja ääni ovat eri
+kelloja, ja ne ajautuvat erilleen sitä enemmän mitä pidempi jakso — eli
+osoitin ei olisi siinä mistä ääni kuuluu, mikä on ainoa asia jota osoitin
+on olemassa näyttämään.
+
+**Raahaus siirtää vain osoitinta; ääni kelataan kun nappi nousee.**
+Raahaus tuottaa kymmeniä tapahtumia sekunnissa, ja jokainen oikea kelaus
+ajastaisi koko miksauksen uudestaan — häivytetyt leikkeet luetaan
+puskuriin, eli se on levyluku. Nykiminen osuisi juuri siihen hetkeen jossa
+käyttäjä katsoo tarkkaan.
+
+**Osoittimen liike mitätöi vain osoittimen kohdat**, ei koko aikajanaa.
+Tunnin istunnossa on satoja palkkeja, ja 30 kertaa sekunnissa piirretty
+koko aikajana olisi juuri sitä hitautta jonka takia esikatselu ei
+renderöi. `draw(_:)` ohittaa palkit likaisen alueen ulkopuolelta.
+
+Kelauksen geometria (sekunnit ↔ pisteet) on `NhsxKit`in
+`TimelineGeometry`, ei näkymän sisällä, ja sillä on testit. Syy on sama
+kuin `fitFades`illa: piirto ja osumatesti ovat sama kaava, ja jos ne
+laskettaisiin erikseen, palkit näyttäisivät oikeilta ja klikkaus osuisi
+väärään kohtaan. Kumpikaan puoli ei näyttäisi yksinään väärältä.
+
 ## Mitä tämä ei tee
 
 Ei taajuuskorjausta, ei kompressointia, ei Hindenburgin ääniprofiileja. Se
