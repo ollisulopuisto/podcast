@@ -86,9 +86,27 @@ def decode_slice(path: str, start: float, length: float, sample_rate: int) -> np
     työ. Kanavat säilytetään kahteen asti — stereo musiikkipohja monoksi
     summattuna on kuultava virhe eikä pyöristys.
     """
-    cmd = [
+    out = subprocess.run(
+        decode_command(path, start, length, sample_rate), capture_output=True, check=True
+    ).stdout
+    return np.frombuffer(out, np.float32).reshape(-1, 2)
+
+
+def decode_command(path: str, start: float, length: float, sample_rate: int) -> list[str]:
+    """``decode_slice``in komentorivi omana funktionaan, jotta se on väitettävissä.
+
+    Argumenttien **järjestys** on tässä se mikä ratkaisee, eikä sitä voi
+    tarkistaa tuloksesta: ``-ss`` väärällä puolella ``-i``:tä antaa täsmälleen
+    saman äänen, se vain puretaan alusta asti ja heitetään pois. Tunnin nauhan
+    lopusta otettu kolmen sekunnin leike on silloin kolmen sekunnin sijaan
+    tunnin työ — esikatselu ei riko mitään, se vain lakkaa olemasta
+    esikatselu. Kellosta mitattuna sen erottaisi vasta tiedostolla, joka on
+    liian iso testattavaksi; komennosta sen näkee suoraan.
+    """
+    return [
         get_binary_path("ffmpeg"),
         "-nostdin",
+        # Ennen -i:tä: hae tiedostossa. Jälkeen: pura alusta ja heitä pois.
         "-ss", f"{max(0.0, start):.6f}",
         "-i", str(path),
         "-t", f"{max(0.0, length):.6f}",
@@ -98,8 +116,6 @@ def decode_slice(path: str, start: float, length: float, sample_rate: int) -> np
         "-ac", "2",
         "-",
     ]
-    out = subprocess.run(cmd, capture_output=True, check=True).stdout
-    return np.frombuffer(out, np.float32).reshape(-1, 2)
 
 
 def _spread(samples: np.ndarray, want: int) -> np.ndarray:
@@ -249,7 +265,15 @@ def _pack(chunk: np.ndarray, bit_depth: int) -> bytes:
     scaled = np.clip(chunk, -1.0, 1.0) * full
     if bit_depth == 16:
         return scaled.astype("<i2").tobytes()
-    # 24-bittiselle ei ole omaa dtypeä: kirjoitetaan 32-bittisenä ja
-    # pudotetaan alin tavu, joka on little-endianina ensimmäinen.
+    # 24-bittiselle ei ole omaa dtypeä: kirjoitetaan 32-bittisenä ja otetaan
+    # **kolme alinta** tavua, jotka ovat little-endianina ensimmäiset. Ylin
+    # tavu on etumerkin jatke ja se pudotetaan; arvo mahtuu 24 bittiin, joten
+    # kahden komplementti säilyy oikein.
+    #
+    # Kolme *ylintä* olisi sama luku 8 bittiä siirrettynä eli 48 dB liian
+    # hiljaa, eikä mikään kaatuisi: WAV olisi kelvollinen, kesto oikea ja
+    # `Report.peak` — joka mitataan liukuluvuista ennen pakkausta — kertoisi
+    # oikean huipun tiedostosta joka on 256× hiljaisempi. Niin tässä oli, ja
+    # se jäi kiinni vasta oikeasta renderöinnistä.
     as32 = scaled.astype("<i4")
-    return as32.view(np.uint8).reshape(-1, 4)[:, 1:].tobytes()
+    return as32.view(np.uint8).reshape(-1, 4)[:, :3].tobytes()

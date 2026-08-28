@@ -228,12 +228,37 @@ mitään. Kun muoto mitataan, se vaihdetaan yhdessä funktiossa (`envelope`).
 Leikettä pidemmät häivytykset **skaalataan** — pilkkominen jättää lyhyitä
 paloja, ja perittynä käyrät menisivät ristiin ja summa nollan ali.
 
-### Purkaja on parametri
+### Purkaja on parametri — ja siksi tarvitaan myös päästä päähän -testi
 
 `render.blocks` ottaa purkajan argumenttina. Ilman sitä jokainen summauksen
 testi tarvitsisi ffmpegin, ja ffmpegiä tarvitseva testi on vihreä siellä
 missä ffmpegiä ei ole — eli sama kuin ettei sitä olisi. Renderöinnin viat
 ovat summauksessa, eivät purussa.
+
+**Mutta silloin oikea polku jää ajamatta, ja siellä oli vika.** 24-bittinen
+näyte pakattiin int32:n kolmesta **ylimmästä** tavusta kolmen alimman
+sijaan, eli jokainen ohjelma kirjoitettiin **48 dB** (256×) liian hiljaa.
+Mikään ei kaatunut: WAV oli kelvollinen, kesto oikea, kanavat oikein — ja
+`Report.peak` kertoi oikean huipun, koska se mitataan liukuluvuista **ennen**
+pakkausta. Ohjelma sanoi «huippu −6,7 dBFS» tiedostosta, jonka huippu oli
+−54,7. Yksikään yksikkötesti ei lukenut 24-bittisiä tavuja takaisin, vain
+16-bittiset.
+
+Siksi `tests/test_render_endtoend.py`: oikeat lähteet, oikea ffmpeg, oikea
+WAV levylle ja tavut luettuna takaisin käsin. Lähteet tehdään niin, että
+**taajuus kertoo sekunnin** (sekunti `s` on siniä taajuudella `400 + 200·s`),
+jolloin renderistä näkee suoraan mistä kohtaa lähdettä kukin ohjelmasekunti
+tuli. Tiedosto-offsetin voi laskea väärin niin, että tulos on joka muulla
+tavalla kelvollinen.
+
+Ohittunut testi on vihreä testi, joten CI tarkistaa erikseen ettei se
+ohittunut — sama kuvio kuin käyttöliittymän savutestillä.
+
+`-ss` **ennen** `-i`:tä ei ole tarkistettavissa tuloksesta: väärällä puolella
+se antaa täsmälleen saman äänen, se vain puretaan alusta asti ja heitetään
+pois. Kellosta eron näkisi vasta tiedostolla joka on liian iso testattavaksi,
+joten komentorivi on oma funktionsa (`decode_command`) ja järjestys
+väitetään siitä.
 
 ## Ääniketju tulee joskus, ei vielä
 

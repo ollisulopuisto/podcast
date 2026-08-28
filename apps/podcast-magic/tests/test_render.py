@@ -218,6 +218,25 @@ def test_a_fade_belongs_to_the_clip_not_to_the_block():
     assert left[1000] == pytest.approx(0.5 * render.pan_of(0.0)[0], abs=0.02)
 
 
+# --- ffmpegin komentorivi ----------------------------------------------
+
+
+def test_the_seek_comes_before_the_input():
+    """``-ss`` ennen ``-i``:tä, ja tämä on ainoa paikka jossa sen näkee.
+
+    Väärällä puolella se antaa täsmälleen saman äänen — ffmpeg purkaa vain
+    tiedoston alusta asti ja heittää pois. Tulos on oikea ja esikatselu
+    kestää minuutteja tunnin nauhalla. Kellosta mitattuna eron näkisi vasta
+    tiedostolla joka on liian iso testattavaksi, joten se väitetään
+    komennosta.
+    """
+    cmd = render.decode_command("a.wav", 3600.0, 3.0, 48000)
+    assert cmd.index("-ss") < cmd.index("-i")
+    assert cmd[cmd.index("-ss") + 1].startswith("3600")
+    # Kesto menee -i:n jälkeen: ennen sitä se rajaisi hakua, ei ulostuloa.
+    assert cmd.index("-t") > cmd.index("-i")
+
+
 # --- WAV ----------------------------------------------------------------
 
 
@@ -239,6 +258,30 @@ def test_sixteen_bit_is_sixteen_bit(tmp_path):
         assert w.getsampwidth() == 2
         frames = np.frombuffer(w.readframes(w.getnframes()), "<i2").reshape(-1, 2)
     assert frames[500, 0] == pytest.approx(0.5 * render.pan_of(0.0)[0] * 32767, abs=2)
+
+
+def test_twentyfour_bit_comes_back_at_the_level_it_went_in(tmp_path):
+    """24-bittinen näyte on int32:n **kolme alinta** tavua, ei kolmea ylintä.
+
+    Ylimmät kolme olisivat sama luku 8 bittiä siirrettynä eli 48 dB liian
+    hiljaa, ja mikään ei kaatuisi: WAV on kelvollinen, kesto oikea, kanavat
+    oikein, ja `Report.peak` — joka mitataan liukuluvuista ennen pakkausta —
+    kertoisi oikean huipun tiedostosta joka on 256× hiljaisempi.
+
+    Juuri tämä vika oli täällä, ja se jäi kiinni vasta kun ohjelma
+    renderöitiin oikeasti ja kuunneltiin. Yksikään testi ei lukenut
+    24-bittisiä tavuja takaisin — vain 16-bittiset.
+    """
+    out = tmp_path / "ohjelma.wav"
+    render.to_wav(one(), str(out), sample_rate=SR, bit_depth=24, decode=constant(0.5))
+    with wave.open(str(out)) as w:
+        raw = w.readframes(w.getnframes())
+    # Kolme tavua kerrallaan etumerkillisenä little-endianina.
+    b = np.frombuffer(raw, np.uint8).reshape(-1, 3).astype(np.int32)
+    values = b[:, 0] | (b[:, 1] << 8) | (b[:, 2] << 16)
+    values = np.where(values >= 1 << 23, values - (1 << 24), values)
+    expected = 0.5 * render.pan_of(0.0)[0] * (2**23 - 1)
+    assert values.reshape(-1, 2)[500, 0] == pytest.approx(expected, rel=1e-4)
 
 
 def test_an_unsupported_bit_depth_says_so_rather_than_writing_nonsense(tmp_path):

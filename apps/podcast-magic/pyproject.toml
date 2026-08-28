@@ -1,6 +1,6 @@
 [project]
 name = "podcast-magic"
-version = "2026.8.27.4"
+version = "2026.8.28.1"
 description = "Hindenburg-jälkityöt macOS:llä: litterointi ja hiljaisten kohtien vaimennus"
 readme = "README.md"
 requires-python = ">=3.13"
