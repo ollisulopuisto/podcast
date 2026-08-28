@@ -44,7 +44,7 @@ public struct TimelineGeometry: Equatable {
     /// oikean reunan takaa kesto eikä sen yli: kelaus ei saa viedä
     /// jakson ulkopuolelle.
     public func time(atX x: Double) -> Double {
-        clamped(x / plotWidth * duration)   // MUTAATIO: nimisarake unohdettu
+        clamped((x - plotStart) / plotWidth * duration)
     }
 
     private func clamped(_ time: Double) -> Double {
