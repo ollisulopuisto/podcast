@@ -99,6 +99,21 @@ jobs:
           done
           echo "Ei get-task-allow'ta kummassakaan."
 
+          # Äänipoolin lukuoikeus. Ilman tätä esikatselu piirtää istunnon
+          # oikein ja on hiljaa — ei virhettä, ei kaatumista, ei mitään
+          # muuta jälkeä kuin rivi «ei auennut». Oikeus voi kadota yhdestä
+          # siivouksesta, ja vika palaisi juuri sellaisena.
+          for part in "$app" "$app/Contents/PlugIns/NhsxQuickLook.appex"; do
+            ent=$(codesign -d --entitlements - "$part" 2>/dev/null)
+            for want in "temporary-exception.files.absolute-path.read-only" "/Users/" "/Volumes/"; do
+              case "$ent" in
+                *"$want"*) ;;
+                *) echo "$part: oikeuksista puuttuu «$want» — äänipooli ei aukea."; exit 1 ;;
+              esac
+            done
+            echo "  $part lukee äänipoolin."
+          done
+
           # Mitä pakettiin **oikeasti** kirjoitettiin. Käännösasetus voi olla
           # oikein ja paketissa silti lukea 1.0, jos plistissä ei ole avainta
           # johon se sijoitetaan — niin kävi julkaisussa viewer-v2026.8.28.1.
