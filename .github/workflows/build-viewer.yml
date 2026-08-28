@@ -16,11 +16,6 @@ on:
   workflow_dispatch:
   push:
     tags: ["viewer-v*"]
-    # VÄLIAIKAINEN. Paketointia ei voi ajaa käsin ennen kuin työnkulku on
-    # oletushaarassa (workflow_dispatch on 404 muualta), joten se todistetaan
-    # tästä haarasta. Poistetaan heti kun käännös on nähty vihreänä:
-    # paketointi ei kuulu jokaiseen puskuun.
-    branches: ["claude/nhsx-previewer-number-helper-c56nz5"]
 
 permissions:
   contents: read
