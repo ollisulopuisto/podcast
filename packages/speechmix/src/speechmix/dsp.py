@@ -14,6 +14,12 @@ from .errors import NotMono
 
 EPS = 1e-12
 
+#: Silence, in dB. The logarithm of zero is -inf and it spreads into every
+#: sum it reaches -- a noise floor, a threshold, a preview bar. Lives here
+#: because this is the module that converts to dB; ``rms`` and ``grid`` both
+#: read it from here rather than each keeping one.
+FLOOR_DB = -120.0
+
 
 def as_mono(audio, name="track"):
     """Return ``audio`` as a 1-D float64 array, refusing anything multi-channel.

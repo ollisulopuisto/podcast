@@ -261,3 +261,50 @@ and scipy on the CPU, automixer's stages were mlx on the GPU. On Apple Silicon
 the old path is faster still, so the ratio there is likely worse than this.
 What was bought with it is a de-clicker that fires, a ceiling that holds where
 it says it does, and a tone that does not move with the programme.
+
+
+---
+
+## 7. The grid rule, converged on autoraffkat's
+
+§4 said the grid arrived and the three stages that needed it started running.
+What it did not say is that the *rule* was still this app's own. autoraffkat
+answered "who is speaking" one way and `speechmix.grid` another, so an
+improvement to autoraffkat's detection would not have reached here — the exact
+thing the shared pipeline is supposed to prevent.
+
+| | automixer (was) | autoraffkat (now both) |
+|---|---|---|
+| level curve | unsmoothed | 100 ms moving average |
+| noise floor | 10th percentile | **20th** percentile |
+| margin over floor | 8 dB | **12 dB** |
+| dominance | folded into the decision | in `duck_masks`, where it decides who stays open |
+
+The margin is the number measured on 77 minutes of real material, so it wins.
+Measured on the library's own two-microphone fixture, where the bleed sits
+18.4 dB under the direct voice:
+
+| rule | own speech | other's bleed |
+|---|---|---|
+| 10th pct + 8 dB + dominance | 100.0 % | 0.4 % |
+| 10th pct + 8 dB, no dominance | 100.0 % | 0.4 % |
+| autoraffkat: smoothed, 20th pct, 12 dB | 100.0 % | **0.0 %** |
+
+The first two rows are identical, so the dominance test was deciding nothing
+there — `test_grid.py` used to assert that bleed "is loud enough to fool a
+level threshold", and on that fixture it is not. The rule is now `grid.lane`,
+one function, called by both apps; everything around it is a host getting hold
+of levels.
+
+### A bug that fell out of copying the rule faithfully
+
+autoraffkat smoothed with `np.convolve(..., "same")`, which zero-pads. **Zero
+is silence in the linear domain and full scale in dB.** Measured on a constant
+−240 dB curve with the 100 ms kernel, the first cell came back at −144 dB:
+96 dB of level that is not in the material, at the programme's first and last
+40 ms — enough to read as a microphone being active there, which is a cut
+decision in autoraffkat and a ducking event in both.
+
+Nothing crashed; the curve was valid and the right length. `grid.smooth`
+replicates the edge value instead, and both apps get the fix because there is
+now one smoother.

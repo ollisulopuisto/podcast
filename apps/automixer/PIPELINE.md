@@ -23,9 +23,23 @@ Where a stage says **shared**, the numbers behind it are in
 `domain/room.py` places each stem at its timeline offset, gives it the shape
 the library asks for — a track with spans on a programme timeline — and hands
 the set to `speechmix.grid.speech_grid`, which builds the **speech grid**: who
-is talking, when, and how loudly, one row per microphone. The decision is a
-comparison across microphones rather than a threshold on one, because on two
-microphones half of what is loud on a track is the other person.
+is talking, when, and how loudly, one row per microphone.
+
+The rule is autoraffkat's, and it is one function (`grid.lane`) that both apps
+call: smooth the level curve over 100 ms, read the noise floor at the 20th
+percentile of that curve, and speech is what clears the floor by 12 dB. Those
+numbers were measured on 77 minutes of real two-microphone material. This app
+used to answer the same question with its own — a 10th-percentile floor, an
+8 dB margin, and a dominance test folded into the decision — which is two
+answers to one question in one package.
+
+Dominance still decides which microphone stays *open* when two are genuinely
+active. That is the ducking rule, and it belongs there: measured on the
+library's own two-microphone fixture, folding it into the decision as well
+changed nothing (0.4 % → 0.4 % on the other speaker's bleed), while the
+measured margin took it to 0.0 %. Keeping it out also makes the "only this
+speaker" masks purer, and those are what de-bleeding estimates its filter
+from.
 
 Three later stages read nothing else, and none of them existed here before the
 grid did.
