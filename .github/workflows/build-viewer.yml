@@ -45,6 +45,17 @@ jobs:
           xcodegen generate --spec project.yml
           echo "VIEWER_VERSION=$version" >> "$GITHUB_ENV"
 
+          # XcodeGenin `info:`-avain **kirjoittaa** plistin, ei viittaa
+          # siihen. Kumpikin tiedosto korvautui joka generoinnilla, ja
+          # ainoa näkyvä oire oli versionumero — puuttuva `NSExtension` ei
+          # kaada mitään, esikatselu vain ei ilmesty koskaan. Väitetään siis
+          # se mitä ei voi nähdä: lähteet ovat generoinnin jälkeen ennallaan.
+          git diff --exit-code App/Info.plist Extension/Info.plist || {
+            echo "xcodegen kirjoitti Info.plistin päälle — paketoitava plist"
+            echo "ei ole se joka on repositoriossa."
+            exit 1
+          }
+
       # Yhdenmukaisuustesti myös täällä. Julkaisu, joka ei ole samaa mieltä
       # `nhsx-render`in kanssa, näyttäisi eri jakson kuin se renderöi.
       - name: NhsxKit agrees with the recorded plan
@@ -59,40 +70,6 @@ jobs:
             -derivedDataPath build \
             CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=YES CODE_SIGNING_ALLOWED=YES \
             build
-
-      # Mitä paketti **ilmoittaa** olevansa. Laajennus ilman `NSExtension`ia
-      # kääntyy, allekirjoittuu ja asentuu; se ei vain koskaan rekisteröidy
-      # esikatseluksi, eikä mikään kerro miksi. Sama koskee `.nhsx`:n
-      # tyyppitunnistetta: ilman sitä välilyönti Finderissä ei tee mitään.
-      - name: The bundles declare what they are for
-        working-directory: viewer
-        run: |
-          app="build/Build/Products/Release/NHSX Viewer.app"
-          ext="$app/Contents/PlugIns/NhsxQuickLook.appex/Contents/Info.plist"
-          plist="$app/Contents/Info.plist"
-
-          want() {
-            got=$(/usr/libexec/PlistBuddy -c "Print $2" "$1" 2>&1) || true
-            echo "  $2 → $got"
-            if [ "$got" != "$3" ]; then
-              echo "Odotettiin «$3», paketissa on «$got»."
-              exit 1
-            fi
-          }
-
-          echo "$ext"
-          want "$ext" ":NSExtension:NSExtensionPointIdentifier" \
-               "com.apple.quicklook.preview"
-          want "$ext" ":NSExtension:NSExtensionPrincipalClass" \
-               "NhsxQuickLook.PreviewViewController"
-          want "$ext" ":NSExtension:NSExtensionAttributes:QLSupportedContentTypes:0" \
-               "com.hindenburg.nhsx"
-
-          echo "$plist"
-          want "$plist" ":UTImportedTypeDeclarations:0:UTTypeIdentifier" \
-               "com.hindenburg.nhsx"
-          want "$plist" ":CFBundleDocumentTypes:0:LSItemContentTypes:0" \
-               "com.hindenburg.nhsx"
 
       # Mitä pakettiin oikeasti päätyi. Laajennus on paketti sovelluksen
       # sisällä, ja jos se puuttuu, sovellus käynnistyy normaalisti eikä
@@ -136,6 +113,51 @@ jobs:
               echo "Odotettiin $VIEWER_VERSION, paketissa on $short ($build)."
               exit 1
             fi
+          done
+
+      # Mitä paketti **ilmoittaa** olevansa. Laajennus ilman `NSExtension`ia
+      # kääntyy, allekirjoittuu ja asentuu; se ei vain koskaan rekisteröidy
+      # esikatseluksi, eikä mikään kerro miksi. Sama koskee `.nhsx`:n
+      # tyyppitunnistetta: ilman sitä välilyönti Finderissä ei tee mitään.
+      - name: The bundles declare what they are for
+        working-directory: viewer
+        run: |
+          app="build/Build/Products/Release/NHSX Viewer.app"
+          ext="$app/Contents/PlugIns/NhsxQuickLook.appex/Contents/Info.plist"
+          plist="$app/Contents/Info.plist"
+
+          want() {
+            got=$(/usr/libexec/PlistBuddy -c "Print $2" "$1" 2>&1) || true
+            echo "  $2 → $got"
+            if [ "$got" != "$3" ]; then
+              printf 'Odotettiin: %s\nPaketissa:  %s\n' "$3" "$got"
+              exit 1
+            fi
+          }
+
+          echo "$ext"
+          want "$ext" ":NSExtension:NSExtensionPointIdentifier" \
+               "com.apple.quicklook.preview"
+          want "$ext" ":NSExtension:NSExtensionPrincipalClass" \
+               "NhsxQuickLook.PreviewViewController"
+          want "$ext" ":NSExtension:NSExtensionAttributes:QLSupportedContentTypes:0" \
+               "com.hindenburg.nhsx"
+
+          echo "$plist"
+          want "$plist" ":UTImportedTypeDeclarations:0:UTTypeIdentifier" \
+               "com.hindenburg.nhsx"
+          want "$plist" ":CFBundleDocumentTypes:0:LSItemContentTypes:0" \
+               "com.hindenburg.nhsx"
+
+          # `CFBundleExecutable` tuli ennen XcodeGeniltä. Nyt se tulee
+          # plististä, ja väärä nimi näkyy vasta käyttäjän koneella
+          # ilmoituksena ettei sovellusta voi avata.
+          for part in "$app" "$app/Contents/PlugIns/NhsxQuickLook.appex"; do
+            exe=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" \
+                  "$part/Contents/Info.plist")
+            echo "  $part → MacOS/$exe"
+            test -x "$part/Contents/MacOS/$exe" \
+              || { echo "Paketti nimeää käynnistettävän jota ei ole."; exit 1; }
           done
 
       - name: Disk image

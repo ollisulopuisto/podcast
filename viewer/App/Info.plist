@@ -5,7 +5,19 @@
   <key>CFBundleDisplayName</key>
   <string>NHSX Viewer</string>
   <key>CFBundleIdentifier</key>
-  <string>fi.sulopuisto.nhsx-viewer</string>
+  <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+  <!-- XcodeGen tuotti nämä ennen itse. Nyt plist on käsin kirjoitettu, ja
+       se joka omistaa tiedoston omistaa myös oletukset: ilman
+       `CFBundleExecutable`ia paketissa ei ole mitään käynnistettävää, ja
+       Finder ilmoittaa vain ettei sovellusta voi avata. -->
+  <key>CFBundleExecutable</key>
+  <string>$(EXECUTABLE_NAME)</string>
+  <key>CFBundleName</key>
+  <string>$(PRODUCT_NAME)</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <!-- Versio tulee käännösasetuksista. Ilman **näitä avaimia** asetus ei

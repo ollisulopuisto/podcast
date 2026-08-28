@@ -27,9 +27,15 @@ targets:
     type: application
     platform: macOS
     sources: [App]
-    info:
-      path: App/Info.plist
+    # `info:` **kirjoittaa** plistin, ei viittaa siihen: jokainen
+    # `xcodegen generate` korvasi käsin kirjoitetun tiedoston omilla
+    # oletuksillaan. Julkaisussa `viewer-v2026.8.28.1` se tarkoitti, että
+    # sovelluksesta puuttuivat tyyppimäärittelyt ja laajennuksesta koko
+    # `NSExtension` — esikatselu ei olisi voinut ilmestyä. Näkyvä oire oli
+    # vain versionumero `1.0 (1)`, joka on XcodeGenin oletus.
+    # `INFOPLIST_FILE` osoittaa tiedostoon koskematta siihen.
     settings:
+      INFOPLIST_FILE: App/Info.plist
       PRODUCT_NAME: NHSX Viewer
       PRODUCT_BUNDLE_IDENTIFIER: fi.sulopuisto.nhsx-viewer
       MARKETING_VERSION: "2026.8.28"
@@ -62,9 +68,15 @@ targets:
     type: app-extension
     platform: macOS
     sources: [Extension]
-    info:
-      path: Extension/Info.plist
+    # `info:` **kirjoittaa** plistin, ei viittaa siihen: jokainen
+    # `xcodegen generate` korvasi käsin kirjoitetun tiedoston omilla
+    # oletuksillaan. Julkaisussa `viewer-v2026.8.28.1` se tarkoitti, että
+    # sovelluksesta puuttuivat tyyppimäärittelyt ja laajennuksesta koko
+    # `NSExtension` — esikatselu ei olisi voinut ilmestyä. Näkyvä oire oli
+    # vain versionumero `1.0 (1)`, joka on XcodeGenin oletus.
+    # `INFOPLIST_FILE` osoittaa tiedostoon koskematta siihen.
     settings:
+      INFOPLIST_FILE: Extension/Info.plist
       PRODUCT_NAME: NhsxQuickLook
       PRODUCT_BUNDLE_IDENTIFIER: fi.sulopuisto.nhsx-viewer.preview
       MARKETING_VERSION: "2026.8.28"
