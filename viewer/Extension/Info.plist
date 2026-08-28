@@ -6,6 +6,20 @@
   <string>NHSX Quick Look</string>
   <key>CFBundleIdentifier</key>
   <string>fi.sulopuisto.nhsx-viewer.preview</string>
+  <!-- Versio tulee käännösasetuksista. Ilman **näitä avaimia** asetus ei
+       päädy mihinkään: `MARKETING_VERSION` on olemassa, `sed` asettaa sen
+       tagista, Xcode kääntää — ja paketissa lukee `1.0`, koska plistissä ei
+       ollut paikkaa johon se sijoitettaisiin.
+       
+       Niin kävi julkaisussa `viewer-v2026.8.28.1`: kaikki vihreänä,
+       molemmat paketit `CFBundleShortVersionString 1.0`, `CFBundleVersion 1`.
+       macOS päättää päivitystarjouksen `CFBundleVersion`ista, joten
+       jumiin jäänyt numero epäonnistuu tekemällä ei mitään. -->
+  <key>CFBundleShortVersionString</key>
+  <string>$(MARKETING_VERSION)</string>
+  <key>CFBundleVersion</key>
+  <string>$(CURRENT_PROJECT_VERSION)</string>
+
   <key>CFBundlePackageType</key>
   <string>XPC!</string>
   <key>NSExtension</key>

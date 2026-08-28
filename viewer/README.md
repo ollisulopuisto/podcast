@@ -134,6 +134,19 @@ renderöidyssä tiedostossa. Oma laki vaatisi jokaisen leikkeen lukemisen
 puskuriin, eli juuri sen nopeuden jonka takia tämä on olemassa.
 `Conformance/plan.json` sitoo suunnitelman, ei toiston viimeistä desibeliä.
 
+## Version on oltava paketissa, ei vain käännösasetuksissa
+
+`Info.plist`eissa on `CFBundleShortVersionString` ja `CFBundleVersion`
+arvoinaan `$(MARKETING_VERSION)` ja `$(CURRENT_PROJECT_VERSION)`. Ne ovat
+siellä siksi, että ilman **avainta** asetuksella ei ole mihin päätyä:
+julkaisussa `viewer-v2026.8.28.1` `sed` asetti version tagista, käännös oli
+vihreä, ja molemmissa paketeissa luki silti `1.0` / `1`.
+
+macOS päättää päivitystarjouksen `CFBundleVersion`ista, joten jumiin jäänyt
+numero epäonnistuu tekemällä ei mitään — sama vikaluokka kuin muuallakin
+täällä. `build-viewer.yml` lukee molemmista paketeista `PlistBuddy`llä mitä
+niihin todella kirjoitettiin ja kaatuu jos se ei ole tagin versio.
+
 ## Asentaminen
 
 Julkaisuista (`viewer-v*`) latautuu kaksi asiaa:
