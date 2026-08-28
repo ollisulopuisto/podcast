@@ -82,11 +82,19 @@ class IntegratedMeter:
         self._z2 = np.zeros(2)
         self.step = max(1, int(round(BLOCK_SEC * rate / OVERLAP)))
         self._tail = np.zeros(0, dtype=np.float64)
+        self._tail_speech = np.zeros(0, dtype=np.float64)
+        self._speech: list[float] = []
         # Osalohkojen tehot: koko lohko on OVERLAP peräkkäistä osaa.
         self._powers: list[float] = []
 
-    def add(self, block) -> None:
-        """Lisää palan. Suotimen tila jatkuu palasta toiseen."""
+    def add(self, block, speech=None) -> None:
+        """Lisää palan. Suotimen tila jatkuu palasta toiseen.
+
+        ``speech`` on valinnainen totuusarvo näytettä kohden. Se kulkee äänen
+        **mukana** eikä erillisenä aikatauluna: mittari saa palansa siinä
+        järjestyksessä kuin isäntä ne lukee, ja jokainen yritys kohdistaa
+        maski jälkikäteen olisi arvaus siitä järjestyksestä.
+        """
         x = np.asarray(block, dtype=np.float64)
         if x.ndim > 1:
             x = x.mean(axis=0)
@@ -94,12 +102,21 @@ class IntegratedMeter:
             return
         y, self._z1 = self._sig.lfilter(self._b1, self._a1, x, zi=self._z1)
         y, self._z2 = self._sig.lfilter(self._b2, self._a2, y, zi=self._z2)
+        flag = (np.ones(x.size) if speech is None
+                else np.asarray(speech, dtype=float)[: x.size])
+        if flag.size < x.size:
+            flag = np.pad(flag, (0, x.size - flag.size))
         data = np.concatenate((self._tail, y)) if self._tail.size else y
+        marks = (np.concatenate((self._tail_speech, flag))
+                 if self._tail_speech.size else flag)
         count = data.size // self.step
         if count:
             usable = data[: count * self.step].reshape(count, self.step)
             self._powers.extend(np.mean(usable**2, axis=1).tolist())
+            spoken = marks[: count * self.step].reshape(count, self.step)
+            self._speech.extend(spoken.mean(axis=1).tolist())
         self._tail = data[count * self.step :].copy()
+        self._tail_speech = marks[count * self.step :].copy()
 
     def _windows(self, seconds: float) -> np.ndarray:
         """Liukuvan ikkunan tehot osalohkoista koottuna."""
@@ -155,17 +172,41 @@ class IntegratedMeter:
             return 0.0
         return float(np.percentile(kept, RANGE_HIGH) - np.percentile(kept, RANGE_LOW))
 
+    def times(self) -> np.ndarray:
+        """Lohkojen keskikohdat sekunteina alusta. Maskin kohdistusta varten."""
+        count = len(self._blocks())
+        step = BLOCK_SEC / OVERLAP
+        return (np.arange(count) + OVERLAP / 2.0) * step
+
+    def speech(self) -> np.ndarray:
+        """Puheen osuus lohkoa kohden, 0…1. Sama pituus kuin ``momentary``."""
+        marks = np.asarray(self._speech)
+        if marks.size < OVERLAP:
+            return np.zeros(0)
+        window = np.lib.stride_tricks.sliding_window_view(marks, OVERLAP)
+        return window.mean(axis=1)
+
     def step_seconds(self) -> float:
         """Osalohkon pituus sekunteina: käyrän aika-akseli."""
         return BLOCK_SEC / OVERLAP
 
-    def value(self) -> float | None:
-        """Integroitu äänekkyys, LUFS. ``None`` jos portin yli ei jää mitään."""
+    def value(self, keep=None) -> float | None:
+        """Integroitu äänekkyys, LUFS. ``None`` jos portin yli ei jää mitään.
+
+        ``keep`` on valinnainen puheportti: totuusarvo lohkoa kohden, ks.
+        ``times``. Sen kanssa lukema on **puheen** lukema, ei ohjelman —
+        hiljainen jakso ohjelman keskellä painaa muuten integroitua alas, ja
+        alaspäin painettu lukema pyytää enemmän nostoa kuin ohjelma
+        tarvitsee. Standardin oma portti ei riitä siihen: se on
+        suhteellinen, ei sisällöllinen.
+        """
         blocks = self._blocks()
         if not blocks.size:
             return None
         level = self._db(blocks)
-        keep = level > ABSOLUTE_GATE
+        keep = (level > ABSOLUTE_GATE) if keep is None else (
+            (level > ABSOLUTE_GATE) & np.asarray(keep, dtype=bool)[: level.size]
+        )
         if not keep.any():
             return None
         # Suhteellinen portti lasketaan absoluuttisen läpäisseistä.

@@ -394,6 +394,12 @@ class AudioSettings:
     program_short_term_db: float = 0.0
     # Kuinka lähelle jakelutasoa on päästävä, LU.
     program_tolerance: float = 0.5
+    # Kuinka paljon äänekkyyttä ohjelman rajoitin saa syödä, LU. Nolla = ei
+    # rajaa. Ala on mitattu muualla eikä täällä: masteroinnissa yhdestä
+    # kolmeen desibeliä rajoitusta on tervettä, kahdeksasta kymmeneen tuhoaa
+    # transientit. Ylitys otetaan **nostosta**, koska taso on korjattavissa
+    # yhdellä liu'ulla ja litistetty ohjelma ei ole.
+    program_limit_budget_db: float = 3.0
     # Liitännäinen käyttää yhtä ydintä, joten tiedosto pilkotaan tämän verran
     # paloiksi jotka ajetaan rinnakkain omilla instansseillaan. ``0`` on
     # automaattinen eli osuus koneen ytimistä (``chain.WORKER_SHARE``), ``1``

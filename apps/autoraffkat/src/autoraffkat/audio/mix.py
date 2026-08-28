@@ -48,7 +48,7 @@ from speechmix.masks import (
     solo_masks,
     speech_masks,
 )
-from speechmix.meter import IntegratedMeter
+from speechmix.meter import BLOCK_SEC, OVERLAP, IntegratedMeter
 
 # Trimmin katto luetaan tämän moduulin kautta (`tests/test_mix.py` vertaa
 # siihen), joten nimi on osa mix.py:n rajapintaa vaikka moduuli itse lukee sen
@@ -345,6 +345,8 @@ class MixResult:
     program_range: float = 0.0            # LRA, LU
     program_short_term_max: float = 0.0   # LUFS
     program_momentary_max: float = 0.0    # LUFS
+    # Rajoittimen hinta äänekkyytenä, LU: sama summa rajoitettuna ja ilman.
+    program_limit_cost: float = 0.0
 
     @property
     def ok(self) -> bool:
@@ -415,8 +417,27 @@ DELIVER_ROUNDS = 3
 DELIVER_TOLERANCE = 0.5
 
 
+def _anyone_speaking(grid, program_start: float):
+    """``(maski, ohjelman alku)`` puheportille, tai ``None``.
+
+    Kuka tahansa käy: portin tehtävä on erottaa puhe muusta, ei puhujia
+    toisistaan. Ruudukko on aikajanan aikaa, ja ``_mask_samples`` muuntaa sen
+    tiedoston näytteiksi kun ryhmä on tiedossa.
+    """
+    if grid is None:
+        return None
+    lanes = [np.asarray(lane.on, dtype=bool) for lane in getattr(grid, "speakers", [])]
+    if not lanes:
+        return None
+    anyone = lanes[0].copy()
+    for lane in lanes[1:]:
+        anyone |= lane
+    return (anyone, float(program_start))
+
+
 def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
-                    extra: dict, settings: AudioSettings) -> None:
+                    extra: dict, settings: AudioSettings,
+                    speech=None) -> None:
     """Ohjelma jakelutasoon: mittaa, nosta, rajoita, mittaa uudestaan.
 
     Tämä on se työ jonka moni tekee erillisellä työkalulla viennin jälkeen —
@@ -463,11 +484,30 @@ def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
     # tiivistys kertyi kierroksittain — mitattuna LRA 5,1 kun kerran ajettuna
     # se on lähes kolme yksikköä enemmän. Nosto on siksi myös absoluuttinen
     # eikä askel: jokainen kierros lähtee samasta tilanteesta.
-    meter = IntegratedMeter(rate)
-    program_ceiling(jobs, result, ducks, extra, 0.0, ceiling, meter,
-                    dry_run=True)
-    measured = meter.value()
-    boost, ride, step_sec = 0.0, None, meter.step_seconds()
+    budget = float(getattr(settings, "program_limit_budget_db", 0.0) or 0.0)
+    step_sec = BLOCK_SEC / OVERLAP
+
+    def run(gain, curve, write=False):
+        """Yksi ajo. Palauttaa ``(lukema, mittari, rajoittimen hinta LU)``.
+
+        Kaksi mittaria: sama summa rajoitettuna ja ilman. Erotus on
+        rajoittimen hinta äänekkyytenä, ja se on ainoa mielekäs mitta sille
+        kuinka kovaa se tekee työtä — käyrän minimi on yhden näytteen
+        vaatimus, ja keskiarvo on lähes nolla koska rajoitin ei tee mitään
+        suurimman osan ajasta.
+        """
+        played, plain = IntegratedMeter(rate), IntegratedMeter(rate)
+        program_ceiling(jobs, result, ducks, extra, gain, ceiling, played,
+                        curve, step_sec if curve is not None else 0.0,
+                        not write, plain, speech)
+        gate = played.speech() > 0.5 if speech is not None else None
+        after, before = played.value(keep=gate), plain.value(keep=gate)
+        cost = 0.0 if (after is None or before is None) else before - after
+        return after, played, cost
+
+    measured, meter, cost = run(0.0, None)
+    step_sec = meter.step_seconds()
+    boost, ride = 0.0, None
     for round_number in range(DELIVER_ROUNDS):
         if measured is None:
             break
@@ -483,26 +523,31 @@ def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
         boost = round(max(-programme.MAX_PROGRAM_BOOST,
                           min(programme.MAX_PROGRAM_BOOST, boost + step)), 2)
         ride = wanted if wanted is not None else ride
-        meter = IntegratedMeter(rate)
-        program_ceiling(jobs, result, ducks, extra, boost, ceiling, meter,
-                        ride, step_sec if ride is not None else 0.0,
-                        dry_run=True)
-        measured = meter.value()
+        measured, meter, cost = run(boost, ride)
+        # Rajoittimella on budjetti, kuten ketjun omalla. Ala on mitattu
+        # muualla eikä täällä: masteroinnissa 1–3 dB rajoitusta on tervettä,
+        # 8–10 tuhoaa transientit. Ylitys otetaan pois **nostosta**, koska
+        # taso on korjattavissa yhdellä liu'ulla ja litistetty ei ole.
+        if budget and cost > budget:
+            boost = round(boost - (cost - budget), 2)
+            measured, meter, cost = run(boost, ride)
+            _log(f"rajoitinbudjetti täynnä: nosto {boost:+.2f} dB, "
+                 f"hinta {cost:.2f} LU -> {measured:.2f} LUFS")
+            break
         _log(f"jakelutaso kierros {round_number + 1}: nosto {boost:+.2f} dB"
              + (f", veto {ride.min():.2f} dB" if ride is not None else "")
-             + f" -> {measured:.2f} LUFS")
+             + f" -> {measured:.2f} LUFS (rajoitin {cost:.2f} LU)")
 
     # Yksi kirjoittava ajo valitulla nostolla.
-    meter = IntegratedMeter(rate)
-    program_ceiling(jobs, result, ducks, extra, boost, ceiling, meter,
-                    ride, step_sec if ride is not None else 0.0)
-    measured = meter.value()
+    measured, meter, cost = run(boost, ride, write=True)
+    result.program_limit_cost = round(cost, 2)
     result.program_boost = boost
     result.program_lufs = measured if measured is not None else 0.0
     result.program_range = meter.range()
     result.program_short_term_max = meter.short_term_max()
     result.program_momentary_max = meter.momentary_max()
     _log(f"jakelu: {result.program_lufs:.1f} LUFS · LRA {result.program_range:.1f} "
+         f"· rajoitin {result.program_limit_cost:.2f} LU "
          f"· lyhyt max {result.program_short_term_max:.1f} "
          f"· hetkellinen max {result.program_momentary_max:.1f}")
     if measured is not None and abs(target - measured) > tolerance:
@@ -522,7 +567,9 @@ def program_ceiling(jobs: list[dict], result: "MixResult",
                     meter=None,
                     ride_db=None,
                     ride_step: float = 0.0,
-                    dry_run: bool = False) -> None:
+                    dry_run: bool = False,
+                    raw_meter=None,
+                    speech=None) -> None:
     """Huippukatto **ohjelmalle**, ei yhdelle stemille.
 
     Sama virhe kuin äänekkyydessä, jonka ``program_trim`` jo korjaa: ketju
@@ -574,6 +621,7 @@ def program_ceiling(jobs: list[dict], result: "MixResult",
             worst = _ceiling_pass(
                 members, frames, AudioFile, envelopes, extra, boost_db,
                 ceiling_db, meter, ride_db, ride_step, dry_run,
+                raw_meter, speech,
             )
         except (OSError, ValueError) as exc:
             for job in members:
@@ -593,7 +641,9 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                   meter=None,
                   ride_db=None,
                   ride_step: float = 0.0,
-                  dry_run: bool = False) -> float:
+                  dry_run: bool = False,
+                  raw_meter=None,
+                  speech=None) -> float:
     """Yksi ryhmä: summa paloittain, sama käyrä jokaiseen stemiin.
 
     ``envelopes`` on vaimennus puhujittain aikajanan aikana. Se **on**
@@ -614,12 +664,18 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
     ``chain.apply_plugin``in rinnakkaisilla paloilla.
     """
     handles = [AudioFile(job["target"]) for job in members]
+    spoken = None
     try:
         rate = int(handles[0].samplerate)
         if any(int(h.samplerate) != rate for h in handles):
             raise ValueError("stemien näytetaajuudet eroavat")
         chunk = int(programme.CEILING_CHUNK * rate)
         margin = int(programme.CEILING_MARGIN * rate)
+        if speech is not None and members[0].get("item") is not None:
+            # Kerran ryhmää kohden: maski on ruudukon aikaa, mittari haluaa
+            # sen näytteinä ja palan mukana.
+            spoken = _mask_samples(members[0]["item"], speech[0], speech[1],
+                                   rate, frames)
         # Kuiva ajo lukee ja mittaa muttei kirjoita. Silmukka etsii oikean
         # noston sillä, ja vasta valittu nosto kirjoitetaan — muuten jokainen
         # kierros rajoittaisi jo rajoitettua, ja tiivistys kertyisi
@@ -671,8 +727,19 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                     # ja mittaa: erillinen mittauskierros olisi gigatavu lisää
                     # luettavaa eikä yhtään desibeliä enempää tietoa.
                     played = sum(h * gain for h in heard)
-                    meter.add(played[..., head:tail].mean(axis=0)
-                              if played.ndim > 1 else played[head:tail])
+                    mono = (played[..., head:tail].mean(axis=0)
+                            if played.ndim > 1 else played[head:tail])
+                    meter.add(mono, None if spoken is None
+                              else spoken[low + head:low + tail])
+                if raw_meter is not None:
+                    # Sama summa **ilman** rajoitusta. Erotus on rajoittimen
+                    # hinta äänekkyytenä, ja se on ainoa mielekäs mitta sille
+                    # kuinka kovaa se tekee työtä: käyrän minimi on yhden
+                    # näytteen vaatimus, ja keskiarvo on lähes nolla koska
+                    # rajoitin ei tee mitään suurimman osan ajasta.
+                    plain = sum(heard)
+                    raw_meter.add(plain[..., head:tail].mean(axis=0)
+                                  if plain.ndim > 1 else plain[head:tail])
                 if not dry_run:
                     for out, block in zip(outs, blocks, strict=True):
                         out.write(np.ascontiguousarray(
@@ -1248,7 +1315,7 @@ def process(
         if settings.program_lufs and grid is not None:
             program_deliver(
                 jobs, result, duck_envelopes(grid, settings, program_start),
-                {}, settings,
+                {}, settings, _anyone_speaking(grid, program_start),
             )
         return result
 
@@ -1338,7 +1405,11 @@ def process(
     # Jakelutaso mitataan **vaimennetusta summasta**, koska se on ohjelma
     # jonka isäntä soittaa. Stemin oma tavoite jää siksi ennalleen: se on
     # tason lähtökohta, tämä on jakelun luku, eivätkä ne ole sama asia.
-    program_deliver(jobs, result, ducks, extra, settings)
+    # Puheportti: RX arvioi puheen sijainnin itse, meillä se on tiedossa.
+    # Ruudukko on sama jonka päälle koko leikkaus on rakennettu, joten
+    # portti on tarkempi kuin arvaus eikä maksa mitään.
+    program_deliver(jobs, result, ducks, extra, settings,
+                    _anyone_speaking(grid, program_start))
     return out
 
 
