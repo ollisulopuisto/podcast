@@ -41,7 +41,20 @@ jobs:
           [ "$version" = "$GITHUB_REF_NAME" ] && version="0.0.0-dev"
           echo "Versio: $version"
           sed -i '' "s/MARKETING_VERSION: \".*\"/MARKETING_VERSION: \"$version\"/" project.yml
+          sed -i '' "s/CURRENT_PROJECT_VERSION: \".*\"/CURRENT_PROJECT_VERSION: \"$version\"/" project.yml
           xcodegen generate --spec project.yml
+          echo "VIEWER_VERSION=$version" >> "$GITHUB_ENV"
+
+          # XcodeGenin `info:`-avain **kirjoittaa** plistin, ei viittaa
+          # siihen. Kumpikin tiedosto korvautui joka generoinnilla, ja
+          # ainoa näkyvä oire oli versionumero — puuttuva `NSExtension` ei
+          # kaada mitään, esikatselu vain ei ilmesty koskaan. Väitetään siis
+          # se mitä ei voi nähdä: lähteet ovat generoinnin jälkeen ennallaan.
+          git diff --exit-code App/Info.plist Extension/Info.plist || {
+            echo "xcodegen kirjoitti Info.plistin päälle — paketoitava plist"
+            echo "ei ole se joka on repositoriossa."
+            exit 1
+          }
 
       # Yhdenmukaisuustesti myös täällä. Julkaisu, joka ei ole samaa mieltä
       # `nhsx-render`in kanssa, näyttäisi eri jakson kuin se renderöi.
@@ -85,6 +98,67 @@ jobs:
             fi
           done
           echo "Ei get-task-allow'ta kummassakaan."
+
+          # Mitä pakettiin **oikeasti** kirjoitettiin. Käännösasetus voi olla
+          # oikein ja paketissa silti lukea 1.0, jos plistissä ei ole avainta
+          # johon se sijoitetaan — niin kävi julkaisussa viewer-v2026.8.28.1.
+          # macOS päättää päivitystarjouksen `CFBundleVersion`ista, joten
+          # jumiin jäänyt numero epäonnistuu tekemällä ei mitään.
+          for part in "$app" "$app/Contents/PlugIns/NhsxQuickLook.appex"; do
+            plist="$part/Contents/Info.plist"
+            short=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$plist")
+            build=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$plist")
+            echo "$part → $short ($build)"
+            if [ "$short" != "$VIEWER_VERSION" ] || [ "$build" != "$VIEWER_VERSION" ]; then
+              echo "Odotettiin $VIEWER_VERSION, paketissa on $short ($build)."
+              exit 1
+            fi
+          done
+
+      # Mitä paketti **ilmoittaa** olevansa. Laajennus ilman `NSExtension`ia
+      # kääntyy, allekirjoittuu ja asentuu; se ei vain koskaan rekisteröidy
+      # esikatseluksi, eikä mikään kerro miksi. Sama koskee `.nhsx`:n
+      # tyyppitunnistetta: ilman sitä välilyönti Finderissä ei tee mitään.
+      - name: The bundles declare what they are for
+        working-directory: viewer
+        run: |
+          app="build/Build/Products/Release/NHSX Viewer.app"
+          ext="$app/Contents/PlugIns/NhsxQuickLook.appex/Contents/Info.plist"
+          plist="$app/Contents/Info.plist"
+
+          want() {
+            got=$(/usr/libexec/PlistBuddy -c "Print $2" "$1" 2>&1) || true
+            echo "  $2 → $got"
+            if [ "$got" != "$3" ]; then
+              printf 'Odotettiin: %s\nPaketissa:  %s\n' "$3" "$got"
+              exit 1
+            fi
+          }
+
+          echo "$ext"
+          want "$ext" ":NSExtension:NSExtensionPointIdentifier" \
+               "com.apple.quicklook.preview"
+          want "$ext" ":NSExtension:NSExtensionPrincipalClass" \
+               "NhsxQuickLook.PreviewViewController"
+          want "$ext" ":NSExtension:NSExtensionAttributes:QLSupportedContentTypes:0" \
+               "com.hindenburg.nhsx"
+
+          echo "$plist"
+          want "$plist" ":UTImportedTypeDeclarations:0:UTTypeIdentifier" \
+               "com.hindenburg.nhsx"
+          want "$plist" ":CFBundleDocumentTypes:0:LSItemContentTypes:0" \
+               "com.hindenburg.nhsx"
+
+          # `CFBundleExecutable` tuli ennen XcodeGeniltä. Nyt se tulee
+          # plististä, ja väärä nimi näkyy vasta käyttäjän koneella
+          # ilmoituksena ettei sovellusta voi avata.
+          for part in "$app" "$app/Contents/PlugIns/NhsxQuickLook.appex"; do
+            exe=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" \
+                  "$part/Contents/Info.plist")
+            echo "  $part → MacOS/$exe"
+            test -x "$part/Contents/MacOS/$exe" \
+              || { echo "Paketti nimeää käynnistettävän jota ei ole."; exit 1; }
+          done
 
       - name: Disk image
         working-directory: viewer

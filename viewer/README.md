@@ -134,6 +134,35 @@ renderöidyssä tiedostossa. Oma laki vaatisi jokaisen leikkeen lukemisen
 puskuriin, eli juuri sen nopeuden jonka takia tämä on olemassa.
 `Conformance/plan.json` sitoo suunnitelman, ei toiston viimeistä desibeliä.
 
+## `Info.plist` on lähde, ei generoinnin tulos
+
+XcodeGenin `info:`-avain **kirjoittaa** plistin annettuun polkuun. Se ei
+viittaa käsin kirjoitettuun tiedostoon vaan korvaa sen joka generoinnilla
+omilla oletuksillaan. Kumpikin plist täällä oli sen alla, joten pakettiin
+päätyi XcodeGenin versio eikä tämä.
+
+Näkyvä oire oli versionumero: julkaisussa `viewer-v2026.8.28.1` `sed` asetti
+version tagista, käännös oli vihreä, ja molemmissa paketeissa luki `1.0` /
+`1` — XcodeGenin oletukset. Todellinen vahinko oli isompi. Sovelluksesta
+puuttuivat `UTImportedTypeDeclarations` ja `CFBundleDocumentTypes`, eli
+macOS ei tiennyt `.nhsx`:stä mitään; laajennuksesta puuttui koko
+`NSExtension`-sanakirja, eli se ei ilmoittanut olevansa esikatselu
+eikä olisi voinut rekisteröityä sellaiseksi. Julkaistu `.dmg` asentui,
+avautui ja allekirjoitus kesti tarkistuksen. Välilyönti Finderissä ei olisi
+vain tehnyt mitään.
+
+Nyt kohteet asettavat `INFOPLIST_FILE`in, joka osoittaa tiedostoon
+koskematta siihen. Sen mukana plistit omistavat myös ne avaimet jotka
+XcodeGen ennen tuotti — `CFBundleExecutable` ennen kaikkea, ilman sitä
+paketissa ei ole mitään käynnistettävää.
+
+`build-viewer.yml` väittää kolme asiaa, koska yksikään niistä ei näy
+vihreästä käännöksestä: lähdeplistit ovat generoinnin jälkeen ennallaan,
+paketoidut plistit ilmoittavat esikatselupisteen ja `.nhsx`:n
+tyyppitunnisteen, ja versio on tagin versio. macOS päättää
+päivitystarjouksen `CFBundleVersion`ista, joten jumiin jäänyt numero
+epäonnistuu tekemällä ei mitään — sama vikaluokka kuin muuallakin täällä.
+
 ## Asentaminen
 
 Julkaisuista (`viewer-v*`) latautuu kaksi asiaa:
