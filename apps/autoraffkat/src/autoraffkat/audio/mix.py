@@ -485,6 +485,7 @@ def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
     # se on lähes kolme yksikköä enemmän. Nosto on siksi myös absoluuttinen
     # eikä askel: jokainen kierros lähtee samasta tilanteesta.
     budget = float(getattr(settings, "program_limit_budget_db", 0.0) or 0.0)
+    lift_db = float(getattr(settings, "program_lift_db", 0.0) or 0.0)
     step_sec = BLOCK_SEC / OVERLAP
 
     def run(gain, curve, write=False):
@@ -533,6 +534,21 @@ def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
             measured, meter, cost = run(boost, ride)
             _log(f"rajoitinbudjetti täynnä: nosto {boost:+.2f} dB, "
                  f"hinta {cost:.2f} LU -> {measured:.2f} LUFS")
+            # Loppumatka pohjasta, ei katosta. Huippuja painamalla se
+            # maksaisi transientteja; hiljaisia jaksoja nostamalla se ei
+            # maksa rajoitusta lainkaan, koska niissä on huippuvaraa.
+            short = target - measured if measured is not None else 0.0
+            if lift_db > 0 and short > tolerance:
+                floor = target - max(tolerance, short)
+                rise = programme.short_term_lift(
+                    meter.short_term(), floor, step_sec, lift_db
+                )
+                if rise.any():
+                    ride = rise if ride is None else ride[: len(rise)] + rise
+                    measured, meter, cost = run(boost, ride)
+                    _log(f"pohjan nosto {rise.max():.2f} dB hiljaisiin "
+                         f"jaksoihin -> {measured:.2f} LUFS "
+                         f"(rajoitin {cost:.2f} LU)")
             break
         _log(f"jakelutaso kierros {round_number + 1}: nosto {boost:+.2f} dB"
              + (f", veto {ride.min():.2f} dB" if ride is not None else "")

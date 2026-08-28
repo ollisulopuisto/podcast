@@ -201,3 +201,32 @@ def test_a_correction_is_a_step_not_a_total():
         measured = measured + step * 0.85
     assert abs(target - measured) < 1.0, measured
     assert applied < 8.0, ("kumulatiivinen nosto karkasi", applied)
+
+
+def test_the_lift_raises_the_quiet_without_touching_the_loud():
+    """Äänekkyyttä alhaalta, ei ylhäältä.
+
+    Tason ostaminen huippuja painamalla maksaa transientit; sama taso
+    hiljaisia kohtia nostamalla ei maksa rajoitusta lainkaan, koska
+    hiljaisissa kohdissa on huippuvaraa. Vaihteluväli kapenee kummallakin
+    tavalla, mutta pohjan nostaminen kuuluu eri tavalla kuin katon
+    litistäminen — ja se on koko ero.
+    """
+    step = 0.1
+    values = np.full(400, -14.0)
+    values[150:260] = -24.0          # 11 s hiljaista
+    gain = programme.short_term_lift(values, floor_db=-19.0, step_sec=step,
+                                     max_lift=6.0)
+
+    assert gain.min() >= -1e-9, "nosto ei saa vaimentaa"
+    assert gain[200] > 3.0, "hiljaista kohtaa ei nostettu"
+    assert gain[20] == pytest.approx(0.0, abs=0.05), "kovaan kohtaan koskettiin"
+    assert gain.max() <= 6.0 + 1e-9, "nosto ylitti kattonsa"
+    assert np.abs(np.diff(gain)).max() < 1.0, "nosto hyppii"
+
+
+def test_nothing_below_the_floor_means_no_lift():
+    values = np.full(200, -14.0)
+    gain = programme.short_term_lift(values, floor_db=-19.0, step_sec=0.1,
+                                     max_lift=6.0)
+    assert np.allclose(gain, 0.0)

@@ -191,6 +191,43 @@ def short_term_ride(short_term_db, target_db: float,
     return np.minimum(0.0, smooth[pad : pad + values.size])
 
 
+def short_term_lift(short_term_db, floor_db: float, step_sec: float,
+                    max_lift: float,
+                    glide_sec: float = SHORT_TERM_GLIDE_SEC) -> np.ndarray:
+    """Nosto jolla hiljaiset jaksot yltävät lattiaansa, dB (≥ 0).
+
+    ``short_term_ride``in duaali, ja se on tarkoituksella eri työkalu.
+    Äänekkyyttä voi ostaa kahdella tavalla: painamalla huiput alas tai
+    nostamalla pohjaa ylös. Ensimmäinen maksaa rajoitusta ja transientteja,
+    toinen ei maksa rajoitusta lainkaan — hiljaisissa kohdissa on
+    huippuvaraa, joten nosto ei kosketa kattoa.
+
+    Vaihteluväli kapenee kummallakin tavalla. Ero on siinä **mitä** kuulee:
+    litistetty transientti kuuluu tiivistyksenä, nostettu hiljainen jakso
+    kuuluu siltä että se on lähempänä. Siksi kun tavoitteeseen ei päästä
+    rajoitinbudjetin sisällä, loppu otetaan täältä eikä katosta.
+
+    Nostolla on oma kattonsa: rajaton nosto veisi pohjakohinan mukanaan.
+    """
+    values = np.asarray(short_term_db, dtype=np.float64)
+    if not values.size or not floor_db or max_lift <= 0:
+        return np.zeros(values.shape)
+    under = np.maximum(0.0, floor_db - values)
+    under[~np.isfinite(under)] = 0.0
+    under = np.minimum(under, max_lift)
+    if not under.any():
+        return np.zeros(values.shape)
+    # Pehmennys kuten vedossa, mutta maksimi ennen keskiarvoa: keskiarvo
+    # yksin jättäisi lyhyen hiljaisen kohdan puoliksi nostamatta.
+    from scipy.ndimage import maximum_filter1d, uniform_filter1d
+
+    span = max(1, int(round(glide_sec / max(step_sec, 1e-6))))
+    padded = np.pad(under, span, mode="edge")
+    held = maximum_filter1d(padded, size=2 * span + 1, mode="nearest")
+    smooth = uniform_filter1d(held, size=2 * span + 1, mode="nearest")
+    return np.clip(smooth[span : span + values.size], 0.0, max_lift)
+
+
 def trim_to_target(summed: np.ndarray, rate: int, target_lufs: float,
                    max_trim: float = MAX_PROGRAM_TRIM) -> float:
     """Kuinka paljon mikkien summa on tavoitteen yli, desibeleinä (≤ 0).

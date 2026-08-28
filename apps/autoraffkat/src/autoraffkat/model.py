@@ -400,6 +400,14 @@ class AudioSettings:
     # transientit. Ylitys otetaan **nostosta**, koska taso on korjattavissa
     # yhdellä liu'ulla ja litistetty ohjelma ei ole.
     program_limit_budget_db: float = 3.0
+    # Kuinka paljon hiljaisia jaksoja saa nostaa, dB. Nolla = pois.
+    #
+    # Tämä on se toinen tapa ostaa äänekkyyttä: huippuja painamalla se
+    # maksaa transientteja, pohjaa nostamalla ei maksa rajoitusta lainkaan,
+    # koska hiljaisissa kohdissa on huippuvaraa. Vaihteluväli kapenee
+    # kummallakin tavalla — ero on siinä mitä kuulee. Käytetään vasta kun
+    # rajoitinbudjetti on täynnä eikä tavoitteeseen ole päästy.
+    program_lift_db: float = 4.0
     # Liitännäinen käyttää yhtä ydintä, joten tiedosto pilkotaan tämän verran
     # paloiksi jotka ajetaan rinnakkain omilla instansseillaan. ``0`` on
     # automaattinen eli osuus koneen ytimistä (``chain.WORKER_SHARE``), ``1``
