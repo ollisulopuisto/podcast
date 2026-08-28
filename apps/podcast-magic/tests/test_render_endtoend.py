@@ -155,7 +155,11 @@ def test_a_centred_track_arrives_at_the_level_it_left(rendered):
 
 @needs_ffmpeg
 def test_the_track_gain_and_the_pan_are_both_in_the_result(rendered):
-    """Musiikkiraita on −12 dB ja panoroitu 0,5 oikealle."""
+    """Musiikkiraita on −12 dB ja panoroitu 0,5 **vasemmalle**.
+
+    Positiivinen panorointi on vasen; mitattu Hindenburgin omasta
+    renderistä, ks. `test_measured_session.py`.
+    """
     # Sekunti 0: vain musiikkia. Ollin alue alkaa vasta 1,0:ssa, joten
     # tässä ei ole mitään mistä pitäisi vähentää.
     left, right = rms(second(rendered, 0))
@@ -163,7 +167,7 @@ def test_the_track_gain_and_the_pan_are_both_in_the_result(rendered):
     want_l, want_r = mix.pan_gains(0.5)
     assert left == pytest.approx(base * want_l, rel=0.03)
     assert right == pytest.approx(base * want_r, rel=0.03)
-    assert right > left  # oikealle panoroitu kuuluu oikealta
+    assert left > right  # vasemmalle panoroitu kuuluu vasemmalta
 
 
 @needs_ffmpeg

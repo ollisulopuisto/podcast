@@ -34,8 +34,15 @@ final class ConformanceTests: XCTestCase {
         let file_offset: Double
         let gain: Double
         let pan: Double
-        let fade_in: Double
-        let fade_out: Double
+        let left: Double
+        let right: Double
+        let ramps: [ExpectedRamp]
+    }
+
+    struct ExpectedRamp: Decodable, Equatable {
+        let start: Double
+        let length: Double
+        let gain: Double
     }
 
     struct ExpectedPlan: Decodable {
@@ -110,8 +117,18 @@ final class ConformanceTests: XCTestCase {
                            "\(where_): tiedosto-offset")
             XCTAssertEqual(mine.gain, theirs.gain, accuracy: 1e-6, "\(where_): taso")
             XCTAssertEqual(mine.pan, theirs.pan, accuracy: 1e-6, "\(where_): panorointi")
-            XCTAssertEqual(mine.fadeIn, theirs.fade_in, accuracy: 1e-6, "\(where_): häivytys sisään")
-            XCTAssertEqual(mine.fadeOut, theirs.fade_out, accuracy: 1e-6, "\(where_): häivytys ulos")
+            // Kanavakertoimet eikä vain panoroinnin luku: pelkkä `pan` on
+            // sama myös silloin kun toteutukset soveltavat eri lakia, eli
+            // juuri se ero jota tämä tiedosto on olemassa estämään.
+            let (left, right) = panGains(mine.pan)
+            XCTAssertEqual(left, theirs.left, accuracy: 1e-6, "\(where_): vasen kerroin")
+            XCTAssertEqual(right, theirs.right, accuracy: 1e-6, "\(where_): oikea kerroin")
+            XCTAssertEqual(mine.ramps.count, theirs.ramps.count, "\(where_): luiskien määrä")
+            for (r, (m, t)) in zip(mine.ramps, theirs.ramps).enumerated() {
+                XCTAssertEqual(m.start, t.start, accuracy: 1e-6, "\(where_): luiska \(r) alku")
+                XCTAssertEqual(m.length, t.length, accuracy: 1e-6, "\(where_): luiska \(r) pituus")
+                XCTAssertEqual(m.gain, t.gain, accuracy: 1e-6, "\(where_): luiska \(r) taso")
+            }
         }
     }
 
@@ -124,8 +141,9 @@ final class ConformanceTests: XCTestCase {
 
         XCTAssertEqual(want.duration, 40.0)          // myös vaimennettu raita pidentää
         XCTAssertEqual(want.muted, 3)                // "True", "1" ja vaimennettu raita
-        XCTAssertEqual(want.unknown, ["Volyymi": 1]) // tuntematon kerrotaan
-        XCTAssertEqual(want.clips.count, 6)          // nollan mittainen ei ole leike
+        // Tuntematon kerrotaan — myös häivytyksen sisällä.
+        XCTAssertEqual(want.unknown, ["Volyymi": 1, "Fade/Kayra": 1])
+        XCTAssertEqual(want.clips.count, 7)          // nollan mittainen ei ole leike
 
         XCTAssertEqual(byStart[2.0]?.file_offset, 30.0)     // tiedostoaika ≠ ohjelma-aika
         XCTAssertEqual(byStart[12.0]?.file_offset, 120.5)   // sama tiedosto toisesta kohdasta
@@ -133,10 +151,16 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(byStart[1.0]?.pan, 0.3)              // raita siirtää aluetta
         XCTAssertEqual(byStart[14.0]?.length, 2.5)          // kaksoispistemuotoinen aika
         XCTAssertEqual(byStart[14.0]?.file_offset, 5.25)
-        XCTAssertEqual(byStart[30.0]?.fade_in, 0.5)         // 2 s + 2 s sekunnin leikkeessä
-        XCTAssertEqual(byStart[30.0]?.fade_out, 0.5)
-        XCTAssertEqual(byStart[0.0]?.fade_in, 1.5)          // mahtuvia ei kutisteta
-        XCTAssertEqual(byStart[0.0]?.fade_out, 3.0)
+        XCTAssertEqual(byStart[20.0]?.gain, 0.25)           // ClipGain voittaa Gainin
+        XCTAssertEqual(byStart[1.0]?.left, 0.65)            // positiivinen on vasen
+        XCTAssertEqual(byStart[0.0]?.right, 0.75)           // negatiivinen on oikea
+        // Luiska päätyy Gainiinsa eikä hiljaisuuteen, ja jää sinne.
+        XCTAssertEqual(byStart[0.0]?.ramps, [
+            ExpectedRamp(start: 0, length: 1.5, gain: 0.5),
+            ExpectedRamp(start: 7, length: 3, gain: 1),
+        ])
+        // Leikettä pidempi luiska katkeaa alueen loppuun, ei kutistu.
+        XCTAssertEqual(byStart[30.0]?.ramps, [ExpectedRamp(start: 0, length: 1, gain: 0)])
     }
 
     // MARK: - Yksikkötestit niille kohdille, joissa Swift eroaa Pythonista
@@ -152,14 +176,22 @@ final class ConformanceTests: XCTestCase {
         XCTAssertEqual(timeToSeconds(""), 0)
     }
 
-    func testTheCentreIsThreeDecibelsDownOnEachSide() {
+    /// Laki on lineaarinen ja vakiosummainen, ja **positiivinen on vasen**.
+    /// Mitattu Hindenburgin omasta renderistä; oli ennen vakiotehoinen ja
+    /// väärin päin.
+    func testTheLawIsLinearAndConstantSumAndPositiveIsLeft() {
         let (left, right) = panGains(0)
         XCTAssertEqual(left, right, accuracy: 1e-12)
-        XCTAssertEqual(20 * log10(left), -3.0103, accuracy: 1e-4)
+        XCTAssertEqual(20 * log10(left), -6.0206, accuracy: 1e-4)
         for pan in [-1.0, -0.5, 0, 0.5, 1.0] {
             let (l, r) = panGains(pan)
-            XCTAssertEqual(l * l + r * r, 1, accuracy: 1e-12, "teho ei säily kohdassa \(pan)")
+            XCTAssertEqual(l + r, 1, accuracy: 1e-12, "summa ei ole vakio kohdassa \(pan)")
         }
+        XCTAssertEqual(panGains(1).left, 1, accuracy: 1e-12)
+        XCTAssertEqual(panGains(1).right, 0, accuracy: 1e-12)
+        // Mitatut suhteet renderöidystä istunnosta.
+        XCTAssertEqual(panGains(0.625).right / panGains(0.625).left, 0.23027, accuracy: 0.0025)
+        XCTAssertEqual(panGains(-0.55).right / panGains(-0.55).left, 3.44347, accuracy: 0.035)
     }
 
     func testAPanOutsideTheScaleIsClampedNotWrapped() {

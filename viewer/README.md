@@ -81,9 +81,10 @@ Vastauksen jakaminen on. `Conformance/session.nhsx` on istunto, joka on
 kirjoitettu erottamaan ne kohdat joissa kaksi jäsennintä voi mennä eri
 mieltä huomaamatta — nimiavaruudet, kaksi aikamuotoa, `Muted="True"` vastaan
 `Muted="1"`, raidan ja alueen vahvistuksen kertautuminen, panorointien
-yhdistyminen, leikettä pidemmät häivytykset, nollan mittainen alue,
-vaimennettu raita, tuntematon attribuutti. `Conformance/plan.json` on sen
-vastaus, ja **molemmat toteutukset testaavat itseään sitä vasten**:
+yhdistyminen ja niiden **kanavakertoimet**, `ClipGain` joka voittaa
+`Gain`in, luiska joka päätyy tasolle eikä hiljaisuuteen, leikettä pidempi
+luiska, nollan mittainen alue, vaimennettu raita, tuntematon attribuutti —
+myös häivytyksen sisällä. `Conformance/plan.json` on sen vastaus, ja **molemmat toteutukset testaavat itseään sitä vasten**:
 
 | | |
 |---|---|
@@ -127,12 +128,18 @@ esikatselu voi olla nopea. Istunnossa, jossa profiileja on käytetty, tämä
 ei kuulosta Hindenburgin toistolta.
 
 Panorointi on lisäksi **järjestelmän** panorointilailla
-(`AVAudioPlayerNode.pan`), kun `nhsx-render` laskee vakiotehoiset kertoimet
-itse. Lait ovat lähellä toisiaan mutta eivät välttämättä samat, joten kovasti
-laidalle ajettu raita voi olla esikatselussa aavistuksen eri tasolla kuin
-renderöidyssä tiedostossa. Oma laki vaatisi jokaisen leikkeen lukemisen
-puskuriin, eli juuri sen nopeuden jonka takia tämä on olemassa.
-`Conformance/plan.json` sitoo suunnitelman, ei toiston viimeistä desibeliä.
+(`AVAudioPlayerNode.pan`), kun `nhsx-render` laskee kertoimet itse
+Hindenburgin lailla — lineaarisesti ja vakiosummaisesti, mitattuna
+Hindenburgin omasta renderistä. Lait eivät ole samat, joten kovasti laidalle
+ajettu raita voi olla esikatselussa eri tasolla kuin renderöidyssä
+tiedostossa. Oma laki vaatisi jokaisen leikkeen lukemisen puskuriin, eli
+juuri sen nopeuden jonka takia tämä on olemassa.
+
+`Conformance/plan.json` sitoo suunnitelman, ei toiston viimeistä desibeliä —
+mutta se sitoo nyt myös panoroinnin **kanavakertoimet**, ei vain
+panoroinnin lukua. Pelkkä luku on sama molemmilla toteutuksilla myös
+silloin kun ne soveltavat eri lakia, eli juuri se ero jonka estämiseksi
+tiedosto on olemassa ei näkyisi.
 
 ## `Info.plist` on lähde, ei generoinnin tulos
 

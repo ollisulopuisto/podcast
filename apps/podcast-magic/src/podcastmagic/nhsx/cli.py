@@ -98,8 +98,10 @@ def _plan_as_dict(mixdown: mix.Mix) -> dict:
                 "file_offset": clip.file_offset,
                 "gain": clip.gain,
                 "pan": clip.pan,
-                "fade_in": clip.fade_in,
-                "fade_out": clip.fade_out,
+                "ramps": [
+                    {"start": r.start, "length": r.length, "gain": r.gain}
+                    for r in clip.ramps
+                ],
             }
             for clip in mixdown.clips
         ],
@@ -135,8 +137,21 @@ def conformance_dict(mixdown: mix.Mix) -> dict:
                 "file_offset": round(clip.file_offset, digits),
                 "gain": round(clip.gain, digits),
                 "pan": round(clip.pan, digits),
-                "fade_in": round(clip.fade_in, digits),
-                "fade_out": round(clip.fade_out, digits),
+                # Kanavakertoimet eikä vain panoroinnin luku. Pelkkä `pan`
+                # on sama molemmilla toteutuksilla myös silloin kun ne
+                # soveltavat eri lakia, eli juuri se ero jota tämä tiedosto
+                # on olemassa estämään ei näkyisi. Laki on mitattu; nyt
+                # myös yhteinen vastaus sanoo mihin se johtaa.
+                "left": round(mix.pan_gains(clip.pan)[0], digits),
+                "right": round(mix.pan_gains(clip.pan)[1], digits),
+                "ramps": [
+                    {
+                        "start": round(r.start, digits),
+                        "length": round(r.length, digits),
+                        "gain": round(r.gain, digits),
+                    }
+                    for r in clip.ramps
+                ],
             }
             for clip in mixdown.clips
         ],

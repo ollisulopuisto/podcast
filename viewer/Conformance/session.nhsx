@@ -38,20 +38,33 @@
       <Region Ref="2" Start="00:00:14.000" Length="00:00:02.500" Offset="00:00:05.250"/>
     </Track>
 
-    <!-- 9.  Häivytykset lapsielementtinä.
-         10. Leikettä pidemmät häivytykset: kutistetaan suhteessa, ei anneta
-             mennä ristiin.
-         11. Tuntematon attribuutti: kerrotaan, ei ohiteta. -->
+    <!-- 9.  Häivytykset lapsielementtinä. `Start`/`Length`/`Gain`, ja
+             luiska päätyy `Gain`iin **eikä hiljaisuuteen**: tässä alue
+             laskee 1,5 sekunnissa -6,02 dB:hen, pysyy siellä, ja palaa
+             ykköseen viimeisen kolmen sekunnin aikana. Mitattu.
+         10. Leikettä pidempi luiska: katkeaa alueen loppuun, ei kutistu.
+         11. Tuntematon attribuutti: kerrotaan, ei ohiteta.
+         12. Tuntematon attribuutti **häivytyksessä**: kerrotaan sekin.
+             Juuri tämä aukko piilotti sen, ettei häivytyksiä luettu. -->
     <Track Name="Musiikki" Gain="-12.041200">
       <Region Ref="3" Start="0.000" Length="10.000" Offset="0.000" Pan="-0.500000">
-        <Fade In="1.500" Out="3.000"/>
+        <Fade Length="1.500" Gain="-6.020600"/>
+        <Fade Start="7.000" Length="3.000"/>
       </Region>
       <Region Ref="3" Start="30.000" Length="1.000" Offset="0.000" Volyymi="0.7">
-        <Fade In="2.000" Out="2.000"/>
+        <Fade Length="2.000" Gain="-inf" Kayra="log"/>
       </Region>
     </Track>
 
-    <!-- 12. Vaimennettu raita: sen alueet eivät kuulu, vaikka ne itse eivät
+    <!-- 13. `ClipGain` voittaa `Gain`in eikä laske sen kanssa yhteen.
+             Mitattu: alue jolla on molemmat on renderissä `ClipGain`in
+             verran vaimeampi, ei niiden summan verran. -->
+    <Track Name="Puhelin">
+      <Region Ref="3" Start="20.000" Length="2.000" Offset="0.000"
+              Gain="-6.020600" ClipGain="-12.041200"/>
+    </Track>
+
+    <!-- 14. Vaimennettu raita: sen alueet eivät kuulu, vaikka ne itse eivät
              ole vaimennettuja. -->
     <Track Name="Varalla" Muted="True">
       <Region Ref="3" Start="0.000" Length="40.000" Offset="0.000"/>

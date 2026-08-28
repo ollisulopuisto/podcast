@@ -21,17 +21,48 @@ public struct Clip {
     public let fileOffset: Double
     public let gain: Double
     public let pan: Double
-    /// Häivytykset **mahtuvat aina**: `fadeIn + fadeOut <= length`.
-    public let fadeIn: Double
-    public let fadeOut: Double
+    /// Äänenvoimakkuuskäyrä. Luiskat on leikattu leikkeen sisään.
+    public let ramps: [Ramp]
 
     public var end: Double { start + length }
+
+    /// Käyrän arvo `when` sekuntia leikkeen alusta.
+    public func level(at when: Double) -> Double {
+        var level = 1.0
+        for ramp in ramps {
+            if when <= ramp.start { return level }
+            if when >= ramp.end { level = ramp.gain; continue }
+            if ramp.length <= 0 { return ramp.gain }
+            return level + (ramp.gain - level) * ((when - ramp.start) / ramp.length)
+        }
+        return level
+    }
 
     /// Ohjelma-ajasta tiedostoaikaan. Yksi kaava, ja se on kaikki mitä
     /// aikajanasta tarvitsee tietää.
     public func fileTime(at programmeTime: Double) -> Double {
         fileOffset + (programmeTime - start)
     }
+}
+
+/// Yksi äänenvoimakkuuskäyrän luiska leikkeen sisällä.
+///
+/// Hindenburgin `<Fade>` ei ole häivytys hiljaisuuteen vaan **luiska
+/// tasolle**: se kulkee edellisestä tasosta arvoon `gain` ajassa `length`
+/// ja jää sinne. Mitattu Hindenburgin omasta renderistä; ks.
+/// `apps/podcast-magic/tests/test_measured_session.py`.
+public struct Ramp: Equatable {
+    public let start: Double
+    public let length: Double
+    public let gain: Double
+
+    public init(start: Double, length: Double, gain: Double) {
+        self.start = start
+        self.length = length
+        self.gain = gain
+    }
+
+    public var end: Double { start + length }
 }
 
 public struct Mix {
@@ -53,28 +84,21 @@ public func dbToLinear(_ db: Double) -> Double {
     db.isInfinite && db < 0 ? 0 : pow(10, db / 20)
 }
 
-/// Panoroinnin kertoimet, vakioteholla: `vasen² + oikea² = 1`.
+/// Panoroinnin kertoimet: **lineaarinen, vakiosummainen, positiivinen vasen**.
 ///
-/// Lineaarisella lailla keskellä oleva raita olisi summassa 3 dB kovempaa
-/// kuin laidoille ajettu. Asteikon ulkopuolinen arvo **rajataan** eikä
-/// kierretä: arvo tulee mittaamattomasta attribuutista, ja kierrettynä se
+/// Mitattu Hindenburgin omasta renderistä eikä valittu. Pienimmän
+/// neliösumman sovitus `R = k·L` antoi `Pan="0.625"`:lle 0,23027
+/// (ennuste 0,23077) ja `Pan="-0.55"`:lle 3,44347 (ennuste 3,44444).
+///
+/// Tämä oli ennen vakiotehoinen ja **väärin päin**. Väärin päin oleva
+/// panorointi on kelvollinen tiedosto, jossa puhujat ovat vaihtaneet
+/// puolta: mikään ei kaadu, eikä sitä huomaa muuten kuin kuuntelemalla.
+///
+/// Asteikon ulkopuolinen arvo **rajataan** eikä kierretä: kierrettynä se
 /// olisi negatiivinen vahvistus eli vaihekäännös.
 public func panGains(_ pan: Double) -> (left: Double, right: Double) {
     let p = min(max(pan, -1), 1)
-    let angle = (p + 1) * .pi / 4
-    return (cos(angle), sin(angle))
-}
-
-/// Häivytykset leikkeen sisään, suhteessa kutistaen.
-public func fitFades(length: Double, fadeIn: Double, fadeOut: Double) -> (Double, Double) {
-    let a = max(0, fadeIn)
-    let b = max(0, fadeOut)
-    let total = a + b
-    if total > length && total > 0 {
-        let scale = length / total
-        return (a * scale, b * scale)
-    }
-    return (a, b)
+    return ((1 + p) / 2, (1 - p) / 2)
 }
 
 /// Äänipoolin tiedosto levyltä.
@@ -147,8 +171,6 @@ public func plan(_ session: Session, extraDirectory: String = "") -> Mix {
                 continue
             }
 
-            let (fadeIn, fadeOut) = fitFades(
-                length: region.length, fadeIn: region.fadeIn, fadeOut: region.fadeOut)
             let regionPan = min(max(region.pan ?? 0, -1), 1)
             mix.clips.append(Clip(
                 path: path,
@@ -160,8 +182,7 @@ public func plan(_ session: Session, extraDirectory: String = "") -> Mix {
                 gain: dbToLinear(region.gainDb ?? 0) * trackGain,
                 // Raidan panorointi siirtää leikkeen omaa, ei korvaa sitä.
                 pan: min(max(regionPan + trackPan, -1), 1),
-                fadeIn: fadeIn,
-                fadeOut: fadeOut
+                ramps: region.ramps
             ))
         }
     }

@@ -173,12 +173,22 @@ ja äänipooli on WAVeja levyllä, eikä muuta tarvita.
 **Mitattua on geometria.** `Start`, `Length`, `Offset` ja `Muted` ovat
 attribuutteja joita tämä repositorio on lukenut ja kirjoittanut alusta asti.
 
-**Arvattua on kaikki muu.** `Gain`, `Pan` ja `<Fade In= Out=>` ovat
-uskottavia nimiä eivätkä todettuja: kummassakaan repositoriossa ei ole
-yhtään istuntoa, jossa faderia olisi liikutettu, eikä formaattia ole
-dokumentoitu. `<Fade>` on se nimi jolla `tests/test_silence.py` rakentaa
-alueen lapsielementin ja `apply.py` sanoo lapsielementeistä «esimerkiksi
-häivytyksiä» — se on huomio, ei mittaus.
+**Ja nyt mitattua on myös taso, panorointi ja häivytys.** `pans and stuff`
+-istunto ja siitä Hindenburgin itsensä renderöimä tiedosto vastasivat
+kaikkiin kolmeen; ks. `tests/test_measured_session.py`, jossa luvut ovat.
+
+Se, mitä mittaus kertoi, on karua luettavaa arvauksista:
+
+* `<Fade In= Out=>` oli **keksitty**. Oikeat nimet ovat `Start`, `Length`
+  ja `Gain`, joten jokaisen istunnon jokainen häivytys luettiin nollana.
+* Panorointi oli vakiotehoinen ja **väärin päin**. Oikea laki on
+  lineaarinen ja vakiosummainen, ja positiivinen on vasen.
+* `ClipGain` ohitettiin kokonaan, eli mitatun istunnon kolmas alue
+  renderöityi 22,2 dB liian kovaa.
+
+Kaksi näistä kolmesta ei ole väärä luku vaan väärä **muoto**: häivytys ei
+mene hiljaisuuteen vaan tasolle, ja `fade_in`/`fade_out` ei osaa esittää
+tasannetta millään lukuparilla.
 
 Siksi kaksi asiaa. `KNOWN_REGION_ATTRS` on **käsin kirjoitettu** lista, sama
 vartija kuin litteroinnin tunnisteella: uusi nimi ei livahda tunnettujen
@@ -214,19 +224,44 @@ paikat lasketaan näyteindekseinä eikä sekunteina, ja
 `test_the_block_size_does_not_change_the_result` ajaa saman miksauksen
 kahdella lohkokoolla. Se on se yksi testi joka näkee ne kaikki kerralla.
 
-### Panorointi on vakiotehoinen, häivytys lineaarinen
+### Panorointi on lineaarinen ja vakiosummainen, ja positiivinen on vasen
 
-Lineaarisella panorointilailla keskellä oleva raita on summassa 3 dB
-kovempaa kuin laidoille ajettu, ja miksaus kallistuu keskelle sitä mukaa kun
-raitoja on enemmän. `pan_gains` pitää `vasen² + oikea² = 1`, jolloin keski on
-−3,01 dB molemmilla puolilla. Asteikon ulkopuolinen arvo **rajataan** eikä
-kierretä: arvo tulee mittaamattomasta attribuutista, ja kierrettynä se
+Mitattu, ei valittu. Renderöidystä istunnosta sovitettu suhde `R = k·L`:
+
+    Pan="0.625"   ennuste 0,23077   mitattu 0,23027
+    Pan="-0.55"   ennuste 3,44444   mitattu 3,44347
+
+eli `R/L = (1-p)/(1+p)`. Normalisointi on vakiosumma (`vasen + oikea = 1`)
+eikä vakioteho: kaksi eri tavoin panoroitua raitaa ovat summattuna 0,24 dB:n
+päässä toisistaan, kun vakiotehoinen laki antaisi eron 1,5 dB.
+
+Aiempi valinta oli vakiotehoinen laki, ja perustelu oli hyvä — lineaarisella
+lailla keskellä oleva raita on summassa 3 dB kovempaa kuin laidoille ajettu.
+Se on vain perustelu sille miten asian *pitäisi* olla, ja tämä lukee
+Hindenburgin istuntoja eikä kirjoita omaansa. **Ja laki oli väärin päin**,
+mikä on kelvollinen tiedosto jossa puhujat ovat vaihtaneet puolta: mikään ei
+kaadu, eikä sitä huomaa muuten kuin kuuntelemalla.
+
+Asteikon ulkopuolinen arvo **rajataan** eikä kierretä: kierrettynä se
 antaisi negatiivisen vahvistuksen eli vaihekäännöksen.
 
-Häivytyksen muotoa ei tiedetä, ja lineaarinen on niistä se joka ei väitä
-mitään. Kun muoto mitataan, se vaihdetaan yhdessä funktiossa (`envelope`).
-Leikettä pidemmät häivytykset **skaalataan** — pilkkominen jättää lyhyitä
-paloja, ja perittynä käyrät menisivät ristiin ja summa nollan ali.
+### Häivytys on luiska tasolle, ei häivytys hiljaisuuteen
+
+`<Fade Start= Length= Gain=>` kulkee edellisestä tasosta arvoon `Gain` ja
+**jää sinne**. Mitattu alue laskee 2,5 sekunnissa −11,2 dB:hen ja pysyy
+siellä 26 sekuntia; renderissä sen runko on 12,02 dB vaimeampi kuin
+vaimentamaton alue. Ilman `Gain`ia luiska palaa ykköseen, ja juuri se on
+kuvaruudulla näkyvä käyrä joka laskee, kulkee tasaisena ja nousee takaisin.
+
+Siksi malli on `Ramp`-lista eikä `fade_in`/`fade_out`: lukupari ei esitä
+tasannetta lainkaan. Leikettä pidempi luiska **katkeaa** alueen loppuun eikä
+kutistu — pilkottu pala on lyhyempi kuin alue, ei hitaampi. Luiskat
+seuraavat toisiaan eivätkä summaudu, joten käyrä ei voi painua nollan ali.
+
+Luiskan **muotoa** ei vieläkään tiedetä: puheen dynamiikka peittää 2,5
+sekunnin rampin, eikä sitä voi mitata muusta kuin tasaisesta signaalista.
+Lineaarinen on niistä se joka ei väitä mitään, ja kun muoto mitataan, se
+vaihdetaan yhdessä funktiossa (`envelope`).
 
 ### `nhsx/`:llä on toinen toteutus, ja se on toista kieltä
 

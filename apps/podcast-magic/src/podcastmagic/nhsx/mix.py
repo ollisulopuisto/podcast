@@ -49,7 +49,6 @@ vaihdetaan tässä yhdessä funktiossa.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -59,8 +58,22 @@ from .read import Session, children, localname, locate, time_to_seconds
 # Alueen attribuutit jotka osataan lukea. Käsin kirjoitettu lista, ei
 # johdettu koodista: johdettuna se seuraisi koodia eikä valvoisi sitä.
 KNOWN_REGION_ATTRS = frozenset(
-    {"Ref", "Start", "Length", "Offset", "Muted", "Name", "Gain", "Pan"}
+    {
+        "Ref", "Start", "Length", "Offset", "Muted", "Name", "Gain", "Pan",
+        # Leikkeen oma taso, ja se joka **voittaa**: mitattu istunnosta
+        # jossa alueella on `Gain="-11.2"` ja `ClipGain="-22.2"`. Renderissä
+        # se alue on 22,50 dB vaimeampi kuin vaimentamaton — eli `ClipGain`
+        # eikä niiden summa (-33,4 dB). Ne eivät siis laske yhteen.
+        "ClipGain",
+        # Eivät vaikuta tasoon: lippuja litterointia ja musiikkitunnistusta
+        # varten. Tunnettuja, jotta varoitus säilyy merkitsevänä.
+        "IsMusic", "UseTranscription",
+    }
 )
+
+# Häivytyselementin attribuutit. `Start` ja `Length`, **ei** `In` ja `Out`:
+# ne kaksi olivat keksittyjä, eikä yksikään istunto ollut kiistänyt niitä.
+KNOWN_FADE_ATTRS = frozenset({"Start", "Length", "Gain"})
 
 # Sama raidalle. Raidan faderi ja leikkeen taso ovat eri säätimiä.
 KNOWN_TRACK_ATTRS = frozenset({"Name", "Gain", "Pan", "Muted"})
@@ -77,61 +90,119 @@ def db_to_linear(db: float) -> float:
 
 
 def pan_gains(pan: float) -> tuple[float, float]:
-    """Panoroinnin kertoimet vasemmalle ja oikealle, vakioteholla.
+    """Panorointi kanavakertoimiksi. **Lineaarinen ja vakiosummainen.**
 
-    ``pan`` on −1 (vasen) … +1 (oikea). Asteikon ulkopuolinen arvo
-    **rajataan** eikä kierretä: arvo tulee attribuutista jota ei ole
-    mitattu, ja kierrettynä se antaisi negatiivisen vahvistuksen eli
-    vaihekäännöksen — kuultavana vikana aivan eri asia kuin liian kova.
+    Mitattu, ei valittu. `pans and stuff` -istunto renderöitiin
+    Hindenburgilla, ja renderöidystä raidasta sovitettiin pienimmän
+    neliösumman suhde ``R = k·L``:
+
+        Pan="0.625"   ennuste 0,23077   mitattu 0,23027
+        Pan="-0.55"   ennuste 3,44444   mitattu 3,44347
+
+    eli ``R/L = (1-p)/(1+p)`` 0,2 %:n ja 0,03 %:n tarkkuudella. Kaksi
+    riippumatonta arvoa samalla lailla ei ole sattuma.
+
+    **Positiivinen on vasen.** Tämä oli väärin päin, ja väärin päin oleva
+    panorointi on kelvollinen tiedosto jossa puhujat ovat vaihtaneet
+    puolta — ei mikään kaadu, eikä sitä huomaa muuten kuin kuuntelemalla.
+
+    Normalisointi on vakiosumma (``L + R == 1``) eikä vakioteho. Sekin on
+    mitattu: raidat ``Pan="0.625"`` ja ``Pan="-0.55"`` ovat summattuna
+    0,24 dB:n päässä toisistaan. Vakiotehoisella lailla ero olisi 1,5 dB.
+
+    Aiempi valinta oli vakiotehoinen laki. Perustelu — ettei keskellä oleva
+    raita nouse laidoille ajetun yli — on hyvä perustelu, mutta se on
+    perustelu sille miten *asian pitäisi* olla. Hindenburg tekee toisin, ja
+    tämä lukee Hindenburgin istuntoja.
+
+    Se mitä tämä **ei** kerro: absoluuttista skaalaa. Suhde ja summan
+    vakioisuus mitattiin, mutta lähdetiedostoa ei ollut, joten ``(1±p)/2``
+    ja ``(1±p)`` erottuisivat vain kokonaistasossa. Vakiosumma on niistä se,
+    joka pitää keskelle panoroidun monolähteen summan ykkösenä.
     """
     pan = max(-1.0, min(1.0, pan))
-    angle = (pan + 1.0) * math.pi / 4.0
-    return (math.cos(angle), math.sin(angle))
+    return ((1.0 + pan) / 2.0, (1.0 - pan) / 2.0)
 
 
-def fit_fades(length: float, fade_in: float, fade_out: float) -> tuple[float, float]:
-    """Häivytykset leikkeen sisään, suhteessa kutistaen.
+@dataclass(frozen=True)
+class Ramp:
+    """Yksi äänenvoimakkuuskäyrän luiska leikkeen sisällä.
 
-    Leikettä pidemmät häivytykset syntyvät pilkkomisesta: ``apply.py``
-    jättää lyhyitä paloja, ja alueen häivytys sellaisenaan perittynä on
-    paloa pidempi. Ristiin menevien käyrien summa painuisi nollan ali, eli
-    leike kääntyisi vaiheeltaan keskeltä.
+    Hindenburgin `<Fade>` ei ole häivytys hiljaisuuteen vaan **luiska
+    tasolle**: se kulkee edellisestä tasosta arvoon ``gain`` ajassa
+    ``length`` ja jää sinne. Mitattu istunnosta, jonka alue on
 
-    Tämä on **yksi funktio kahdelle kutsujalle** eikä sama sääntö kahdesti.
-    ``plan`` soveltaa sen, jolloin jokainen ``Clip`` pitää lupauksen
-    ``fade_in + fade_out <= length``; ``envelope`` soveltaa sen uudestaan,
-    mikä on tyhjä operaatio jo mahtuville luvuille mutta pitää funktion
-    turvallisena myös suoraan kutsuttuna. Kaksi kopiota säännöstä olisi
-    täsmälleen se ajautuminen jota vastaan tämä repositorio on.
+        <Fade Length="02.500" Gain="-11.2"/>
+        <Fade Start="25.900" Length="02.500"/>
+
+    ja jonka runko on renderissä 12,02 dB vaimeampi kuin vaimentamaton
+    alue — eli luiska päätyi arvoon -11,2 dB eikä nollaan, ja jäi sinne.
+    Toisella luiskalla ei ole ``Gain``ia, ja se palaa ykköseen: kuvaruudulla
+    se on juuri se käyrä joka laskee, kulkee tasaisena ja nousee takaisin.
+
+    Vanha malli oli `fade_in`/`fade_out` sekunteina hiljaisuudesta ja
+    hiljaisuuteen. Se ei osaa esittää tasannetta lainkaan, joten kyse ei
+    ollut väärästä luvusta vaan väärästä muodosta.
     """
-    fade_in = max(0.0, fade_in)
-    fade_out = max(0.0, fade_out)
-    total = fade_in + fade_out
-    if total > length and total > 0:
-        scale = length / total
-        return (fade_in * scale, fade_out * scale)
-    return (fade_in, fade_out)
+
+    start: float
+    length: float
+    gain: float = 1.0
+
+    @property
+    def end(self) -> float:
+        return self.start + self.length
 
 
-def envelope(length: float, sample_rate: int, fade_in: float, fade_out: float) -> np.ndarray:
-    """Leikkeen häivytyskäyrä, ``length`` sekuntia ``sample_rate``:lla."""
+def level_at(ramps: "tuple[Ramp, ...]", when: float) -> float:
+    """Käyrän arvo hetkellä ``when`` sekuntia leikkeen alusta.
+
+    Taso on ykkönen ensimmäiseen luiskaan asti, kulkee lineaarisesti
+    luiskan yli ja pysyy sen päätearvossa seuraavaan luiskaan asti.
+    """
+    level = 1.0
+    for ramp in ramps:
+        if when <= ramp.start:
+            return level
+        if when >= ramp.end:
+            level = ramp.gain
+            continue
+        if ramp.length <= 0:
+            return ramp.gain
+        share = (when - ramp.start) / ramp.length
+        return level + (ramp.gain - level) * share
+    return level
+
+
+def envelope(length: float, sample_rate: int, ramps: "tuple[Ramp, ...]" = ()) -> np.ndarray:
+    """Leikkeen äänenvoimakkuuskäyrä, ``length`` sekuntia ``sample_rate``:lla."""
     n = int(round(length * sample_rate))
     if n <= 0:
         return np.zeros(0, dtype=np.float32)
-
-    fade_in, fade_out = fit_fades(length, fade_in, fade_out)
+    if not ramps:
+        return np.ones(n, dtype=np.float32)
 
     env = np.ones(n, dtype=np.float32)
-    n_in = min(n, int(round(fade_in * sample_rate)))
-    n_out = min(n - n_in, int(round(fade_out * sample_rate)))
-    if n_in > 1:
-        env[:n_in] = np.linspace(0.0, 1.0, n_in, dtype=np.float32)
-    elif n_in == 1:
-        env[0] = 0.0
-    if n_out > 1:
-        env[n - n_out :] = np.linspace(1.0, 0.0, n_out, dtype=np.float32)
-    elif n_out == 1:
-        env[-1] = 0.0
+    level = 1.0
+    filled = 0
+    for ramp in ramps:
+        a = max(filled, min(n, int(round(ramp.start * sample_rate))))
+        b = max(a, min(n, int(round(ramp.end * sample_rate))))
+        env[filled:a] = level
+        if b > a:
+            # Luiska voi jäädä kesken, jos alue loppuu sen keskellä; silloin
+            # se katkeaa siihen eikä kutistu. Pilkottu pala on lyhyempi kuin
+            # alue, ei hitaampi.
+            span = max(1, int(round(ramp.length * sample_rate)))
+            share = (np.arange(b - a, dtype=np.float32) + 1.0) / span
+            env[a:b] = level + (ramp.gain - level) * np.minimum(share, 1.0)
+        filled = b
+        level = float(env[b - 1]) if b > a else level
+        if b >= n:
+            return env
+        if b > a:
+            level = ramp.gain
+    env[filled:] = level
     return env
 
 
@@ -143,9 +214,10 @@ class Clip:
     erikseen. Näin «miksauksessa oleva leike» tarkoittaa aina «tämä
     kuuluu», eikä jokaisen lukijan tarvitse muistaa tarkistaa lippua.
 
-    Samasta syystä häivytykset **mahtuvat aina**:
-    ``fade_in + fade_out <= length``. Lukijan ei tarvitse tietää
-    kutistussääntöä — myöskään sen lukijan, joka on toista kieltä.
+    Äänenvoimakkuus on ``gain`` kertaa ``ramps``-käyrä, eikä käyrä ole
+    häivytys hiljaisuuteen: ks. ``Ramp``. Luiskat on leikattu leikkeen
+    sisään, joten lukijan — myös sen joka on toista kieltä — ei tarvitse
+    tietää mitä alueen ulkopuolelle jäävä luiska tarkoittaa.
     """
 
     path: str
@@ -155,12 +227,15 @@ class Clip:
     file_offset: float
     gain: float = 1.0
     pan: float = 0.0
-    fade_in: float = 0.0
-    fade_out: float = 0.0
+    ramps: tuple[Ramp, ...] = ()
 
     @property
     def end(self) -> float:
         return self.start + self.length
+
+    def level_at(self, when: float) -> float:
+        """Käyrän arvo ``when`` sekuntia leikkeen alusta."""
+        return level_at(self.ramps, when)
 
     def file_time(self, programme_time: float) -> float:
         """Sama muunnos kuin ``pipeline.Span.file_time`` ja ``silence/detect``."""
@@ -210,19 +285,44 @@ def _number(value: str | None, default: float) -> float:
         return default
 
 
-def _fades(region_elem, unknown: dict[str, int]) -> tuple[float, float]:
-    """Alueen häivytykset lapsielementeistä."""
-    fade_in = fade_out = 0.0
+def _ramps(region_elem, length: float, unknown: dict[str, int]) -> tuple[Ramp, ...]:
+    """Alueen äänenvoimakkuuskäyrä `<Fade>`-lapsielementeistä.
+
+    Attribuutit ovat ``Start``, ``Length`` ja ``Gain``. Aiempi versio luki
+    ``In`` ja ``Out``, joita Hindenburg ei kirjoita, joten **jokaisen
+    istunnon jokainen häivytys luettiin nollana** — eikä mikään kertonut
+    siitä: tuntemattomaksi kirjattiin vain tuntematon *elementti*, ei
+    tuntematon attribuutti sen sisällä. Siksi juuri se aukko, jonka läpi
+    vika olisi pitänyt nähdä, oli vian kohdalla.
+    """
+    ramps: list[Ramp] = []
     for child in region_elem:
         name = localname(child)
         if not name:  # kommentit ja käsittelyohjeet
             continue
-        if name == FADE_ELEMENT:
-            fade_in = max(fade_in, time_to_seconds(child.get("In")))
-            fade_out = max(fade_out, time_to_seconds(child.get("Out")))
-        else:
+        if name != FADE_ELEMENT:
             unknown[name] = unknown.get(name, 0) + 1
-    return (fade_in, fade_out)
+            continue
+        for attr in child.attrib:
+            attr_name = localname_attr(attr)
+            if attr_name not in KNOWN_FADE_ATTRS:
+                key = f"{FADE_ELEMENT}/{attr_name}"
+                unknown[key] = unknown.get(key, 0) + 1
+        span = time_to_seconds(child.get("Length"))
+        if span <= 0:
+            continue
+        begin = time_to_seconds(child.get("Start"))
+        if begin >= length:
+            continue
+        ramps.append(
+            Ramp(
+                start=max(0.0, begin),
+                length=min(span, length - begin),
+                gain=db_to_linear(_number(child.get("Gain"), 0.0)),
+            )
+        )
+    ramps.sort(key=lambda r: r.start)
+    return tuple(ramps)
 
 
 def _gain_and_pan(elem, known: frozenset[str], unknown: dict[str, int], prefix: str = ""):
@@ -232,8 +332,14 @@ def _gain_and_pan(elem, known: frozenset[str], unknown: dict[str, int], prefix: 
         if name not in known:
             key = f"{prefix}{name}"
             unknown[key] = unknown.get(key, 0) + 1
+    # `ClipGain` voittaa `Gain`in eikä laske sen kanssa yhteen: mitattu.
+    # Summa olisi ollut 11,2 dB liikaa vaimennusta, eli leike lähes
+    # kuulumattomiin — kelvollinen tiedosto, väärä miksaus.
+    level = elem.get("ClipGain")
+    if level is None:
+        level = elem.get("Gain")
     return (
-        db_to_linear(_number(elem.get("Gain"), 0.0)),
+        db_to_linear(_number(level, 0.0)),
         max(-1.0, min(1.0, _number(elem.get("Pan"), 0.0))),
     )
 
@@ -273,15 +379,13 @@ def plan(session: Session, extra_dir: str = "") -> Mix:
 
             elem = region.elem
             gain, pan = (1.0, 0.0)
-            fade_in = fade_out = 0.0
+            ramps: tuple[Ramp, ...] = ()
             if elem is not None:
                 gain, pan = _gain_and_pan(elem, KNOWN_REGION_ATTRS, mixdown.unknown)
-                fade_in, fade_out = _fades(elem, mixdown.unknown)
-
-            # Kutistetaan tässä, jotta jokainen lukija — myös QuickLookin
-            # Swift-puoli, joka ei jaa tämän kanssa riviäkään — saa
-            # valmiiksi mahtuvat luvut eikä sääntöä opeteltavakseen.
-            fits_in, fits_out = fit_fades(region.length, fade_in, fade_out)
+                # Leikattu tässä alueen sisään, jotta jokainen lukija — myös
+                # katselimen Swift-puoli, joka ei jaa tämän kanssa riviäkään —
+                # saa valmiit luvut eikä sääntöä opeteltavakseen.
+                ramps = _ramps(elem, region.length, mixdown.unknown)
 
             if track_muted or (elem is not None and _truthy(elem.get("Muted"))):
                 mixdown.muted += 1
@@ -307,8 +411,7 @@ def plan(session: Session, extra_dir: str = "") -> Mix:
                     gain=gain * track_gain,
                     # Raidan panorointi siirtää leikkeen omaa, ei korvaa sitä.
                     pan=max(-1.0, min(1.0, pan + track_pan)),
-                    fade_in=fits_in,
-                    fade_out=fits_out,
+                    ramps=ramps,
                 )
             )
 

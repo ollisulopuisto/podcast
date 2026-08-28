@@ -97,26 +97,33 @@ def test_an_area_whose_file_is_not_on_disk_is_reported_not_dropped_quietly(tmp_p
 # --- Panorointi ---------------------------------------------------------
 
 
-def test_the_centre_is_three_decibels_down_on_each_side(tmp_path):
-    """Vakiotehoinen panorointi, ei lineaarinen.
+def test_the_law_is_linear_and_constant_sum(tmp_path):
+    """Oli vakiotehoinen, on lineaarinen. Vaihdettu mittauksen perusteella.
 
-    Lineaarisella lailla keskellä oleva raita on summassa 3 dB kovempaa kuin
-    laidoilla oleva, ja koko miksaus kallistuu keskelle sitä mukaa kun
-    raitoja lisätään.
+    Vanha väite oli, että keskellä on -3,01 dB kummallakin puolella ja että
+    teho säilyy. Perustelu oli hyvä — lineaarisella lailla keskellä oleva
+    raita on summassa 3 dB kovempaa — mutta se on perustelu sille, miten
+    asian *pitäisi* olla. Hindenburg tekee toisin, ja renderöity istunto
+    sanoo sen suoraan; ks. `test_measured_session.py`.
     """
     del tmp_path
     left, right = mix.pan_gains(0.0)
     assert left == pytest.approx(right)
-    assert 20 * math.log10(left) == pytest.approx(-3.01, abs=0.01)
-    # Teho säilyy laidasta laitaan.
+    assert 20 * math.log10(left) == pytest.approx(-6.02, abs=0.01)
     for pan in (-1.0, -0.5, 0.0, 0.5, 1.0):
         left, right = mix.pan_gains(pan)
-        assert left**2 + right**2 == pytest.approx(1.0)
+        assert left + right == pytest.approx(1.0)
 
 
 def test_hard_left_is_silent_on_the_right(tmp_path):
+    """Vasen on **positiivinen**. Tämä oli väärin päin.
+
+    Väärin päin oleva panorointi on kelvollinen tiedosto, jossa puhujat
+    ovat vaihtaneet puolta: mikään ei kaadu eikä sitä huomaa muuten kuin
+    kuuntelemalla — tai mittaamalla, kuten lopulta tehtiin.
+    """
     del tmp_path
-    left, right = mix.pan_gains(-1.0)
+    left, right = mix.pan_gains(1.0)
     assert left == pytest.approx(1.0)
     assert right == pytest.approx(0.0, abs=1e-12)
 
@@ -131,45 +138,51 @@ def test_a_pan_outside_the_scale_is_clamped_not_wrapped(tmp_path):
 # --- Häivytykset --------------------------------------------------------
 
 
-def test_a_fade_in_starts_at_silence_and_arrives_at_full(tmp_path):
+def test_a_ramp_to_silence_starts_at_full_and_arrives_at_zero(tmp_path):
+    """Luiska nollaan on se, mitä ennen kutsuttiin ulosajoksi."""
     del tmp_path
-    env = mix.envelope(length=2.0, sample_rate=100, fade_in=0.5, fade_out=0.0)
+    env = mix.envelope(2.0, 100, (mix.Ramp(start=1.5, length=0.5, gain=0.0),))
     assert len(env) == 200
-    assert env[0] == pytest.approx(0.0)
-    assert env[49] == pytest.approx(1.0, abs=0.03)
-    assert env[-1] == pytest.approx(1.0)
-
-
-def test_a_fade_out_ends_at_silence(tmp_path):
-    del tmp_path
-    env = mix.envelope(length=2.0, sample_rate=100, fade_in=0.0, fade_out=0.5)
     assert env[0] == pytest.approx(1.0)
+    assert env[149] == pytest.approx(1.0)
     assert env[-1] == pytest.approx(0.0, abs=0.02)
 
 
-def test_fades_longer_than_the_clip_are_scaled_not_allowed_to_cross(tmp_path):
-    """Kaksi sekunnin häivytystä sekunnin leikkeessä ei saa mennä nollan alle.
+def test_a_ramp_holds_its_level_afterwards(tmp_path):
+    """Tämä on se, mitä `fade_in`/`fade_out` ei osannut esittää lainkaan.
 
-    Pilkkominen jättää lyhyitä paloja, ja jos häivytykset periytyisivät
-    sellaisenaan, ne olisivat leikettä pidempiä.
+    Mitattu alue laskee 2,5 sekunnissa arvoon -11,2 dB ja **jää sinne**
+    26 sekunniksi. Hiljaisuudesta täyteen ja täydestä hiljaisuuteen ei
+    kuvaa sitä millään lukuparilla.
     """
     del tmp_path
-    env = mix.envelope(length=1.0, sample_rate=100, fade_in=2.0, fade_out=2.0)
+    env = mix.envelope(4.0, 100, (mix.Ramp(start=0.0, length=1.0, gain=0.25),))
+    assert env[0] == pytest.approx(1.0, abs=0.02)
+    assert env[99] == pytest.approx(0.25, abs=0.02)
+    assert env[-1] == pytest.approx(0.25)
+    assert np.all(env[100:] == pytest.approx(0.25))
+
+
+def test_a_ramp_that_runs_past_the_clip_is_cut_not_scaled(tmp_path):
+    """Pilkottu pala on lyhyempi kuin alue, ei hitaampi.
+
+    Vanha sääntö kutisti leikettä pidemmät häivytykset suhteessa, koska
+    kaksi *summattua* käyrää olisi mennyt nollan ali. Luiskat eivät summaudu
+    vaan seuraavat toisiaan, joten kesken jäävä luiska yksinkertaisesti
+    katkeaa — ja katkeaa oikeaan arvoon, ei nollaan.
+    """
+    del tmp_path
+    env = mix.envelope(1.0, 100, (mix.Ramp(start=0.0, length=2.0, gain=0.0),))
     assert len(env) == 100
     assert env.min() >= 0.0
     assert env.max() <= 1.0
-    # Molemmat häivytykset mahtuvat, eli molemmat on kutistettu puoleen
-    # sekuntiin — eivät kumpikaan pudonneet pois. Se erottaa suhteellisen
-    # kutistamisen siitä, että jälkimmäinen jäisi rakenteellisesti nollaan:
-    # sisääntulo saavuttaa täyden tason keskellä ja ulostulo päätyy nollaan.
-    assert env[0] == pytest.approx(0.0)
-    assert env[49] == pytest.approx(1.0)
-    assert env[-1] == pytest.approx(0.0)
+    assert env[0] == pytest.approx(1.0, abs=0.02)
+    assert env[-1] == pytest.approx(0.5, abs=0.02)
 
 
-def test_a_clip_without_fades_is_flat(tmp_path):
+def test_a_clip_without_ramps_is_flat(tmp_path):
     del tmp_path
-    env = mix.envelope(length=1.0, sample_rate=48000, fade_in=0.0, fade_out=0.0)
+    env = mix.envelope(1.0, 48000)
     assert np.all(env == 1.0)
 
 
@@ -216,50 +229,52 @@ def test_the_attributes_we_do_read_are_not_reported_as_unknown(tmp_path):
     assert mix.plan(s).unknown == {}
 
 
-def test_a_fade_child_element_is_read_as_a_fade(tmp_path):
-    """Alueen lapsielementti on häivytys — sitä ``apply.py`` varoo pudottavansa."""
+def test_a_fade_child_element_is_read_as_a_ramp(tmp_path):
+    """`Start` ja `Length`, ei `In` ja `Out`.
+
+    Nämä kaksi nimeä olivat keksittyjä, eikä yksikään istunto ollut
+    kiistänyt niitä ennen kuin sellainen vihdoin nähtiin. Niin kauan
+    jokaisen istunnon jokainen häivytys luettiin nollana.
+    """
     s = session_with(
         '<Region Ref="1" Start="0" Length="4">'
-        '<Fade In="0.5" Out="1.0"/>'
+        '<Fade Start="0.5" Length="1.0" Gain="-6.02"/>'
         "</Region>",
         tmp_path=tmp_path,
     )
     clip = mix.plan(s).clips[0]
-    assert clip.fade_in == pytest.approx(0.5)
-    assert clip.fade_out == pytest.approx(1.0)
+    assert clip.ramps == (mix.Ramp(start=0.5, length=1.0, gain=pytest.approx(0.5, abs=1e-3)),)
+    assert clip.level_at(0.0) == pytest.approx(1.0)
+    assert clip.level_at(1.5) == pytest.approx(0.5, abs=1e-3)
+    assert clip.level_at(4.0) == pytest.approx(0.5, abs=1e-3)
 
 
-def test_the_fades_in_the_plan_already_fit_the_clip(tmp_path):
-    """Kutistus kuuluu suunnitelmaan, ei vasta renderöintiin.
+def test_the_ramps_in_the_plan_already_fit_the_clip(tmp_path):
+    """Leikkaus kuuluu suunnitelmaan, ei vasta renderöintiin.
 
-    Sääntö oli ennen vain `envelope`ssa, eli renderöinnin sisällä. Silloin
-    suunnitelma kertoi kahden sekunnin häivytykset sekunnin mittaisesta
-    leikkeestä, ja jokaisen lukijan piti tietää kutistaa ne itse — myös
-    QuickLook-esikatselun, joka on toista kieltä eikä jaa riviäkään koodia.
-    Sääntö, joka on kerrottava jokaiselle lukijalle erikseen, on sääntö jota
-    joku lukija ei noudata.
+    Sääntö oli ennen vain `envelope`ssa eli renderöinnin sisällä, ja
+    jokaisen lukijan piti tietää se itse — myös katselimen Swift-puolen,
+    joka ei jaa tämän kanssa riviäkään koodia. Sääntö, joka on kerrottava
+    jokaiselle lukijalle erikseen, on sääntö jota joku lukija ei noudata.
 
-    Nyt `Clip` pitää lupauksen `fade_in + fade_out <= length`, ja
-    `envelope` saa valmiiksi mahtuvat luvut.
+    Nyt jokainen `Ramp` mahtuu leikkeeseen sellaisenaan.
     """
     s = session_with(
-        '<Region Ref="1" Start="0" Length="1.0"><Fade In="2.0" Out="2.0"/></Region>',
+        '<Region Ref="1" Start="0" Length="1.0">'
+        '<Fade Start="0" Length="2.0" Gain="-inf"/></Region>',
         tmp_path=tmp_path,
     )
     clip = mix.plan(s).clips[0]
-    assert clip.fade_in == pytest.approx(0.5)
-    assert clip.fade_out == pytest.approx(0.5)
-    assert clip.fade_in + clip.fade_out <= clip.length
+    assert clip.ramps[0].end <= clip.length
 
 
-def test_fades_that_already_fit_are_left_alone(tmp_path):
+def test_a_ramp_starting_past_the_clip_is_dropped(tmp_path):
     s = session_with(
-        '<Region Ref="1" Start="0" Length="10.0"><Fade In="1.5" Out="3.0"/></Region>',
+        '<Region Ref="1" Start="0" Length="1.0">'
+        '<Fade Start="5.0" Length="1.0"/></Region>',
         tmp_path=tmp_path,
     )
-    clip = mix.plan(s).clips[0]
-    assert clip.fade_in == pytest.approx(1.5)
-    assert clip.fade_out == pytest.approx(3.0)
+    assert mix.plan(s).clips[0].ramps == ()
 
 
 def test_a_gain_attribute_is_read_as_decibels(tmp_path):
@@ -344,8 +359,12 @@ def test_the_known_attributes_are_written_out_by_hand(tmp_path):
     """
     del tmp_path
     assert mix.KNOWN_REGION_ATTRS == frozenset(
-        {"Ref", "Start", "Length", "Offset", "Muted", "Name", "Gain", "Pan"}
+        {
+            "Ref", "Start", "Length", "Offset", "Muted", "Name", "Gain", "Pan",
+            "ClipGain", "IsMusic", "UseTranscription",
+        }
     )
+    assert mix.KNOWN_FADE_ATTRS == frozenset({"Start", "Length", "Gain"})
 
 
 def test_a_region_child_that_is_not_a_fade_is_reported(tmp_path):

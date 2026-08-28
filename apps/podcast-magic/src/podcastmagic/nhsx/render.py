@@ -166,7 +166,7 @@ def blocks(
         count = int(round(clip.length * sample_rate))
         if count <= 0:
             continue
-        env = envelope(clip.length, sample_rate, clip.fade_in, clip.fade_out)
+        env = envelope(clip.length, sample_rate, clip.ramps)
         env = _spread(env.reshape(-1, 1), count).reshape(-1)
         left, right = pan_gains(clip.pan)
         prepared.append((clip, first, count, env, np.float32(left), np.float32(right)))

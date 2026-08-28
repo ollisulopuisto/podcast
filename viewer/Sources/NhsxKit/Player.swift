@@ -165,7 +165,7 @@ public final class MixPlayer {
             sampleTime: zero.sampleTime + AVAudioFramePosition((clip.start - origin + skipped) * rate),
             atRate: rate)
 
-        if clip.fadeIn == 0 && clip.fadeOut == 0 {
+        if clip.ramps.isEmpty {
             node.scheduleSegment(
                 source, startingFrame: startFrame, frameCount: available,
                 at: when, completionHandler: nil)
@@ -187,31 +187,25 @@ public final class MixPlayer {
         node.scheduleBuffer(buffer, at: when, options: [], completionHandler: nil)
     }
 
-    /// Lineaarinen häivytys sisään ja ulos, sama muoto kuin `nhsx-render`issa.
+    /// Äänenvoimakkuuskäyrä, sama muoto kuin `nhsx-render`issa.
     ///
-    /// `Clip` lupaa että häivytykset mahtuvat (`fadeIn + fadeOut <= length`),
-    /// joten käyrät eivät voi mennä ristiin eikä summa painua nollan ali.
+    /// Luiskat seuraavat toisiaan eivätkä summaudu, joten käyrä ei voi
+    /// painua nollan ali. `skipped` on se osa leikkeestä joka on jo mennyt,
+    /// kun soitto aloitetaan keskeltä.
     private func applyEnvelope(
         to buffer: AVAudioPCMBuffer, clip: Clip, skipped: Double, rate: Double
     ) {
         guard let channels = buffer.floatChannelData else { return }
         let count = Int(buffer.frameLength)
-        let inFrames = Int(max(0, clip.fadeIn - skipped) * rate)
-        let outStart = count - Int(clip.fadeOut * rate)
+        guard count > 0 else { return }
 
+        var curve = [Float](repeating: 1, count: count)
+        for i in 0..<count {
+            curve[i] = Float(clip.level(at: skipped + Double(i) / rate))
+        }
         for channel in 0..<Int(buffer.format.channelCount) {
             let samples = channels[channel]
-            if inFrames > 1 {
-                for i in 0..<min(inFrames, count) {
-                    samples[i] *= Float(Double(i) / Double(inFrames - 1))
-                }
-            }
-            if outStart > 0, outStart < count {
-                let span = count - outStart
-                for i in outStart..<count {
-                    samples[i] *= Float(1 - Double(i - outStart) / Double(span))
-                }
-            }
+            for i in 0..<count { samples[i] *= curve[i] }
         }
     }
 
