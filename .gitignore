@@ -35,3 +35,17 @@ bin/
 *.tmp
 
 .DS_Store
+
+# Swift ja Xcode (quicklook/)
+#
+# `.xcodeproj` on **generoitu** `project.yml`:stä eikä sitä säilytetä:
+# se on konetuotettua XML:ää, jonka diffiä ei voi lukea, ja kahden haaran
+# ristiriita siinä ratkeaa vain arvaamalla. `xcodegen generate` tekee sen
+# uudestaan milloin tahansa. Ilman tätä riviä ensimmäinen ajo jättää
+# työhakemistoon ison seurantaan kuulumattoman hakemiston, ja se päätyy
+# committiin sinä päivänä kun joku kirjoittaa `git add -A`.
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+.build/
+DerivedData/
