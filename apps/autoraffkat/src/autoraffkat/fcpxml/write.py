@@ -249,6 +249,110 @@ def settings_metadata(settings: "ProjectSettings", source: str = "") -> list[str
     return ["          <metadata>", *lines, "          </metadata>"]
 
 
+def _free_id(resources: str) -> int:
+    """Ensimmäinen vapaa ``rN``. Kopioidussa lohkossa on jo omat id:nsä."""
+    used = {int(m) for m in re.findall(r'id="r(\d+)"', resources)}
+    return max(used, default=0) + 1
+
+
+def _with_resources(resources: str, extra: list[str]) -> str:
+    """Lisää uudet resurssit kopioidun ``<resources>``-lohkon loppuun."""
+    text = resources.strip()
+    if not extra:
+        return text
+    at = text.rindex("</resources>")
+    return text[:at] + "\n" + "\n".join(extra) + "\n  " + text[at:]
+
+
+def _srcenable(line: str, what: str) -> str:
+    """Merkitsee ``mc-clip``in kuvaksi tai ääneksi. Muut rivit sellaisenaan."""
+    if not line.lstrip().startswith("<mc-clip "):
+        return line
+    line = re.sub(r'\s+srcEnable="[^"]*"', "", line)
+    return re.sub(r"(<mc-clip\b.*?)(/?>)$", rf'\1 srcEnable="{what}"\2', line, count=1)
+
+
+def _attach(body: list[str], index: int, lines: list[str]) -> list[str]:
+    """Liittää rivit ``mc-clip``in sisään. Itsesulkeva klippi avataan ensin.
+
+    Paikka on ``mc-source``ien jälkeen mutta **ennen avainsanoja**, koska
+    DTD vaatii sen järjestyksen — sama syy kuin puhujan avainsanalla, ks.
+    ``build_multicam_fcpxml``. Väärässä järjestyksessä tiedosto näyttää
+    oikealta ja Final Cut hylkää sen tuonnissa.
+    """
+    out = list(body)
+    line = out[index]
+    if line.rstrip().endswith("/>"):
+        out[index] = line.rstrip()[:-2].rstrip() + ">"
+        out[index + 1 : index + 1] = [*lines, "            </mc-clip>"]
+        return out
+    close = next(i for i in range(index + 1, len(out))
+                 if out[i].strip() == "</mc-clip>")
+    at = next((i for i in range(index + 1, close)
+               if out[i].lstrip().startswith("<keyword ")), close)
+    out[at:at] = lines
+    return out
+
+
+def _compound_audio(
+    body: list[str],
+    resources: str,
+    program_frames: int,
+    frame_duration,
+    project_name: str,
+    master_db: float,
+) -> tuple[list[str], list[str]]:
+    """Ääni yhdistelmäklipiksi, kuva jää monikameraksi.
+
+    Sama spine kahdesti: ulos ``srcEnable="video"``, yhdistelmän sisään
+    ``srcEnable="audio"``. Ääni on siis olemassa **kerran** — ilman tätä
+    kumpikin soisi ja ohjelma tulisi kahteen kertaan.
+
+    Yhdistelmän sekvenssi tarvitsee oman formaattinsa, ja se on Final Cutin
+    oma ``FFVideoFormatRateUndefined``: äänellä ei ole kuvakokoa eikä
+    ruutunopeutta, mutta sekvenssin ``format`` on silti pakollinen.
+
+    Tämä on ainoa tapa saada ohjelmalle **yksi säädin**. Monikameraklipin
+    oma äänenvoimakkuus ei ole sellainen: mitattuna se kirjoittui yhden
+    kulman ``audio-role-source``en eikä koskenut toiseen lainkaan.
+    """
+    audio_body = [_srcenable(line, "audio") for line in body]
+    video_body = [_srcenable(line, "video") for line in body]
+
+    next_id = _free_id(resources)
+    format_id, media_id = f"r{next_id}", f"r{next_id + 1}"
+    name = f"{project_name} · ääni"
+    span = frames_str(program_frames, frame_duration)
+    extra = [
+        f'    <format id="{format_id}" name="FFVideoFormatRateUndefined"/>',
+        f"    <media id={quoteattr(media_id)} name={quoteattr(name)}>",
+        f'      <sequence format="{format_id}" duration="{span}" '
+        'tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">',
+        "        <spine>",
+        *audio_body,
+        "        </spine>",
+        "      </sequence>",
+        "    </media>",
+    ]
+
+    # Liitos ensimmäiseen kuvaklippiin, sen paikallisessa aikapohjassa —
+    # sama sääntö kuin tilaäänellä, ks. `_room_lines`.
+    first = next((i for i, ln in enumerate(video_body)
+                  if ln.lstrip().startswith("<mc-clip ")), None)
+    if first is None:
+        return body, []
+    at = re.search(r'start="([^"]+)"', video_body[first])
+    lane = [
+        f'              <spine lane="-1" offset="{at.group(1) if at else "0s"}">',
+        f"                <ref-clip ref={quoteattr(media_id)} offset=\"0s\" "
+        f"name={quoteattr(name)} duration=\"{span}\" useAudioSubroles=\"1\">",
+        f'                  <adjust-volume amount="{master_db:g}dB"/>',
+        "                </ref-clip>",
+        "              </spine>",
+    ]
+    return _attach(video_body, first, lane), extra
+
+
 def _sequence_extras(
     settings: "ProjectSettings | None", source: str
 ) -> tuple[list[str], list[str]]:
@@ -1225,12 +1329,25 @@ def build_multicam_fcpxml(
         else:
             body.append("            <mc-clip " + " ".join(attrs) + "/>")
 
+    # Ääni omaan yhdistelmäklippiin, jos niin on pyydetty. Rakenne on Final
+    # Cutin oma: kuvan `mc-clip`it jäävät spinelle `srcEnable="video"`, äänen
+    # kopiot menevät `<media>`n sisään `srcEnable="audio"`, ja `<ref-clip>`
+    # liitetään ensimmäiseen kuvaklippiin lanelle -1. `useAudioSubroles="1"`
+    # tuo puhujien aliroolit näkyviin yhdistelmän ulkopuolelle, joten
+    # yleissäädin ja puhujakohtainen säätö ovat samassa ikkunassa.
+    extra_resources: list[str] = []
+    if settings is not None and settings.globals.compound_audio:
+        body, extra_resources = _compound_audio(
+            body, resources, program_frames, frame_duration, project_name,
+            float(settings.globals.master_db),
+        )
+
     note, metadata = _sequence_extras(settings, source)
     out = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         "<!DOCTYPE fcpxml>",
         f'<fcpxml version="{version}">',
-        "  " + resources.strip(),
+        "  " + _with_resources(resources, extra_resources),
         "  <library>",
         f"    <event name={quoteattr(project_name)}>",
         f"      <project name={quoteattr(project_name)}>",

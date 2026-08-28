@@ -201,6 +201,17 @@ class Globals:
     )
     wide_hold: float = 3.5  # laajan kesto ennen paluuta, s (vain «return»)
     long_take_rule: str = LONGTAKE_RETURN
+    # --- Ääni omaan yhdistelmäklippiin --------------------------------
+    # Kuva jää spinelle monikameraksi, ääni menee `<media>`n sisään ja
+    # `<ref-clip>` liitetään lanelle -1. Rakenne on luettu Final Cutin
+    # itsensä kirjoittamasta tiedostosta: irrota ääni, yhdistä se.
+    #
+    # Tämä on ainoa tapa saada ohjelmalle **yksi säädin**. Monikameraklipin
+    # oma äänenvoimakkuus ei ole sellainen: mitattuna se kirjoittui yhden
+    # kulman `audio-role-source`en eikä koskenut toiseen lainkaan, eli
+    # «yleissäätimen» vetäminen olisi siirtänyt puhujien tasapainoa.
+    compound_audio: bool = False
+    master_db: float = 0.0  # yhdistelmäklipin oma taso, dB
     # --- Reaktiokuvat -------------------------------------------------
     # Spekulatiivinen kerros: kuuntelijan lähikuva kesken toisen puheen.
     # Ei osa peruleikkausta, vaan omalle lanelleen, jotta sen voi poistaa

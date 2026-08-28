@@ -492,6 +492,13 @@ class AppState:
         ):
             if name in raw:
                 setattr(g, name, max(0.0, float(raw[name])))
+        if "master_db" in raw:
+            # Yleissäädin saa olla negatiivinen — ja on käytännössä aina,
+            # koska se on vaimennus eikä nosto. Yllä oleva silmukka nollaisi
+            # sen, kuten se olisi nollannut reaktiokynnyksenkin.
+            g.master_db = float(raw["master_db"])
+        if "compound_audio" in raw:
+            g.compound_audio = bool(raw["compound_audio"])
         if "reaction_threshold" in raw:
             # Kynnys on z-luku ja saa olla negatiivinen: yllä oleva silmukka
             # nollaisi sen.

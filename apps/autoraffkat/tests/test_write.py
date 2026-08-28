@@ -1032,3 +1032,82 @@ def test_ducked_multicam_passes_the_fcp_dtd(fixture_dir, validate_fcpxml):
     _, xml = _multicam_cut(fixture_dir, ducks=ducks,
                            pans={"Host": -3.0, "Guest": 3.0})
     validate_fcpxml(xml)
+
+
+def _compound_xml(scratch_xml, **globals_kw):
+    """Vienti, jossa ääni on omassa yhdistelmäklipissään."""
+    from test_endtoend import _multicam_tracks
+
+    from autoraffkat.analysis import analyze, build_grid, resolve_roles
+    from autoraffkat.decide import decide
+    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.project import ProjectSettings
+
+    timeline = read_fcpxml(str(scratch_xml("multicam.fcpxml")))
+    settings = ProjectSettings(tracks=_multicam_tracks())
+    for k, v in globals_kw.items():
+        setattr(settings.globals, k, v)
+    analysis = analyze(timeline)
+    roles = resolve_roles(timeline, settings.tracks)
+    grid, program_start, program_end = build_grid(analysis, settings.tracks, roles)
+    decision = decide(grid, settings.globals, roles)
+    mics = [(k, s) for s, keys in roles.mics.items() for k in keys]
+    return build_multicam_fcpxml(
+        timeline, decision.segments, mics, program_start, program_end,
+        settings=settings, roles=roles,
+    )
+
+
+@pytest.mark.usefixtures()
+def test_the_audio_can_live_in_one_compound_clip(scratch_xml, validate_fcpxml):
+    """Ääni omaan yhdistelmäklippiin, kuva jää monikameraksi.
+
+    Rakenne on luettu Final Cutin itsensä kirjoittamasta tiedostosta, ei
+    DTD:stä: käyttäjä irrotti äänen ja yhdisti sen käsin, ja vienti matkii
+    sitä. Kuvan `mc-clip`it jäävät spinelle `srcEnable="video"`, äänen kopiot
+    menevät `<media>`n sisään `srcEnable="audio"`, ja `<ref-clip>` liitetään
+    ensimmäiseen kuvaklippiin lanelle -1.
+
+    `useAudioSubroles="1"` on se mikä tekee tästä käyttökelpoisen: puhujien
+    aliroolit näkyvät lanena myös yhdistelmän **ulkopuolella**, joten
+    yleissäädin ja puhujakohtainen säätö ovat samassa ikkunassa.
+    """
+    xml = _compound_xml(scratch_xml, compound_audio=True, master_db=-8.0)
+    root = ET.fromstring(xml)
+
+    media = [m for m in root.iter("media") if m.find("sequence") is not None]
+    assert media, "yhdistelmäklipin <media> puuttuu"
+    inner = media[0].find("sequence/spine")
+    assert inner is not None and list(inner), "yhdistelmässä ei ole sisältöä"
+    assert all(c.get("srcEnable") == "audio" for c in inner.findall("mc-clip"))
+
+    (ref,) = list(root.iter("ref-clip"))
+    assert ref.get("useAudioSubroles") == "1"
+    assert ref.get("ref") == media[0].get("id")
+    assert ref.find("adjust-volume").get("amount") == "-8dB"
+
+    spine = root.find(".//project/sequence/spine")
+    outer = spine.findall("mc-clip")
+    assert outer and all(c.get("srcEnable") == "video" for c in outer)
+    lane = outer[0].find("spine")
+    assert lane is not None and lane.get("lane") == "-1", "ref-clip ei ole lanella -1"
+    assert lane.find("ref-clip") is ref
+
+    # Muoto on Final Cutin oma: äänetön formaatti yhdistelmän sekvenssille.
+    fmts = {f.get("id"): f.get("name") for f in root.iter("format")}
+    assert "FFVideoFormatRateUndefined" in fmts.values()
+
+    # Ja DTD:tä vasten, koska järjestys on siellä pakotettu: liitetty spine
+    # kuuluu `mc-source`ien jälkeen mutta ennen avainsanoja. Väärässä
+    # järjestyksessä tiedosto näyttää oikealta ja tuonti hylkää sen.
+    validate_fcpxml(xml, "compound.fcpxml")
+
+
+@pytest.mark.usefixtures()
+def test_without_the_setting_the_audio_stays_on_the_multicam(scratch_xml):
+    """Oletus ei muutu: ääni on kuvan mukana kuten ennenkin."""
+    xml = _compound_xml(scratch_xml)
+    root = ET.fromstring(xml)
+    assert not list(root.iter("ref-clip"))
+    assert all(c.get("srcEnable") is None
+               for c in root.findall(".//project/sequence/spine/mc-clip"))
