@@ -96,6 +96,15 @@ def shared_backoff(backoffs) -> dict:
     kerrotaan jokaiseen stemiin **samanlaisena**. Tässä luku on vakio eikä
     käyrä, mutta sääntö on sama — eniten tarvitseva sanelee, ja kaikki
     seuraavat, jolloin taso siirtyy eikä tasapaino.
+
+    **Tämä ei vielä riitä.** Peruutusten tasaaminen ei tasaa lopputulosta,
+    koska ketjun hakusilmukka ajetaan vain niille stemeille joita budjetti ei
+    sitonut: sidottu stemi jää siihen mihin budjetti sen jätti, sitomaton
+    nostetaan tavoitteeseen. Mitattuna 6 dB:n budjetilla puhujien ero oli
+    ilman tasausta 1,07 -> 5,90 dB ja tasauksen kanssa 1,07 -> 3,28 dB: kaksi
+    kolmasosaa virheestä pois, kolmasosa jäljellä. Loppu vaatii että koko
+    ohjelma päättää hakusilmukasta yhdessä — sidottu stemi tekee ohjelmasta
+    sidotun — eikä sitä voi päättää yhtä stemiä katsomalla.
     """
     if not backoffs:
         return {}
