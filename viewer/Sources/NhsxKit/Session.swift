@@ -106,10 +106,11 @@ public struct Region {
     public let length: Double
     public let offset: Double
     public let muted: Bool
+    /// `ClipGain` jos on, muuten `Gain`. Ne eivät laske yhteen: mitattu.
     public let gainDb: Double?
     public let pan: Double?
-    public let fadeIn: Double
-    public let fadeOut: Double
+    /// Äänenvoimakkuuskäyrän luiskat, `<Fade>`-lapsielementeistä.
+    public let ramps: [Ramp]
     /// Attribuutit ja lapsielementit, joita tämä ei osaa lukea.
     public let unknown: [String]
 
@@ -144,11 +145,20 @@ public struct Session {
 /// livahtaa tunnettujen joukkoon ilman että joku päätti niin.
 public let knownRegionAttributes: Set<String> = [
     "Ref", "Start", "Length", "Offset", "Muted", "Name", "Gain", "Pan",
+    // Leikkeen oma taso, ja se joka voittaa `Gain`in. Mitattu.
+    "ClipGain",
+    // Eivät vaikuta tasoon; tunnettuja jotta varoitus säilyy merkitsevänä.
+    "IsMusic", "UseTranscription",
 ]
 
 public let knownTrackAttributes: Set<String> = ["Name", "Gain", "Pan", "Muted"]
 
 public let fadeElement = "Fade"
+
+/// Häivytyksen attribuutit: `Start`, `Length`, `Gain` — **ei** `In`/`Out`.
+/// Ne kaksi olivat keksittyjä, ja niin kauan kuin ne olivat täällä,
+/// jokaisen istunnon jokainen häivytys luettiin nollana.
+public let knownFadeAttributes: Set<String> = ["Start", "Length", "Gain"]
 
 /// `Muted` on eri istunnoissa `True`, `true` tai `1`.
 func truthy(_ value: String?) -> Bool {
@@ -185,26 +195,36 @@ public func readSession(at path: String) throws -> Session {
         var regions: [Region] = []
         for node in element.children(named: "Region") {
             var unknown = node.attributeNames.filter { !knownRegionAttributes.contains($0) }
-            var fadeIn = 0.0
-            var fadeOut = 0.0
+            let length = timeToSeconds(node.attr("Length"))
+            var ramps: [Ramp] = []
             for kid in node.children?.compactMap({ $0 as? XMLElement }) ?? [] {
                 if kid.local == fadeElement {
-                    fadeIn = max(fadeIn, timeToSeconds(kid.attr("In")))
-                    fadeOut = max(fadeOut, timeToSeconds(kid.attr("Out")))
+                    for name in kid.attributeNames where !knownFadeAttributes.contains(name) {
+                        unknown.append("\(fadeElement)/\(name)")
+                    }
+                    let span = timeToSeconds(kid.attr("Length"))
+                    let begin = timeToSeconds(kid.attr("Start"))
+                    if span > 0 && begin < length {
+                        ramps.append(Ramp(
+                            start: max(0, begin),
+                            length: min(span, length - begin),
+                            gain: dbToLinear(kid.attr("Gain").flatMap(Double.init) ?? 0)
+                        ))
+                    }
                 } else if !kid.local.isEmpty {
                     unknown.append(kid.local)
                 }
             }
+            ramps.sort { $0.start < $1.start }
             regions.append(Region(
                 ref: node.attr("Ref") ?? "",
                 start: timeToSeconds(node.attr("Start")),
                 length: timeToSeconds(node.attr("Length")),
                 offset: timeToSeconds(node.attr("Offset")),
                 muted: truthy(node.attr("Muted")),
-                gainDb: node.attr("Gain").flatMap(Double.init),
+                gainDb: (node.attr("ClipGain") ?? node.attr("Gain")).flatMap(Double.init),
                 pan: node.attr("Pan").flatMap(Double.init),
-                fadeIn: fadeIn,
-                fadeOut: fadeOut,
+                ramps: ramps,
                 unknown: unknown
             ))
         }

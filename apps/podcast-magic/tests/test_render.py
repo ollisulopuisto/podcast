@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 from podcastmagic.nhsx import render
-from podcastmagic.nhsx.mix import Clip, Mix
+from podcastmagic.nhsx.mix import Clip, Mix, Ramp
 
 SR = 1000  # testien näytetaajuus: laskettava käsin, riittävän tiheä
 PROBE = 0.01  # ``ramp``in asteikko, ks. siellä
@@ -154,18 +154,19 @@ def test_gain_scales_the_result():
 
 
 def test_a_pan_puts_the_signal_on_one_side():
-    out = render_all(one(pan=-1.0))
+    """Positiivinen on vasen; mitattu, ks. `test_measured_session.py`."""
+    out = render_all(one(pan=1.0))
     assert out[500, 0] == pytest.approx(1.0)
     assert out[500, 1] == pytest.approx(0.0, abs=1e-6)
 
 
-def test_a_fade_in_is_a_ramp_in_the_result():
-    out = render_all(one(length=1.0, fade_in=1.0))
+def test_a_ramp_is_a_ramp_in_the_result():
+    out = render_all(one(length=1.0, ramps=(Ramp(0.0, 1.0, 0.0),)))
     left = out[:1000, 0]
-    assert left[0] == pytest.approx(0.0)
-    assert left[999] == pytest.approx(render.pan_of(0.0)[0], abs=0.01)
-    # Monotoninen: häivytys ei saa hyppiä.
-    assert np.all(np.diff(left) >= -1e-6)
+    assert left[0] == pytest.approx(render.pan_of(0.0)[0], abs=0.01)
+    assert left[999] == pytest.approx(0.0, abs=0.01)
+    # Monotoninen: luiska ei saa hyppiä.
+    assert np.all(np.diff(left) <= 1e-6)
 
 
 def test_a_stereo_source_keeps_its_sides():
@@ -197,7 +198,8 @@ def test_the_block_size_does_not_change_the_result():
     """
     mixdown = Mix(
         clips=[
-            Clip("a.wav", "Olli", 0.3, 2.4, 10.0, gain=0.8, fade_in=0.4, fade_out=0.6),
+            Clip("a.wav", "Olli", 0.3, 2.4, 10.0, gain=0.8,
+                 ramps=(Ramp(0.0, 0.4, 0.3), Ramp(1.8, 0.6, 0.0))),
             Clip("b.wav", "Panu", 1.1, 1.9, 5.0, pan=0.5),
         ],
         duration=3.5,
@@ -208,13 +210,13 @@ def test_the_block_size_does_not_change_the_result():
     np.testing.assert_allclose(whole, chopped, atol=1e-5)
 
 
-def test_a_fade_belongs_to_the_clip_not_to_the_block():
-    """Häivytys lasketaan koko leikkeelle ja viipaloidaan, ei lasketa uudestaan."""
-    mixdown = one(start=0.0, length=2.0, fade_in=2.0)
+def test_a_ramp_belongs_to_the_clip_not_to_the_block():
+    """Käyrä lasketaan koko leikkeelle ja viipaloidaan, ei lasketa uudestaan."""
+    mixdown = one(start=0.0, length=2.0, ramps=(Ramp(0.0, 2.0, 0.0),))
     out = render_all(mixdown, block=0.25)
     left = out[:2000, 0]
-    # Yksi nouseva ramppi alusta loppuun, ei kahdeksan pientä.
-    assert np.all(np.diff(left) >= -1e-6)
+    # Yksi laskeva luiska alusta loppuun, ei kahdeksan pientä.
+    assert np.all(np.diff(left) <= 1e-6)
     assert left[1000] == pytest.approx(0.5 * render.pan_of(0.0)[0], abs=0.02)
 
 

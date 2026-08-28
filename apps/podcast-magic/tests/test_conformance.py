@@ -84,9 +84,11 @@ def test_the_answer_covers_every_decision_the_session_was_built_to_test(staged):
     # `Muted="True"`, `Muted="1"` ja vaimennettu raita — kolme eri tapaa.
     assert plan["muted"] == 3
     # Tuntematon attribuutti kerrotaan.
-    assert plan["unknown"] == {"Volyymi": 1}
+    # Tuntematon attribuutti kerrotaan — myös häivytyksen sisällä. Juuri
+    # se puuttui, ja siksi «häivytyksiä ei lueta lainkaan» oli näkymätön.
+    assert plan["unknown"] == {"Volyymi": 1, "Fade/Kayra": 1}
     # Nollan mittainen alue ei ole leike.
-    assert len(clips) == 6
+    assert len(clips) == 7
     # Leikkeet ohjelmajärjestyksessä.
     assert [c["start"] for c in clips] == sorted(c["start"] for c in clips)
 
@@ -104,13 +106,22 @@ def test_the_answer_covers_every_decision_the_session_was_built_to_test(staged):
     # Kaksoispistemuotoinen aika luetaan.
     assert by_start[14.0]["length"] == 2.5
     assert by_start[14.0]["file_offset"] == 5.25
-    # Häivytykset mahtuvat leikkeeseen: 2 s + 2 s sekunnin leikkeessä.
-    assert by_start[30.0]["fade_in"] == 0.5
-    assert by_start[30.0]["fade_out"] == 0.5
-    assert by_start[30.0]["fade_in"] + by_start[30.0]["fade_out"] <= by_start[30.0]["length"]
-    # Mahtuvia ei kutisteta.
-    assert by_start[0.0]["fade_in"] == 1.5
-    assert by_start[0.0]["fade_out"] == 3.0
+    # Panorointi kanavakertoimina: laki on lineaarinen ja vakiosummainen,
+    # ja **positiivinen on vasen**. Pelkkä `pan` ei erottaisi lakia.
+    assert (by_start[1.0]["left"], by_start[1.0]["right"]) == (0.65, 0.35)
+    assert (by_start[0.0]["left"], by_start[0.0]["right"]) == (0.25, 0.75)
+    for clip in clips:
+        assert clip["left"] + clip["right"] == 1.0
+    # `ClipGain` voittaa `Gain`in eikä laske sen kanssa yhteen: −12,04 dB
+    # antaa 0,25, kun summa −18,06 dB antaisi 0,125.
+    assert by_start[20.0]["gain"] == 0.25
+    # Luiska päätyy `Gain`iinsa eikä hiljaisuuteen, ja jää sinne.
+    assert by_start[0.0]["ramps"] == [
+        {"start": 0.0, "length": 1.5, "gain": 0.5},
+        {"start": 7.0, "length": 3.0, "gain": 1.0},
+    ]
+    # Leikettä pidempi luiska katkeaa alueen loppuun, ei kutistu.
+    assert by_start[30.0]["ramps"] == [{"start": 0.0, "length": 1.0, "gain": 0.0}]
 
 
 def test_the_agreed_plan_carries_a_version(staged):
@@ -120,11 +131,19 @@ def test_the_agreed_plan_carries_a_version(staged):
 
 
 def test_no_machine_specific_path_leaks_into_the_shared_answer(staged):
-    """Absoluuttinen polku on sen koneen oma jolla testi ajettiin."""
+    """Absoluuttinen polku on sen koneen oma jolla testi ajettiin.
+
+    Ennen tämä kielsi kauttaviivan koko tiedostosta, mikä on eri väite kuin
+    se jota tarkoitettiin: `unknown` erottaa elementin ja attribuutin
+    kauttaviivalla (`Fade/Kayra`), eikä sillä ole polkujen kanssa mitään
+    tekemistä. Tarkistetaan siis se mitä tarkoitetaan.
+    """
     got = cli.conformance_dict(nhsx.mix.plan(nhsx.read(str(staged))))
     blob = json.dumps(got)
     assert str(staged.parent) not in blob
-    assert "/" not in blob.replace("\\/", "")
+    for clip in got["clips"]:
+        assert "/" not in clip["file"]
+        assert not clip["file"].startswith("/")
 
 
 def test_every_clip_has_the_fields_the_previewer_reads(staged):
@@ -137,6 +156,6 @@ def test_every_clip_has_the_fields_the_previewer_reads(staged):
     for clip in got["clips"]:
         assert set(clip) == {
             "file", "speaker", "start", "length", "file_offset",
-            "gain", "pan", "fade_in", "fade_out",
+            "gain", "pan", "left", "right", "ramps",
         }
     assert set(got) == {"version", "duration", "muted", "unknown", "speakers", "clips"}
