@@ -1,21 +1,21 @@
-name: build quicklook
+name: build viewer
 
 # Yksi julkaisu, kaksi tuotetta, sama tarina: lue `.nhsx` ilman Hindenburgia.
 #
-#   NHSX Quick Look.app   Finderin välilyönti näyttää istunnon ja soittaa sen
+#   NHSX Viewer.app   Finderin välilyönti näyttää istunnon ja soittaa sen
 #   nhsx-render           yksi binääri, joka kirjoittaa istunnosta WAVin
 #
 # Ne julkaistaan yhdessä, koska käyttäjälle ne ovat sama asia ja erikseen
 # ladattuina toinen jäisi huomaamatta. Kumpikaan ei tarvitse Pythonia,
 # Hindenburgia eikä tätä repositoriota.
 #
-# Tagi `quicklook-v*` julkaisee. Sama muoto kuin `build-podcast-magic.yml`illa
+# Tagi `viewer-v*` julkaisee. Sama muoto kuin `build-podcast-magic.yml`illa
 # — kaksi paketoitavaa sovellusta samassa repossa ajautuu erilleen, jos ne
 # julkaistaan eri tavalla.
 on:
   workflow_dispatch:
   push:
-    tags: ["quicklook-v*"]
+    tags: ["viewer-v*"]
     # VÄLIAIKAINEN. Paketointia ei voi ajaa käsin ennen kuin työnkulku on
     # oletushaarassa (workflow_dispatch on 404 muualta), joten se todistetaan
     # tästä haarasta. Poistetaan heti kun käännös on nähty vihreänä:
@@ -40,9 +40,9 @@ jobs:
       # päivitystarpeen `CFBundleVersion`istä, joten vanhentunut numero
       # epäonnistuu tekemällä ei mitään.
       - name: Generate project at the tag's version
-        working-directory: quicklook
+        working-directory: viewer
         run: |
-          version="${GITHUB_REF_NAME#quicklook-v}"
+          version="${GITHUB_REF_NAME#viewer-v}"
           [ "$version" = "$GITHUB_REF_NAME" ] && version="0.0.0-dev"
           echo "Versio: $version"
           sed -i '' "s/MARKETING_VERSION: \".*\"/MARKETING_VERSION: \"$version\"/" project.yml
@@ -51,14 +51,14 @@ jobs:
       # Yhdenmukaisuustesti myös täällä. Julkaisu, joka ei ole samaa mieltä
       # `nhsx-render`in kanssa, näyttäisi eri jakson kuin se renderöi.
       - name: NhsxKit agrees with the recorded plan
-        working-directory: quicklook
+        working-directory: viewer
         run: swift test
 
       - name: Build
-        working-directory: quicklook
+        working-directory: viewer
         run: |
-          xcodebuild -project NhsxQuickLook.xcodeproj \
-            -scheme NhsxQuickLookApp -configuration Release \
+          xcodebuild -project NhsxViewer.xcodeproj \
+            -scheme NhsxViewerApp -configuration Release \
             -derivedDataPath build \
             CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=YES CODE_SIGNING_ALLOWED=YES \
             build
@@ -67,9 +67,9 @@ jobs:
       # sisällä, ja jos se puuttuu, sovellus käynnistyy normaalisti eikä
       # esikatselu vain koskaan ilmesty — vika joka ei näy mitenkään muuten.
       - name: The extension really is inside the app
-        working-directory: quicklook
+        working-directory: viewer
         run: |
-          app="build/Build/Products/Release/NHSX Quick Look.app"
+          app="build/Build/Products/Release/NHSX Viewer.app"
           ls -la "$app/Contents/PlugIns/"
           test -d "$app/Contents/PlugIns/NhsxQuickLook.appex" \
             || { echo "Laajennus puuttuu paketista."; exit 1; }
@@ -80,22 +80,22 @@ jobs:
             || { echo "Laajennukselta puuttuu hiekkalaatikko — se ei rekisteröidy."; exit 1; }
 
       - name: Disk image
-        working-directory: quicklook
+        working-directory: viewer
         run: |
           mkdir -p dist staging
           # `ditto` eikä `cp`: allekirjoitus kattaa laajennetut attribuutit ja
           # symlinkit, ja tavallinen kopio rikkoo sen niin että Gatekeeper
           # hylkää paketin vasta toisen käyttäjän koneella.
-          ditto "build/Build/Products/Release/NHSX Quick Look.app" \
-                "staging/NHSX Quick Look.app"
+          ditto "build/Build/Products/Release/NHSX Viewer.app" \
+                "staging/NHSX Viewer.app"
           ln -s /Applications staging/Applications
-          hdiutil create -volname "NHSX Quick Look" -srcfolder staging \
-            -ov -format UDZO "dist/NHSX-Quick-Look.dmg"
+          hdiutil create -volname "NHSX Viewer" -srcfolder staging \
+            -ov -format UDZO "dist/NHSX-Viewer.dmg"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: quicklook-app
-          path: quicklook/dist/*.dmg
+          name: viewer-app
+          path: viewer/dist/*.dmg
           if-no-files-found: error
 
   cli:
@@ -126,10 +126,10 @@ jobs:
           binary="dist/nhsx-render"
           test -x "$binary"
           work=$(mktemp -d)
-          cp ../../quicklook/Conformance/session.nhsx "$work/"
+          cp ../../viewer/Conformance/session.nhsx "$work/"
           : > "$work/olli.wav"; : > "$work/panu.wav"; : > "$work/musiikki.wav"
           "$binary" "$work/session.nhsx" --conformance > "$work/got.json"
-          python3 - "$work/got.json" ../../quicklook/Conformance/plan.json <<'PY'
+          python3 - "$work/got.json" ../../viewer/Conformance/plan.json <<'PY'
           import json, sys
           got, want = (json.load(open(p)) for p in sys.argv[1:3])
           assert got == want, "paketoitu binääri ei ole samaa mieltä kirjatun vastauksen kanssa"
@@ -176,7 +176,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/quicklook-v')
+    if: startsWith(github.ref, 'refs/tags/viewer-v')
     needs: [app, cli]
     runs-on: ubuntu-latest
     permissions:
@@ -194,7 +194,7 @@ jobs:
           cat > notes.md <<'NOTES'
           Kaksi työkalua, joilla `.nhsx`-istunnon saa auki ilman Hindenburgia.
 
-          **NHSX Quick Look.app** — vedä Ohjelmat-kansioon ja **avaa kerran**.
+          **NHSX Viewer.app** — vedä Ohjelmat-kansioon ja **avaa kerran**.
           Sen jälkeen Finderissä välilyönti `.nhsx`-tiedoston päällä näyttää
           raidat ja alueet ja soittaa miksauksen. Avaaminen kerran on se, mikä
           rekisteröi esikatselun; ilman sitä mitään ei tapahdu.

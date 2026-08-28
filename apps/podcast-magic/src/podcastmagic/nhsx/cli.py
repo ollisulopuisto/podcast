@@ -32,10 +32,23 @@ from .read import NhsxError, read
 from .write import next_free_path
 
 
+def _version() -> str:
+    """Paketin versio, myös paketoituna."""
+    from .. import __version__
+
+    return __version__
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="nhsx-render",
         description="Renderöi Hindenburgin istunto WAViksi ilman Hindenburgia.",
+    )
+    # Paketoidusta binääristä ei näe versiota mistään muualta: `.app`illa on
+    # `CFBundleVersion`, yksittäisellä binäärillä ei mitään. Numero tulee
+    # paketista eikä ole oma kopionsa.
+    parser.add_argument(
+        "--version", action="version", version=f"nhsx-render {_version()}"
     )
     parser.add_argument("session", help="istuntotiedosto (.nhsx)")
     parser.add_argument("-o", "--output", help="kohdetiedosto (oletus: istunnon viereen)")

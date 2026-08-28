@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleDisplayName</key>
-  <string>NHSX Quick Look</string>
+  <string>NHSX Viewer</string>
   <key>CFBundleIdentifier</key>
-  <string>fi.sulopuisto.nhsx-quicklook</string>
+  <string>fi.sulopuisto.nhsx-viewer</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>LSMinimumSystemVersion</key>
@@ -19,6 +19,25 @@
        julistaa saman päätteen toisella tunnisteella, järjestelmä
        suosii sitä — ks. README, siellä on komento jolla oikean
        tunnisteen näkee omalta koneelta. -->
+  <!-- Sovellus avaa `.nhsx`:n: kaksoisklikkaus Finderissä tulee tänne, ja
+       ilman tätä macOS ei tiedä että se osaa. `Viewer`-rooli eikä `Editor`,
+       koska tämä ei kirjoita istuntoa. -->
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Hindenburg-istunto</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>com.hindenburg.nhsx</string>
+      </array>
+    </dict>
+  </array>
+
   <key>UTImportedTypeDeclarations</key>
   <array>
     <dict>

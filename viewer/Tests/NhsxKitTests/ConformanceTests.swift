@@ -13,7 +13,7 @@ import XCTest
 /// renderöi — eikä kumpikaan kaadu, mikä on juuri tämän talon vikaluokka.
 final class ConformanceTests: XCTestCase {
 
-    /// `quicklook/Conformance/`, tämän tiedoston paikan kautta.
+    /// `viewer/Conformance/`, tämän tiedoston paikan kautta.
     ///
     /// Ei SwiftPM-resurssina: fikstuuri on kahden kielen yhteinen eikä
     /// kummankaan paketin sisus, ja resurssiksi niputettuna Python-puoli
@@ -22,7 +22,7 @@ final class ConformanceTests: XCTestCase {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()   // NhsxKitTests
             .deletingLastPathComponent()   // Tests
-            .deletingLastPathComponent()   // quicklook
+            .deletingLastPathComponent()   // viewer
             .appendingPathComponent("Conformance")
     }
 

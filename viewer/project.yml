@@ -8,7 +8,7 @@
 # että mikään kaatuu.
 #
 #     brew install xcodegen && xcodegen generate
-name: NhsxQuickLook
+name: NhsxViewer
 options:
   bundleIdPrefix: fi.sulopuisto
   deploymentTarget:
@@ -16,22 +16,22 @@ options:
   createIntermediateGroups: true
 
 packages:
-  NhsxKit:
+  NhsxViewerPackage:
     path: .
 
 targets:
 
-  # Isäntäsovellus. Ei tee mitään paitsi kanna laajennusta — ks.
-  # `App/AppDelegate.swift`.
-  NhsxQuickLookApp:
+  # Katselin. Tämä on tuote: avaa `.nhsx`, näytä raidat, soita miksaus.
+  # Laajennus on saman näkymän toinen pinta, ei toisin päin.
+  NhsxViewerApp:
     type: application
     platform: macOS
     sources: [App]
     info:
       path: App/Info.plist
     settings:
-      PRODUCT_NAME: NHSX Quick Look
-      PRODUCT_BUNDLE_IDENTIFIER: fi.sulopuisto.nhsx-quicklook
+      PRODUCT_NAME: NHSX Viewer
+      PRODUCT_BUNDLE_IDENTIFIER: fi.sulopuisto.nhsx-viewer
       MARKETING_VERSION: "2026.8.28"
       CURRENT_PROJECT_VERSION: "1"
       ENABLE_HARDENED_RUNTIME: YES
@@ -43,6 +43,8 @@ targets:
       CODE_SIGNING_REQUIRED: YES
       CODE_SIGNING_ALLOWED: YES
     dependencies:
+      - package: NhsxViewerPackage
+        product: NhsxViewer
       - target: NhsxQuickLookExtension
         embed: true
         codeSign: true
@@ -56,7 +58,7 @@ targets:
       path: Extension/Info.plist
     settings:
       PRODUCT_NAME: NhsxQuickLook
-      PRODUCT_BUNDLE_IDENTIFIER: fi.sulopuisto.nhsx-quicklook.preview
+      PRODUCT_BUNDLE_IDENTIFIER: fi.sulopuisto.nhsx-viewer.preview
       MARKETING_VERSION: "2026.8.28"
       CURRENT_PROJECT_VERSION: "1"
       ENABLE_HARDENED_RUNTIME: YES
@@ -65,5 +67,5 @@ targets:
       CODE_SIGNING_REQUIRED: YES
       CODE_SIGNING_ALLOWED: YES
     dependencies:
-      - package: NhsxKit
-        product: NhsxKit
+      - package: NhsxViewerPackage
+        product: NhsxViewer

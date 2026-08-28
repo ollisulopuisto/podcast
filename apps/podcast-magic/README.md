@@ -228,9 +228,9 @@ xattr -d com.apple.quarantine nhsx-render
 ./nhsx-render "episode 8.nhsx"
 ```
 
-It ships alongside **NHSX Quick Look.app**, which previews the same sessions
-in Finder. Both are unsigned — see `quicklook/README.md` for the first-launch
-steps.
+It ships alongside **NHSX Viewer.app**, which opens the same sessions — and
+puts the same view in Finder's preview. Both are unsigned — see
+`viewer/README.md` for the first-launch steps.
 
 ### One caveat worth knowing
 

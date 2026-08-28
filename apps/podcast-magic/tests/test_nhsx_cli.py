@@ -130,3 +130,22 @@ def test_sixteen_bit_is_available_for_publishing(session):
     cli.main([str(session), "--rate", "1000", "--bits", "16"], decode=fake_decode)
     with wave.open(str(session.with_suffix(".wav"))) as w:
         assert w.getsampwidth() == 2
+
+
+def test_it_says_which_version_it_is(capsys):
+    """Paketoidusta binääristä ei näe versiota mistään muualta.
+
+    `.app`illa on `CFBundleVersion`, jonka Finder näyttää; yksittäisellä
+    binäärillä ei ole mitään vastaavaa. Ilman tätä lippua käyttäjän
+    lataamasta tiedostosta ei voi kertoa mikä se on — eikä siis myöskään
+    sitä, selittääkö vanha versio jonkin oudon tuloksen.
+
+    Numero tulee paketista eikä ole oma kopionsa: `nhsx-render` on
+    `podcast-magic`in sisällä, ja yksi versio riittää.
+    """
+    from podcastmagic import __version__
+
+    with pytest.raises(SystemExit) as exit_code:
+        cli.main(["--version"])
+    assert exit_code.value.code == 0
+    assert __version__ in capsys.readouterr().out

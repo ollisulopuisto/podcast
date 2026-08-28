@@ -230,14 +230,14 @@ paloja, ja perittynä käyrät menisivät ristiin ja summa nollan ali.
 
 ### `nhsx/`:llä on toinen toteutus, ja se on toista kieltä
 
-`quicklook/` on QuickLook-esikatselu: `.nhsx` sisään, aikajana ja ääni ulos
-Finderin välilyönnistä. Se **jäsentää istunnon uudestaan Swiftillä** eikä
+`viewer/` on NHSX Viewer: `.nhsx` sisään, aikajana ja ääni ulos — sovelluksen
+ikkunassa ja Finderin välilyönnillä samasta näkymästä. Se **jäsentää istunnon uudestaan Swiftillä** eikä
 kutsu tätä koodia. Se ei ole valinta: macOS-laajennus on hiekkalaatikossa
 eikä voi käynnistää `nhsx-render`iä.
 
 Kaksi toteutusta samasta formaatista on täsmälleen se ajautuminen jota
 vastaan tämä repositorio on — mutta tätä ei voi ratkaista jakamalla koodi.
-Mitä voi jakaa on **vastaus**: `quicklook/Conformance/session.nhsx` on
+Mitä voi jakaa on **vastaus**: `viewer/Conformance/session.nhsx` on
 istunto, joka erottaa jokaisen kohdan jossa kaksi jäsennintä voi mennä eri
 mieltä huomaamatta, ja `plan.json` on sen kirjattu vastaus. Molemmat
 toteutukset testaavat itseään sitä vasten
@@ -249,7 +249,7 @@ muuttunut luku on joko korjaus tai regressio — ja Swift-puoli muutetaan
 samassa hengessä. Muuten esikatselu näyttää eri jakson kuin `nhsx-render`
 renderöi, eikä kumpikaan kaadu.
 
-`quicklook/` **ei ole työtilan jäsen** eikä voi olla: `apps/*` vaatii
+`viewer/` **ei ole työtilan jäsen** eikä voi olla: `apps/*` vaatii
 `pyproject.toml`in, ja Swift-hakemisto siellä kaataa `uv sync`in koko
 työtilalta. Siksi se on juuressa ja sillä on oma työnkulkunsa.
 

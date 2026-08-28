@@ -1,9 +1,17 @@
-# NHSX Quick Look
+# NHSX Viewer
 
-Valitse Finderissä `.nhsx`, paina välilyöntiä, kuule jakso.
+Hindenburgin istunto auki ilman Hindenburgia: raidat, alueet ja miksaus
+kuultavana.
 
-Esikatselu näyttää istunnon raidat ja alueet ja soittaa miksauksen —
-alueiden paikat, vaimennukset, tasot, häivytykset ja panoroinnin.
+**Sovellus** avaa `.nhsx`-tiedoston — Arkisto → Avaa…, kaksoisklikkaus
+Finderissä tai raahaamalla. **Quick Look -laajennus** näyttää *saman
+näkymän* esikatselupaneelissa, kun valitset `.nhsx`:n ja painat välilyöntiä.
+
+Järjestys on tämä päin: katselin on tuote, esikatselu on sen toinen pinta.
+Laajennus tarvitsee isäntäsovelluksen joka tapauksessa — macOS ei asenna
+`.appex`iä yksin — ja isäntä joka ei tee mitään on isäntä jota kukaan ei
+avaa. Koska laajennus rekisteröityy vasta kun sovellus on kerran avattu,
+tyhjä isäntä olisi myös se syy, jonka takia esikatselu ei koskaan ilmesty.
 
 ## Miksi tämä ei ole `apps/`in alla
 
@@ -27,30 +35,36 @@ jäsenväitteet eivät muutu.
 
 ## Miksi tämä on oma sovelluksensa
 
-Koska Quick Look -laajennus **ei ole asennettavissa yksin**. Se on paketti
-sovelluksen sisällä (`NHSX Quick Look.app/Contents/PlugIns/…appex`), ja
-järjestelmä löytää sen vain sitä kautta. Isäntäsovellus on siis pakollinen;
-kysymys on vain siitä, mikä isäntä.
-
 Vaihtoehto olisi ollut viedä laajennus `Podcast Magic.app`in sisään. Silloin
-Finderin välilyönti vaatisi PyInstaller-paketin, jossa on Whisper, MLX ja
-ffmpeg — reilusti yli gigatavun — jotta tiedostoa voi katsoa. Tämä on
-muutama megatavu Swiftiä eikä tarvitse Pythonia lainkaan, ja toimii oli
-Podcast Magic asennettu tai ei. Sama päättely kuin `nhsx-render`illä.
+istunnon katsominen vaatisi PyInstaller-paketin, jossa on Whisper, MLX ja
+ffmpeg — reilusti yli gigatavun. Tämä on muutama megatavu Swiftiä eikä
+tarvitse Pythonia lainkaan, ja toimii oli Podcast Magic asennettu tai ei.
+Sama päättely kuin `nhsx-render`illä.
 
 ## Rakenne
 
 ```
-Package.swift            NhsxKit SwiftPM-kirjastona: kääntyy ja testautuu
+Package.swift            kaksi SwiftPM-kirjastoa: kääntyvät ja testautuvat
                          ilman Xcodea
 Sources/NhsxKit/         .nhsx:n jäsennys, miksauksen päättely, toisto
+Sources/NhsxViewer/      **näkymä** — aikajana, tiedot ja toistopainike
                          — `Sources/` on kokonaan SwiftPM:n, jotta se ei
                          näe Xcode-kohteita eikä valita niistä
-Extension/               laajennus: näkymä ja aikajana
-App/                     isäntäsovellus, joka kantaa laajennuksen
+App/                     katselin: ikkuna, Avaa…, veto ja pudotus
+Extension/               Quick Look -kuori, ~30 riviä
 Tests/NhsxKitTests/      yhdenmukaisuustesti
 Conformance/             se yksi istunto ja sen kirjattu vastaus
 project.yml              XcodeGen — `.xcodeproj`ia ei säilytetä repossa
+
+## Yksi näkymä, kaksi pintaa
+
+`NhsxViewer.SessionView` on koko käyttöliittymä, ja sekä sovellus että
+laajennus näyttävät sen. Kumpikaan ei piirrä mitään omaa: `App/` antaa sille
+tiedoston jonka käyttäjä avasi, `Extension/` sen jonka Finder esikatselee.
+
+Syy on sama kuin `Conformance/`in: kaksi toteutusta samasta asiasta ajautuu
+erilleen. Jäsentimien kohdalla sitä ei voi estää jakamalla koodi, koska
+laajennus ei voi ajaa Pythonia — näkymien kohdalla voi, joten jaetaan.
 ```
 
 Jako on tämä siksi, että se osa jonka **on oltava samaa mieltä Pythonin
@@ -83,7 +97,7 @@ Vastaus on **käsin tarkistettu**, ei koneen kirjaama. Uudelleenluonti on
 tahallinen teko ja sen diffi luetaan:
 
 ```
-uv run nhsx-render <staged session> --conformance > quicklook/Conformance/plan.json
+uv run nhsx-render <staged session> --conformance > viewer/Conformance/plan.json
 ```
 
 Muuttunut luku on joko korjaus tai regressio, eikä sitä erota muuten kuin
@@ -122,12 +136,15 @@ puskuriin, eli juuri sen nopeuden jonka takia tämä on olemassa.
 
 ## Asentaminen
 
-Julkaisuista (`quicklook-v*`) latautuu kaksi asiaa:
+Julkaisuista (`viewer-v*`) latautuu kaksi asiaa:
 
-**`NHSX-Quick-Look.dmg`** — vedä `NHSX Quick Look.app` Ohjelmat-kansioon ja
-**avaa se kerran**. Avaaminen on se, mikä rekisteröi laajennuksen; ilman sitä
-välilyönti ei tee mitään. Ikkunan saa sen jälkeen sulkea, ja esikatselu
-toimii niin kauan kuin sovellus on Ohjelmat-kansiossa.
+**`NHSX-Viewer.dmg`** — vedä `NHSX Viewer.app` Ohjelmat-kansioon. Sillä voi
+avata `.nhsx`-istunnon heti.
+
+**Avaa sovellus kerran**, niin sama näkymä tulee myös Finderin
+esikatseluun. Avaaminen on se, mikä rekisteröi laajennuksen; ilman sitä
+välilyönti ei tee mitään. Esikatselu toimii niin kauan kuin sovellus on
+Ohjelmat-kansiossa.
 
 **`nhsx-render-macos-*.tar.gz`** — yksi binääri, ffmpeg mukana:
 
@@ -157,18 +174,23 @@ Laajennus on **ad-hoc-allekirjoitettu ja hiekkalaatikossa**. Kumpikin on
 pakollinen eikä valinta: allekirjoittamaton laajennus ei rekisteröidy, ja
 julkaistuja Quick Look -laajennuksia on jäänyt toimimattomiksi juuri
 `com.apple.security.app-sandbox`in puuttuessa — paikallisesti käännettynä
-sama koodi toimi. Käännös tarkistaa molemmat (`build-quicklook.yml`).
+sama koodi toimi. Käännös tarkistaa molemmat (`build-viewer.yml`).
 
 ### Yksi avoin kysymys, jota ei ole voitu mitata
 
-Hiekkalaatikko antaa laajennukselle pääsyn **esikatseltavaan tiedostoon**.
+Sovelluksessa tätä ei ole: käyttäjä valitsee tiedoston itse, ja
+`com.apple.security.files.user-selected.read-only` kattaa sen.
+
+Laajennuksessa on. Hiekkalaatikko antaa sille pääsyn **esikatseltavaan
+tiedostoon**.
 Äänipooli on eri tiedostoja saman kansion sisällä, eikä ole varmaa antaako
 järjestelmä niihin pääsyä samalla.
 
 Jos ei anna, aikajana piirtyy normaalisti (se on pelkkää XML:ää) mutta
 toisto vaikenee, ja `MixPlayer` kertoo mitkä tiedostot eivät auenneet — se
-näkyy esikatselun alarivillä. Tämä selviää ensimmäisellä ajolla oikealla
-Macilla; täältä sitä ei voi mitata.
+näkyy alarivillä. Tämä selviää ensimmäisellä ajolla oikealla Macilla;
+täältä sitä ei voi mitata. **Sovelluksessa toisto toimii joka tapauksessa**,
+joten pahimmillaankin esikatselu on katselu ilman ääntä.
 
 ## Kääntäminen
 
@@ -176,10 +198,10 @@ Macilla; täältä sitä ei voi mitata.
 swift test                       # NhsxKit ja yhdenmukaisuustesti, ei Xcodea
 brew install xcodegen
 xcodegen generate                # tekee .xcodeproj project.yml:stä
-xcodebuild -scheme NhsxQuickLookApp -configuration Release
+xcodebuild -scheme NhsxViewerApp -configuration Release
 ```
 
-Valmis `NHSX Quick Look.app` **Ohjelmat-kansioon**. Laajennus rekisteröityy
+Valmis `NHSX Viewer.app` **Ohjelmat-kansioon**. Laajennus rekisteröityy
 kun sovellus on siellä ja se on kertaalleen avattu; `qlmanage -r` pakottaa
 Quick Lookin lukemaan laajennukset uudestaan.
 

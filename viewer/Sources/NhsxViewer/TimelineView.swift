@@ -6,7 +6,7 @@ import NhsxKit
 /// Vaimennetut alueet piirretään ääriviivalla eikä täytettynä. Ne ovat
 /// vaimennuksen jälkeen suurin osa istunnosta, ja piilotettuina aikajana
 /// näyttäisi tyhjältä siitä mitä tiedostossa oikeasti on.
-final class TimelineView: NSView {
+public final class TimelineView: NSView {
 
     private struct Bar {
         let row: Int
@@ -19,9 +19,9 @@ final class TimelineView: NSView {
     private var rows: [String] = []
     private var duration: Double = 0
 
-    override var isFlipped: Bool { true }
+    public override var isFlipped: Bool { true }
 
-    func show(session: Session, mix: Mix) {
+    public func show(session: Session, mix: Mix) {
         rows = session.tracks.map { $0.name.isEmpty ? "(nimetön)" : $0.name }
         duration = max(mix.duration, 0.001)
         bars = []
@@ -34,7 +34,7 @@ final class TimelineView: NSView {
         needsDisplay = true
     }
 
-    override func draw(_ dirty: NSRect) {
+    public override func draw(_ dirty: NSRect) {
         NSColor.textBackgroundColor.setFill()
         bounds.fill()
         guard !rows.isEmpty else { return }

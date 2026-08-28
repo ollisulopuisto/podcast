@@ -1,6 +1,6 @@
 """Kaksi toteutusta, yksi vastaus.
 
-`quicklook/` on QuickLook-esikatselu: Swiftiä, koska macOS-laajennus ei voi
+`viewer/` on NHSX Viewer ja sen Quick Look -laajennus: Swiftiä, koska macOS-laajennus ei voi
 olla muuta, eikä se jaa tämän kanssa riviäkään koodia. Se lukee saman
 `.nhsx`:n ja päättelee saman miksauksen — omalla jäsentimellään, omalla
 kielellään.
@@ -11,8 +11,8 @@ jakamalla koodi: laajennus ei voi käynnistää Pythonia. Mitä voi jakaa, on
 **vastaus**: yksi istunto, jonka suunnitelma on kirjoitettu muistiin, ja
 jota molemmat toteutukset testaavat itseään vasten.
 
-`quicklook/Conformance/session.nhsx` on istunto ja `plan.json` sen vastaus.
-Sama pari on `quicklook/Tests`in luettavana. Jos nämä eroavat, esikatselu
+`viewer/Conformance/session.nhsx` on istunto ja `plan.json` sen vastaus.
+Sama pari on `viewer/Tests`in luettavana. Jos nämä eroavat, esikatselu
 näyttää eri jakson kuin `nhsx-render` renderöi — eikä kumpikaan kaadu.
 
 Vastaus on **käsin tarkistettu**, ei koneen kirjaama. Uudelleenluonti on
@@ -32,7 +32,7 @@ import pytest
 from podcastmagic import nhsx
 from podcastmagic.nhsx import cli
 
-CONFORMANCE = Path(__file__).resolve().parents[3] / "quicklook" / "Conformance"
+CONFORMANCE = Path(__file__).resolve().parents[3] / "viewer" / "Conformance"
 SESSION = CONFORMANCE / "session.nhsx"
 PLAN = CONFORMANCE / "plan.json"
 

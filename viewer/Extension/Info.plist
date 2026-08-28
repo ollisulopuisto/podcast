@@ -5,7 +5,7 @@
   <key>CFBundleDisplayName</key>
   <string>NHSX Quick Look</string>
   <key>CFBundleIdentifier</key>
-  <string>fi.sulopuisto.nhsx-quicklook.preview</string>
+  <string>fi.sulopuisto.nhsx-viewer.preview</string>
   <key>CFBundlePackageType</key>
   <string>XPC!</string>
   <key>NSExtension</key>

@@ -11,13 +11,19 @@ import PackageDescription
 // Jako on tämä siksi, että CI voi ajaa yhdenmukaisuustestin ilman
 // Xcode-ajuria ja koko sovelluskehystä.
 let package = Package(
-    name: "NhsxKit",
+    name: "NhsxViewerPackage",
     platforms: [.macOS(.v12)],
     products: [
         .library(name: "NhsxKit", targets: ["NhsxKit"]),
+        // Näkymä on oma tuotteensa, koska sillä on **kaksi kuluttajaa**:
+        // sovellus ja Quick Look -laajennus. Kaksi näkymää samasta
+        // istunnosta ajautuisi erilleen kuten kaksi jäsennintä; erona on,
+        // että näkymät voivat jakaa koodin.
+        .library(name: "NhsxViewer", targets: ["NhsxViewer"]),
     ],
     targets: [
         .target(name: "NhsxKit"),
+        .target(name: "NhsxViewer", dependencies: ["NhsxKit"]),
         .testTarget(name: "NhsxKitTests", dependencies: ["NhsxKit"]),
     ]
 )

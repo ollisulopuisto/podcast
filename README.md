@@ -63,10 +63,12 @@ Each app's own README has the rest: `apps/podcast-magic/README.md`
 ([suomeksi](apps/podcast-magic/README.fi.md)), `apps/autoraffkat/README.md`,
 `apps/automixer/README.md`.
 
-## Quick Look
+## The viewer
 
-`quicklook/` previews a `.nhsx` in Finder — press space, see the tracks and
-regions, hear the mix. It is Swift, because a macOS preview extension cannot
+`viewer/` is **NHSX Viewer**, a small app that opens a `.nhsx` — tracks,
+regions, and the mix played back — plus a Quick Look extension that shows the
+same view in Finder — press space, see the tracks and
+regions, hear the mix. It is Swift, because a macOS app extension cannot
 be anything else, and it is at the repo root rather than under `apps/`
 because a directory there without a `pyproject.toml` breaks `uv sync` for the
 whole workspace.
@@ -74,9 +76,9 @@ whole workspace.
 It parses the session again in Swift rather than calling `nhsx-render`: a
 preview extension is sandboxed and cannot spawn a subprocess. Two parsers of
 one format is the drift this repo exists to prevent, so they share an
-answer instead of code — one session in `quicklook/Conformance/` whose plan
+answer instead of code — one session in `viewer/Conformance/` whose plan
 is written down, which both implementations test themselves against.
-`quicklook/README.md` has the rest.
+`viewer/README.md` has the rest.
 
 ## Working rules
 

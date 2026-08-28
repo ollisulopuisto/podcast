@@ -1,17 +1,17 @@
-name: quicklook
+name: viewer
 
-# Oma työnkulkunsa, koska `quicklook/` ei ole työtilan jäsen: se on Swiftiä,
+# Oma työnkulkunsa, koska `viewer/` ei ole työtilan jäsen: se on Swiftiä,
 # eikä `uv sync` tunne sitä. Juuressa kuten kaikki muutkin — GitHub ajaa
 # vain juuren työnkulut.
 on:
   push:
     paths:
-      - 'quicklook/**'
+      - 'viewer/**'
       - 'apps/podcast-magic/src/podcastmagic/nhsx/**'
       - '.github/workflows/quicklook.yml'
   pull_request:
     paths:
-      - 'quicklook/**'
+      - 'viewer/**'
       - 'apps/podcast-magic/src/podcastmagic/nhsx/**'
       - '.github/workflows/quicklook.yml'
 
@@ -29,7 +29,7 @@ jobs:
       # Ei Xcodea — `NhsxKit` on SwiftPM-kirjasto juuri siksi, että tämä
       # rivi on mahdollinen.
       - name: NhsxKit
-        working-directory: quicklook
+        working-directory: viewer
         run: swift test
 
       # Python-puoli lukee saman fikstuurin ja saman vastauksen. Molemmat
@@ -44,8 +44,8 @@ jobs:
       # molemmat yllä olevat menisivät läpi koskematta siihen.
       - name: fikstuuri on olemassa ja molemmat lukivat sen
         run: |
-          test -f quicklook/Conformance/session.nhsx
-          test -f quicklook/Conformance/plan.json
+          test -f viewer/Conformance/session.nhsx
+          test -f viewer/Conformance/plan.json
           uv run --directory apps/podcast-magic \
             pytest tests/test_conformance.py -q --no-header -rs | tee /tmp/conf.log
           if grep -q "skipped" /tmp/conf.log; then
@@ -58,4 +58,4 @@ jobs:
       - name: project.yml kelpaa
         run: |
           brew install xcodegen
-          cd quicklook && xcodegen generate --spec project.yml
+          cd viewer && xcodegen generate --spec project.yml
