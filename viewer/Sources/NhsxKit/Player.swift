@@ -49,12 +49,24 @@ import AVFoundation
 public final class MixPlayer {
 
     public enum Failure: Error, CustomStringConvertible {
-        case cannotOpen(String)
+        /// Nimi **ja syy**. Syy oli aiemmin nielty, ja se maksoi: julkaistu
+        /// esikatselu kertoi «ei auennut» eikä mitään muuta, ja kaksi täysin
+        /// eri vikaa — hiekkalaatikon esto ja väärin päätelty polku —
+        /// näyttivät samalta. Ne erottaa yksi sana: «Operation not
+        /// permitted» vastaan «No such file or directory».
+        case cannotOpen(name: String, reason: String)
         public var description: String {
             switch self {
-            case .cannotOpen(let name): return "Ääntä ei voi avata: \(name)"
+            case .cannotOpen(let name, let reason): return "Ääntä ei voi avata: \(name) — \(reason)"
             }
         }
+    }
+
+    /// Yhden lähteen epäonnistuminen nimineen ja syineen.
+    public struct Unreadable: Equatable {
+        public let name: String
+        public let reason: String
+        public var described: String { "\(name) — \(reason)" }
     }
 
     private let engine = AVAudioEngine()
@@ -64,7 +76,7 @@ public final class MixPlayer {
 
     /// Tiedostot, jotka eivät auenneet. Yksi rikkinäinen lähde vaientaa
     /// oman leikkeensä, ei koko esikatselua.
-    public private(set) var unreadable: [String] = []
+    public private(set) var unreadable: [Unreadable] = []
 
     public private(set) var isPlaying = false
 
@@ -115,8 +127,22 @@ public final class MixPlayer {
             files[path] = opened
             return opened
         } catch {
-            throw Failure.cannotOpen((path as NSString).lastPathComponent)
+            // `localizedDescription` kantaa POSIX-syyn: eston ja puuttuvan
+            // tiedoston ero on juuri se mitä tästä halutaan tietää.
+            throw Failure.cannotOpen(
+                name: (path as NSString).lastPathComponent,
+                reason: error.localizedDescription
+            )
         }
+    }
+
+    /// Kirjaa lähteen, joka ei auennut. Sama tiedosto vain kerran.
+    private func note(_ path: String, _ error: Error) {
+        let name = (path as NSString).lastPathComponent
+        var reason = error.localizedDescription
+        if case .cannotOpen(_, let why)? = error as? Failure { reason = why }
+        guard !unreadable.contains(where: { $0.name == name }) else { return }
+        unreadable.append(Unreadable(name: name, reason: reason))
     }
 
     /// Soittaa ohjelman kohdasta `from` (ohjelma-aikaa sekunteina).
@@ -142,8 +168,7 @@ public final class MixPlayer {
     ) {
         let source: AVAudioFile
         do { source = try file(at: clip.path) } catch {
-            let name = (clip.path as NSString).lastPathComponent
-            if !unreadable.contains(name) { unreadable.append(name) }
+            note(clip.path, error)
             return
         }
 
@@ -179,8 +204,7 @@ public final class MixPlayer {
             source.framePosition = startFrame
             try source.read(into: buffer, frameCount: available)
         } catch {
-            let name = (clip.path as NSString).lastPathComponent
-            if !unreadable.contains(name) { unreadable.append(name) }
+            note(clip.path, error)
             return
         }
         applyEnvelope(to: buffer, clip: clip, skipped: skipped, rate: sourceRate)

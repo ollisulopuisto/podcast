@@ -136,7 +136,7 @@ public final class SessionView: NSView {
             // Lähde, joka ei auennut, kerrotaan heti eikä jätetä
             // hiljaisuudeksi jolle ei ole selitystä.
             if !fresh.unreadable.isEmpty {
-                note.stringValue = "ei auennut: " + fresh.unreadable.joined(separator: ", ")
+                note.stringValue = "ei auennut: " + fresh.unreadable.map(\.described).joined(separator: ", ")
             }
         } catch {
             note.stringValue = "\(error)"
