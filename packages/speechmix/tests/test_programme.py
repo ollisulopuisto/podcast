@@ -153,3 +153,30 @@ def test_no_delivery_target_means_no_boost():
     rate = 48000
     block = (np.random.default_rng(3).standard_normal((1, rate)) * 0.02).astype("f4")
     assert programme.boost_to(block, rate, target_lufs=None) == 0.0
+
+
+def test_the_short_term_ceiling_rides_instead_of_limiting():
+    """Lyhytaikainen katto on hidas veto, ei rajoitin.
+
+    Kolmen sekunnin ikkuna on kolme kertaluokkaa rajoittimen muistia
+    pidempi, joten sitä ei voi hoitaa rajoittimella: se söisi
+    mikrodynamiikan koko sen ajan. Ylitys otetaan pois tasona, ja käyrä
+    pehmennetään niin ettei vedon alkua ja loppua kuule.
+    """
+    step = 0.1
+    values = np.full(400, -20.0)
+    values[150:220] = -8.0          # 7 s liian kovaa
+    gain = programme.short_term_ride(values, target_db=-12.0, step_sec=step)
+
+    assert gain.shape == values.shape
+    assert gain.max() <= 0.0, "veto ei saa nostaa"
+    assert gain[180] < -3.0, "ylitystä ei otettu pois"
+    assert gain[20] == pytest.approx(0.0, abs=0.05), "rauhalliseen kohtaan koskettiin"
+    # Pehmeys: ei askelmia, vaan liuku.
+    assert np.abs(np.diff(gain)).max() < 1.0
+
+
+def test_a_programme_under_the_ceiling_is_left_alone():
+    values = np.full(200, -18.0)
+    gain = programme.short_term_ride(values, target_db=-12.0, step_sec=0.1)
+    assert np.allclose(gain, 0.0)

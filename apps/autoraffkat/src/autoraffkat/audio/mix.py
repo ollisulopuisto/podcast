@@ -342,6 +342,9 @@ class MixResult:
     program_boost: float = 0.0
     # Mitattu ohjelman äänekkyys jakelun jälkeen, LUFS. Nolla = ei mitattu.
     program_lufs: float = 0.0
+    program_range: float = 0.0            # LRA, LU
+    program_short_term_max: float = 0.0   # LUFS
+    program_momentary_max: float = 0.0    # LUFS
 
     @property
     def ok(self) -> bool:
@@ -478,25 +481,59 @@ def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
                 rate = int(handle.samplerate)
             break
 
-    boost, measured = 0.0, _program_level(jobs, ducks, rate)
+    tolerance = float(getattr(settings, "program_tolerance", DELIVER_TOLERANCE))
+    short_target = float(getattr(settings, "program_short_term_db", 0.0) or 0.0)
+
+    first = IntegratedMeter(rate)
+    measured = _program_level(jobs, ducks, rate, first)
+    boost, ride, step_sec = 0.0, None, first.step_seconds()
+    meter = first
     for round_number in range(DELIVER_ROUNDS):
         if measured is None:
             break
         step = target - measured
-        if abs(step) <= DELIVER_TOLERANCE:
+        # Lyhytaikainen katto on **raja**, ei tavoite: se lasketaan joka
+        # kierroksella siitä mitä nosto on juuri tekemässä, koska nosto
+        # siirtää myös ylitykset.
+        wanted = None
+        if short_target:
+            wanted = programme.short_term_ride(
+                meter.short_term() + step, short_target, step_sec
+            )
+            wanted = wanted if wanted.any() else None
+        if abs(step) <= tolerance and wanted is None:
             break
         boost = round(min(programme.MAX_PROGRAM_BOOST, boost + step), 2)
+        ride = wanted if ride is None else (
+            ride[: len(wanted)] + wanted if wanted is not None else ride
+        )
         meter = IntegratedMeter(rate)
         program_ceiling(jobs, result, ducks, extra if not round_number else None,
-                        boost, ceiling, meter)
+                        boost, ceiling, meter, ride, step_sec if ride is not None
+                        else 0.0)
         measured = meter.value()
-        _log(f"jakelutaso kierros {round_number + 1}: "
-             f"nosto {boost:+.2f} dB -> {measured:.2f} LUFS")
+        _log(f"jakelutaso kierros {round_number + 1}: nosto {boost:+.2f} dB"
+             + (f", veto {ride.min():.2f} dB" if ride is not None else "")
+             + f" -> {measured:.2f} LUFS")
     result.program_boost = boost
     result.program_lufs = measured if measured is not None else 0.0
+    result.program_range = meter.range()
+    result.program_short_term_max = meter.short_term_max()
+    result.program_momentary_max = meter.momentary_max()
+    _log(f"jakelu: {result.program_lufs:.1f} LUFS · LRA {result.program_range:.1f} "
+         f"· lyhyt max {result.program_short_term_max:.1f} "
+         f"· hetkellinen max {result.program_momentary_max:.1f}")
+    if measured is not None and abs(target - measured) > tolerance:
+        for job in jobs:
+            result.notes.setdefault(job["key"], []).append(
+                t("audio.program_short", target=f"{target:.1f}",
+                  got=f"{measured:.1f}")
+            )
+            break
 
 
-def _program_level(jobs: list[dict], ducks: dict, rate: int) -> float | None:
+def _program_level(jobs: list[dict], ducks: dict, rate: int,
+                   meter=None) -> float | None:
     """Ohjelman äänekkyys nyt: vaimennettu summa koko pituudeltaan."""
     from pedalboard.io import AudioFile
 
@@ -504,7 +541,7 @@ def _program_level(jobs: list[dict], ducks: dict, rate: int) -> float | None:
             and os.path.exists(j.get("target", ""))]
     if len(mics) < 2:
         return None
-    meter = IntegratedMeter(rate)
+    meter = meter if meter is not None else IntegratedMeter(rate)
     frames = min(filter(None, (frame_count(j["target"]) for j in mics)), default=0)
     if not frames:
         return None
@@ -533,7 +570,9 @@ def program_ceiling(jobs: list[dict], result: "MixResult",
                     extra: dict | None = None,
                     boost_db: float = 0.0,
                     ceiling_db: float = chain.CEILING_DB,
-                    meter=None) -> None:
+                    meter=None,
+                    ride_db=None,
+                    ride_step: float = 0.0) -> None:
     """Huippukatto **ohjelmalle**, ei yhdelle stemille.
 
     Sama virhe kuin äänekkyydessä, jonka ``program_trim`` jo korjaa: ketju
@@ -584,7 +623,7 @@ def program_ceiling(jobs: list[dict], result: "MixResult",
         try:
             worst = _ceiling_pass(
                 members, frames, AudioFile, envelopes, extra, boost_db,
-                ceiling_db, meter,
+                ceiling_db, meter, ride_db, ride_step,
             )
         except (OSError, ValueError) as exc:
             for job in members:
@@ -601,7 +640,9 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                   extra: dict | None = None,
                   boost_db: float = 0.0,
                   ceiling_db: float = chain.CEILING_DB,
-                  meter=None) -> float:
+                  meter=None,
+                  ride_db=None,
+                  ride_step: float = 0.0) -> float:
     """Yksi ryhmä: summa paloittain, sama käyrä jokaiseen stemiin.
 
     ``envelopes`` on vaimennus puhujittain aikajanan aikana. Se **on**
@@ -651,6 +692,15 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                     blocks.append(
                         handle.read(high - low)
                         * _linear((extra or {}).get(job["key"], 0.0) + boost_db)
+                    )
+                if ride_db is not None and ride_step > 0:
+                    # Hidas veto näytteille: käyrä on ohjelman aikaa, ja
+                    # lineaarinen interpolointi riittää, koska se on jo
+                    # pehmennetty ikkunansa pituudella.
+                    when = (np.arange(low, high) / rate) / ride_step
+                    curve = np.interp(when, np.arange(len(ride_db)), ride_db)
+                    blocks[-1] = blocks[-1] * (10.0 ** (curve / 20.0)).astype(
+                        np.float32
                     )
                 heard = [
                     block * _envelope_block(job, envelopes, low, high, rate)

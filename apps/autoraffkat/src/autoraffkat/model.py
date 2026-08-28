@@ -387,6 +387,13 @@ class AudioSettings:
     # Jakelun huippukatto, dBTP. Ketjun oma `CEILING_DB` on stemin katto ja
     # jättää varaa summalle; tämä on se luku johon **ohjelma** rajataan.
     program_peak_db: float = -1.0
+    # Lyhytaikaisen äänekkyyden katto, LUFS. Nolla = pois. Tämä on **raja**
+    # eikä tavoite: katon alle jäävään ohjelmaan ei kosketa. Hoidetaan
+    # hitaalla vedolla eikä rajoittimella, koska kolmen sekunnin ikkuna on
+    # kolme kertaluokkaa rajoittimen muistia pidempi.
+    program_short_term_db: float = 0.0
+    # Kuinka lähelle jakelutasoa on päästävä, LU.
+    program_tolerance: float = 0.5
     # Liitännäinen käyttää yhtä ydintä, joten tiedosto pilkotaan tämän verran
     # paloiksi jotka ajetaan rinnakkain omilla instansseillaan. ``0`` on
     # automaattinen eli osuus koneen ytimistä (``chain.WORKER_SHARE``), ``1``

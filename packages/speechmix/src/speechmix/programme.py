@@ -148,6 +148,49 @@ def boost_to(summed: np.ndarray, rate: int, target_lufs: float | None,
     return round(max(0.0, min(float(max_boost), float(target_lufs) - measured)), 2)
 
 
+#: Kuinka nopeasti lyhytaikainen veto liikkuu. Kolme sekuntia on ikkunan oma
+#: pituus: sitä nopeampi veto reagoisi ikkunan sisään eikä sen mittaamaan
+#: asiaan, ja kuuluisi pumppauksena.
+SHORT_TERM_GLIDE_SEC = 3.0
+
+
+def short_term_ride(short_term_db, target_db: float,
+                    step_sec: float,
+                    glide_sec: float = SHORT_TERM_GLIDE_SEC) -> np.ndarray:
+    """Vaimennus jolla lyhytaikainen äänekkyys mahtuu kattoonsa, dB (≤ 0).
+
+    Hidas veto, ei rajoitin. Kolmen sekunnin ikkuna on kolme kertaluokkaa
+    rajoittimen muistia pidempi, joten rajoittimella hoidettuna se söisi
+    mikrodynamiikan koko sen ajan — juuri sen jonka takia taso ylipäätään
+    tehdään summasta eikä stemeistä.
+
+    Ylitys otetaan pois tasona ja käyrä pehmennetään ikkunan omalla
+    pituudella: nopeampi veto reagoisi ikkunan **sisään** eikä sen
+    mittaamaan asiaan, ja kuuluisi pumppauksena.
+
+    Vain vaimennus. Katon alla olevaan ohjelmaan ei kosketa, koska tämä on
+    raja eikä tavoite.
+    """
+    values = np.asarray(short_term_db, dtype=np.float64)
+    if not values.size or not target_db:
+        return np.zeros(values.shape)
+    over = np.minimum(0.0, target_db - values)
+    over[~np.isfinite(over)] = 0.0
+    if not over.any():
+        return np.zeros(values.shape)
+    # Pehmennys molempiin suuntiin, jotta veto ehtii alkaa ennen ylitystä
+    # eikä jää jälkeen sen jälkeen. Minimi ennen keskiarvoa: keskiarvo yksin
+    # päästäisi huipun läpi puoliksi.
+    span = max(1, int(round(glide_sec / max(step_sec, 1e-6))))
+    pad = span
+    padded = np.pad(over, pad, mode="edge")
+    from scipy.ndimage import minimum_filter1d, uniform_filter1d
+
+    held = minimum_filter1d(padded, size=2 * span + 1, mode="nearest")
+    smooth = uniform_filter1d(held, size=2 * span + 1, mode="nearest")
+    return np.minimum(0.0, smooth[pad : pad + values.size])
+
+
 def trim_to_target(summed: np.ndarray, rate: int, target_lufs: float,
                    max_trim: float = MAX_PROGRAM_TRIM) -> float:
     """Kuinka paljon mikkien summa on tavoitteen yli, desibeleinä (≤ 0).

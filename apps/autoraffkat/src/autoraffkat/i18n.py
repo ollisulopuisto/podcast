@@ -295,6 +295,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "fi": "Liitännäistä ei voitu ladata: {name} — {error}",
         "en": "Could not load the plug-in: {name} — {error}",
     },
+    "audio.program_short": {
+        "fi": "Jakelutaso jäi: tavoite {target} LUFS, tulos {got}.",
+        "en": "Delivery level fell short: target {target} LUFS, got {got}.",
+    },
     "audio.plugin_skipped": {
         "fi": "Liitännäinen ohitettu, muu käsittely tehtiin: {error}",
         "en": "Plug-in skipped, the rest of the chain still ran: {error}",

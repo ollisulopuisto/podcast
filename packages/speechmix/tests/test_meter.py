@@ -56,3 +56,38 @@ def test_a_gain_moves_the_reading_by_the_same_amount():
     quiet.add(audio)
     loud.add(audio * (10 ** (6 / 20)))
     assert loud.value() - quiet.value() == pytest.approx(6.0, abs=0.05)
+
+
+def test_momentary_and_short_term_have_the_right_windows():
+    """400 ms ja 3 s, standardin ikkunat.
+
+    Lyhyt piikki hiljaisessa ohjelmassa nostaa hetkellistä paljon ja
+    lyhytaikaista vähän: se on ikkunoiden ero, ja väärä ikkuna näkyisi vain
+    siinä että raja laukeaa väärään aikaan.
+    """
+    rate = RATE
+    audio = np.full(rate * 10, 0.001, dtype=np.float32)
+    audio[rate * 5 : rate * 5 + rate // 2] = 0.3      # 0,5 s kovaa
+    meter = IntegratedMeter(rate)
+    meter.add(audio)
+    assert meter.momentary_max() > meter.short_term_max() + 4.0
+
+
+def test_the_range_is_the_spread_of_the_short_term_values():
+    """LRA: 10. ja 95. prosenttipisteen väli, EBU Tech 3342.
+
+    Ohjelma jossa on kaksi tasoa 10 dB:n päässä toisistaan antaa noin
+    kymmenen; tasainen ohjelma antaa lähes nollan.
+    """
+    rate = RATE
+    rng = np.random.default_rng(9)
+    flat = (rng.standard_normal(rate * 40) * 0.05).astype(np.float32)
+    steady = IntegratedMeter(rate)
+    steady.add(flat)
+    assert steady.range() < 1.5, steady.range()
+
+    varied = flat.copy()
+    varied[: rate * 20] *= 10 ** (-10 / 20)
+    swung = IntegratedMeter(rate)
+    swung.add(varied)
+    assert 7.0 < swung.range() < 13.0, swung.range()

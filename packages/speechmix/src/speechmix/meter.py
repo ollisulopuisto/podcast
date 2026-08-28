@@ -26,6 +26,18 @@ OVERLAP = 4
 ABSOLUTE_GATE = -70.0
 RELATIVE_GATE = 10.0
 
+#: Ikkunat: hetkellinen 400 ms, lyhytaikainen 3 s.
+MOMENTARY_SEC = 0.400
+SHORT_TERM_SEC = 3.0
+
+#: Vaihteluväli, EBU Tech 3342: suhteellinen portti 20 LU alle keskiarvon,
+#: ja väli 10.–95. prosenttipisteestä. Eri portti kuin integroidulla, ja se
+#: on tahallista: vaihteluvälin pitää nähdä hiljaiset kohdat jotka
+#: integroidun portti hylkää.
+RANGE_GATE = 20.0
+RANGE_LOW = 10.0
+RANGE_HIGH = 95.0
+
 
 def _k_weighting(rate: int):
     """K-painotuksen kertoimet: korkeahylly ja ylipäästö, BS.1770-4."""
@@ -89,21 +101,70 @@ class IntegratedMeter:
             self._powers.extend(np.mean(usable**2, axis=1).tolist())
         self._tail = data[count * self.step :].copy()
 
+    def _windows(self, seconds: float) -> np.ndarray:
+        """Liukuvan ikkunan tehot osalohkoista koottuna."""
+        power = np.asarray(self._powers)
+        count = max(1, int(round(seconds / (BLOCK_SEC / OVERLAP))))
+        if power.size < count:
+            return np.zeros(0)
+        window = np.lib.stride_tricks.sliding_window_view(power, count)
+        return window.mean(axis=1)
+
     def _blocks(self) -> np.ndarray:
         """Lohkojen tehot: OVERLAP peräkkäistä osaa yhtä lohkoa kohden."""
-        power = np.asarray(self._powers)
-        if power.size < OVERLAP:
-            return np.zeros(0)
-        window = np.lib.stride_tricks.sliding_window_view(power, OVERLAP)
-        return window.mean(axis=1)
+        return self._windows(BLOCK_SEC)
+
+    @staticmethod
+    def _db(power) -> np.ndarray:
+        with np.errstate(divide="ignore"):
+            return -0.691 + 10.0 * np.log10(np.asarray(power))
+
+    def momentary(self) -> np.ndarray:
+        """Hetkellinen äänekkyys, 400 ms ikkuna, LUFS per osalohko."""
+        return self._db(self._blocks())
+
+    def short_term(self) -> np.ndarray:
+        """Lyhytaikainen äänekkyys, 3 s ikkuna, LUFS per osalohko."""
+        return self._db(self._windows(SHORT_TERM_SEC))
+
+    def momentary_max(self) -> float:
+        values = self.momentary()
+        keep = values > ABSOLUTE_GATE
+        return float(values[keep].max()) if keep.any() else float("nan")
+
+    def short_term_max(self) -> float:
+        values = self.short_term()
+        keep = values > ABSOLUTE_GATE
+        return float(values[keep].max()) if keep.any() else float("nan")
+
+    def range(self) -> float:
+        """Äänekkyyden vaihteluväli, LU. EBU Tech 3342.
+
+        Oma porttinsa, 20 LU keskiarvon alle: integroidun kymmenen hylkäisi
+        juuri ne hiljaiset kohdat joiden mittaamisesta tässä on kyse.
+        """
+        values = self.short_term()
+        keep = values > ABSOLUTE_GATE
+        if keep.sum() < 2:
+            return 0.0
+        power = self._windows(SHORT_TERM_SEC)[keep]
+        reference = float(self._db(power.mean()))
+        keep = values[keep] > reference - RANGE_GATE
+        kept = values[values > ABSOLUTE_GATE][keep]
+        if kept.size < 2:
+            return 0.0
+        return float(np.percentile(kept, RANGE_HIGH) - np.percentile(kept, RANGE_LOW))
+
+    def step_seconds(self) -> float:
+        """Osalohkon pituus sekunteina: käyrän aika-akseli."""
+        return BLOCK_SEC / OVERLAP
 
     def value(self) -> float | None:
         """Integroitu äänekkyys, LUFS. ``None`` jos portin yli ei jää mitään."""
         blocks = self._blocks()
         if not blocks.size:
             return None
-        with np.errstate(divide="ignore"):
-            level = -0.691 + 10.0 * np.log10(blocks)
+        level = self._db(blocks)
         keep = level > ABSOLUTE_GATE
         if not keep.any():
             return None
