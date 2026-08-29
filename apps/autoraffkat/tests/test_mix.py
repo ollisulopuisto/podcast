@@ -1000,6 +1000,10 @@ def test_a_partner_from_another_part_is_not_a_leakage_source():
 
     class Item:
         asset_start = 0.0
+        # ``track_of`` lukee polun, koska sääntö itse on kirjastossa ja
+        # ottaa vastaan kokonaisen ``Track``in. Tupla on siis nyt sen
+        # verran täydellisempi.
+        path = "mic.wav"
 
         def __init__(self, offset, end):
             self.placements = [P(offset, end)]

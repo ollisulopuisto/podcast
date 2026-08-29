@@ -29,6 +29,7 @@ from pathlib import Path
 import numpy as np
 
 from . import binaries
+from .dsp import FLOOR_DB
 from .errors import EnvelopeError
 from .masks import HOP
 from .messages import t
@@ -42,7 +43,6 @@ SAMPLE_RATE = 8000
 # laskennan tulos, ja niiden käyttö olisi juuri se hiljainen väärä tulos.
 CACHE_VERSION = 2
 
-FLOOR_DB = -120.0
 
 
 def require_ffmpeg() -> None:

@@ -19,17 +19,20 @@ this file once the extraction is finished — it describes a state, not a rule.
 
 ## Not done, in the order I would do it
 
-1. **`envelope.py` + `binaries.py`** — small. They depend on `model.HOP`
-   and on ffmpeg discovery. `HOP` is a constant of the analysis, so it
-   belongs in the package; ffmpeg discovery is per-app (each bundles its
-   own binaries) and probably wants the same hook shape as the translator.
-2. **`mix.py`** — the real work, and where a silent regression would hide.
-   It reaches into `item.placements`, `asset_start` and `sibling()` paths in
-   about a dozen places, and every one has to become the `Track` protocol
-   described in `packages/speechmix/README.md`. Write the failing test
-   first; this is the module where "valid output, wrong result" lives.
+1. ~~**`envelope.py` + `binaries.py`**~~ — both moved: `speechmix/rms.py`
+   and `speechmix/binaries.py`.
+2. ~~**`mix.py`'s timeline arithmetic**~~ — done. `item.placements` and
+   `asset_start` reached the library in about a dozen places; they are now
+   the `Track` protocol from `packages/speechmix/README.md`, in
+   `speechmix/timeline.py`, and `mix.track_of` is the one place that knows
+   FCPXML. `overlaps`, `_mask_samples` and `_aligned` followed, because
+   automixer subtracts the same leak from its own wav tracks and cannot
+   import autoraffkat to reach them.
 3. **`editor.py`, `worker.py`** — the plug-in child process. Mostly
-   mechanical once `chain` is in place.
+   mechanical once `chain` is in place. automixer wants this one: it takes
+   a **list** of plug-ins per track, loaded lazily on a pool worker with no
+   length check, where the library takes one in a child process with length
+   and lag both checked.
 4. ~~**automixer's mlx failure.**~~ Done. It was not a version problem:
    mlx's default stream is thread-local, and three call sites ran mlx work
    in a `ThreadPoolExecutor`, so an array made on a worker raised on first
@@ -67,6 +70,28 @@ siksi, että `masks.py`:ssä on parametri nimeltä `grid`.
 
 Mitä jäi: `chain`, `masks`, `envelopes`, `debleed`, `freshness`, `messages`.
 Jokaisella on tuoja.
+
+`grid` on sittemmin palannut, ja ero edelliseen on juuri se jonka testi ei
+osaa katsoa: silloin sillä ei ollut yhtään kuluttajaa ja se oli rinnakkainen
+toteutus `analysis.build_grid`ille. Nyt sillä on kuluttaja — automixerin
+`domain/room.py`, jolle se on alun perin kirjoitettukin — ja sen ainoa
+ruudukko. Kirjastoon saa siirtää ja sinne saa kirjoittaa sen mitä joku kutsuu;
+sinne ei saa kirjoittaa **toista vastausta** samaan kysymykseen. Kaksi
+ruudukkomuotoa yhdessä paketissa oli tarkalleen sitä, ja se korjattiin
+yhdistämällä ne (`SpeechGrid.speakers`) eikä lisäämällä kolmatta.
+
+## automixer's missing decision layer — done
+
+automixer had the shared **chain** but not the shared **decision layer**, and
+`SPEECHMIX-INVENTORY.md` twice recorded the reason as "automixer has no
+microphones to build a speech grid from". Wrong premise: every `type: speech`
+track is one person's microphone. What was missing was the timeline shape, and
+that is item 2 above. With it, three stages that were already written and
+tested in the library started running here — cross-bleed removal, the level
+rider and per-microphone ducking — through `automixer/domain/room.py`, which
+holds no arithmetic of its own. That is the whole design working as intended:
+the next measured fix on autoraffkat's side reaches automixer without anybody
+carrying it across.
 
 ## Two things not to undo
 

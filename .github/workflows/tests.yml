@@ -66,6 +66,22 @@ jobs:
             exit 1
           fi
 
+      # Sama syy kuin savutestillä. Renderöinnin päätestit käyttävät
+      # injektoitua purkajaa, joten ne ovat vihreitä ilman ffmpegiä — ja
+      # niin oli sekin ajo, jossa jokainen ohjelma kirjoitettiin 48 dB liian
+      # hiljaa: 24-bittinen näyte pakattiin int32:n kolmesta ylimmästä
+      # tavusta kolmen alimman sijaan. WAV oli kelvollinen, kesto oikea ja
+      # `Report.peak` kertoi oikean huipun, koska se mitataan liukuluvuista
+      # ennen pakkausta. Vasta oikea renderöinti näytti sen.
+      - name: podcast-magic — renderöinti ajettiin oikealla ffmpegillä
+        run: |
+          uv run --directory apps/podcast-magic \
+            pytest tests/test_render_endtoend.py -q --no-header -rs | tee /tmp/e2e.log
+          if grep -q "skipped" /tmp/e2e.log; then
+            echo "Renderöinnin päästä päähän -testi ohittui — ffmpeg puuttuu ajurilta."
+            exit 1
+          fi
+
       # Moottori, jota ei voi tuoda, ei ole hidas vaan poissa. Testit menevät
       # läpi kummankin puuttuessa, koska ne käyttävät valemoottoria; tämä on
       # se kohta joka lukee oikean tilanteen ajurilta.

@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "duration": 40.0,
+  "muted": 3,
+  "unknown": {
+    "Volyymi": 1,
+    "Fade/Kayra": 1
+  },
+  "speakers": [
+    "Musiikki",
+    "Panu",
+    "Olli",
+    "Puhelin"
+  ],
+  "clips": [
+    {
+      "file": "musiikki.wav",
+      "speaker": "Musiikki",
+      "start": 0.0,
+      "length": 10.0,
+      "file_offset": 0.0,
+      "gain": 0.25,
+      "pan": -0.5,
+      "left": 0.25,
+      "right": 0.75,
+      "ramps": [
+        {
+          "start": 0.0,
+          "length": 1.5,
+          "gain": 0.5
+        },
+        {
+          "start": 7.0,
+          "length": 3.0,
+          "gain": 1.0
+        }
+      ]
+    },
+    {
+      "file": "panu.wav",
+      "speaker": "Panu",
+      "start": 1.0,
+      "length": 6.0,
+      "file_offset": 0.0,
+      "gain": 0.25,
+      "pan": 0.3,
+      "left": 0.65,
+      "right": 0.35,
+      "ramps": []
+    },
+    {
+      "file": "olli.wav",
+      "speaker": "Olli",
+      "start": 2.0,
+      "length": 8.0,
+      "file_offset": 30.0,
+      "gain": 1.0,
+      "pan": 0.0,
+      "left": 0.5,
+      "right": 0.5,
+      "ramps": []
+    },
+    {
+      "file": "olli.wav",
+      "speaker": "Olli",
+      "start": 12.0,
+      "length": 4.0,
+      "file_offset": 120.5,
+      "gain": 1.0,
+      "pan": 0.0,
+      "left": 0.5,
+      "right": 0.5,
+      "ramps": []
+    },
+    {
+      "file": "panu.wav",
+      "speaker": "Panu",
+      "start": 14.0,
+      "length": 2.5,
+      "file_offset": 5.25,
+      "gain": 0.5,
+      "pan": 0.2,
+      "left": 0.6,
+      "right": 0.4,
+      "ramps": []
+    },
+    {
+      "file": "musiikki.wav",
+      "speaker": "Puhelin",
+      "start": 20.0,
+      "length": 2.0,
+      "file_offset": 0.0,
+      "gain": 0.25,
+      "pan": 0.0,
+      "left": 0.5,
+      "right": 0.5,
+      "ramps": []
+    },
+    {
+      "file": "musiikki.wav",
+      "speaker": "Musiikki",
+      "start": 30.0,
+      "length": 1.0,
+      "file_offset": 0.0,
+      "gain": 0.25,
+      "pan": 0.0,
+      "left": 0.5,
+      "right": 0.5,
+      "ramps": [
+        {
+          "start": 0.0,
+          "length": 1.0,
+          "gain": 0.0
+        }
+      ]
+    }
+  ]
+}

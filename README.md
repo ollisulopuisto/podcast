@@ -14,7 +14,8 @@ the file — it is **tracks placed on a programme timeline**, which `.fcpxml`,
 
 `packages/speechmix` is the pipeline itself. It turns samples into other
 samples and knows nothing about any session format — see its README for the
-seam and `SHARED-AUDIO.md` for the measurements behind every stage.
+seam and `apps/autoraffkat/SHARED-AUDIO.md` for the measurements behind every
+stage.
 
 ## Running one of them
 
@@ -28,11 +29,25 @@ uv sync --all-packages --extra mlx        # --extra faster on an Intel Mac
 uv run podcast-magic ~/Podcast/episode8/  # Hindenburg: transcribe and mute
 uv run autoraffkat                        # Final Cut: cut the picture
 uv run automixer                          # render a mix
+
+uv run nhsx-render "episode 8.nhsx"       # a Hindenburg session → a WAV
 ```
 
-automixer is still mid-move into this repository — one test fails on the
-workspace's mlx and CI carries it as declared debt — so treat that last line
-as the one to check before relying on it.
+All three run the same chain. automixer was the last one in and the last to
+get all of it: the shared pipeline reaches the timeline through *tracks with
+spans*, that shape used to be buildable only from FCPXML, and so the four
+stages that need it were locked to one app. They are not any more —
+`packages/speechmix/README.md` describes the seam and
+`apps/automixer/SPEECHMIX-INVENTORY.md` records what changed when automixer
+crossed it.
+
+`nhsx-render` is the odd member of the set: it is the only tool here that
+does not run that chain at all, because it exists for the day the program it
+reads for is gone. A `.nhsx` is XML and a folder of WAVs, so it turns one
+back into audio — geometry, mute, level, fades and pan, no effects — with
+nothing but `nhsx/`, numpy and ffmpeg. `--plan` and `--json` say what would
+be heard without opening a single audio file, which is what makes a preview
+fast enough to be worth having.
 
 **`uv sync` belongs at the root, with `--all-packages`.** The three apps and
 the shared pipeline are members of one uv workspace over one environment, so:
@@ -47,6 +62,23 @@ the shared pipeline are members of one uv workspace over one environment, so:
 Each app's own README has the rest: `apps/podcast-magic/README.md`
 ([suomeksi](apps/podcast-magic/README.fi.md)), `apps/autoraffkat/README.md`,
 `apps/automixer/README.md`.
+
+## The viewer
+
+`viewer/` is **NHSX Viewer**, a small app that opens a `.nhsx` — tracks,
+regions, and the mix played back — plus a Quick Look extension that shows the
+same view in Finder — press space, see the tracks and
+regions, hear the mix. It is Swift, because a macOS app extension cannot
+be anything else, and it is at the repo root rather than under `apps/`
+because a directory there without a `pyproject.toml` breaks `uv sync` for the
+whole workspace.
+
+It parses the session again in Swift rather than calling `nhsx-render`: a
+preview extension is sandboxed and cannot spawn a subprocess. Two parsers of
+one format is the drift this repo exists to prevent, so they share an
+answer instead of code — one session in `viewer/Conformance/` whose plan
+is written down, which both implementations test themselves against.
+`viewer/README.md` has the rest.
 
 ## Working rules
 

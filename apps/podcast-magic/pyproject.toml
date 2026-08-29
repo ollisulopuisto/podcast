@@ -1,6 +1,6 @@
 [project]
 name = "podcast-magic"
-version = "2026.8.27.3"
+version = "2026.8.28.3"
 description = "Hindenburg-jälkityöt macOS:llä: litterointi ja hiljaisten kohtien vaimennus"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -25,6 +25,10 @@ dependencies = [
 
 [project.scripts]
 podcast-magic = "podcastmagic.__main__:main"
+# Istunto WAViksi ilman Hindenburgia ja ilman tätä sovellusta: pelkkä
+# `nhsx/`, numpy ja ffmpeg. Oma komentonsa eikä `podcast-magic`in valitsin,
+# koska sen koko pointti on olla se joka toimii kun muuta ei ole.
+nhsx-render = "podcastmagic.nhsx.cli:main"
 
 [project.optional-dependencies]
 # Apple Silicon: Metal-kiihdytetty Whisper. Ei asennu Intelille eikä Linuxille,

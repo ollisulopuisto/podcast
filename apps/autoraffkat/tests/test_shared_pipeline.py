@@ -73,6 +73,32 @@ def test_the_timeline_formula_lives_in_exactly_one_function():
     assert not outside, f"aikajanamuunnos on myös täällä: {outside}"
 
 
+def test_the_duck_defaults_are_the_measured_ones():
+    """Mitattu luku kopioituna on kaksi vastausta samaan kysymykseen.
+
+    Vaimennuksen ajat ja syvyys mitattiin oikealla aineistolla ja olivat
+    tässä sovelluksessa. Toinen isäntä olisi kirjoittanut omansa, eivätkä
+    ne kaataisi mitään — ne alkaisivat vain erota, ja kaksi eri vaimennusta
+    yhden nimen alla on tarkalleen se vika jota vastaan tämä työtila on.
+
+    automixerin puolella on tämän peilikuva. Kummankin sovelluksen lukema
+    tarkistetaan **kirjastoa** vastaan eikä toista sovellusta vastaan:
+    kirjasto on se yksi paikka jossa muutos tehdään, eikä kummankaan testin
+    tarvitse tuoda toista sovellusta sisään.
+    """
+    from autoraffkat.model import AudioSettings
+
+    settings = AudioSettings()
+    assert settings.duck_db == masks.DUCK_DB
+    assert settings.duck_fade == masks.DUCK_FADE
+    assert settings.duck_release == masks.DUCK_RELEASE
+    assert settings.duck_hold == masks.DUCK_HOLD
+    assert settings.duck_lookahead == masks.DUCK_LOOKAHEAD
+    assert settings.duck_min_open == masks.DUCK_MIN_OPEN
+    assert settings.duck_min_closed == masks.DUCK_MIN_CLOSED
+    assert settings.duck_dominance_db == masks.DUCK_DOMINANCE_DB
+
+
 def test_the_masks_come_from_the_library():
     assert mix.duck_masks is masks.duck_masks
     assert mix.solo_masks is masks.solo_masks

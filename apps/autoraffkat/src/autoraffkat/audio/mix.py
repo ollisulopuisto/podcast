@@ -35,6 +35,7 @@ from pathlib import Path
 import numpy as np
 
 from speechmix import chain, envelopes, programme
+from speechmix import timeline as timeline_lib
 from speechmix.binaries import get_binary_path
 from speechmix.chain import ChainError
 from speechmix.envelopes import (  # noqa: F401  julkinen rajapinta säilyy
@@ -984,21 +985,10 @@ WRITE_SHARE = 0.07
 def overlaps(one, other) -> bool:
     """Ovatko kaksi mediaa yhtään hetkeä yhtä aikaa aikajanalla.
 
-    Monikamerassa osat ovat peräkkäin, joten toisen osan mikki ei voi
-    vuotaa tämän osan tiedostoon. Ilman tätä se tarjottiin silti
-    vuotolähteeksi, ``_aligned`` palautti pelkkää nollaa, ja lokiin tuli
-    «vuotopolkua ei saatu ratkaistua» pariutumisesta joka ei ollut koskaan
-    mahdollinen. Vienti ei mennyt siitä rikki — oikea kumppani käsiteltiin
-    erikseen — mutta sama tiedosto näytti lokissa sekä onnistuvan että
-    epäonnistuvan, ja se peitti alleen oikean vian pitkissä osissa.
-    Virheilmoitus jota ei voi uskoa on huonompi kuin ei ilmoitusta.
+    Sääntö on kirjastossa: se on puhdasta jaksogeometriaa, ja automixerin
+    vuodonvähennys tarvitsee saman. Tänne jää `track_of`, eli FCPXML.
     """
-    for mine in one.placements:
-        for theirs in other.placements:
-            if (float(mine.offset) < float(theirs.end)
-                    and float(theirs.offset) < float(mine.end)):
-                return True
-    return False
+    return timeline_lib.overlaps(track_of(one), track_of(other))
 
 
 def _debleed(job, audio, rate, program_start, solos, partners, result):
@@ -1238,52 +1228,18 @@ def adopt(timeline, roles, settings: AudioSettings) -> MixResult:
 
 def _mask_samples(item, mask, program_start: float, rate: int, frames: int):
     """Ruudukon maski tiedoston näytteiksi. Sama muunnos kuin ``closed_ranges``."""
-    out = np.zeros(frames, dtype=bool)
-    for first, last in closed_ranges(item, mask, program_start, rate):
-        low, high = max(0, first), min(frames, last)
-        if high > low:
-            out[low:high] = True
-    return out
+    return envelopes.mask_samples(track_of(item), mask, program_start, rate, frames)
 
 
 def _aligned(target_item, source_item, source_audio, rate: int, frames: int):
     """Lähdemikin ääni kohdetiedoston näytepaikoille.
 
-    Tiedostot ovat eri pituisia ja alkavat aikajanalla eri kohdista, joten
-    vuotoa ei voi vähentää ennen kuin ne ovat samassa aikapohjassa. Kuvaus
-    on esiintymän sisällä lineaarinen ja näytetaajuus sama, joten se on
-    kokonaisluvun siirto — ei uudelleennäytteistystä, joka siirtäisi
-    vaihetta ja pilaisi juuri sen mitä tässä yritetään mitata.
+    Siirto on kirjastossa, koska se on jaksogeometriaa eikä FCPXML:ää — ja
+    koska automixer vähentää saman vuodon omista wav-raidoistaan.
     """
-    out = np.zeros(frames, dtype=np.float64)
-    source = np.asarray(source_audio, dtype=np.float64).reshape(-1)
-    for target in track_of(target_item).spans:
-        for source_span in track_of(source_item).spans:
-            low = max(target.programme_start, source_span.programme_start)
-            high = min(target.programme_end, source_span.programme_end)
-            if high <= low:
-                continue
-            t0 = int(round(target.to_file_time(low) * rate))
-            t1 = int(round(target.to_file_time(high) * rate))
-            # Kuinka kaukana lähdetiedosto on kohdetiedostosta samalla
-            # ohjelman hetkellä. Molemmat kuvaukset ovat kulmakertoimeltaan
-            # yksi, joten erotus on sama joka hetkellä paikan sisällä.
-            shift = int(
-                round(
-                    (source_span.to_file_time(low) - target.to_file_time(low)) * rate
-                )
-            )
-            t0, t1 = max(0, t0), min(frames, t1)
-            s0, s1 = t0 + shift, t1 + shift
-            if s1 <= 0 or s0 >= source.size or t1 <= t0:
-                continue
-            cut = max(0, -s0)
-            s0, t0 = s0 + cut, t0 + cut
-            cut = max(0, s1 - source.size)
-            s1, t1 = s1 - cut, t1 - cut
-            if t1 > t0:
-                out[t0:t1] = source[s0:s1]
-    return out
+    return timeline_lib.aligned(
+        track_of(target_item), track_of(source_item), source_audio, rate, frames
+    )
 
 
 def process(

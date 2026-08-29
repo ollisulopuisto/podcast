@@ -5,8 +5,10 @@ What this is: a map of `src/automixer/domain/processor.py` against
 stages exist in both, which are automixer's alone, and where a constant differs
 from the measured one.
 
-Read against the code, not the documentation — `PIPELINE.md` describes at least
-one stage that has never run. Every number below was measured in this
+Read against the code, not the documentation. That was written when
+`PIPELINE.md` documented a stage which had never run; it has since been
+rewritten against the code, but the rule stands — it is how that stage
+survived for as long as it did. Every number below was measured in this
 repository on synthetic speech with uneven burst levels, except where it says
 otherwise.
 
@@ -130,6 +132,8 @@ sample-to-sample gain step measured **120 dB**.
 
 ## 4. In speechmix, absent from automixer entirely
 
+*Written before the grid existed. What is left of it is at the bottom.*
+
 `debleed`, the speech grid, the level rider, the de-esser, parallel
 compression, the over-compression check (`peak_to_short_term`, 6 LU floor),
 lag and length assertions, the fingerprint, and per-microphone ducking.
@@ -138,6 +142,35 @@ automixer's "ducking" is a different feature and should not be confused with
 it: `DuckingProcessor` sidechains the **music bed** from the summed speech bus.
 speechmix's ducking closes a **microphone** while its owner is not talking.
 Both are wanted; only the second is in the library.
+
+### The grid was the whole blocker, and the premise was wrong
+
+Four of those entries — the grid, `debleed`, the rider and per-microphone
+ducking — were one entry. The last three read the grid and nothing else, so
+none of them could be swapped while it was missing.
+
+This document twice gave the reason as **"automixer has no microphones to
+build one from"**. That is a true statement about FCPXML angles and a false
+one about automixer: every `type: speech` track *is* one person's microphone.
+What was missing was not microphones but the shape the library asks for — a
+track with spans on a programme timeline — and the conversion from a wav file
+with a start time to that shape is `domain/room.py`, which is thirty lines of
+adapter and no arithmetic of its own.
+
+`speechmix.grid.speech_grid` builds the grid by comparing the raw stems, and
+`speechmix.timeline.Track` is the seam that was previously reachable only
+through `item.placements` — which is why every one of these stages was locked
+to one host. automixer is `speech_grid`'s first application consumer; it was
+written for exactly this case, stems that share a time base, and had none.
+
+Connecting it took one library change: `SpeechGrid` kept the per-frame levels
+it already computed and grew a `speakers` view in the shape `masks` and
+`envelopes` read. The package had two grids and nothing joined them, so
+ducking could not reach the one this module builds.
+
+**Still absent, and still wanted:** the fingerprint (automixer re-renders
+every time), the lag and length assertions around the plug-in slot, and the
+over-compression check.
 
 ## 5. automixer's alone, and staying that way
 
@@ -167,16 +200,45 @@ left reachable: a stage measured to do harm is not a fallback.
 3. ~~The compressors~~ — done, `chain.multiband` + two `chain.compress`
    stages, each capped at `MAX_GR_DB`. Measured before the swap, one stage
    with no cap pulled **29.26 dB**.
-4. **De-essing** — done, from `chain.process`. **The rider is not**: it needs a
-   speech grid, and automixer has no microphones to build one from. Passing
-   `speaking=None` makes the library skip it, and `SpeechSettings.rider` is
-   `False` so the skip reads as a decision rather than an oversight.
-5. `debleed` — still open, and still needs the grid.
+4. ~~**De-essing**~~ — done, from `chain.process`.
+5. ~~**The speech grid**~~ — done, `domain/room.py`. See §4: the reason it
+   was blocked was a wrong premise, not a missing input.
+6. ~~**The rider**~~ — done. `speaking` now comes from the grid and
+   `SpeechSettings.rider` is `True`. It is still the grid's mask and never the
+   signal's: measured on autoraffkat's material, a level heuristic called 74 %
+   of blocks speech when 53 % were the speaker's own, and riding on it lifted
+   the leakage until the level spread got worse. Without a mask the library
+   still skips the stage rather than guessing, and that path is still live —
+   a single microphone has no grid.
+7. ~~`debleed`~~ — done, on the raw audio ahead of the plug-in slot, with
+   `solo_masks` from the grid. A refused filter reports its reason; a
+   de-bleeder that quietly does nothing is the failure this whole document
+   was written against.
 
 Not swapped, deliberately: the **plug-in slot**. automixer takes a list per
 track and speechmix takes one, in a child process, with length and lag
 checks. The child process is the part worth having and it is not a rename —
 it wants its own change.
+
+### What the grid stages measure
+
+On synthetic two-microphone material in this container (300 s, alternating
+turns, a planted linear leak path), which is where the numbers below come
+from — the numbers above are autoraffkat's, on 77 minutes of real material,
+and they are the ones to trust for depth:
+
+| | |
+|---|---|
+| grid precision, "is this the owner speaking" | **1.000** — no false positive on leak at any sensitivity tested (6–18 dB) |
+| grid recall at the 12 dB default | 0.450 here, 0.996 at 6 dB — the floor lands on the *leak* when two people alternate, so the default is conservative on this material |
+| microphone closed | **41.6 %** of the programme, all of it under the other speaker |
+| microphone closed during its **own** speech | **0.00 %** |
+| leak level, before → after de-bleed | −17.52 → −72.57 dB, own speech kept at r = 0.9987 |
+
+The synthetic leak is noiseless, so −55 dB is not a number to expect from a
+real room; real material gave 4.12 and 3.77 dB. What these say is the
+*direction*: the errors the grid makes are misses, never false positives, so
+a microphone is never closed while its owner is talking.
 
 ### The A/B, measured
 
@@ -199,3 +261,50 @@ and scipy on the CPU, automixer's stages were mlx on the GPU. On Apple Silicon
 the old path is faster still, so the ratio there is likely worse than this.
 What was bought with it is a de-clicker that fires, a ceiling that holds where
 it says it does, and a tone that does not move with the programme.
+
+
+---
+
+## 7. The grid rule, converged on autoraffkat's
+
+§4 said the grid arrived and the three stages that needed it started running.
+What it did not say is that the *rule* was still this app's own. autoraffkat
+answered "who is speaking" one way and `speechmix.grid` another, so an
+improvement to autoraffkat's detection would not have reached here — the exact
+thing the shared pipeline is supposed to prevent.
+
+| | automixer (was) | autoraffkat (now both) |
+|---|---|---|
+| level curve | unsmoothed | 100 ms moving average |
+| noise floor | 10th percentile | **20th** percentile |
+| margin over floor | 8 dB | **12 dB** |
+| dominance | folded into the decision | in `duck_masks`, where it decides who stays open |
+
+The margin is the number measured on 77 minutes of real material, so it wins.
+Measured on the library's own two-microphone fixture, where the bleed sits
+18.4 dB under the direct voice:
+
+| rule | own speech | other's bleed |
+|---|---|---|
+| 10th pct + 8 dB + dominance | 100.0 % | 0.4 % |
+| 10th pct + 8 dB, no dominance | 100.0 % | 0.4 % |
+| autoraffkat: smoothed, 20th pct, 12 dB | 100.0 % | **0.0 %** |
+
+The first two rows are identical, so the dominance test was deciding nothing
+there — `test_grid.py` used to assert that bleed "is loud enough to fool a
+level threshold", and on that fixture it is not. The rule is now `grid.lane`,
+one function, called by both apps; everything around it is a host getting hold
+of levels.
+
+### A bug that fell out of copying the rule faithfully
+
+autoraffkat smoothed with `np.convolve(..., "same")`, which zero-pads. **Zero
+is silence in the linear domain and full scale in dB.** Measured on a constant
+−240 dB curve with the 100 ms kernel, the first cell came back at −144 dB:
+96 dB of level that is not in the material, at the programme's first and last
+40 ms — enough to read as a microphone being active there, which is a cut
+decision in autoraffkat and a ducking event in both.
+
+Nothing crashed; the curve was valid and the right length. `grid.smooth`
+replicates the edge value instead, and both apps get the fix because there is
+now one smoother.

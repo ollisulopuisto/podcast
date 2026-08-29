@@ -13,6 +13,7 @@ from fractions import Fraction
 
 import numpy as np
 
+from speechmix import grid as grid_lib
 from speechmix.errors import EnvelopeError
 from speechmix.rms import FLOOR_DB, envelope_for
 
@@ -22,8 +23,12 @@ from .fcpxml.read import Timeline
 from .i18n import t
 from .model import HOP, ROLE_CLOSE, ROLE_MIC, ROLE_WIDE, MediaItem, TrackConfig
 
-SMOOTH_SECONDS = 0.10
-NOISE_PERCENTILE = 20.0
+# Tasoitus, pohjan persentiili ja kynnys ovat kirjastossa: automixer kysyy
+# saman kysymyksen samasta aineistosta, ja kaksi vastausta siihen on juuri se
+# ajautuminen jota vastaan `packages/speechmix` on. Nämä nimet jäävät, koska
+# tämä moduuli on niiden mitattu koti — arvot tulevat sieltä.
+SMOOTH_SECONDS = grid_lib.SMOOTH_SECONDS
+NOISE_PERCENTILE = grid_lib.NOISE_PERCENTILE
 
 
 class AnalysisError(Exception):
@@ -31,12 +36,15 @@ class AnalysisError(Exception):
 
 
 def _smooth(db: np.ndarray, seconds: float) -> np.ndarray:
-    """Liukuva keskiarvo. Tasoittaa tavuvälit, joita ei haluta leikkauksiksi."""
-    k = max(1, int(round(seconds / HOP)))
-    if k <= 1 or db.size < k:
-        return db
-    kernel = np.ones(k, dtype=np.float32) / k
-    return np.convolve(db, kernel, mode="same").astype(np.float32)
+    """Liukuva keskiarvo. Tasoittaa tavuvälit, joita ei haluta leikkauksiksi.
+
+    Kirjastossa, koska automixer tasoittaa saman käyrän — ja koska tässä oli
+    vika jota kumpikaan ei nähnyt: ``np.convolve(..., "same")`` täyttää reunat
+    nollalla, ja nolla on desibeleissä **täysi asteikko**. Ohjelman ensimmäiset
+    ja viimeiset 40 ms lukivat 96 dB liian kovaa, eli mikki näytti olevan
+    äänessä siellä. Ks. ``grid.smooth``.
+    """
+    return grid_lib.smooth(db, seconds, hop_sec=HOP)
 
 
 def align(
@@ -128,11 +136,7 @@ class Analysis:
                 db = _smooth(db, SMOOTH_SECONDS)
                 # Pohjakohina riippuu vain verhokäyrästä, ei säätimistä, joten
                 # se lasketaan kerran tähän välimuistiin.
-                floor = (
-                    float(np.percentile(db[valid], NOISE_PERCENTILE))
-                    if valid.any()
-                    else FLOOR_DB
-                )
+                floor = grid_lib.noise_floor(db, valid, NOISE_PERCENTILE)
                 hit = (db, valid, floor)
             self._aligned[cache_key] = hit
         return hit
@@ -255,21 +259,18 @@ def build_grid(
         mic_keys = roles.mics.get(name, [])
         if not mic_keys:
             continue
-        level = np.full(n, FLOOR_DB, dtype=np.float32)
-        on = np.zeros(n, dtype=bool)
+        parts = []
         for key in mic_keys:
             cfg = tracks.get(key, TrackConfig())
             # Raidan osat ovat eri tiedostoja mutta sama mikki: sama säädin,
             # sama puhuja, eri kohta aikajanaa.
             for item in timeline.track_media(key):
                 db, valid, floor = analysis.aligned(item, program_start, n)
-                if not valid.any():
-                    continue
-                # Herkkyys on kynnys pohjakohinan yli; vahvistus siirtää sekä
-                # signaalin että pohjan, joten se ei vaikuta kynnykseen — vain
-                # mikkien keskinäiseen vertailuun päällekkäispuheessa.
-                on |= valid & (db > floor + cfg.sensitivity_db)
-                level = np.maximum(level, db + cfg.gain_db)
+                parts.append((db, valid, floor, cfg.sensitivity_db, cfg.gain_db))
+        # Kynnyssääntö on kirjastossa. Herkkyys on kynnys pohjakohinan yli;
+        # vahvistus siirtää sekä signaalin että pohjan, joten se ei vaikuta
+        # kynnykseen — vain mikkien keskinäiseen vertailuun päällekkäispuheessa.
+        heard = grid_lib.lane(name, parts)
 
         close_key = roles.closes.get(name)
         avail = None
@@ -279,7 +280,8 @@ def build_grid(
                 avail = availability(items, program_start, n)
         lanes.append(
             SpeakerLanes(
-                name=name, level=level, on=on, close_key=close_key, available=avail
+                name=name, level=heard.level, on=heard.on,
+                close_key=close_key, available=avail,
             )
         )
 
