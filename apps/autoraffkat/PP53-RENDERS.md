@@ -98,13 +98,25 @@ material. Both are why the backoff became one shared decision.
 
 ## Reference renders — `valmiit/`
 
-* `… K-compound … .mov` — `K-compound` exported and taken through Waves L2 and
-  iZotope RX Loudness Control by hand. Measured with our own meter:
-  **−14.08 LUFS, LRA 6.95, short-term max −8.35, momentary max −5.17.** RX read
-  the same file as −14.0 / LRA 7.8 / −7.7 / −4.7, so the meter agrees within
-  0.1 LU on integrated and 0.5–0.9 on the maxima, which is windowing convention.
-* `… (original audio).m4a` and `… NORMALIZED.wav` — the same export before and
-  after that treatment.
+* `… K-compound … .mov` — `K-compound` exported from Final Cut **with Waves L2
+  already on the compound clip**. That is why it measures −14 rather than the
+  −25 an untreated `K-compound` would give (stems at −20, master at −8).
+* `… NORMALIZED.wav` — the same, after iZotope RX Loudness Control.
+
+Measured with our own meter, the two are the same file acoustically:
+
+| | integrated | LRA | short-term max | momentary max |
+|---|---|---|---|---|
+| `.mov` (L2) | −14.08 | 6.95 | −8.35 | −5.17 |
+| `NORMALIZED.wav` (L2 + RX) | −14.07 | 6.95 | −8.34 | −5.17 |
+
+0.01 LU apart: L2 had already landed on the target, so RX had almost nothing to
+do. RX itself read the file as −14.0 / LRA 7.8 / −7.7 / −4.7, so our meter agrees
+within 0.1 LU on integrated and 0.5–0.9 on the maxima — windowing convention,
+not disagreement.
+
+`… (original audio).m4a` is the untreated export; ffmpeg refuses to decode it
+(exit 183), so it is unmeasured here.
 
 This file is the benchmark the app's own delivery stage was measured against.
 
@@ -114,7 +126,7 @@ This file is the benchmark the app's own delivery stage was measured against.
 |---|---|---|---|
 | `T-jakelu16` | −16.21 | 0.27 LU | **6.8** |
 | `S-jakelu14` | −14.35 | 2.0–2.3 LU | **5.3** |
-| L2 + RX reference | −14.08 | — | 6.95 |
+| L2 (+ RX) reference | −14.08 | — | 6.95 |
 
 Two decibels of loudness costs about 1.5 LU of loudness range, and no limiter
 design recovers it: the boosted material only *has* 7.33 LRA, and taking
