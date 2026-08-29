@@ -1,0 +1,61 @@
+name: viewer
+
+# Oma työnkulkunsa, koska `viewer/` ei ole työtilan jäsen: se on Swiftiä,
+# eikä `uv sync` tunne sitä. Juuressa kuten kaikki muutkin — GitHub ajaa
+# vain juuren työnkulut.
+on:
+  push:
+    paths:
+      - 'viewer/**'
+      - 'apps/podcast-magic/src/podcastmagic/nhsx/**'
+      - '.github/workflows/quicklook.yml'
+  pull_request:
+    paths:
+      - 'viewer/**'
+      - 'apps/podcast-magic/src/podcastmagic/nhsx/**'
+      - '.github/workflows/quicklook.yml'
+
+# `nhsx/**` on tässä tarkoituksella. Yhdenmukaisuus rikkoutuu yhtä hyvin
+# Python-puolen muutoksesta kuin Swift-puolen, ja kumpikaan ei kaadu
+# itsestään — esikatselu vain alkaa näyttää eri jaksoa kuin renderöinti.
+
+jobs:
+  agree:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Swift-puoli: jäsennin, miksauksen päättely ja yhdenmukaisuustesti.
+      # Ei Xcodea — `NhsxKit` on SwiftPM-kirjasto juuri siksi, että tämä
+      # rivi on mahdollinen.
+      - name: NhsxKit
+        working-directory: viewer
+        run: swift test
+
+      # Python-puoli lukee saman fikstuurin ja saman vastauksen. Molemmat
+      # tässä samassa työssä, koska niiden **pariutuminen** on se mitä
+      # testataan: kumpikin yksin vihreänä ei kerro mitään.
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+      - name: podcast-magic — sama vastaus
+        run: uv run --directory apps/podcast-magic pytest tests/test_conformance.py -q
+
+      # Ohittunut testi on vihreä testi. Jos fikstuuri katoaa tai siirtyy,
+      # molemmat yllä olevat menisivät läpi koskematta siihen.
+      - name: fikstuuri on olemassa ja molemmat lukivat sen
+        run: |
+          test -f viewer/Conformance/session.nhsx
+          test -f viewer/Conformance/plan.json
+          uv run --directory apps/podcast-magic \
+            pytest tests/test_conformance.py -q --no-header -rs | tee /tmp/conf.log
+          if grep -q "skipped" /tmp/conf.log; then
+            echo "Yhdenmukaisuustesti ohittui."
+            exit 1
+          fi
+
+      # Projektitiedosto on generoitava; rikkinäinen `project.yml` ei näy
+      # `swift test`issä lainkaan, koska se ei koske Xcode-kohteisiin.
+      - name: project.yml kelpaa
+        run: |
+          brew install xcodegen
+          cd viewer && xcodegen generate --spec project.yml

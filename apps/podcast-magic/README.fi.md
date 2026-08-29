@@ -203,6 +203,53 @@ Mikä ratkaisisi asian: `.nhsx`, jossa Hindenburgin oma litterointi ohjaa
 käsikirjoitusnäkymää oikein. Sen rakenne on totuus siitä, mitä `<p>`:ssä ja
 `sp`:ssä pitäisi olla.
 
+## Istunnon lukeminen ilman Hindenburgia
+
+`.nhsx` on XML ja sen äänipooli on WAV-tiedostoja levyllä. Niin kauan kuin
+jokin osaa lukea nämä kaksi, istunto on kuunneltavissa — oli sitä ohjelmaa
+jolla se tehtiin tai ei, ja oli siihen lisenssiä tai ei. `nhsx-render` on se
+jokin.
+
+```
+uv run nhsx-render "jakso 8.nhsx"              # → jakso 8.wav
+uv run nhsx-render "jakso 8.nhsx" --plan       # mitä kuuluisi
+uv run nhsx-render "jakso 8.nhsx" --json       # sama koneelle
+uv run nhsx-render "jakso 8.nhsx" --inspect    # mitä formaatissa on
+```
+
+Se lukee alueiden geometrian, vaimennuksen, tason, häivytykset ja
+panoroinnin — eikä mitään muuta. Ei taajuuskorjausta, ei kompressointia, ei
+Hindenburgin ääniprofiileja. Se on tarkoituksellinen lattia eikä tekemättä
+jäänyt työ: siksi `--plan` ei avaa yhtään äänitiedostoa, ja tunnin istunnon
+suunnitelma syntyy millisekunneissa. Esikatselu joka pitää ensin renderöidä
+on esikatselu jota kukaan ei avaa välilyönnillä.
+
+Renderöinti ei pidä ohjelmaa muistissa. Se etenee 30 sekuntia kerrallaan
+suoraan tiedostoon ja purkaa lähteestä vain sen kohdan jota tarvitsee —
+tunnin istunto maksaa suunnilleen minuutin verran muistia. Mitään ei
+ylikirjoiteta: olemassa olevasta `jakso 8.wav`ista tulee `jakso 8 v2.wav`.
+
+### Yksi varaus
+
+Alueiden geometria ja vaimennus ovat varmoja — tämä työkalu on lukenut ja
+kirjoittanut niitä alusta asti. **Taso, panorointi ja häivytykset eivät
+ole.** Niiden attribuuttinimet ovat uskottavia arvauksia, koska yhdessäkään
+tämän repositorion istunnossa ei ole liikutettu faderia eikä formaattia ole
+dokumentoitu.
+
+Siksi työkalu kertoo, kun se kohtaa jotain jota ei osaa lukea, sen sijaan
+että miksaisi hiljaa väärällä tasolla:
+
+```
+Huom: istunnossa on attribuutteja joita tämä ei lue: Volume.
+```
+
+`--inspect` on se, joka ratkaisee asian. Osoita se oikeaan istuntoon, jossa
+tasot, panoroinnit ja häivytykset **on** asetettu, niin se kertoo jokaisen
+attribuutin esimerkkiarvoineen — «Gain» ei kerro onko se desibeliä vai
+kerroin, mutta arvo kertoo. Yksi sellainen tiedosto vaihtaa arvauksen
+mittaukseksi.
+
 ## Sovelluksen kääntäminen
 
 ```

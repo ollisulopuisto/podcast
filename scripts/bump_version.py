@@ -108,7 +108,16 @@ def edits(member: Path, version: str) -> list[tuple[Path, str]]:
     if init.exists() and re.search(VERSION_IN_INIT, init.read_text(encoding="utf-8")):
         targets.append((init, VERSION_IN_INIT, True))
 
-    targets += [(spec, VERSION_IN_SPEC, True) for spec in sorted(member.glob("*.spec"))]
+    # Vain `.app`in kokoavat `.spec`it. Sovelluksella voi olla useampi:
+    # `podcast-magic` paketoi sekä ikkunallisen sovelluksen että
+    # `nhsx-render`in yhtenä binäärinä, ja vain edellisellä on `Info.plist`
+    # ja siten `CFBundleVersion`. Binäärille numeron kirjoittaminen olisi
+    # neljäs kopio samasta luvusta; se kertoo versionsa paketista.
+    targets += [
+        (spec, VERSION_IN_SPEC, True)
+        for spec in sorted(member.glob("*.spec"))
+        if "BUNDLE(" in spec.read_text(encoding="utf-8")
+    ]
 
     for path, pattern, required in targets:
         text = path.read_text(encoding="utf-8")

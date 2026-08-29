@@ -297,18 +297,60 @@ def test_the_running_program_reports_the_version_that_was_built(app: Path):
     assert literal.group(1) == declared_version(app), name(app)
 
 
-@pytest.mark.parametrize("app", [a for a in APPS if list(a.glob("*.spec"))], ids=name)
+def bundle_specs(app: Path) -> list[Path]:
+    """`.spec`it, jotka kokoavat `.app`-paketin.
+
+    Sovelluksella voi olla useampi `.spec`: `podcast-magic` paketoi sekä
+    ikkunallisen sovelluksen että `nhsx-render`in yhtenä binäärinä. Vain
+    edellisellä on `Info.plist` ja siten `CFBundleVersion`, ja alla oleva
+    sääntö koskee juuri sitä.
+
+    `BUNDLE(` on ero, koska se on se PyInstallerin kutsu joka `.app`in
+    tekee — ei tiedoston nimi, joka voi olla mitä tahansa.
+    """
+    return [
+        spec for spec in sorted(app.glob("*.spec"))
+        if "BUNDLE(" in spec.read_text(encoding="utf-8")
+    ]
+
+
+@pytest.mark.parametrize("app", [a for a in APPS if bundle_specs(a)], ids=name)
 def test_the_bundle_reports_the_version_that_was_built(app: Path):
     """macOS tarjoaa päivitystä `CFBundleVersion`in perusteella.
 
     Jos se jää jälkeen, Finderin tiedot ja käyttöliittymä kertovat eri
     versiota eikä kumpikaan kaada mitään.
+
+    Väite oli aiemmin `(spec,) = app.glob("*.spec")`, eli «sovelluksella on
+    täsmälleen yksi `.spec`». Se lakkasi pitämästä paikkaansa kun
+    `podcast-magic` sai toisen: `nhsx-render.spec` paketoi komentorivi-
+    työkalun yhtenä binäärinä. Sääntö itse ei muuttunut — se on
+    `CFBundleVersion`ista eikä `.spec`ien lukumäärästä — joten se rajattiin
+    sinne minne se kuuluu.
     """
-    (spec,) = app.glob("*.spec")
-    text = spec.read_text(encoding="utf-8")
-    found = re.search(r'os\.environ\.get\("[A-Z_]+VERSION", "(.+?)"\)', text)
-    assert found, f"{name(app)}: .spec ei lue versiota ympäristöstä oletuksineen"
-    assert found.group(1) == declared_version(app), name(app)
+    for spec in bundle_specs(app):
+        text = spec.read_text(encoding="utf-8")
+        found = re.search(r'os\.environ\.get\("[A-Z_]+VERSION", "(.+?)"\)', text)
+        assert found, f"{name(app)}/{spec.name}: ei lue versiota ympäristöstä oletuksineen"
+        assert found.group(1) == declared_version(app), f"{name(app)}/{spec.name}"
+
+
+@pytest.mark.parametrize("app", APPS, ids=name)
+def test_a_plain_binary_spec_carries_no_version_of_its_own(app: Path):
+    """Neljäs paikka samalle numerolle olisi neljäs paikka joka jää jälkeen.
+
+    Paketoitu komentorivityökalu kertoo versionsa paketista
+    (`podcastmagic.__version__`, `--version`), eikä sillä ole `Info.plist`ia
+    johon numero kirjoitettaisiin. Jos sellaiseen `.spec`iin joskus
+    ilmestyy oma versio, se on kopio jota kukaan ei nosta.
+    """
+    for spec in sorted(app.glob("*.spec")):
+        if spec in bundle_specs(app):
+            continue
+        text = spec.read_text(encoding="utf-8")
+        assert not re.search(r'os\.environ\.get\("[A-Z_]+VERSION"', text), (
+            f"{name(app)}/{spec.name}: ei-paketoiva .spec ei saa kantaa omaa versiotaan"
+        )
 
 
 @pytest.mark.parametrize("app", [a for a in APPS if list(a.glob("*.spec"))], ids=name)
