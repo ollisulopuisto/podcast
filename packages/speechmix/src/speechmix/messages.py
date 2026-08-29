@@ -30,6 +30,11 @@ FALLBACK: dict[str, str] = {
     "audio.plugin_failed": "Could not load the plug-in: {name} — {error}",
     "audio.plugin_length": "The plug-in changed the length ({before} → {after}).",
     "audio.chain_length": "Processing changed the length ({before} → {after}).",
+    "audio.editor_timeout": (
+        "The plug-in's window was open too long. Close it and try again."
+    ),
+    "audio.editor_failed": "The plug-in's window could not be opened.",
+    "audio.editor_behind": "The plug-in's window did not come to the front.",
 }
 
 _translate: Callable[..., str] | None = None

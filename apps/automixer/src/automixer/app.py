@@ -36,6 +36,7 @@ from textual.widgets.selection_list import Selection
 
 from automixer.analyzer import SpotAnalyzer
 from automixer.cli_mix import Mixer
+from speechmix import chain
 
 
 class LogScreen(ModalScreen):
@@ -187,22 +188,15 @@ class AutomixerApp(App):
         self.call_after_refresh(populate)
 
     def scan_system_plugins(self):
+        """Asennetut liitännäiset kirjaston listalta.
+
+        Oma hakemistokävely oli toisinto `chain.plugins`ista, ja se erosi
+        siitä kahdella tavalla jotka näkyvät käyttäjälle: se listasi vain
+        macOS:n hakemistot, ja sama liitännäinen näkyi kahdesti kun se on
+        asennettu sekä VST3:na että AU:na. Kirjaston lista karsii kaksoset
+        — VST3 voittaa — ja tuntee myös Linuxin ja Windowsin polut.
         """
-        Scans standard macOS plugin directories for VST3 and Component files.
-        """
-        paths = [
-            "/Library/Audio/Plug-Ins/Components",
-            os.path.expanduser("~/Library/Audio/Plug-Ins/Components"),
-            "/Library/Audio/Plug-Ins/VST3",
-            os.path.expanduser("~/Library/Audio/Plug-Ins/VST3"),
-        ]
-        self.system_plugins = []
-        for p in paths:
-            if os.path.exists(p):
-                for f in os.listdir(p):
-                    if f.endswith((".component", ".vst3")):
-                        self.system_plugins.append(os.path.join(p, f))
-        self.system_plugins.sort()
+        self.system_plugins = [found["path"] for found in chain.plugins()]
 
     def compose(self) -> ComposeResult:
         """
