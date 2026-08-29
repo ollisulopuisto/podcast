@@ -70,6 +70,10 @@ elif sys.platform.startswith("win"):
 
 hiddenimports += collect_submodules("uvicorn")
 hiddenimports += collect_submodules("autoraffkat")
+# Jaettu kirjasto kokonaisuudessaan, samasta syystä kuin autoraffkat itse:
+# lapsiprosessit käynnistetään ``-m``:llä, eikä sitä reittiä näy tuontigraafissa.
+# ``speechmix.editor`` on nyt yksi niistä.
+hiddenimports += collect_submodules("speechmix")
 
 a = Analysis(
     [str(SRC_DIR / "autoraffkat" / "__main__.py")],

@@ -67,6 +67,26 @@ name.
 
 Ducking is after. A level rider is before.
 
+## The third seam: the plug-in's own window
+
+`editor.py` is a child process, and both ends of it are here. A plug-in's
+adjustable parameters are not its whole state: dxRevive publishes four, and
+**the model selector is not one of them** — it lives in the plug-in's own
+opaque state, reachable only through its own interface. `show_editor` is
+main-thread-only *and* blocks until the user closes the window, so no host
+with an event loop can call it in-process. The child's main thread is free,
+and a plug-in UI that crashes takes only that process with it.
+
+The parser is in the library with the child that feeds it, not in each host.
+The protocol is line-delimited JSON, and it carries an intermediate
+`opening` message saying whether the window came to the front — a host that
+reads the first JSON line takes that for the result, and the state the user
+just chose disappears without an error. One shape, one parser: `open_editor`
+spawns and reads, `main` is what it spawns.
+
+Plug-ins also print to stdout whenever they feel like it, so a line that is
+not JSON is logged rather than fatal.
+
 ## Why the measurements live here
 
 Every constant in this package came from measuring real material, and the

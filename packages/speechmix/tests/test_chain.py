@@ -619,3 +619,63 @@ def test_the_bands_sum_back_to_the_original():
 
     assert len(parts) == 3
     np.testing.assert_allclose(sum(parts), audio, atol=1e-6)
+
+
+def test_apply_plugin_checks_the_length_of_a_single_instance_too():
+    """Pituusvartio kuuluu ``apply_plugin``iin, ei vain koko ketjuun.
+
+    Paloitellulla ajolla jokainen pala tarkistetaan, mutta yhden
+    instanssin haara palautti liitännäisen tuloksen sellaisenaan: vartio
+    oli vasta ``chain.process``issa. Isäntä joka ajaa liitännäisen omassa
+    ketjussaan — automixerin ``ExternalPluginProcessor`` on tarkalleen se —
+    ei kulje ``process``in kautta, joten se sai lyhentyneen signaalin
+    hiljaa. Se on tämän työkalun se yksi asia jota ei sallita, eikä sen
+    saa riippua siitä kuka funktion kutsuu.
+    """
+
+    class Truncating:
+        def process(self, audio, rate, reset=True):
+            return audio[:, :-4641]  # dxReviven mitattu viive
+
+    audio = speech_like()
+    with pytest.raises(chain.ChainError, match="changed the length"):
+        chain.apply_plugin(Truncating(), audio, RATE)
+
+
+def test_apply_plugin_resets_the_plugin_between_calls():
+    """``reset=True`` on osa sopimusta, ei kutsujan muistettava tapa.
+
+    Ilman nollausta liitännäisen tila jatkuu kutsusta toiseen, ja peräkkäin
+    käsitellyt raidat kuulostavat eriltä sen mukaan mikä niitä edelsi.
+    """
+    seen: list[bool] = []
+
+    class Noting:
+        def process(self, audio, rate, reset=False):
+            seen.append(reset)
+            return audio
+
+    chain.apply_plugin(Noting(), speech_like(), RATE)
+    assert seen == [True]
+
+
+def test_apply_plugin_checks_the_length_from_a_pool_of_one_too():
+    """Sama vartio myös varannon yhden palan haarassa.
+
+    Varanto putoaa yhteen palaan aina kun tiedosto on ``PIECE_MIN``iä
+    lyhyempi tai kun käyttäjä on valinnut yhden työntekijän — eli
+    tavallisessa ajossa, ei reunatapauksessa. Pituus tarkistettiin
+    paloittaisessa haarassa mutta ei tässä, ja ero olisi ollut juuri se
+    että lyhyt tiedosto pääsee läpi ja pitkä ei.
+    """
+
+    class Truncating:
+        def process(self, audio, rate, reset=True):
+            return audio[:, :-4641]
+
+    pool = chain.PluginPool.__new__(chain.PluginPool)
+    pool.workers = 1
+    pool.instances = [Truncating()]
+
+    with pytest.raises(chain.ChainError, match="changed the length"):
+        chain.apply_plugin(pool, speech_like(), RATE)

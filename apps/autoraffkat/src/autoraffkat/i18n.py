@@ -172,6 +172,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "fi": "Liitännäisen ikkunaa ei saatu auki.",
         "en": "The plug-in's window could not be opened.",
     },
+    "audio.editor_behind": {
+        "fi": "Liitännäisen ikkuna ei noussut eteen.",
+        "en": "The plug-in's window did not come to the front.",
+    },
     "video.not_ready": {
         "fi": "Verhokäyrät eivät ole vielä valmiit. Reaktiokuvat tarvitsevat "
         "tiedon siitä kuka puhuu milloinkin.",
