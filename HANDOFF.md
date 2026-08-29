@@ -28,11 +28,38 @@ this file once the extraction is finished — it describes a state, not a rule.
    FCPXML. `overlaps`, `_mask_samples` and `_aligned` followed, because
    automixer subtracts the same leak from its own wav tracks and cannot
    import autoraffkat to reach them.
-3. **`editor.py`, `worker.py`** — the plug-in child process. Mostly
-   mechanical once `chain` is in place. automixer wants this one: it takes
-   a **list** of plug-ins per track, loaded lazily on a pool worker with no
-   length check, where the library takes one in a child process with length
-   and lag both checked.
+3. ~~**`editor.py`**~~ — moved, with **both ends**. `speechmix/editor.py`
+   is the child process and `open_editor` is the parent that reads it; the
+   line-JSON parser was open-coded in autoraffkat's `/api/plugin-editor`
+   and would have been open-coded again in automixer. The endpoint went
+   from 45 lines to 10. `audio.editor_timeout`, `audio.editor_failed` and
+   the new `audio.editor_behind` gained English fallbacks in
+   `speechmix.messages`; autoraffkat still says them in Finnish, through
+   the translator seam.
+
+   automixer's `ExternalPluginProcessor` now calls `chain.load_plugin` and
+   `chain.apply_plugin`, and its own `pedalboard` loader is gone. It had
+   three silent differences from the library, none of which ever raised:
+   **the plug-in's state never reached it** (so it always ran dxRevive's
+   default model, with no way to say which), **no `reset=True`** (so a
+   plug-in's state carried from one track to the next), and **no length
+   check** (a plug-in's latency shortened the result — 4641 samples
+   measured — and shifted everything after it). `app.py`'s
+   `scan_system_plugins` was a fourth copy, macOS-only and listing the same
+   plug-in twice when it is installed as both VST3 and AU; it is
+   `chain.plugins()` now.
+
+   The length check turned out to be missing from the library too, on the
+   path automixer uses: `apply_plugin` checked every piece of a split run
+   but returned a single instance's output untouched, because the guard
+   lived in `chain.process` and automixer does not go through it. It is in
+   `apply_plugin` now, where the docstring already claimed it was.
+
+   **`worker.py` stays in autoraffkat.** It is not the plug-in child
+   process — it reads FCPXML, resolves roles and calls `mix.process`. What
+   was shareable about it was the *protocol*, and that went with the
+   editor. A host-specific worker in the library would be the eighth
+   module nothing can call.
 4. ~~**automixer's mlx failure.**~~ Done. It was not a version problem:
    mlx's default stream is thread-local, and three call sites ran mlx work
    in a `ThreadPoolExecutor`, so an array made on a worker raised on first

@@ -92,8 +92,14 @@ class Mixer:
         if p_type == "gain":
             return GainProcessor(gain_db=p_cfg.get("db", 0.0))
         if p_type == "plugin":
+            # `state` on liitännäisen oma läpinäkymätön tila base64:nä, sellaisena
+            # kuin sen oma ikkuna sen jätti (`speechmix.editor`). Ilman sitä
+            # ajetaan aina liitännäisen oletusmallia: dxRevivella mallin valinta
+            # ei ole yksikään sen neljästä parametrista.
             return ExternalPluginProcessor(
-                plugin_path=p_cfg["path"], parameters=p_cfg.get("params", {})
+                plugin_path=p_cfg["path"],
+                parameters=p_cfg.get("params", {}),
+                state=p_cfg.get("state"),
             )
         return None
 

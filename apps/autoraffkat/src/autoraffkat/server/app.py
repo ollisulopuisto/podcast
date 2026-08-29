@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from speechmix import chain
+from speechmix import chain, editor
 from speechmix.chain import ChainError
 
 from .. import i18n, pick, probe, project, reactions, staging, thumbs
@@ -53,12 +53,6 @@ from ..paths import get_resource_path
 from ..preview import build as build_preview
 
 STATIC_DIR = get_resource_path("server/static")
-
-
-# Liitännäisen ikkuna on auki niin kauan kuin käyttäjä katselee sitä.
-# Tunti on tarpeeksi pitkä, ettei se katkea kesken työn, ja tarpeeksi
-# lyhyt, ettei unohtunut ikkuna jää roikkumaan ikuisesti.
-EDITOR_TIMEOUT = 3600.0
 
 
 def _plugin_params(raw) -> dict:
@@ -1133,55 +1127,22 @@ def create_app(state: AppState) -> FastAPI:
         Lapsiprosessissa, koska ``show_editor`` on kutsuttava pääsäikeestä
         ja se **estää** sen kunnes ikkuna suljetaan — palvelimen pääsäie
         ajaa tapahtumasilmukkaa. Sama syy kuin käsittelyllä, ks.
-        ``audio/editor.py``.
+        ``speechmix.editor``.
 
         Tämä on ainoa tie liitännäisen malliin: dxRevive julkaisee neljä
         parametria, eikä mallin valinta ole yksikään niistä.
         """
         audio = state.settings.audio
-        if not audio.plugin_path:
-            raise HTTPException(400, t("audio.plugin_missing", path=""))
-        spec = {
-            "plugin_path": audio.plugin_path,
-            "params": audio.plugin_params,
-            "state": audio.plugin_state or None,
-        }
         try:
-            child = subprocess.run(
-                [sys.executable, "-m", "autoraffkat.audio.editor"],
-                input=json.dumps(spec),
-                capture_output=True,
-                text=True,
-                timeout=EDITOR_TIMEOUT,
+            result = editor.open_editor(
+                audio.plugin_path, audio.plugin_params, audio.plugin_state
             )
-        except subprocess.TimeoutExpired as exc:
-            raise HTTPException(400, t("audio.editor_timeout")) from exc
-        payload: dict = {}
-        for line in (child.stdout or "").splitlines():
-            try:
-                message = json.loads(line)
-            except json.JSONDecodeError:
-                print(line, flush=True)
-                continue
-            if message.get("kind") == "opening":
-                # Väliviesti, ei tulos: kertoo vain saiko lapsi nostettua
-                # ikkunan eteen. Ilman tätä se olisi jäänyt tulokseksi ja
-                # oikea tulos olisi näyttänyt puuttuvan.
-                if not message.get("foreground"):
-                    print("liitännäisen ikkuna ei noussut eteen", flush=True)
-                continue
-            payload = message
-        if payload.get("kind") != "done":
-            tail = (child.stderr or "").strip().splitlines()
-            raise HTTPException(
-                400,
-                payload.get("error")
-                or (tail[-1] if tail else t("audio.editor_failed")),
-            )
+        except ChainError as exc:
+            raise HTTPException(400, str(exc)) from exc
         with state.lock:
-            audio.plugin_state = payload.get("state", "")
+            audio.plugin_state = result.state
             merged = dict(audio.plugin_params)
-            merged.update(_plugin_params(payload.get("params") or {}))
+            merged.update(_plugin_params(result.params))
             audio.plugin_params = merged
         project.save(state.xml_path, state.settings)
         return _state_json(state)

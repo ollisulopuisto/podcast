@@ -383,6 +383,25 @@ def load_pool(path: str, params: dict | None = None, count: int = 1, state=None)
     return PluginPool(path, params, count, state)
 
 
+def _one_piece(plugin, audio: np.ndarray, rate: int) -> np.ndarray:
+    """Liitännäinen kerralla koko palaan, pituus tarkistettuna.
+
+    ``reset=True`` on osa sopimusta: ilman sitä liitännäisen tila jatkuu
+    kutsusta toiseen, ja peräkkäin käsitellyt raidat kuulostaisivat eriltä
+    sen mukaan mikä niitä edelsi.
+
+    Pituuden tarkistus on tässä eikä kutsujassa. Viiveellinen liitännäinen
+    palauttaa lyhyemmän tuloksen — dxRevivella mitattuna 4641 näytettä — ja
+    se on hiljainen vika: kelvollista ääntä, ei poikkeusta, väärä synkka.
+    """
+    done = plugin.process(audio, rate, reset=True)
+    if done.shape[1] != audio.shape[1]:
+        raise ChainError(
+            t("audio.plugin_length", before=audio.shape[1], after=done.shape[1])
+        )
+    return done
+
+
 def apply_plugin(plugin, audio: np.ndarray, rate: int) -> np.ndarray:
     """Liitännäinen koko tiedostoon. ``plugin`` on yksi olio tai lista.
 
@@ -394,18 +413,20 @@ def apply_plugin(plugin, audio: np.ndarray, rate: int) -> np.ndarray:
 
     Pituus säilyy rakenteeltaan: tulos kirjoitetaan valmiiksi oikean
     kokoiseen taulukkoon, ja jokaisen palan pituus tarkistetaan erikseen.
+    Myös yhden instanssin haara tarkistetaan — vartio kuuluu tähän eikä
+    kutsujaan, koska tätä kutsutaan myös ``process``in ulkopuolelta.
     """
     if plugin is None:
         return audio
     if isinstance(plugin, PluginPool):
         return _apply_pool(plugin, audio, rate)
     if not isinstance(plugin, (list, tuple)):
-        return plugin.process(audio, rate, reset=True)
+        return _one_piece(plugin, audio, rate)
     pool = list(plugin)
     frames = audio.shape[1]
     pieces = min(len(pool), max(1, int(frames / rate / PIECE_MIN)))
     if pieces < 2:
-        return pool[0].process(audio, rate, reset=True)
+        return _one_piece(pool[0], audio, rate)
 
     margin = int(PIECE_MARGIN * rate)
     edges = [int(round(i * frames / pieces)) for i in range(pieces + 1)]
@@ -440,7 +461,7 @@ def _apply_pool(pool: "PluginPool", audio: np.ndarray, rate: int) -> np.ndarray:
     frames = audio.shape[1]
     pieces = min(pool.workers, max(1, int(frames / rate / PIECE_MIN)))
     if pieces < 2:
-        return pool.plugin(0).process(audio, rate, reset=True)
+        return _one_piece(pool.plugin(0), audio, rate)
 
     margin = int(PIECE_MARGIN * rate)
     edges = [int(round(i * frames / pieces)) for i in range(pieces + 1)]

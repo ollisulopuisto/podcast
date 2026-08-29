@@ -108,7 +108,7 @@ DAW. This is an automation tool, not a worse DAW.
 A plug-in window from a plain Python process opens behind everything. The
 window is created — measured 536×392 at (0, 37), on screen, thirteenth from
 the front — but macOS does not treat the process as a GUI application, so it
-never comes forward and the button looks broken. `editor.py` sets
+never comes forward and the button looks broken. `speechmix.editor` sets
 `NSApplicationActivationPolicyRegular` and activates, once before opening and
 once after the plug-in has drawn. The title is pedalboard's ("Pedalboard"),
 not the plug-in's.
@@ -116,9 +116,13 @@ not the plug-in's.
 Not everything that changes the result is a parameter. dxRevive publishes
 four automatable parameters and the **model selector is not one of them** —
 Studio 2 lives in the plug-in's own state, reachable only through its own
-interface. `audio/editor.py` opens that interface in a child process
+interface. `speechmix.editor` opens that interface in a child process
 (`show_editor` is main-thread-only *and* blocks until the window closes, so
-it cannot run in the server) and saves `raw_state` with the episode. State
+it cannot run in the server) and saves `raw_state` with the episode. Both
+ends of that child process are the library's — the window and the parser
+that reads it — because a host that reads the line protocol without knowing
+what writes it is guessing; `server/app.py` calls `open_editor` and stores
+what comes back. State
 is applied before parameters so a saved value cannot override the panel's
 slider; a state from another plug-in is opaque and is ignored rather than
 raised. It is in `FINGERPRINT_FIELDS`, because a different model is a

@@ -6,14 +6,14 @@ implementations for applying effects like gain, EQ, compression, limiting,
 ducking, and external VST/AU plugins.
 """
 
-import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 import mlx.core as mx
 import numpy as np
-import pedalboard
 from scipy import signal as sp_signal
+
+from speechmix import chain
 
 from . import shared
 
@@ -288,52 +288,59 @@ class SpectralCarverProcessor(Processor):
 
 
 class ExternalPluginProcessor(Processor):
-    """
-    Loads and applies an external VST3 or AudioUnit plugin via Pedalboard.
+    """Ulkoinen VST3 tai AU, jaetun ketjun kautta.
+
+    Tämä oli oma toteutuksensa `chain.load_plugin`ista: `pedalboard`
+    suoraan, säätimet `setattr`illa ja `print` virheeksi. Se ei kaatanut
+    mitään, ja siinä oli kolme hiljaista vikaa joita kirjastossa ei ole.
+
+    **Tila puuttui kokonaan.** Kaikki mikä vaikuttaa lopputulokseen ei ole
+    parametri: dxRevivella mallin valinta elää liitännäisen omassa tilassa
+    eikä ole yksikään sen neljästä parametrista. Ilman tilaa täällä ajettiin
+    aina sitä mallia jonka liitännäinen sattuu ottamaan oletuksena — eri
+    malli, eri lopputulos, eikä mitään tapaa kertoa kummasta oli kyse.
+
+    **Nollaus puuttui.** `plugin.process(sig, sr)` ilman `reset=True` jättää
+    liitännäisen tilan elämään kutsusta toiseen, jolloin peräkkäin
+    käsitellyt raidat kuulostavat eriltä sen mukaan mikä niitä edelsi.
+
+    **Pituutta ei tarkistettu.** Viiveellinen liitännäinen palauttaa
+    lyhyemmän tuloksen — dxRevivella mitattuna 4641 näytettä — ja se siirtää
+    kaiken sen jälkeisen. `chain.apply_plugin` kieltäytyy siitä.
+
+    Lataus tapahtuu **rakennettaessa** eikä ensimmäisellä käsittelyllä.
+    Kaksi syytä: väärä polku kerrotaan ennen kuin minuuttien ajo alkaa, ja
+    pedalboard vaatii latauksen samasta säikeestä joka liitännäistä käyttää
+    — laiska lataus `process`in sisällä oli sama vika joka kaatoi mlx-työn
+    `ThreadPoolExecutor`issa.
     """
 
-    def __init__(self, plugin_path: str, parameters: dict | None = None):
+    def __init__(
+        self,
+        plugin_path: str,
+        parameters: dict | None = None,
+        state: str | None = None,
+    ):
         """
-        Initializes the ExternalPluginProcessor.
-
         Args:
             plugin_path (str): File path to the external plugin.
-            parameters (dict, optional): Dictionary of parameters to set on the plugin.
+            parameters (dict, optional): Parameters to set, in the plug-in's
+                own units.
+            state (str, optional): The plug-in's own opaque state as base64,
+                as left by its own window. See `speechmix.editor`.
         """
         self.plugin_path = plugin_path
         self.parameters = parameters or {}
-        self.plugin = None
+        self.state = state
+        self.plugin = chain.load_plugin(plugin_path, self.parameters, state)
 
     def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
-        if self.plugin is None:
-            try:
-                plugin_name = os.path.basename(self.plugin_path)
-                print(f"[PLUGIN] Loading {plugin_name}...")
-                self.plugin = pedalboard.load_plugin(self.plugin_path)
-                for name, value in self.parameters.items():
-                    if hasattr(self.plugin, name):
-                        setattr(self.plugin, name, value)
-                        print(f"  - Set {name} = {value}")
-                    else:
-                        found = False
-                        if hasattr(self.plugin, "parameters"):
-                            for p_name in self.plugin.parameters:
-                                if name.lower() == p_name.lower().replace(" ", "_"):
-                                    setattr(self.plugin, p_name, value)
-                                    print(f"  - Set {p_name} = {value}")
-                                    found = True
-                                    break
-                        if not found:
-                            print(f"  ! Warning: Parameter '{name}' not found")
-            except Exception as e:
-                print(f"[PLUGIN ERROR] {self.plugin_path}: {e}")
-                return signal
         sig_np = np.array(signal)
-        sig_pb = sig_np.T if len(sig_np.shape) > 1 else sig_np[None, :]
-        processed_pb = self.plugin.process(sig_pb, sr)
-        if len(sig_np.shape) > 1:
-            return mx.array(processed_pb.T)
-        return mx.array(processed_pb[0])
+        mono = sig_np.ndim == 1
+        # Kirjasto puhuu kanavia riveinä, (kanavat, näytteet).
+        block = sig_np[None, :] if mono else sig_np.T
+        done = chain.apply_plugin(self.plugin, block, sr)
+        return mx.array(done[0] if mono else done.T)
 
 
 @dataclass
