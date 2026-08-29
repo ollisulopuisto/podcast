@@ -14,12 +14,16 @@ contradicted by them.
 * **Red-green.** The failing test comes first. When the fix is already
   written, restore the old behaviour and watch the test fail before believing
   it. A test that has never been red is a test that has never been checked.
-* **Lint is strict, pinned, and passes.** `uv run ruff check .` before
-  committing; CI runs it ahead of the tests. One config, at the root — a
-  `[tool.ruff]` block in an app *replaces* the root one rather than adding to
-  it, which is how two nearly-identical rule lists start drifting apart. A
-  rule that does not fit gets a written reason in `ignore` or
-  `per-file-ignores`, never a bare `# noqa`.
+  Nothing is committed or presented whose tests are not green; where an area
+  has no tests, writing them is part of the change.
+* **Lint is strict, pinned, and passes.** Every change runs `uv run ruff
+  check .` and fixes *all* findings before it is considered done — green
+  tests and clean lint together, or it is not finished. CI runs it ahead of
+  the tests. One config, at the root — a `[tool.ruff]` block in an app
+  *replaces* the root one rather than adding to it, which is how two
+  nearly-identical rule lists start drifting apart. A rule that does not fit
+  gets a written reason in `ignore` or `per-file-ignores`, never a bare
+  `# noqa`.
 * **The members agree.** One Python floor, one specifier per shared library,
   one lockfile, one dev toolchain, one pytest config shape. `tests/` asserts
   all of it and fails when it stops being true. If a change has to break one
