@@ -120,6 +120,38 @@ Häivytetyt leikkeet ovat poikkeus — häivytystä ei voi ajastaa solmun
 ominaisuutena palakohtaisesti — joten ne luetaan puskuriin ja verhokäyrä
 kerrotaan sisään. Niitä on käytännössä musiikkipohjan alku ja loppu.
 
+## Toistosäätimet
+
+Soita ja tauko, kello (`kulunut / kesto`), ja aikajanalla osoitin joka
+seuraa ääntä. Aikajanaa klikkaamalla tai raahaamalla kelataan; kelaus
+toimii myös ennen ensimmäistä soittoa, jolloin soitto alkaa siitä mihin
+osoitettiin.
+
+Kolme asiaa, jotka näyttäisivät pikkuseikoilta mutta eivät ole:
+
+**Osoittimen aika luetaan äänimoottorilta**, ei seinäkellosta.
+`MixPlayer.currentTime` kysyy solmun omaa kelloa. `Timer` ja ääni ovat eri
+kelloja, ja ne ajautuvat erilleen sitä enemmän mitä pidempi jakso — eli
+osoitin ei olisi siinä mistä ääni kuuluu, mikä on ainoa asia jota osoitin
+on olemassa näyttämään.
+
+**Raahaus siirtää vain osoitinta; ääni kelataan kun nappi nousee.**
+Raahaus tuottaa kymmeniä tapahtumia sekunnissa, ja jokainen oikea kelaus
+ajastaisi koko miksauksen uudestaan — häivytetyt leikkeet luetaan
+puskuriin, eli se on levyluku. Nykiminen osuisi juuri siihen hetkeen jossa
+käyttäjä katsoo tarkkaan.
+
+**Osoittimen liike mitätöi vain osoittimen kohdat**, ei koko aikajanaa.
+Tunnin istunnossa on satoja palkkeja, ja 30 kertaa sekunnissa piirretty
+koko aikajana olisi juuri sitä hitautta jonka takia esikatselu ei
+renderöi. `draw(_:)` ohittaa palkit likaisen alueen ulkopuolelta.
+
+Kelauksen geometria (sekunnit ↔ pisteet) on `NhsxKit`in
+`TimelineGeometry`, ei näkymän sisällä, ja sillä on testit. Syy on sama
+kuin `fitFades`illa: piirto ja osumatesti ovat sama kaava, ja jos ne
+laskettaisiin erikseen, palkit näyttäisivät oikeilta ja klikkaus osuisi
+väärään kohtaan. Kumpikaan puoli ei näyttäisi yksinään väärältä.
+
 ## Mitä tämä ei tee
 
 Ei taajuuskorjausta, ei kompressointia, ei Hindenburgin ääniprofiileja. Se
@@ -212,21 +244,45 @@ julkaistuja Quick Look -laajennuksia on jäänyt toimimattomiksi juuri
 `com.apple.security.app-sandbox`in puuttuessa — paikallisesti käännettynä
 sama koodi toimi. Käännös tarkistaa molemmat (`build-viewer.yml`).
 
-### Yksi avoin kysymys, jota ei ole voitu mitata
+### Äänipoolin lukuoikeus, ja mitä se maksaa
 
-Sovelluksessa tätä ei ole: käyttäjä valitsee tiedoston itse, ja
-`com.apple.security.files.user-selected.read-only` kattaa sen.
+Tämä oli pitkään avoin kysymys. Se on nyt mitattu oikealla Macilla, ja
+vastaus oli se ikävämpi: **hiekkalaatikko ei anna pääsyä äänipooliin.**
 
-Laajennuksessa on. Hiekkalaatikko antaa sille pääsyn **esikatseltavaan
-tiedostoon**.
-Äänipooli on eri tiedostoja saman kansion sisällä, eikä ole varmaa antaako
-järjestelmä niihin pääsyä samalla.
+Quick Look antaa laajennukselle pääsyn vain siihen tiedostoon jonka päällä
+välilyöntiä painettiin. `.nhsx` on pelkkä XML, ja WAVit ovat viereisessä
+kansiossa. Esikatselu piirsi istunnon oikein — raidat, alueet, kesto,
+puhujat — ja oli hiljaa.
 
-Jos ei anna, aikajana piirtyy normaalisti (se on pelkkää XML:ää) mutta
-toisto vaikenee, ja `MixPlayer` kertoo mitkä tiedostot eivät auenneet — se
-näkyy alarivillä. Tämä selviää ensimmäisellä ajolla oikealla Macilla;
-täältä sitä ei voi mitata. **Sovelluksessa toisto toimii joka tapauksessa**,
-joten pahimmillaankin esikatselu on katselu ilman ääntä.
+Sama koskee **sovellusta**, toisin kuin täällä aiemmin luki: `NSOpenPanel`
+antaa pääsyn valittuun tiedostoon eikä sen sisaruksiin, joten `.nhsx`:n
+avaaminen ei riitä äänipoolin lukemiseen. Väite «sovelluksessa toisto
+toimii joka tapauksessa» oli päättelyä eikä mittausta, ja se oli väärin.
+
+Laajennus ei voi laajentaa omaa pääsyään ajossa. Hiekkalaatikko on sille
+pakollinen, eikä Quick Look voi kysyä käyttäjältä kansio-oikeutta.
+
+Ratkaisu on siksi oikeus, ei koodi:
+
+    com.apple.security.temporary-exception.files.absolute-path.read-only
+        /Users/     /Volumes/
+
+**Luku, ei kirjoitus**, ja kahteen puuhun rajattuna eikä `/`:ksi. Hinta
+sanottuna suoraan: jokainen jaettu kopio sisältää esikatselulaajennuksen,
+joka voi lukea käyttäjän kotihakemiston. Se on tietoinen valinta, ei
+huomaamatta jäänyt asetus.
+
+Puhdas vaihtoehto on App Group ja käyttäjän myöntämä kansio-oikeus
+(`bookmarkData(options: .withSecurityScope)`): pääsy rajautuisi niihin
+kansioihin jotka käyttäjä itse antaa. App Group -tunnus vaatii Team ID:n
+eli maksullisen Apple-kehittäjätilin. Kun sellainen on, tämä poikkeus
+poistetaan ja korvataan sillä — ja se on samalla se päivä jolloin
+notarisointi tulee mahdolliseksi, sillä notarisointi hylkää
+temporary-exception-oikeudet.
+
+Käännös tarkistaa, että oikeus on molemmissa paketeissa. Ilman sitä
+tarkistusta vika palaisi juuri siinä muodossa jossa se löydettiin: kaikki
+näyttää oikealta eikä ääntä kuulu.
 
 ## Kääntäminen
 
@@ -262,8 +318,11 @@ macOS:ää mitattavaksi.
 
 ## Tämän tilanne
 
-`NhsxKit` ja sen testit ovat kirjoitetut mutta **ei käännetty**: ne
-syntyivät Linux-ympäristössä, jossa ei ole Swift-työkaluketjua eikä macOS:ää.
-Ensimmäinen `swift test` Macilla on siis myös ensimmäinen käännös. Toisin
-kuin `nhsx-render`, jonka jokainen väite on ajettu ja mitattu, tämä on
-tarkistamatta siihen asti.
+`NhsxKit` kääntyy ja sen testit ajetaan jokaisessa puskussa
+(`viewer.yml`, `swift test`), ja esikatselu on ajettu oikealla Macilla:
+se rekisteröityy, piirtää istunnon ja kertoo lukemattomat attribuutit.
+
+Swift kirjoitetaan yhä Linux-ympäristössä, jossa ei ole työkaluketjua, joten
+CI on edelleen ensimmäinen kääntäjä jokaiselle muutokselle. Se ei ole sama
+asia kuin kääntämätön, mutta se tarkoittaa ettei mitään Swift-muutosta ole
+kokeiltu ennen kuin se on työnnetty.

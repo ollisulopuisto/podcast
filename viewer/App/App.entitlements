@@ -11,5 +11,15 @@
        epäonnistuisivat hiljaa hiekkalaatikon estäminä. -->
   <key>com.apple.security.files.user-selected.read-only</key>
   <true/>
+
+  <!-- Sama poikkeus kuin laajennuksella, samasta syystä: NSOpenPanel antaa
+       pääsyn **valittuun tiedostoon**, ei sen sisaruksiin, joten pelkkä
+       `.nhsx`:n avaaminen ei riitä äänipoolin lukemiseen. Ks. laajennuksen
+       `NhsxQuickLook.entitlements`, jossa perustelu ja hinta kokonaan. -->
+  <key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
+  <array>
+    <string>/Users/</string>
+    <string>/Volumes/</string>
+  </array>
 </dict>
 </plist>

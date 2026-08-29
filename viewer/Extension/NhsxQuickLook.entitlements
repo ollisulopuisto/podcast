@@ -17,5 +17,38 @@
        oikeus jota se ei käytä, ja ainoa mitä sillä voisi tehdä on vahinko. -->
   <key>com.apple.security.files.user-selected.read-only</key>
   <true/>
+
+  <!-- Äänipooli on **eri tiedostoja kuin esikatseltava**, ja siihen tämä
+       kaatui: Quick Look antaa laajennukselle pääsyn vain siihen tiedostoon
+       jonka päällä välilyöntiä painettiin. `.nhsx` on pelkkä XML, ja WAVit
+       ovat viereisessä kansiossa — hiekkalaatikon ulkopuolella. Esikatselu
+       piirsi istunnon oikein ja oli hiljaa, ja ainoa jälki oli rivi
+       «ei auennut».
+
+       Laajennus ei voi laajentaa omaa pääsyään ajossa: hiekkalaatikko on
+       sille pakollinen (ilman sitä se ei rekisteröidy lainkaan), eikä
+       Quick Look voi kysyä käyttäjältä lupaa kansioon.
+
+       Tämä on siis se hinta jolla toisto esikatselussa saadaan. Se on
+       **luku, ei kirjoitus**, ja rajattu kahteen puuhun sen sijaan että
+       annettaisiin `/`:
+
+           /Users/     kotihakemistot
+           /Volumes/   ulkoiset levyt, joilla jaksot usein ovat
+
+       Mitä tämä maksaa, sanottuna suoraan: jokainen jaettu kopio sisältää
+       esikatselulaajennuksen, joka voi lukea käyttäjän kotihakemiston.
+       Puhdas vaihtoehto on App Group ja käyttäjän myöntämä kansio-oikeus
+       (`bookmarkData(options: .withSecurityScope)`), mutta App Group -tunnus
+       vaatii Team ID:n eli maksullisen Apple-kehittäjätilin. Kun sellainen
+       on, tämä poikkeus poistetaan ja korvataan sillä.
+
+       Huom. myös: notarisointi hylkää temporary-exception-oikeudet. Niin
+       kauan kuin tämä on täällä, notarisointi ei ole mahdollista. -->
+  <key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
+  <array>
+    <string>/Users/</string>
+    <string>/Volumes/</string>
+  </array>
 </dict>
 </plist>
