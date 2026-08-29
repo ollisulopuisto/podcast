@@ -231,7 +231,7 @@ def test_without_the_comparison_the_bleed_stays_audible(bleed_session):
     from podcastmagic.jobs import Job, Progress
     from podcastmagic.silence import run as runner
 
-    settings = Settings(tail=0.4, gap=0.4, rms=True, threshold=-35.0, dominance=0.0)
+    settings = Settings(tail=0.4, gap=0.4, rms=True, dominance=0.0)
     result = runner.run(
         str(bleed_session), settings, Progress(Job(id=0, module="s", label="t"))
     )

@@ -76,7 +76,10 @@ def run(
         )
 
     if settings.rms:
-        progress.log(f"Tason tarkistus päällä, kynnys {settings.threshold:.0f} dB")
+        progress.log(
+            f"Tason tarkistus päällä, herkkyys {settings.sensitivity:.0f} dB "
+            "raidan oman pohjakohinan yli"
+        )
     else:
         progress.log("Tason tarkistus pois — pelkkä litterointi ratkaisee")
 

@@ -38,7 +38,7 @@ def test_quiet_words_are_dropped(monkeypatch, session_file):
         lambda path: (samples * 32768).astype(np.int16),
     )
     session = nhsx.read(session_file)
-    result = speech_intervals(session, session.tracks[0], Settings(rms=True, threshold=-35))
+    result = speech_intervals(session, session.tracks[0], Settings(rms=True))
     assert result.words_seen == 3
     assert result.words_levelled == 3
     assert result.words_quiet == 2

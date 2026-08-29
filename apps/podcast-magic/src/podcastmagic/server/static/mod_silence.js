@@ -16,7 +16,7 @@
       tail: Number(root.querySelector('#si-tail').value),
       gap: Number(root.querySelector('#si-gap').value),
       rms: root.querySelector('#si-rms').checked,
-      threshold: Number(root.querySelector('#si-threshold').value),
+      sensitivity: Number(root.querySelector('#si-sensitivity').value),
       dominance: Number(root.querySelector('#si-dominance').value),
     };
   }
@@ -122,7 +122,10 @@
             PM.el('span', { class: 'why', text: PM.t('si.rmsWhy') }),
           ]),
         ]),
-        slider('si-threshold', PM.t('si.threshold'), '', saved.threshold, -60, -10, 1, 'dB'),
+        // 0–24 dB pohjan yli. Ylärajaksi 24 samasta syystä kuin
+        // `dominance`illa: sitä leveämpi kaista ei enää erottele mitään.
+        slider('si-sensitivity', PM.t('si.sensitivity'), PM.t('si.sensitivityWhy'),
+               saved.sensitivity, 0, 24, 1, 'dB'),
         // Ylärajaksi 24: mitattu ero oman puheen ja vuodon välillä on
         // mediaanissa 12,8 dB, joten sitä leveämpi kaista ei enää erottele.
         // Nolla on «pois», ja se on kaistan alapää eikä oma valintansa.
@@ -137,7 +140,8 @@
         const preset = state.info.presets[presetSelect.value];
         if (!preset) return;
         for (const [id, value] of Object.entries({
-          'si-tail': preset.tail, 'si-gap': preset.gap, 'si-threshold': preset.threshold,
+          'si-tail': preset.tail, 'si-gap': preset.gap,
+          'si-sensitivity': preset.sensitivity,
           'si-dominance': preset.dominance,
         })) {
           const input = root.querySelector(`#${id}`);
@@ -185,7 +189,7 @@
     for (const [name, preset] of Object.entries(presets)) {
       const same = Math.abs(preset.tail - settings.tail) < 0.001
         && Math.abs(preset.gap - settings.gap) < 0.001
-        && Math.abs(preset.threshold - settings.threshold) < 0.001
+        && Math.abs(preset.sensitivity - settings.sensitivity) < 0.001
         && Math.abs(preset.dominance - settings.dominance) < 0.001
         && !!preset.rms === !!settings.rms;
       if (same) return name;

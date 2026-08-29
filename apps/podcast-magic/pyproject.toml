@@ -16,6 +16,9 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Editors",
 ]
 dependencies = [
+    # Jaettu puheenkäsittely työtilasta, ei julkaisusta: sääntö siitä milloin
+    # mikki on äänessä on yksi ja se asuu siellä. Ks. CLAUDE.md.
+    "speechmix",
     "numpy>=2.4.2",
     "lxml>=5.0",
     "fastapi>=0.115",
@@ -37,6 +40,9 @@ nhsx-render = "podcastmagic.nhsx.cli:main"
 mlx = ["mlx-whisper>=0.4.0"]
 # Kaikille alustoille sopiva varakone. Sama moottori kuin Colab-muistikirjassa.
 faster = ["faster-whisper>=1.1.0"]
+
+[tool.uv.sources]
+speechmix = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
