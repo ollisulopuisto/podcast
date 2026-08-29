@@ -5,6 +5,8 @@ from __future__ import annotations
 import threading
 import time
 
+import pytest
+
 from podcastmagic import jobs
 from podcastmagic.jobs import Runner
 

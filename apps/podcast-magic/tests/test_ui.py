@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
 from podcastmagic.paths import get_resource_path
 from podcastmagic.server.app import create_app
 

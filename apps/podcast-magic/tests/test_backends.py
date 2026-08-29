@@ -7,6 +7,7 @@ import types
 
 import numpy as np
 import pytest
+
 from podcastmagic.jobs import Cancelled, Job, Progress
 from podcastmagic.transcribe.backends import BACKENDS
 from podcastmagic.transcribe.backends import mlx as mlx_backend
