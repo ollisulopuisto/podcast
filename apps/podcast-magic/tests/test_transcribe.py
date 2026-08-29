@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from podcastmagic import nhsx
 from podcastmagic.jobs import Job, Progress
 from podcastmagic.transcribe import run as runner

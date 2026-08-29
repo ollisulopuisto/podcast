@@ -5,7 +5,6 @@ from __future__ import annotations
 from itertools import pairwise
 
 from lxml import etree
-
 from podcastmagic import nhsx
 from podcastmagic.silence.apply import (
     audible_zones,
