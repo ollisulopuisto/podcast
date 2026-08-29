@@ -32,7 +32,7 @@ def test_main_headless_mode(monkeypatch, scratch_xml):
 def test_main_direct_script_execution():
     """__main__.py voidaan ajaa suoraan skriptinä (kuten PyInstaller tekee)."""
     res = subprocess.run(
-        [sys.executable, "src/autoraffkat/__main__.py", "--help"],
+        [sys.executable, __main__.__file__, "--help"],
         capture_output=True,
         text=True,
         check=False,

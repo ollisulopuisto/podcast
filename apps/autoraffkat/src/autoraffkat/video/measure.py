@@ -20,6 +20,7 @@ näkyisi mistään, joten se on virhe eikä varoitus.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -61,6 +62,47 @@ def cache_key(path: str, detector: detect.Detector) -> str:
     raw = (f"{os.path.abspath(path)}|{stat.st_size}|{stat.st_mtime_ns}"
            f"|{WIDTH}|{CACHE_VERSION}|{detector.name}|{detector.version}")
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+#: Polku -> viimeisin avain. Ilman tätä mittaus katoaa median mukana:
+#: avain lasketaan `os.stat`ista, eli juuri siitä tiedostosta jonka
+#: koskemista välimuisti on olemassa välttämään. Irrotetulla levyllä avainta
+#: ei voi laskea, mittaus lasketaan uudestaan tiedostosta jota ei ole, ja
+#: seuraus ei ole virhe vaan hiljainen puute — istumajärjestys jää tyhjäksi
+#: ja vienti kirjoittaa nolla panorointia.
+INDEX_NAME = "polut.json"
+
+
+def _index() -> dict:
+    try:
+        return json.loads((cache_dir() / INDEX_NAME).read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def remember(path: str, key: str) -> None:
+    """Merkitsee polun viimeisimmän avaimen muistiin."""
+    index = _index()
+    index[os.path.abspath(path)] = key
+    tmp = cache_dir() / (INDEX_NAME + ".tmp")
+    try:
+        tmp.write_text(json.dumps(index, ensure_ascii=False), "utf-8")
+        os.replace(tmp, cache_dir() / INDEX_NAME)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+
+
+def known_key(path: str, detector: "detect.Detector") -> str | None:
+    """Avain tälle polulle: tuore jos media on saatavilla, muuten viimeisin.
+
+    Tuoreus tarkistetaan aina kun se **voidaan** tarkistaa. Vasta kun
+    `os.stat` ei onnistu, luotetaan viimeisimpään: silloin vaihtoehto ei ole
+    tuoreempi mittaus vaan ei mittausta lainkaan.
+    """
+    try:
+        return cache_key(path, detector)
+    except OSError:
+        return _index().get(os.path.abspath(path))
 
 
 def duration(path: str) -> float:
@@ -230,20 +272,31 @@ def table(path: str, detector: detect.Detector, progress=None) -> dict:
     väliaikaisnimeen tallennus loisi väärän tiedoston ja uudelleennimeäminen
     epäonnistuisi hiljaa. Sama ansa kuin verhokäyrällä, ks. audio/envelope.py.
     """
-    target = cache_dir() / f"{cache_key(path, detector)}.npz"
-    if target.exists():
+    key = known_key(path, detector)
+    target = cache_dir() / f"{key}.npz" if key else None
+    if target is not None and target.exists():
         try:
             with np.load(target) as data:
+                # Merkitään polku myös osumasta, ei vain kirjoituksesta:
+                # muuten vanhat mittaukset jäisivät ikuisesti indeksin
+                # ulkopuolelle, ja levyn irrottaminen veisi ne mukanaan.
+                # Yksi kytketty ajo riittää kirjaamaan koko välimuistin.
+                remember(path, target.stem)
                 return {name: data[name] for name in data.files}
         except (OSError, ValueError):
             target.unlink(missing_ok=True)   # rikkinäinen välimuisti lasketaan uusiksi
 
     result = measure_file(path, detector, progress)
+    if target is None:
+        # Mediaa ei ole eikä mittausta muistissa: tänne ei pitäisi päätyä,
+        # koska `measure_file` on jo kaatunut. Varmistus siltä varalta.
+        return result
     tmp = target.with_suffix(".tmp")
     try:
         with open(tmp, "wb") as handle:
             np.savez(handle, **result)
         tmp.replace(target)
+        remember(path, target.stem)
     except OSError:
         tmp.unlink(missing_ok=True)
     return result
@@ -251,7 +304,5 @@ def table(path: str, detector: detect.Detector, progress=None) -> dict:
 
 def is_cached(path: str, detector: detect.Detector) -> bool:
     """Onko tiedosto jo mitattu — halpa tarkistus käyttöliittymälle."""
-    try:
-        return (cache_dir() / f"{cache_key(path, detector)}.npz").exists()
-    except OSError:
-        return False
+    key = known_key(path, detector)
+    return bool(key) and (cache_dir() / f"{key}.npz").exists()

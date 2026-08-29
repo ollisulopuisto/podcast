@@ -247,3 +247,40 @@ def test_missing_media_is_reported_not_swallowed(monkeypatch):
         grid, _Roles(), timeline, Globals(reactions=True))
     assert tables == {}
     assert "b" in errors and "mitaan.mp4" in errors["b"]
+
+
+def test_a_measured_file_stays_measured_when_the_drive_is_gone(tmp_path, monkeypatch):
+    """Mittaus löytyy vaikka media olisi irrotetulla levyllä.
+
+    Avain lasketaan polusta, koosta ja muokkausajasta, eli ``os.stat``ista —
+    ja se on juuri se tiedosto jonka koskemista välimuisti on olemassa
+    välttämään. Kun levy ei ole kiinni, avainta ei voi laskea, `is_cached`
+    palauttaa `False`, ja mittaus lasketaan uudestaan tiedostosta jota ei
+    ole. Mitattuna: 532 valmista mittausta välimuistissa ja vienti kaatui
+    jokaiseen niistä.
+
+    Seuraus ei ollut virhe vaan **hiljainen puute**: istumajärjestys jäi
+    tyhjäksi ja vienti kirjoitti nolla panorointia. Tiedosto oli kelvollinen
+    ja kuulosti oikealta kunnes vertasi siihen jossa panorointi on.
+    """
+    from autoraffkat.video import measure
+
+    monkeypatch.setattr(measure, "cache_dir", lambda: tmp_path)
+    class Fake:
+        name, version, fields = "testi", 1, ("side",)
+
+        def measure(self, path):  # ei kutsuta: mittaus on välimuistissa
+            raise AssertionError("levyä ei saa lukea")
+
+    detector = Fake()
+    media = tmp_path / "kamera.mp4"
+    media.write_bytes(b"x" * 1024)
+
+    key = measure.cache_key(str(media), detector)
+    np.savez(tmp_path / f"{key}.npz", side=np.array([1.0, 2.0]))
+    measure.remember(str(media), key)
+
+    assert measure.is_cached(str(media), detector)
+    media.unlink()                      # levy irti
+    assert measure.is_cached(str(media), detector), "mittaus katosi levyn mukana"
+    assert list(measure.table(str(media), detector)) == ["side"]

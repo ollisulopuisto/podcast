@@ -299,6 +299,12 @@ CATALOG: dict[str, dict[str, str]] = {
         "fi": "Liitännäistä ei voitu ladata: {name} — {error}",
         "en": "Could not load the plug-in: {name} — {error}",
     },
+    "export.pan_none": {
+        "fi": "Panorointi on päällä mutta istumajärjestystä ei ole mitattu — "
+              "vienti jää ilman panorointia.",
+        "en": "Panning is on but the seating has not been measured — "
+              "the export goes out without it.",
+    },
     "audio.program_short": {
         "fi": "Jakelutaso jäi: tavoite {target} LUFS, tulos {got}.",
         "en": "Delivery level fell short: target {target} LUFS, got {got}.",

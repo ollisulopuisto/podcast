@@ -1320,6 +1320,13 @@ def create_app(state: AppState) -> FastAPI:
                     _grid, float(program_start), float(program_end), ducks
                 )
 
+                # Panorointi päällä mutta tuloksessa ei mitään: sama
+                # vikaluokka kuin reaktioilla, ja se osui tähän oikeasti —
+                # irrotettu medialevy jätti istumajärjestyksen tyhjäksi ja
+                # vienti kirjoitti nolla panorointia sanomatta mitään.
+                if state.settings.globals.panning and not state.pans_now():
+                    warnings.append(t("export.pan_none"))
+
                 shots = state.reactions_now(_grid, roles, program_start)
                 if state.settings.globals.reactions and not shots:
                     warnings.append(t("video.none_measured")
