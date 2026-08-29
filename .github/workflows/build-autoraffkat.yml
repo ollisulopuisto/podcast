@@ -39,7 +39,11 @@ jobs:
           node-version: "22"
 
       - name: Install
-        run: uv sync --all-extras
+        # Työtila, ei yksi jäsen: jaettu työkalusto (pytest, ruff) on juuren
+        # `dependency-groups`issa, ja `uv sync` jäsenen hakemistossa jättää sen
+        # asentamatta sekä poistaa muiden jäsenten riippuvuudet samasta
+        # ympäristöstä. Ensimmäinen ajo kaatui tähän: «Failed to spawn: pytest».
+        run: uv sync --all-packages --all-extras --directory ../..
 
       # Testit ennen pakkausta. Rikkinäinen binääri on pahempi kuin hidas
       # käännös: sen ehtii ladata ennen kuin kukaan huomaa.
@@ -109,7 +113,11 @@ jobs:
           node-version: "22"
 
       - name: Install
-        run: uv sync --all-extras
+        # Työtila, ei yksi jäsen: jaettu työkalusto (pytest, ruff) on juuren
+        # `dependency-groups`issa, ja `uv sync` jäsenen hakemistossa jättää sen
+        # asentamatta sekä poistaa muiden jäsenten riippuvuudet samasta
+        # ympäristöstä. Ensimmäinen ajo kaatui tähän: «Failed to spawn: pytest».
+        run: uv sync --all-packages --all-extras --directory ../..
 
       - name: Cache bundled ffmpeg
         uses: actions/cache@v4

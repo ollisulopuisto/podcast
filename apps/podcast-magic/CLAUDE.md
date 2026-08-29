@@ -329,42 +329,45 @@ tänne — ketju kuuluu jaettuun pakettiin, jotta se ei ehdi ajautua erilleen
 kolmessa projektissa. Tämän tiedoston tehtävä on, ettei ketjun tuominen ole
 lukijan uudelleenkirjoittamista.
 
-### Tämä sovellus ei käytä `speechmix`iä lainkaan — lue tämä ennen kuin kirjoitat DSP:tä
+### `speechmix` on tuotu, mutta vain sääntö — lue tämä ennen kuin kirjoitat DSP:tä
 
-Nollä tuontia, ei riippuvuutta `pyproject.toml`issa. Jaettu ketju on jaettu
-**kahden** sovelluksen kesken (autoraffkat, automixer), ja tämä kolmas on
-kirjoittanut oman ~770 rivin puhe- ja tasokoodinsa (`audio.py`, `silence/`)
-tapaamatta sitä koskaan.
+Riippuvuus on `pyproject.toml`issa työtilasta, ja tuotuna on **päätössääntö**:
+`grid.noise_floor`, `grid.smooth`, `grid.FLOOR_MARGIN_DB` ja
+`masks.DUCK_DOMINANCE_DB`. Tasojen mittaaminen jää tänne, ja se on tarkoitus
+eikä laiskuutta — `lane`in docstring jakaa työn juuri noin: sääntö on yksi,
+tapa saada tasot on isännän oma.
 
-**Se ei ole tyhjä paikka vaan päällekkäisyys, ja se on jo tapahtunut kerran.**
-`silence/detect.py`:n `dominant_words` kirjoitettiin uusiksi vaikka
-`speechmix.grid.speech_grid` teki jo saman päätöksen — samalla vakiolla:
+**Miksi `speech_grid` ei ole suora korvaaja.** Se ottaa kaikki raidat yhtä
+aikaa liukulukutaulukkoina. Tämän sovelluksen istunto on viisi raitaa kertaa
+75 minuuttia: 16 kHz:n int16:na 575 MB, liukulukuina yli kaksi kertaa se, ja
+katto on kaksi tiedostoa kerrallaan. `noise_floor_of` mittaa käyrän raita
+kerrallaan ja pitää vain käyrän, joka on megatavun luokkaa.
 
-    podcast-magic  Settings.dominance = 6.0     speechmix  DOMINANCE_DB = 6.0
-    podcast-magic  levels >= loudest - kaista   speechmix  levels >= loudest - dominance_db
+**Mitä kiinteän kynnyksen tilalle tuli.** `Settings.sensitivity` on
+desibeleitä raidan oman pohjakohinan yli (oletus `grid.FLOOR_MARGIN_DB` =
+12), ei absoluuttinen `-35 dBFS`. Ero on mitattu tämän repositorion omalla
+jaksolla (`vst s13e01`, 4 raitaa, 9 412 sanaa), ja se on iso:
 
-Sama luku kahdesti kahdessa paikassa on täsmälleen se ajautuminen jota vastaan
-tämä repositorio on olemassa. Kommentti «sama päätös kuin `duck_masks`in»
-ei ole tuonti: se on muistiinpano siitä että kopio tehtiin tietoisesti.
+    raita   pohja      vanha −35 dBFS vaiensi   uusi pohja+12 dB vaiensi
+    Olli    −60,9 dB   1 482 / 5 257  (28,2 %)  136 / 5 257  (2,6 %)
+    Karde   −72,4 dB     332 / 1 833  (18,1 %)  139 / 1 833  (7,6 %)
+    Panu    −93,2 dB     901 / 2 322  (38,8 %)   82 / 2 322  (3,5 %)
 
-**Ja `speechmix` osaa sen paremmin.** `speech_grid` ei käytä absoluuttista
-kynnystä lainkaan vaan raitakohtaista pohjakohinaa (10. persentiili) plus
-`FLOOR_MARGIN_DB = 8`. Se kalibroituu itse jokaiselle mikille, eli ratkaisee
-juuri sen esivahvistusongelman jonka takia `threshold = -35 dBFS` on huono —
-ja sillä on mittaus jota täällä ei ole: tasoheuristiikka kutsui 74 % raidan
-lohkoista puheeksi kun 53 % oli omistajansa, ja ne olivat samaa mieltä 38 %
-ajasta.
+Kiinteä kynnys siis vaiensi joka kolmannen sanan raidalta jonka mikki on
+58 dB sen oletuksen alapuolella. Se on juuri se virhe joka on pahempi kuin
+päinvastainen: liikaa vaimennetusta jaksosta puuttuu puhetta, ja sen huomaa
+vasta valmiista jaksosta.
 
-Kun ketju tuodaan, **käytä näitä äläkä kirjoita uusia**:
+Loput, kun ketju tuodaan — **käytä näitä äläkä kirjoita uusia**:
 
 | täällä nyt | `speechmix` | huomio |
 |---|---|---|
-| `silence/detect.py` `dominant_words`, `speech_intervals` | `grid.speech_grid` → `SpeechGrid.speaking` | sama päätös, parempi aktiivisuustesti |
-| `Settings.threshold` (−35 dBFS kiinteä) | `grid.FLOOR_MARGIN_DB` pohjakohinan yli | itsekalibroituva |
-| `Settings.dominance` | `grid.DOMINANCE_DB` | sama luku, poista toinen |
+| `silence/detect.py` `dominant_words` | `grid.lane`, `SpeechGrid.speaking` | sama päätös; vaatii käyrät, ei stemejä |
+| `Settings.sensitivity` | `grid.FLOOR_MARGIN_DB` | **tuotu** |
+| `Settings.dominance` | `masks.DUCK_DOMINANCE_DB` | **tuotu** |
 | «vain minä äänessä» (ei ole vielä) | `SpeechGrid.only_frames`, `masks.solo_masks` | vuodon vähennys tarvitsee juuri nämä |
 | `silence/apply.py` `merge`, `audible_zones` | `masks.open_windows`, `drop_short`, `envelopes.closed_ranges` | jaksot vs. ruudukko, sama idea |
-| `audio.py` `dbfs` | `dsp.moving_rms`, `dsp.lin_to_db` | |
+| `audio.py` `dbfs` | `dsp.moving_rms`, `dsp.lin_to_db` | sama mitta, eri hankintatapa |
 | ristivuodon poisto (ei ole) | `debleed.path`, `debleed.remove` | mitattu, tarkistaa tuloksensa |
 
 Mikä **jää** tänne, koska se on istuntoformaattia eikä ketjua: `nhsx/`
@@ -372,6 +375,6 @@ kokonaan, `silence/apply.py`:n `split_track` ja `has_region_children`,
 `audio.py`:n `decode_pcm` (paketoitu ffmpeg-binääri, ei PATH) ja
 `silence/presets.py`:n käyttöliittymäsanasto.
 
-Järjestys jolla tämä kannattaa tehdä: `speech_grid` ensin `dominant_words`in
-tilalle, koska se poistaa vakion kahdennuksen ja tuo pohjakohinan samalla
-kertaa. Vasta sen jälkeen loput — ruudukko on se mitä kaikki muu lukee.
+Seuraava askel on `dominant_words`: se vertaa raitoja sanan kohdalla, ja sama
+vertailu on `lane`issa ruudukon päällä. Se vaatii käyrät kaikilta raidoilta
+yhtä aikaa — käyrät mahtuvat muistiin vaikka raidat eivät.

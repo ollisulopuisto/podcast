@@ -14,6 +14,9 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from speechmix import grid
+from speechmix.dsp import FLOOR_DB
+
 from .. import audio as audio_io
 from ..nhsx import Session, TrackInfo, locate
 from ..nhsx.read import RegionInfo
@@ -109,6 +112,36 @@ def probe_windows(session: Session) -> list[tuple[float, float, str]]:
             for _word, _info, start, end in region_words(session, region):
                 out.append((start, end, track.name))
     return out
+
+
+def noise_floor_of(samples: np.ndarray) -> float:
+    """Raidan oma pohjakohina desibeleinä.
+
+    Sääntö on kirjastosta — ``grid.smooth`` tasoittaa tavukohtaisen värinän ja
+    ``grid.noise_floor`` lukee 20. persentiilin — mutta tasot mitataan tällä
+    puolella. Syy on muisti: ``grid.speech_grid`` ottaa kaikki raidat yhtä
+    aikaa liukulukuina, ja tämän sovelluksen istunto on viisi raitaa kertaa
+    75 minuuttia, eli int16:na 575 MB ja liukulukuina yli kaksi kertaa se.
+    Katto on kaksi tiedostoa, ja käyrä on raidasta megatavun luokkaa.
+
+    Sama ``audio.dbfs`` mittaa tässä ja sanan kohdalla: pohjan ja sanan pitää
+    olla samalla asteikolla, tai marginaali niiden välillä ei tarkoita mitään.
+
+    Digitaalinen hiljaisuus on ``-inf`` ja se on mittaustulos, ei puuttuva
+    mittaus — mutta persentiili ``-inf``:istä on ``-inf``, ja silloin mikä
+    tahansa marginaali sen yli päästäisi kaiken läpi. Siksi lattia on
+    kirjaston ``FLOOR_DB``.
+    """
+    total = audio_io.duration(samples)
+    if total <= grid.FRAME_SEC:
+        return FLOOR_DB
+    starts = np.arange(0.0, total - grid.FRAME_SEC, grid.HOP_SEC)
+    curve = np.array(
+        [audio_io.dbfs(samples, t, t + grid.FRAME_SEC) for t in starts],
+        dtype=np.float32,
+    )
+    curve = np.maximum(curve, FLOOR_DB)
+    return float(grid.noise_floor(grid.smooth(curve, hop_sec=grid.HOP_SEC)))
 
 
 def dominant_words(
@@ -209,6 +242,7 @@ def speech_intervals(
     result = TrackResult(name=track.name)
     cache = cache or AudioCache()
     missing: set[str] = set()
+    floors: dict[str, float] = {}
 
     for region in track.regions:
         for word, file_info, start, end in region_words(session, region):
@@ -234,8 +268,13 @@ def speech_intervals(
                         missing.add(file_info.name)
                     else:
                         result.words_levelled += 1
+                        # Pohja kerran per tiedosto: se ei riipu sanasta, ja
+                        # koko raidan käyrän laskeminen tuhannesti olisi
+                        # tunteja siinä missä kerran on sekunti.
+                        if path not in floors:
+                            floors[path] = noise_floor_of(samples)
                         level = audio_io.dbfs(samples, word.start, word.end)
-                        if level < settings.threshold:
+                        if level < floors[path] + settings.sensitivity:
                             result.words_quiet += 1
                             continue
 

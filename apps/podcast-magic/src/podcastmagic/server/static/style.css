@@ -1,5 +1,10 @@
 /* Ulkoasu seuraa autoraffkatia: sama tumma pohja, samat mitat, samat napit.
-   Kaksi työkalua samaan työhön eivät saa näyttää kahdelta eri ohjelmalta. */
+   Kaksi työkalua samaan työhön eivät saa näyttää kahdelta eri ohjelmalta.
+
+   Ikkuna on kolmiosainen: kuori vasemmalla (istunto ja työkalut), sisältö
+   keskellä, työn kulku alapalkkina. Kuori on vasemmalla siksi että se on
+   sama joka välilehdellä — ylälaidassa se söi sisällön leveyden, ja leveys
+   on juuri se mitä pitkät tiedostonimet ja polut tarvitsevat. */
 
 :root {
   --bg: #16181c;
@@ -11,30 +16,48 @@
   --ok: #59c98a;
   --warn: #f0a35e;
   --error: #f0736a;
+  --rail: 236px;
 }
 
 * { box-sizing: border-box; }
 
+html, body { height: 100%; }
+
 body {
   margin: 0;
-  padding: 0 16px 32px;
+  padding: 0;
   background: var(--bg);
   color: var(--text);
   font: 14px/1.45 -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
 }
 
-header {
-  position: sticky;
-  top: 0;
-  z-index: 5;
+.shell { position: relative; display: flex; height: 100%; }
+
+/* ---- kuori ------------------------------------------------------------- */
+
+.rail {
+  width: var(--rail);
+  flex: 0 0 auto;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  padding: 14px 12px;
   display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 14px 0 12px;
-  background: linear-gradient(var(--bg) 80%, transparent);
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
 }
-.titles { min-width: 150px; }
-h1 { font-size: 17px; margin: 0; font-weight: 600; letter-spacing: -.01em; }
+.rail .titles { padding: 0 4px; }
+.rail h2 { margin: 0 0 6px; padding: 0 4px; }
+.rail .source { display: flex; flex-direction: column; gap: 6px;
+                background: var(--bg); border: 1px solid var(--line);
+                border-radius: 8px; padding: 10px; }
+.rail .source input { width: 100%; padding: 6px 8px;
+                      font: 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace; }
+.rail .source button { padding: 5px 10px; font-size: 13px; }
+.rail .source p:empty { display: none; }
+.rail-foot { margin-top: auto; padding: 0 4px; }
+
+h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: -.01em; }
 h2 { font-size: 12px; margin: 0 0 12px; text-transform: uppercase;
      letter-spacing: .08em; color: var(--muted); font-weight: 600; }
 h3 { font-size: 12px; margin: 20px 0 10px; text-transform: uppercase;
@@ -44,22 +67,29 @@ p { margin: 0; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 .hidden { display: none !important; }
-.actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
-/* Moduulit välilehtinä. Sateenvarjo näkyy tässä ja vain tässä: työkaluja on
-   monta, työ on yksi, ja istunto pysyy samana kun välilehti vaihtuu. */
-.tabs { display: flex; gap: 4px; }
+/* Moduulit kuoren luettelona. Sateenvarjo näkyy tässä ja vain tässä:
+   työkaluja on monta, työ on yksi, ja istunto pysyy samana kun välilehti
+   vaihtuu. */
+.tabs { display: flex; flex-direction: column; gap: 2px; }
 .tabs button {
   background: transparent;
   border: 1px solid transparent;
   color: var(--muted);
-  padding: 6px 14px;
+  padding: 7px 10px;
   border-radius: 7px;
   font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 .tabs button:hover { color: var(--text); }
-.tabs button.on { background: var(--panel); border-color: var(--line); color: var(--text); }
+.tabs button.on { background: #262a32; border-color: transparent; color: var(--text); }
+
+/* ---- sisältö ----------------------------------------------------------- */
+
+.work { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+#panels { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px 20px 20px; }
+#banner { margin: 16px 20px 0; }
 
 button {
   font: inherit;
@@ -101,16 +131,16 @@ select { cursor: pointer; }
   margin-bottom: 14px;
 }
 
-.picker { display: flex; gap: 8px; }
-.picker input { flex: 1 1 auto; font: 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace; }
-
-/* Tiedostoselain. Selaimessa ajettaessa natiivia valintaikkunaa ei ole, ja
-   polun kirjoittaminen käsin on juuri se kitka jota tässä yritetään poistaa. */
-.browser { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+/* Tiedostoselain nousee kuoren päälle sisällön ylle: kuori on 236 px, ja
+   siihen ei mahdu ainoatakaan poolin tiedostonimeä. */
+.browser { position: absolute; z-index: 9; left: calc(var(--rail) + 12px); top: 96px;
+           width: 520px; max-width: calc(100vw - var(--rail) - 32px);
+           background: var(--panel); box-shadow: 0 12px 32px #0009;
+           border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .browser .here { padding: 8px 12px; background: var(--bg); border-bottom: 1px solid var(--line);
                  font: 12px/1.4 ui-monospace, Menlo, monospace; color: var(--muted);
                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.browser ul { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow-y: auto; }
+.browser ul { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
 .browser li { padding: 0; }
 .browser li button {
   display: block; width: 100%; text-align: left; border: 0; border-radius: 0;
@@ -122,26 +152,41 @@ select { cursor: pointer; }
 .browser .derived { color: var(--muted); }
 .browser .when { float: right; color: var(--muted); font-size: 12px; }
 
-.field { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 12px;
-         align-items: center; margin-bottom: 10px; }
+/* Kentät vasemmalle, perustelut oikealle. Kaksi saraketta on tässä
+   tilankäyttöä eikä koristetta: ilman sitä «tota noin» -perustelu on 900
+   pikseliä leveä rivi ja valikko sen alla yhtä leveä. */
+.cols { display: grid; grid-template-columns: minmax(0, 372px) minmax(0, 1fr);
+        gap: 28px; align-items: start; }
+.cols > div { display: flex; flex-direction: column; gap: 10px; }
+.cols > .right { border-left: 1px solid var(--line); padding-left: 28px; }
+.cols h3 { margin: 0; }
+
+/* Selitesarake on 104 px eikä 190: nimi mahtuu, ja kontrolli alkaa
+   lähempää. Kontrolli on sisältönsä levyinen — «large-v3-turbo» ei tarvitse
+   kahdeksaasataa pikseliä eikä näytä oikealta niin. */
+.field { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 4px 10px;
+         align-items: center; margin: 0; }
 .field > span { color: var(--muted); }
-.field .hint { grid-column: 2; color: var(--muted); font-size: 12px; margin-top: -4px; }
+.field > select { justify-self: start; max-width: 100%; }
+.field > input[type=text] { width: 100%; }
+.field > .short { justify-self: start; width: 88px; }
+.field .hint { grid-column: 2; color: var(--muted); font-size: 12px; }
 .field.wide { grid-template-columns: 1fr; }
 
-.check { display: flex; gap: 9px; align-items: flex-start; margin-bottom: 10px; }
+.check { display: flex; gap: 9px; align-items: flex-start; }
 .check input { margin-top: 3px; }
 .check .body { display: grid; gap: 2px; }
 .check .body .why { color: var(--muted); font-size: 12px; }
 
 .slider { display: flex; gap: 12px; align-items: center; }
-.slider input[type=range] { flex: 1 1 auto; accent-color: var(--accent); }
+.slider input[type=range] { flex: 1 1 auto; accent-color: var(--accent); max-width: 260px; }
 .slider output { min-width: 62px; text-align: right;
                  font: 13px/1.4 ui-monospace, Menlo, monospace; }
 
 .rows { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
 
 .banner {
-  border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;
+  border-radius: 8px; padding: 10px 14px;
   background: #3a2a22; border: 1px solid #5c4130; color: var(--warn);
   white-space: pre-line;
 }
@@ -156,11 +201,17 @@ td { padding: 6px 10px 6px 0; border-bottom: 1px solid #23272f; white-space: now
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 tr.off td { color: var(--muted); }
 
-.job-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-.job-head h2 { margin: 0; }
-.job-head #cancel { margin-left: auto; }
+/* ---- työn kulku -------------------------------------------------------- */
 
-.progress { width: 100%; height: 6px; margin: 10px 0 8px; border-radius: 3px;
+.jobbar { flex: 0 0 auto; background: var(--panel); border-top: 1px solid var(--line);
+          padding: 10px 20px 12px; display: flex; flex-direction: column; gap: 8px; }
+.job-head { display: flex; align-items: center; gap: 12px; }
+.job-head #job-file, .job-head #job-all { font-variant-numeric: tabular-nums; }
+.job-head #job-file:empty, .job-head #job-all:empty { display: none; }
+.job-head #job-log-toggle { margin-left: auto; }
+.job-head button { padding: 5px 11px; font-size: 13px; }
+
+.progress { width: 100%; height: 6px; border-radius: 3px;
             background: color-mix(in srgb, var(--accent) 16%, transparent); overflow: hidden; }
 .progress-fill { height: 100%; border-radius: 3px; background: var(--accent);
                  transition: width .35s ease; width: 0; }
@@ -172,7 +223,7 @@ tr.off td { color: var(--muted); }
 }
 
 .log {
-  margin: 0; max-height: 260px; overflow-y: auto;
+  margin: 0; max-height: 220px; overflow-y: auto;
   font: 12px/1.55 ui-monospace, "SF Mono", Menlo, monospace;
   color: var(--muted); white-space: pre-wrap; word-break: break-word;
 }
@@ -181,7 +232,7 @@ tr.off td { color: var(--muted); }
    seuraava lukija on aina Hindenburg, ja lauseen keskeltä sitä ei saa
    valituksi kahdella klikkauksella. */
 .exported { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-            border-radius: 8px; padding: 8px 12px; margin-top: 12px;
+            border-radius: 8px; padding: 8px 12px;
             background: var(--bg); border: 1px solid var(--line); }
 .exported .said { color: var(--ok); }
 .exported input { flex: 1 1 260px; font: 12.5px/1.4 ui-monospace, Menlo, monospace; }
@@ -198,7 +249,15 @@ button.busy::before {
   button.busy::before { animation: none; border-top-color: currentColor; opacity: .5; }
 }
 
+/* Kapea ikkuna: kaksi saraketta ei mahdu, eikä kuori ole tärkein. */
+@media (max-width: 900px) {
+  .cols { grid-template-columns: 1fr; gap: 14px; }
+  .cols > .right { border-left: 0; padding-left: 0; border-top: 1px solid var(--line);
+                   padding-top: 14px; }
+}
 @media (max-width: 720px) {
-  header { flex-wrap: wrap; gap: 10px; }
-  .field { grid-template-columns: 1fr; gap: 4px; }
+  .shell { flex-direction: column; height: auto; }
+  .rail { width: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .field { grid-template-columns: 1fr; }
+  .browser { position: static; width: auto; max-width: none; box-shadow: none; }
 }

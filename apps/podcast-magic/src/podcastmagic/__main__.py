@@ -18,6 +18,24 @@ from . import __version__, pick
 DEFAULT_PORT = 8741
 
 
+def wants_window(flag: bool | None, frozen: bool, system: str) -> bool:
+    """Avataanko ikkuna vai selain, kun käyttäjä ei sanonut kumpaa.
+
+    Pakattuna oletus on ikkuna: `.app`illa ei ole terminaalia johon osoite
+    tulostettaisiin. Poikkeus on Linux — siellä `pywebview` tarvitsee GTK:n ja
+    WebKit2:n koneelta eikä paketista, ja niiden puuttuessa ohjelma ei avaisi
+    mitään eikä kertoisi mitään. Selain on siellä se joka varmasti on.
+
+    Pyydetty ikkuna avataan aina: `--gui` on käyttäjän päätös, ja jos
+    kirjastot puuttuvat, virhe kuuluu näkyä.
+    """
+    if flag is not None:
+        return flag
+    if system.startswith("linux"):
+        return False
+    return bool(frozen)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="podcast-magic",
@@ -45,9 +63,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="version", version=__version__)
     args = parser.parse_args(argv)
 
-    # Pakattuna sovelluksena oletus on ikkuna, kehityksessä selain: .app:llä ei
-    # ole terminaalia johon osoite tulostettaisiin.
-    use_gui = args.gui if args.gui is not None else getattr(sys, "frozen", False)
+    use_gui = wants_window(args.gui, frozen=getattr(sys, "frozen", False),
+                           system=sys.platform)
 
     here = os.getcwd()
     session = ""

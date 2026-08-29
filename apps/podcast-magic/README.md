@@ -18,6 +18,11 @@ One window, one session file, two tools — and room for a third.
 
 macOS, and [uv](https://docs.astral.sh/uv/). Cold clone to a running window:
 
+*(Released packages are built for macOS, Windows and Linux. Metal
+acceleration is Apple Silicon only — elsewhere the engine is
+`faster-whisper` on the CPU, and on Linux the interface opens in a
+browser rather than a native window.)*
+
 ```
 git clone https://github.com/ollisulopuisto/podcast
 cd podcast

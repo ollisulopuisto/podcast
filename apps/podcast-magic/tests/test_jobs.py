@@ -7,6 +7,7 @@ import time
 
 import pytest
 
+from podcastmagic import jobs
 from podcastmagic.jobs import Runner
 
 
@@ -97,3 +98,22 @@ def _wait(job, timeout=5.0):
     while job.running and time.time() < deadline:
         time.sleep(0.005)
     assert not job.running, "työ ei päättynyt"
+
+
+def test_step_carries_its_own_clock():
+    """Kaksi arviota tarvitsee kaksi kelloa.
+
+    Työn `elapsed` kertoo koko ajon iän, mutta «kauanko tämä tiedosto vielä
+    kestää» lasketaan vaiheen omasta iästä: tiedostot ovat eri mittaisia,
+    joten koko ajon keskinopeus ei kerro tästä tiedostosta mitään.
+    """
+    job = jobs.Job(id=1, module="testi", label="")
+    progress = jobs.Progress(job)
+
+    progress.step("eka.wav", done=0, total=2)
+    job.step_started -= 30.0
+    first = job.snapshot()["stepElapsed"]
+    assert first >= 30.0
+
+    progress.step("toka.wav", done=1, total=2)
+    assert job.snapshot()["stepElapsed"] < first

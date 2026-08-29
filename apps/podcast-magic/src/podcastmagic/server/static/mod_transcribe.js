@@ -118,7 +118,7 @@
       modelSelect.addEventListener('change', showHint);
 
       const languageInput = PM.el('input', {
-        type: 'text', id: 'tr-language', value: saved.language ?? 'fi',
+        type: 'text', id: 'tr-language', class: 'short', value: saved.language ?? 'fi',
         placeholder: PM.t('tr.languageAuto'), spellcheck: 'false',
       });
       const promptInput = PM.el('input', {
@@ -132,17 +132,27 @@
         root.appendChild(PM.el('p', { class: 'banner error',
                                       text: `${PM.t('tr.noBackend')}\n${hints}` }));
       }
-      root.appendChild(field(PM.t('tr.engine'), backendSelect));
-      root.appendChild(PM.el('label', { class: 'field' }, [
-        PM.el('span', { text: PM.t('tr.model') }), modelSelect, modelHint,
-      ]));
-      root.appendChild(field(PM.t('tr.language'), languageInput, PM.t('tr.languageAuto')));
-      root.appendChild(field(PM.t('tr.prompt'), promptInput, PM.t('tr.promptWhy')));
-      root.appendChild(check('tr-fillers', PM.t('tr.fillers'), PM.t('tr.fillersWhy'), saved.fillers));
-      root.appendChild(check('tr-vad', PM.t('tr.vad'), PM.t('tr.vadWhy'), saved.vad));
-      root.appendChild(check('tr-paragraphs', PM.t('tr.paragraphs'), PM.t('tr.paragraphsWhy'),
-                             saved.paragraphs !== false));
-      root.appendChild(check('tr-force', PM.t('tr.force'), PM.t('tr.forceWhy'), false));
+
+      /* Kentät vasemmalle, valinnat oikealle. Valinnan perustelu on kolme
+         riviä tekstiä, ja koko rivin levyisenä se työntää valikot omalle
+         riville — kaksi saraketta pitää molemmat luettavina. */
+      const left = PM.el('div', {}, [
+        field(PM.t('tr.engine'), backendSelect),
+        PM.el('label', { class: 'field' }, [
+          PM.el('span', { text: PM.t('tr.model') }), modelSelect, modelHint,
+        ]),
+        field(PM.t('tr.language'), languageInput, PM.t('tr.languageAuto')),
+        field(PM.t('tr.prompt'), promptInput, PM.t('tr.promptWhy')),
+      ]);
+      const right = PM.el('div', { class: 'right' }, [
+        PM.el('h3', { text: PM.t('app.options') }),
+        check('tr-fillers', PM.t('tr.fillers'), PM.t('tr.fillersWhy'), saved.fillers),
+        check('tr-vad', PM.t('tr.vad'), PM.t('tr.vadWhy'), saved.vad),
+        check('tr-paragraphs', PM.t('tr.paragraphs'), PM.t('tr.paragraphsWhy'),
+              saved.paragraphs !== false),
+        check('tr-force', PM.t('tr.force'), PM.t('tr.forceWhy'), false),
+      ]);
+      root.appendChild(PM.el('div', { class: 'cols' }, [left, right]));
 
       root.appendChild(PM.el('h3', { text: PM.t('tr.plan') }));
       root.appendChild(PM.el('div', { id: 'tr-plan' }));

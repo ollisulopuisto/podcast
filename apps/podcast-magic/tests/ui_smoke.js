@@ -102,12 +102,20 @@ function matches(node, selector) {
 }
 
 /* index.html:n tunnukselliset elementit. Ne luetaan oikeasta tiedostosta,
-   jotta poistettu id kaataa testin sen sijaan että jäisi hiljaa toimimatta. */
+   jotta poistettu id kaataa testin sen sijaan että jäisi hiljaa toimimatta.
+
+   Myös luokat luetaan: `class="log hidden"` on alkutila siinä missä mikä
+   tahansa muukin, ja ilman sitä valeselain aloittaa auki olevasta lokista
+   ja tyhjentämättömästä bannerista — eli tilasta jota kukaan ei näe. */
 const html = fs.readFileSync(path.join(staticDir, 'index.html'), 'utf8');
 const root = makeElement('body');
-for (const match of html.matchAll(/\sid="([^"]+)"/g)) {
+for (const tag of html.matchAll(/<[a-zA-Z][^>]*>/g)) {
+  const id = /\sid="([^"]+)"/.exec(tag[0]);
+  if (!id) continue;
   const el = makeElement('div');
-  el.id = match[1];
+  el.id = id[1];
+  const cls = /\sclass="([^"]+)"/.exec(tag[0]);
+  if (cls) el.className = cls[1];
   root.appendChild(el);
 }
 
@@ -187,6 +195,33 @@ async function settle() {
         throw new Error(`moduulissa ${key} ei ole yhtään nappia`);
       }
     }
+  }
+
+  /* Ajon aikana ruudulla on prosentti ja arvio jäljellä olevasta. «1/3» yksin
+     seisoo paikallaan minuutteja, ja juuri silloin kysytään eteneekö mikään.
+     Loki on kiinni kunnes se avataan: se on ajon lokia, ei ajon tilaa. */
+  const running = { id: 1, module: 'transcribe', running: true, stepsDone: 1, stepsTotal: 3,
+                    fraction: 0.5, step: 'olli.wav', log: ['a', 'b'], result: {},
+                    elapsed: 90, stepElapsed: 30 };
+  vm.runInContext(`PM.showJob(${JSON.stringify(running)})`, sandbox);
+  /* Kaksi arviota erikseen: tämä tiedosto ja koko työ. Yksi luku ei vastaa
+     kumpaankaan kysymykseen — «15 %» kertoo ajosta eikä siitä tiedostosta
+     jota juuri odotetaan. */
+  const perFile = byId.get('job-file').textContent;
+  const overall = byId.get('job-all').textContent;
+  for (const [what, said] of [['tiedoston', perFile], ['koko työn', overall]]) {
+    if (!said.includes('%')) throw new Error(`${what} osuus puuttuu: «${said}»`);
+    if (!/\d/.test(said.slice(said.lastIndexOf('·')))) {
+      throw new Error(`${what} arvio jäljellä olevasta puuttuu: «${said}»`);
+    }
+  }
+  if (perFile === overall) throw new Error(`arviot ovat sama luku: «${perFile}»`);
+  if (!byId.get('job-log').classList.contains('hidden')) {
+    throw new Error('loki on auki ilman että sitä pyydettiin');
+  }
+  byId.get('job-log-toggle').dispatchEvent({ type: 'click' });
+  if (byId.get('job-log').classList.contains('hidden')) {
+    throw new Error('loki ei avaudu napista');
   }
 
   // Kaikki luodut napit painetaan. Käsittelijä joka viittaa olemattomaan

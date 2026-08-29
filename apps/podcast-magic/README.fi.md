@@ -19,6 +19,11 @@ istuntotiedosto, kaksi työkalua — ja tilaa kolmannelle.
 
 macOS ja [uv](https://docs.astral.sh/uv/). Tyhjästä kloonista ikkunaan:
 
+*(Julkaistut paketit käännetään macOS:lle, Windowsille ja Linuxille.
+Metal-kiihdytys on Apple Siliconin asia — muualla moottori on
+`faster-whisper` suorittimella, ja Linuxilla käyttöliittymä avautuu
+selaimeen natiivin ikkunan sijaan.)*
+
 ```
 git clone https://github.com/ollisulopuisto/podcast
 cd podcast

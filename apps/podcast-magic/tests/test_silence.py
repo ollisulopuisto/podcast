@@ -167,5 +167,7 @@ def test_presets_match_the_notebook():
 
 
 def test_settings_are_clamped():
-    settings = Settings.from_dict({"tail": 99, "gap": -3, "threshold": 40})
-    assert settings.tail == 5.0 and settings.gap == 0.0 and settings.threshold == 0.0
+    settings = Settings.from_dict({"tail": 99, "gap": -3, "sensitivity": 40})
+    # Herkkyys on marginaali pohjan yli, joten sen katto on 24 dB eikä nolla:
+    # sitä leveämpi ei enää erottele, samasta syystä kuin `dominance`illa.
+    assert settings.tail == 5.0 and settings.gap == 0.0 and settings.sensitivity == 24.0

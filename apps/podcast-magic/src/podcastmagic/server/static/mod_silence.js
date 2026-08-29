@@ -16,7 +16,7 @@
       tail: Number(root.querySelector('#si-tail').value),
       gap: Number(root.querySelector('#si-gap').value),
       rms: root.querySelector('#si-rms').checked,
-      threshold: Number(root.querySelector('#si-threshold').value),
+      sensitivity: Number(root.querySelector('#si-sensitivity').value),
       dominance: Number(root.querySelector('#si-dominance').value),
     };
   }
@@ -103,28 +103,36 @@
       ]);
 
       root.appendChild(PM.el('h2', { text: PM.t('si.run') }));
-      root.appendChild(PM.el('label', { class: 'field' }, [
-        PM.el('span', { text: PM.t('si.preset') }), presetSelect,
-      ]));
-      root.appendChild(slider('si-tail', PM.t('si.tail'), PM.t('si.tailWhy'),
-                              saved.tail, 0, 2, 0.1, 's'));
-      root.appendChild(slider('si-gap', PM.t('si.gap'), PM.t('si.gapWhy'),
-                              saved.gap, 0, 2, 0.1, 's'));
-      root.appendChild(PM.el('label', { class: 'check' }, [
-        PM.el('input', { type: 'checkbox', id: 'si-rms', ...(saved.rms ? { checked: true } : {}) }),
-        PM.el('span', { class: 'body' }, [
-          PM.el('span', { text: PM.t('si.rms') }),
-          PM.el('span', { class: 'why', text: PM.t('si.rmsWhy') }),
+
+      /* Ajastus vasemmalle, tason tarkistus oikealle. Kynnys ja erotus ovat
+         tason tarkistuksen säätimiä eivätkä omiaan, joten ne ovat sen
+         kanssa samassa sarakkeessa. */
+      const left = PM.el('div', {}, [
+        PM.el('label', { class: 'field' }, [
+          PM.el('span', { text: PM.t('si.preset') }), presetSelect,
         ]),
-      ]));
-      root.appendChild(slider('si-threshold', PM.t('si.threshold'), '',
-                              saved.threshold, -60, -10, 1, 'dB'));
-      // Ylärajaksi 24: mitattu ero oman puheen ja vuodon välillä on
-      // mediaanissa 12,8 dB, joten sitä leveämpi kaista ei enää erottele.
-      // Nolla on «pois», ja se on kaistan alapää eikä oma valintansa.
-      root.appendChild(slider('si-dominance', PM.t('si.dominance'),
-                              PM.t('si.dominanceWhy'),
-                              saved.dominance, 0, 24, 1, 'dB'));
+        slider('si-tail', PM.t('si.tail'), PM.t('si.tailWhy'), saved.tail, 0, 2, 0.1, 's'),
+        slider('si-gap', PM.t('si.gap'), PM.t('si.gapWhy'), saved.gap, 0, 2, 0.1, 's'),
+      ]);
+      const right = PM.el('div', { class: 'right' }, [
+        PM.el('label', { class: 'check' }, [
+          PM.el('input', { type: 'checkbox', id: 'si-rms', ...(saved.rms ? { checked: true } : {}) }),
+          PM.el('span', { class: 'body' }, [
+            PM.el('span', { text: PM.t('si.rms') }),
+            PM.el('span', { class: 'why', text: PM.t('si.rmsWhy') }),
+          ]),
+        ]),
+        // 0–24 dB pohjan yli. Ylärajaksi 24 samasta syystä kuin
+        // `dominance`illa: sitä leveämpi kaista ei enää erottele mitään.
+        slider('si-sensitivity', PM.t('si.sensitivity'), PM.t('si.sensitivityWhy'),
+               saved.sensitivity, 0, 24, 1, 'dB'),
+        // Ylärajaksi 24: mitattu ero oman puheen ja vuodon välillä on
+        // mediaanissa 12,8 dB, joten sitä leveämpi kaista ei enää erottele.
+        // Nolla on «pois», ja se on kaistan alapää eikä oma valintansa.
+        slider('si-dominance', PM.t('si.dominance'), PM.t('si.dominanceWhy'),
+               saved.dominance, 0, 24, 1, 'dB'),
+      ]);
+      root.appendChild(PM.el('div', { class: 'cols' }, [left, right]));
 
       // Esivalinta asettaa säätimet; säätimen liikuttaminen tekee valinnasta
       // «oma». Kumpikaan suunta ei saa valehdella toisesta.
@@ -132,7 +140,8 @@
         const preset = state.info.presets[presetSelect.value];
         if (!preset) return;
         for (const [id, value] of Object.entries({
-          'si-tail': preset.tail, 'si-gap': preset.gap, 'si-threshold': preset.threshold,
+          'si-tail': preset.tail, 'si-gap': preset.gap,
+          'si-sensitivity': preset.sensitivity,
           'si-dominance': preset.dominance,
         })) {
           const input = root.querySelector(`#${id}`);
@@ -180,7 +189,7 @@
     for (const [name, preset] of Object.entries(presets)) {
       const same = Math.abs(preset.tail - settings.tail) < 0.001
         && Math.abs(preset.gap - settings.gap) < 0.001
-        && Math.abs(preset.threshold - settings.threshold) < 0.001
+        && Math.abs(preset.sensitivity - settings.sensitivity) < 0.001
         && Math.abs(preset.dominance - settings.dominance) < 0.001
         && !!preset.rms === !!settings.rms;
       if (same) return name;
