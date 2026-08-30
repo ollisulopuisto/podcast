@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+
 PROJECT_W = 1080
 PROJECT_H = 1920
 
@@ -73,3 +75,46 @@ def plan_shot(cx: float, width: int, height: int) -> Reframe | None:
     cx = min(0.5 + half_gap, max(0.5 - half_gap, cx))
     pos_x = -(cx - 0.5) * displayed_w / PROJECT_H * 100
     return Reframe(scale=extra, pos_x=pos_x)
+
+
+class Reframer:
+    """Mitatus → kehys. Lukematon luokka: taulukot ovat muistissa.
+
+    ``tables`` on sama sanakirja jonka reaktiokerroksen mittaus tuottaa:
+    median avain → ``{"times", "found", "cx", …}``-taulukko. Vastaa kuvaa
+    kohden ``None``illa kun kehystä ei ole — mittaamaton kuva saa
+    letterboxin eikä arvausta, ja siitä kerrotaan viennin varoituksissa.
+    """
+
+    def __init__(self, tables: dict):
+        self.tables = tables
+
+    def from_item(
+        self,
+        item,
+        t0: float,
+        t1: float,
+    ) -> Reframe | None:
+        """Kehys yhdelle klipille: mediaanikasvo klipin omilta riveiltä.
+
+        ``t0``/``t1`` ovat aikajanan sekunteja; ne käännetään tiedoston
+        sekunteiksi sijoituksen kautta (``file_time_at``), ja taulukon
+        rivit otetaan kestosta pienellä toleranssilla molemmin puolin.
+        """
+        table = self.tables.get(item.key)
+        if table is None or not item.width or not item.height:
+            return None
+        f0 = item.file_time_at(t0)
+        f1 = item.file_time_at(t1)
+        if f0 is None or f1 is None:
+            return None
+        rows = (
+            (table["times"] >= f0 - EPS_S)
+            & (table["times"] < f1 + EPS_S)
+            & table["found"]
+        )
+        if int(rows.sum()) < MIN_SAMPLES:
+            return None
+        return plan_shot(
+            float(np.median(table["cx"][rows])), item.width, item.height
+        )
