@@ -173,6 +173,23 @@ def _quantize(
     return spans
 
 
+def _merge_spans(
+    spans: list[tuple[Segment, int, int]],
+) -> list[tuple[Segment, int, int]]:
+    """Yhdistää peräkkäiset samasta kulmasta/lähteestä tulevat kehysvälit."""
+    merged: list[tuple[Segment, int, int]] = []
+    for seg, a, b in spans:
+        if b <= a:
+            continue
+        if merged and merged[-1][0].angle == seg.angle and merged[-1][2] == a:
+            prev_seg, prev_a, _ = merged[-1]
+            merged[-1] = (prev_seg, prev_a, b)
+        else:
+            merged.append((seg, a, b))
+    return merged
+
+
+
 # ------------------------------------------------------- säätimet ulos XML:ään
 
 # Metatiedon avainten etuliite. Käänteinen nimiavaruus on Applen tapa
@@ -406,6 +423,7 @@ def build_fcpxml(
         raise WriteError(t("write.zero_duration"))
 
     spans = _quantize(segments, program_start, program_frames, frame_duration)
+    spans = _merge_spans(spans)
     if not spans:
         raise WriteError(t("write.cuts_collapsed"))
     used_segments = [segment for segment, _, _ in spans]
@@ -682,6 +700,60 @@ def _split_spans(spans, marks: list[int]):
                 cursor = mark
         out.append((segment, cursor, b))
     return [(s, x, y) for s, x, y in out if y > x]
+
+
+def _merge_multicam_spans(
+    spans: list[tuple[Segment, int, int]],
+    timeline,
+    angles_of: dict[str, list[str]],
+    program_start: Fraction,
+    frame_duration: Fraction,
+) -> list[tuple[Segment, int, int]]:
+    """Yhdistää peräkkäiset samasta videolähteestä/kulmasta tulevat kehysvälit.
+
+    Jos kaksi peräkkäistä jaksoa viittaavat samaan multicamiin ja sen samaan
+    videokulmaan, ne yhdistetään yhdeksi klipiksi ennen FCPXML-vientiä. Tämä
+    estää turhat leikkaukset, jotka 9:16 Smart Conform -muunnoksessa voisivat
+    aiheuttaa eri rajauksen samalle kameralle.
+    """
+    merged: list[tuple[Segment, int, int]] = []
+    for seg, a, b in spans:
+        if b <= a:
+            continue
+        at = program_start + frame_duration * a
+        mc = timeline.multicam_at(at)
+        video_angle = ""
+        mc_id = None
+        if mc is not None:
+            mc_id = mc.media_id
+            own = set(mc.angle_ids)
+            video_angle = next((x for x in angles_of.get(seg.angle, []) if x in own), "")
+
+        if merged and merged[-1][2] == a:
+            prev_seg, prev_a, _ = merged[-1]
+            prev_at = program_start + frame_duration * prev_a
+            prev_mc = timeline.multicam_at(prev_at)
+            prev_video_angle = ""
+            prev_mc_id = None
+            if prev_mc is not None:
+                prev_mc_id = prev_mc.media_id
+                prev_own = set(prev_mc.angle_ids)
+                prev_video_angle = next(
+                    (x for x in angles_of.get(prev_seg.angle, []) if x in prev_own), ""
+                )
+
+            if (mc is None and prev_mc is None) or (
+                mc is not None
+                and prev_mc is not None
+                and mc_id == prev_mc_id
+                and video_angle == prev_video_angle
+            ):
+                merged[-1] = (prev_seg, prev_a, b)
+                continue
+
+        merged.append((seg, a, b))
+    return merged
+
 
 
 def _pan_line(indent: str, amount: float) -> list[str]:
@@ -1225,10 +1297,12 @@ def build_multicam_fcpxml(
     spans = _split_spans(
         spans, _boundaries(timeline, program_start, frame_duration, program_frames)
     )
+    angles_of = {t.key: t.angle_ids for t in timeline.tracks}
+    spans = _merge_multicam_spans(
+        spans, timeline, angles_of, program_start, frame_duration
+    )
     if not spans:
         raise WriteError(t("write.cuts_collapsed"))
-
-    angles_of = {t.key: t.angle_ids for t in timeline.tracks}
 
     # Käsitelty ääni ohjataan resurssitasolla: kulmat ja mc-sourcet viittaavat
     # assettiin, joten yksi src riittää eikä leikkauslistaan tarvitse koskea.
