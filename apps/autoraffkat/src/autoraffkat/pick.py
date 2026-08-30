@@ -184,6 +184,20 @@ def native(directory: str = "", force: bool = False) -> str | None:
     return None
 
 
+def native_folder(directory: str = "", force: bool = False) -> str | None:
+    """Finderin hakemiston valintaikkuna."""
+    if sys.platform != "darwin":
+        return None
+    if not force and not interactive():
+        return None
+    prompt = '"Valitse mediatiedostojen kansio"'
+    start = f'default location POSIX file "{directory}"' if directory else ""
+    result = _osascript(_CHOOSE_FOLDER.format(prompt=prompt, start=start))
+    if result:
+        return os.path.abspath(result.rstrip("/"))
+    return None
+
+
 def pick(directory: str) -> str | None:
     """Lähde ilman argumenttia: yksi löytyi, useampi kysytään, tyhjästä ikkuna."""
     found = candidates(directory)

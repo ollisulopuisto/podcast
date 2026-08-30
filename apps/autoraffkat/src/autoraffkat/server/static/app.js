@@ -453,10 +453,20 @@ function trackCard(media, dest) {
 
   if (media.missing) {
     const gone = (media.parts || []).filter((p) => p.missing).map((p) => p.path);
-    card.append(Object.assign(document.createElement('div'), {
-      className: 'warn',
-      textContent: T('app.missingFile', { paths: gone.join(', ') || media.path }),
-    }));
+    const warnEl = document.createElement('div');
+    warnEl.className = 'warn';
+    warnEl.textContent = T('app.missingFile', { paths: gone.join(', ') || media.path });
+    const relinkBtn = document.createElement('button');
+    relinkBtn.type = 'button';
+    relinkBtn.className = 'ghost small';
+    relinkBtn.style.marginTop = '4px';
+    relinkBtn.textContent = T('app.relink');
+    relinkBtn.addEventListener('click', (e) => {
+      if (e.stopPropagation) e.stopPropagation();
+      relinkFiles();
+    });
+    warnEl.append(document.createElement('br'), relinkBtn);
+    card.append(warnEl);
   } else if (media.envelope_error) {
     card.append(Object.assign(document.createElement('div'),
       { className: 'warn', textContent: media.envelope_error }));
@@ -2369,6 +2379,11 @@ function renderHeader() {
                 T('meta.tracks', { n: state.tracks.length })];
   if (state.parts > 1) bits.push(T('meta.parts', { n: state.parts }));
   $('project-meta').textContent = bits.join(' · ');
+
+  const hasMissing = (state.tracks || []).some((t) => t.missing);
+  const relinkBtn = $('relink');
+  if (relinkBtn) relinkBtn.classList.toggle('hidden', !hasMissing);
+
   /* Polut omille riveilleen: yhdellä rivillä ne kietoutuvat toisiinsa eikä
      kumpaakaan pysty lukemaan. */
   const paths = $('paths');
@@ -2403,18 +2418,17 @@ function watchProgress() {
       const fresh = data.tracks.find((x) => x.key === m.key);
       if (fresh) m.envelope_error = fresh.envelope_error;
     });
-    const p = data.progress;
-    if (p.ready) {
+    if (state.progress.ready) {
       clearInterval(progressTimer);
-      $('status').textContent = '';
       setBusy($('reload'), false);
-      renderTracks();
+      $('status').textContent = '';
       send();
     } else {
-      $('status').textContent = T('app.envelopes', { done: p.done, total: p.total })
-        + (p.current ? ' · ' + p.current : '');
+      $('status').textContent = T('app.envelopes', {
+        done: state.progress.done, total: state.progress.total,
+      });
     }
-  }, 400);
+  }, 300);
 }
 
 /* Kielivalitsin otsikkoon. Kieli tallentuu asetuksiin ja periytyy jaksosta
@@ -2460,6 +2474,8 @@ function renderStatic() {
   });
   $('open').innerHTML = `${T('app.open')} <kbd>⌘O</kbd>`;
   $('reload').textContent = T('app.reload');
+  const relinkBtn = $('relink');
+  if (relinkBtn) relinkBtn.textContent = T('app.relink');
   $('export').innerHTML = `${T('app.export')} <kbd>⌘E</kbd>`;
 }
 
@@ -2521,6 +2537,56 @@ async function openXml(path) {
   if (state.progress && state.progress.ready) send();
 }
 
+async function relinkFiles(searchDir) {
+  const button = $('relink');
+  if (!searchDir && typeof window !== 'undefined' && window.pywebview && window.pywebview.api) {
+    try {
+      searchDir = await window.pywebview.api.open_folder_dialog();
+    } catch (err) {
+      console.error(err);
+    }
+  }
+  if (!searchDir) {
+    try {
+      const res = await fetch('/api/pick-folder', { method: 'POST' });
+      const data = await res.json();
+      if (!data.unavailable && data.path) {
+        searchDir = data.path;
+      }
+    } catch (err) {
+      // ignore
+    }
+  }
+  if (button) setBusy(button, true, T('app.relinking'));
+  try {
+    const res = await fetch('/api/relink', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ search_dir: searchDir || '' }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      banner(data.detail || T('app.relinkNotFound'), true);
+      return;
+    }
+    if (data.relinked > 0) {
+      banner(T('app.relinkedCount', { n: data.relinked }), false);
+      state = await (await fetch('/api/state')).json();
+      renderHeader();
+      renderTracks();
+      renderGlobals();
+      watchProgress();
+      if (state.progress && state.progress.ready) send();
+    } else {
+      banner(T('app.relinkNotFound'), true);
+    }
+  } catch (err) {
+    banner(err.message || T('app.relinkNotFound'), true);
+  } finally {
+    if (button) setBusy(button, false);
+  }
+}
+
 async function boot() {
   state = await (await fetch('/api/state')).json();
   setLang(state.language || 'fi');
@@ -2537,6 +2603,8 @@ async function boot() {
 
 $('open').addEventListener('click', () => openXml());
 $('export').addEventListener('click', exportXml);
+const relinkBtnEl = $('relink');
+if (relinkBtnEl) relinkBtnEl.addEventListener('click', () => relinkFiles());
 /* Lukeminen jatkuu verhokäyrien laskentana taustalla, joten painike vapautuu
    vasta kun se on ohi — ei kun pyyntö palaa. Muuten nappi näyttäisi
    valmiilta samalla kun tilarivi laskee vielä käyriä, ja uusi klikkaus

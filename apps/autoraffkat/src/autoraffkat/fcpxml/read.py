@@ -713,7 +713,7 @@ def read_fcpxml(path: str) -> Timeline:
     if ctx.multicams:
         kind = "multicam"
 
-    return Timeline(
+    tl = Timeline(
         media=media,
         frame_duration=frame_duration,
         kind=kind,
@@ -722,3 +722,8 @@ def read_fcpxml(path: str) -> Timeline:
         tracks=tracks,
         multicams=ctx.multicams,
     )
+    if any(not m.path or not os.path.exists(m.path) for m in media):
+        from ..relink import relink_timeline
+
+        relink_timeline(tl, xml_path=path)
+    return tl
