@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [autoraffkat-v2026.8.30.2] - 2026-08-30
+
+### Added
+- **Micro-movement for Vertical Exports** (`movement.py`): a toggle, off by default, that plans a subtle deterministic scale treatment over the spine — perceived as camera variation, never seen as zoom.
+  - **Scale only.** 100–106 % total, short cuts (< 3 s) static, longer clips get a slow 2–5 % push/pull (2–3 % for medium shots). Position is never written: Smart Conform's reframing stays authoritative, and in a 9:16 crop a horizontal nudge pushes the speaker off centre.
+  - **Not metronomic.** Adjacent clips stay within a 3-point scale jump, identical framing never repeats more than twice, and push/pull alternation is drawn, not cycled. Same seed, same plan — a re-export reproduces the file; a new seed is a new cut.
+  - **On the angle, not the clip.** The transform lives on the video `mc-source`, because the DTD gives `mc-clip` no `adjust-transform` — on the clip it would kill the whole import, the `tcFormat` failure again. Keyframe form is Apple's own example: x-y fraction pairs, clip-local times, DTD-default `curve="smooth"` for the easing.
+  - **Identity writes nothing.** Wides and 1.00-scale clips get no element, and the switch off produces byte-for-byte the file the tool produced before. Validated against Final Cut's own v1.10 DTD with movement on, flat and multicam.
+  - Wides carry their label («Laaja») as a keyword, which is how a batch of wide shots is selected in the Final Cut index — and the movement planner leaves them still. The export name carries `move` (e.g. «jakso-cut broadcast move») so the two flavours of the same cut stay apart in the browser; the note and `<metadata>` record the setting.
+
 ## [autoraffkat-v2026.8.28.2] - 2026-08-28
 
 ### Added

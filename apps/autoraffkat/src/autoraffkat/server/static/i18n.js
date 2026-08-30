@@ -52,6 +52,15 @@ const STRINGS = {
     'panning.right': 'oikealla',
     'panning.centre': 'keskellä',
     'panning.looking': 'Katsotaan kuvasta…',
+    'movement.title': 'Mikroliike',
+    'movement.hint': 'Valekameraa pystyvientiin: kuvat saavat hienovaraisen, toistettavan skaalauksen jo tuontiin.',
+    'why.movement': 'Liike on pelkkää skaalaa — paikkaa ei kosketeta, jotta '
+      + 'Smart Confin kuvaajasijainti pysyy aitorivinä. Lyhyet kuvat jäävät '
+      + 'paikalleen, pitkät saavat hitaan 2–5 % puskun, ja skaala pysyy '
+      + '100–106 %:ssa: zoomin ei saa näkyä, sen on tuntua kameran '
+      + 'vaihtelulta. Laajat jäävät liikkeettömiksi, ja jokaisella kuvalla on '
+      + 'avainsana (puhujan nimi tai «Laaja») jolla ne saa Final Cutin '
+      + 'hakemistosta valittua.',
     'why.panning': 'Paikka mitataan pään asennosta: vastakkain istuvat katsovat '
       + 'toisiaan, joten vasemmalla istuva katsoo oikealle. Paikat jaetaan tasan '
       + 'järjestyksen mukaan — kulma kertoo järjestyksen mutta ei etäisyyttä. '
@@ -387,6 +396,14 @@ const STRINGS = {
     'panning.right': 'right',
     'panning.centre': 'centre',
     'panning.looking': 'Looking at the picture…',
+    'movement.title': 'Micro-movement',
+    'movement.hint': 'Virtual camera for vertical exports: clips get a subtle, repeatable scale treatment already on import.',
+    'why.movement': 'The movement is scale only — position is never touched, so '
+      + 'Smart Conform reframing stays authoritative. Short cuts stay put, '
+      + 'longer clips get a slow 2–5% push, and scale stays within 100–106%: '
+      + 'the zoom should never be seen, only felt as camera variation. Wide '
+      + 'shots stay still, and every clip carries a keyword (the speaker name '
+      + 'or «Laaja») for selecting them in the Final Cut index.',
     'why.panning': 'The position is measured from head direction: people sitting '
       + 'opposite each other look at each other, so the one on the left looks '
       + 'right. Positions are spread evenly by order — the angle gives the '

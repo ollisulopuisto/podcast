@@ -98,6 +98,11 @@ def name_tag(settings: ProjectSettings) -> str:
         parts.append(g.overlap_rule)
     if g.long_take_rule != LONGTAKE_RETURN:
         parts.append(g.long_take_rule)
+    # Mikroliike on tyylivalinta joka vaihtaa koko leikkauksen luonteen:
+    # samasta jaksosta syntyy nyt kaksi tiedostoa, eikä Final Cutin
+    # selaimessa saa jäädä epäselväksi kumpi niistä liikkuu.
+    if g.movement:
+        parts.append("move")
     if settings.audio.enabled:
         parts.append("audio")
     return " ".join(parts)

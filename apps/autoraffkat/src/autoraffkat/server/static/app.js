@@ -778,6 +778,21 @@ function renderGlobals() {
     body: (body, mark) => { panningBody(body, mark, video); },
   }).row);
 
+  /* Mikroliike: valekameraa pystyvientiä varten. Skaalaus kirjoitetaan
+     vientiin klippien keyframeineen, joten Final Cut nielee zoomit jo
+     tuonnissa. Paikkaa ei kosketeta — se kuuluu Smart Conformille. */
+  rows.append(settingRow({
+    key: 'movement',
+    label: T('movement.title'),
+    hint: T('movement.hint'),
+    value: state.globals.movement ? T('panning.on') : T('audio.off'),
+    toggle: {
+      checked: state.globals.movement,
+      onChange: (on) => { state.globals.movement = on; renderGlobals(); schedule(0); },
+    },
+    body: (body) => { movementBody(body); },
+  }).row);
+
   const overlapChosen = OVERLAP_RULES()
     .find(([value]) => value === state.globals.overlap_rule);
   rows.append(settingRow({
@@ -929,6 +944,18 @@ function panningBody(host, mark, video) {
       .join(' · ');
     host.append(list);
   }
+}
+
+
+/* Mikroliikkeen runko. Ei säätimiä: rajat ovat «movement.py»ssä mittauksineen
+   ja «kuinka paljon liike» on kysymys johon käyttäjällä ei ole vastausta —
+   sama rivi kuin panoroinnin leveys. Runko kertoo mitä tehdään, jotta
+   kytkimen voi arvioida ennen vientiä. */
+function movementBody(host) {
+  const note = document.createElement('p');
+  note.className = 'why';
+  note.textContent = T('why.movement');
+  host.append(note);
 }
 
 

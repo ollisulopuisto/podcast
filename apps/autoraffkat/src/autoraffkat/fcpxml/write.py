@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from urllib.request import pathname2url
 from xml.sax.saxutils import escape, quoteattr
 
-from .. import __version__
+from .. import __version__, movement
 from ..audio.mix import ROOM_ROLE
 from ..decide import WIDE_LABEL
 from ..i18n import t
@@ -238,6 +238,7 @@ def settings_note(settings: "ProjectSettings", source: str = "") -> str:
         overlap=t(f"overlap.{g.overlap_rule}"),
         longtake=t(f"longtake.{g.long_take_rule}"),
         audio=t("export.audio_on" if settings.audio.enabled else "export.audio_off"),
+        movement=t("export.movement_on" if g.movement else "export.movement_off"),
         source=os.path.basename(source),
     )
 
@@ -266,6 +267,7 @@ def settings_metadata(settings: "ProjectSettings", source: str = "") -> list[str
         _md("wide_every", _number(g.wide_every), "float"),
         _md("wide_hold", _number(g.wide_hold), "float"),
         _md("long_take_rule", g.long_take_rule),
+        _md("movement", "1" if g.movement else "0", "boolean"),
         _md("audio.enabled", "1" if settings.audio.enabled else "0", "boolean"),
         _md(
             "settings",
@@ -517,6 +519,7 @@ def build_fcpxml(
     # ---------------------------------------------------------- spine
     body: list[str] = []
     first_clip_start_frames = 0
+    moves = _movement_plan(spans, frame_duration, settings)
     for index, (seg, a, b) in enumerate(spans):
         item = media_by_key[seg.angle]
         seg_start_tl = program_start + frame_duration * a
@@ -543,9 +546,16 @@ def build_fcpxml(
         if src_enable:
             attrs.append(f'srcEnable="{src_enable}"')
         clip = "            <asset-clip " + " ".join(attrs)
+        # Mikroliike menee suoraan kuvalle, ennen kiinnitettyjä mikkejä:
+        # DTD asettaa intrinsic-params-sisällön ennen ankkuroituja klippejä.
+        transform = (
+            _movement_lines(moves[index], b - a, frame_duration, "              ")
+            if moves else []
+        )
 
         if index == 0 and (mic_tracks or room_ids):
             body.append(clip + ">")
+            body += transform
             attached = [
                 (k, f"dialogue.{sanitize_role(name)}", res_ids, False)
                 for k, name in mic_tracks
@@ -568,6 +578,10 @@ def build_fcpxml(
                 program_end,
                 first_clip_start_frames,
             )
+            body.append("            </asset-clip>")
+        elif transform:
+            body.append(clip + ">")
+            body += transform
             body.append("            </asset-clip>")
         else:
             body.append(clip + "/>")
@@ -820,6 +834,66 @@ def _volume_lines(indent: str, points: list, low, high, mc,
     return lines
 
 
+def _movement_plan(
+    spans: list, frame_duration: Fraction, settings: "ProjectSettings | None",
+) -> list[movement.Move]:
+    """Mikroliikkeen suunnitelma kuville, tai tyhjä lista jos kytkin on pois.
+
+    Kestot ovat kvantisoitujen spanien kestot sekunteina — sama luku joka
+    klippiin kirjoitetaan — ja laajuus luetaan segmentin nimestä, samasta
+    josta esikatselu ja avainsanakin: ``WIDE_LABEL``.
+    """
+    if settings is None or not settings.globals.movement:
+        return []
+    return movement.plan(
+        [float(frame_duration * (b - _a)) for _seg, _a, b in spans],
+        [seg.label == WIDE_LABEL for seg, _a, _b in spans],
+    )
+
+
+def _movement_lines(
+    move: movement.Move,
+    frames: int,
+    frame_duration: Fraction,
+    indent: str,
+) -> list[str]:
+    """``<adjust-transform>`` yhdelle kuvalle, tai ei mitään.
+
+    Paikallaan pysyvä kehys on attribuutti, liike on ``<param
+    name="scale">`` keyframeineen. Apple esittää muodon omassa esimerkissään:
+    keyframen arvo ohittaa attribuutin, arvo on x-y-pari murto-osana
+    (1 = 100 %), ja ajat ovat klipin omaa aikaa nollasta kestoon — sama
+    paikallinen aikakanta kuin ``adjust-volume``n keyframeilla. Interpolaatio
+    jätetään DTD:n oletukseen (``curve="smooth"``): pehmeä käyrä on juuri se
+    mikä erottaa valekameran lineaarisesta zoomista.
+
+    Identtinen ykkönen ei kirjoita mitään: tyhjä asetus olisi Final Cutille
+    asetus siinä missä mikä tahansa, samasta syystä kuin panoroinnissa.
+    """
+    if move.identity:
+        return []
+
+    def _pair(value: float) -> str:
+        return f"{_number(value)} {_number(value)}"
+
+    if not move.animated:
+        return [
+            f'{indent}<adjust-transform scale="{_pair(move.start_scale)}"/>',
+        ]
+    return [
+        f"{indent}<adjust-transform>",
+        f'{indent}  <param name="scale">',
+        f"{indent}    <keyframeAnimation>",
+        f'{indent}      <keyframe time="{frames_str(0, frame_duration)}" '
+        f'value="{_pair(move.start_scale)}"/>',
+        f'{indent}      <keyframe time="{frames_str(frames, frame_duration)}" '
+        f'value="{_pair(move.end_scale)}"/>',
+        f"{indent}    </keyframeAnimation>",
+        f"{indent}  </param>",
+        f"{indent}</adjust-transform>",
+    ]
+
+
 def _mc_sources(
     video_angle: str,
     audio_angles: list[tuple[str, str]],
@@ -830,6 +904,7 @@ def _mc_sources(
     span: tuple | None = None,
     mc=None,
     frame_duration=None,
+    transform: list[str] | None = None,
 ) -> list[str]:
     """``<mc-source>``-rivit: yksi kuva, loput ääntä omilla rooleillaan.
 
@@ -840,6 +915,11 @@ def _mc_sources(
     raakana ja vaimennettuna. Oma aliroolinsa siksi, että jos sen kytkee
     päälle, sitä pitää voida säätää erikseen — muuten se summautuisi
     käsitellyn kanssa samaan liukuun.
+
+    ``transform`` on kuvakulman ``adjust-transform`` (mikroliike). Se tulee
+    roolin jälkeen, koska DTD vaatii järjestyksen: ``mc-source
+    (audio-role-source*, %intrinsic-params-video;, …)``. Koko ``mc-clip``in
+    muunnos ei ole vaihtoehto — se ei mahdu DTD:hen lainkaan.
     """
     lines: list[str] = []
     if video_angle:
@@ -847,6 +927,7 @@ def _mc_sources(
         lines += [
             f'              <mc-source angleID={quoteattr(video_angle)} srcEnable="video">',
             f'                <audio-role-source role={quoteattr(role)} active="0"/>',
+            *(transform or []),
             "              </mc-source>",
         ]
     for angle_id, speaker in audio_angles:
@@ -1431,6 +1512,7 @@ def build_multicam_fcpxml(
     # joten reaktioklippi viittaa niihin sellaisenaan eikä uutta resurssia
     # tarvita. Tunnetut id:t poimitaan sieltä, jotta viittaus tuntemattomaan
     # assettiin jää tekemättä sen sijaan että se rikkoisi tuonnin.
+    moves = _movement_plan(spans, frame_duration, settings)
     for index, (seg, a, b) in enumerate(spans):
         at = program_start + frame_duration * a
         mc = timeline.multicam_at(at)
@@ -1462,6 +1544,11 @@ def build_multicam_fcpxml(
         sources = _mc_sources(
             video_angle, audio_angles, mc.angle_roles, raw_angles, pans,
             ducks, (at, program_start + frame_duration * b), mc, frame_duration,
+            transform=(
+                _movement_lines(moves[index], b - a, frame_duration,
+                                "                ")
+                if moves else []
+            ),
         )
         # Puhujan nimi avainsanaksi. Selaimessa monikameraklipin nimi on
         # median oma («A-osa»), joten kaikki kuvat näyttävät samalta;

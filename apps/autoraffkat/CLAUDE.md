@@ -996,6 +996,40 @@ modification time as a query parameter. Without it the browser serves an old
 stylesheet with a new script, and the layout breaks in a way nobody connects to
 caching. This happened once already.
 
+## Micro-movement is a transform on the angle, or nothing at all
+
+`movement.py` plans a subtle, deterministic scale treatment (100–106 %) for
+the vertical workflow: import the export, run Smart Conform, and the zooms
+are already there. Four rules hold it together:
+
+* **The transform goes on the video angle's `mc-source`, never on the
+  `mc-clip`.** The DTD gives `mc-clip` no `adjust-transform` at all —
+  `mc-source` is `audio-role-source*` *then* `%intrinsic-params-video;`, so
+  the transform comes after the muted role. Writing it on the clip would be
+  the `tcFormat` failure again: our reader accepts it and the whole import
+  dies. The flat export puts it directly on the `asset-clip`, before the
+  attached microphones.
+* **Identity writes nothing.** A clip whose move is exactly 1.00 gets no
+  `adjust-transform` — an empty element is a setting as far as Final Cut is
+  concerned, the same rule as a zero pan. The switch off must produce
+  byte-for-byte the file the tool produced before the feature existed.
+* **The thresholds are not controls.** Amount, jump ceiling, repeat limit,
+  the animation threshold and the seed live in `movement.py` with their
+  reasoning; the interface has the switch and nothing else. "How much
+  movement" is the same kind of question as "how much panning", and it gets
+  the same answer.
+* **Scale only, and wides stay still.** Position is never written — Smart
+  Conform's framing is the authority, and in a 9:16 crop a horizontal
+  nudge pushes the subject off centre. A wide already *is* the room, so it
+  gets no movement; it carries its label as a keyword («Laaja»), which is
+  how a batch of wide shots is selected in Final Cut's index.
+
+The keyframe form is Apple's own example, not a guess: `param
+name="scale"` in x-y pairs as fractions (1 = 100 %), times in the clip's
+own base from zero to the clip's length, interpolation left at the DTD's
+`curve="smooth"` default — the softness is the feature. The keyframe
+overrides the attribute, so the attribute carries the static case.
+
 ## Tests
 
 `tests/make_fixture.py` synthesises the material with ffmpeg: sine bursts at

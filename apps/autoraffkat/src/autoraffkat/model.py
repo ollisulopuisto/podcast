@@ -243,6 +243,13 @@ class Globals:
     # käyttäjällä ei ole vastausta — «kuinka paljon panorointia» on juuri
     # se numero jonka tämä työkalu on olemassa päättämään.
     panning: bool = False
+    # Mikroliike: valekameraa pystyvideolle. Kuville kirjoitetaan hienovarainen
+    # pseudosatunnainen skaalaus (``movement.py``), jotta keskusrajattu
+    # leikkaus tuntuu kameran vaihtelulta eikä kuvaruudulta. Oletus pois:
+    # se on tyylivalinta jota ei kaikille jaksoille tehdä, ja pois päältä
+    # vienti on täsmälleen entisensä. Rajat eivät ole säätimiä — ks.
+    # ``movement.py``n docstring.
+    movement: bool = False
     # Painot. Näitä on tarkoitus säätää, ja siksi mittaukset ovat
     # välimuistissa pisteiden sijaan: säätö ei maksa uutta purkua.
     # Portin läpäisseiden järjestys. Suoruus edellä; loput pieninä, koska

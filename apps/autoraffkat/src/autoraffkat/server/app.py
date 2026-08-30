@@ -514,6 +514,8 @@ class AppState:
             # painamista ensin, eikä mikään kertoisi sitä.
             if g.panning and not was and not self.seating:
                 self.start_seating()
+        if "movement" in raw:
+            g.movement = bool(raw["movement"])
         if raw.get("overlap_rule") in OVERLAP_RULES:
             g.overlap_rule = raw["overlap_rule"]
         if raw.get("long_take_rule") in LONGTAKE_RULES:

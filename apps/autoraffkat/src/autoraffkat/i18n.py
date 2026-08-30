@@ -243,10 +243,12 @@ CATALOG: dict[str, dict[str, str]] = {
     "export.note": {
         "fi": "autoraffkat {version} · rytmi: {rhythm} · lyhin kuva {min_shot} s · "
         "ennakko {lead} s · häntä {hang} s · päällekkäispuhe: {overlap} · "
-        "pitkä puheenvuoro: {longtake} · mikit: {audio} · lähde: {source}",
+        "pitkä puheenvuoro: {longtake} · mikit: {audio} · mikroliike: {movement} · "
+        "lähde: {source}",
         "en": "autoraffkat {version} · rhythm: {rhythm} · shortest shot {min_shot} s · "
         "lead {lead} s · hang {hang} s · overlapping speech: {overlap} · "
-        "long turn: {longtake} · microphones: {audio} · source: {source}",
+        "long turn: {longtake} · microphones: {audio} · "
+        "micro-movement: {movement} · source: {source}",
     },
     "export.audio_on": {
         "fi": "käsitelty",
@@ -255,6 +257,14 @@ CATALOG: dict[str, dict[str, str]] = {
     "export.audio_off": {
         "fi": "käsittelemätön",
         "en": "unprocessed",
+    },
+    "export.movement_on": {
+        "fi": "valekamera",
+        "en": "on",
+    },
+    "export.movement_off": {
+        "fi": "ei",
+        "en": "off",
     },
     # Säätimien arvot muistiinpanossa. Sanamuodot ovat samat kuin
     # `static/i18n.js`:ssä; kaksi luetteloa siksi, että selain ei lue

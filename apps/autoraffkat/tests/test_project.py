@@ -271,3 +271,20 @@ def test_the_stamp_does_not_mangle_the_clock():
     assert stamp_now(when) == "1.9. 10:05"
     noon = _time.struct_time((2026, 12, 28, 9, 9, 0, 0, 363, -1))
     assert stamp_now(noon) == "28.12. 9:09"
+
+
+def test_name_tag_mentions_micro_movement(tmp_path):
+    """Liike on tyylivalinta joka vaihtaa koko leikkauksen luonteen.
+
+    Samasta jaksosta syntyy nyt kaksi tiedostoa, ja pelkkä numerointi ei
+    kerro kumpi niistä liikkuu: «jakso-cut v2» ja «jakso-cut move v2»
+    eroavat vasta nimessä, joka on se mikä Final Cutin selaimessa näkyy.
+    """
+    xml = tmp_path / "jakso.fcpxml"
+    plain = ProjectSettings()
+    moved = ProjectSettings(globals=Globals(movement=True))
+    assert project.name_tag(plain) == "broadcast"
+    assert project.name_tag(moved) == "broadcast move"
+    assert project.next_output_path(str(xml), "broadcast move") == str(
+        tmp_path / "jakso-cut broadcast move.fcpxml"
+    )

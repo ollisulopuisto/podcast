@@ -666,7 +666,8 @@ def _settings():
 
     settings = ProjectSettings(
         tracks={"MIC_A.wav": TrackConfig(role="mic", speaker="Host", gain_db=-3.0)},
-        globals=Globals(rhythm="hectic", min_shot=1.4, overlap_rule="louder"),
+        globals=Globals(rhythm="hectic", min_shot=1.4, overlap_rule="louder",
+                        movement=True),
     )
     settings.audio.enabled = True
     return settings
@@ -685,6 +686,7 @@ def test_note_says_what_the_settings_were(fixture_dir):
     note = ET.fromstring(xml).find(".//sequence/note").text
     assert "autoraffkat" in note
     assert "1.4" in note  # lyhin kuva
+    assert "valekamera" in note  # mikroliike päällä
 
 
 def test_metadata_carries_every_setting_back(fixture_dir):
@@ -702,6 +704,7 @@ def test_metadata_carries_every_setting_back(fixture_dir):
     assert md["fi.autoraffkat.rhythm"] == "hectic"
     assert md["fi.autoraffkat.min_shot"] == "1.4"
     assert md["fi.autoraffkat.overlap_rule"] == "louder"
+    assert md["fi.autoraffkat.movement"] == "1"
     assert md["fi.autoraffkat.audio.enabled"] == "1"
     assert md["fi.autoraffkat.source"] == "jakso.fcpxml"
 
@@ -1222,3 +1225,153 @@ def test_multicam_export_matches_timeline_frame_duration(fixture_dir):
 
 
 
+
+
+# ------------------------------------------------------------------ liike
+
+
+def _moved_settings():
+    from autoraffkat.model import Globals
+    from autoraffkat.project import ProjectSettings
+
+    return ProjectSettings(globals=Globals(movement=True))
+
+
+def _spine_mc_clips(xml):
+    return ET.fromstring(xml).findall(".//spine/mc-clip")
+
+
+def _plan_for(segments, frame_duration):
+    from autoraffkat import movement
+    from autoraffkat.decide import WIDE_LABEL
+
+    return movement.plan(
+        [seg.duration for seg in segments],
+        [seg.label == WIDE_LABEL for seg in segments],
+    )
+
+
+# Viisi kuvaa, eikä yksikään ylitä osien rajaa 18 s — rajan ylittävä kuva
+# pilkotaan kahdeksi klipiksi, ja silloin vientiä ei voi laskea näistä
+# segmenteistä vaan kirjoittajansa omista spaneista.
+_MOVEMENT_SPANS = [
+    Segment("WIDE", "Laaja", 0.0, 4.0),
+    Segment("CLOSE_A", "Host", 4.0, 12.0),
+    Segment("CLOSE_B", "Guest", 12.0, 18.0),
+    Segment("WIDE", "Laaja", 18.0, 30.0),
+    Segment("CLOSE_A", "Host", 30.0, 36.0),
+]
+
+
+def test_movement_scales_the_video_angle_not_the_clip(fixture_dir):
+    """Liike on kulman muoto, ei koko monikameraklipin.
+
+    DTD: ``mc-clip`` ei salli ``adjust-transform``ia lainkaan — sen
+    kirjoittaminen sinne tappaisi koko tuonnin, kuten kerran ``tcFormat``.
+    Kulman ``mc-source`` sen sijaan sallii sen, ja kulma on se mikä näkyy.
+    """
+    tl, xml = _multicam_cut(fixture_dir, segments=_MOVEMENT_SPANS,
+                            settings=_moved_settings())
+    clips = _spine_mc_clips(xml)
+    plan = _plan_for(_MOVEMENT_SPANS, tl.frame_duration)
+    checked = False
+    for clip, move in zip(clips, plan, strict=True):
+        assert clip.find("adjust-transform") is None, "koko klipin skaalaus"
+        if move.identity:
+            continue
+        source = clip.find('mc-source[@srcEnable="video"]')
+        # DTD: ``mc-source (audio-role-source*, %intrinsic-params-video;…)``
+        # — muunnos roolin jälkeen, ei ennen sitä.
+        kids = [c.tag for c in source]
+        assert "adjust-transform" in kids
+        assert kids.index("adjust-transform") > kids.index("audio-role-source")
+        checked = True
+    assert checked, "yksikään kuva ei saanut muunnosta"
+
+
+def test_movement_without_the_setting_writes_nothing(fixture_dir):
+    """Oletus on pois päältä, ja silloin liike ei muuta vientiä —
+    tyhjä asetus olisi Final Cutille asetus siinä missä mikä tahansa."""
+    from autoraffkat.model import Globals
+    from autoraffkat.project import ProjectSettings
+
+    _, off = _multicam_cut(
+        fixture_dir, segments=_MOVEMENT_SPANS,
+        settings=ProjectSettings(globals=Globals(movement=False)),
+    )
+    _, on = _multicam_cut(
+        fixture_dir, segments=_MOVEMENT_SPANS,
+        settings=ProjectSettings(globals=Globals(movement=True)),
+    )
+    assert on != off
+    assert "adjust-transform" not in off
+
+
+def test_wide_shots_get_no_transform_but_closes_do(fixture_dir):
+    """Laaja kertoo missä ollaan eikä kaipaa valekameraa — ja sillä on jo
+    avainsanansa (»Laaja»), jolla sen saa Final Cutin hakemistosta valittua."""
+    tl, xml = _multicam_cut(fixture_dir, segments=_MOVEMENT_SPANS,
+                            settings=_moved_settings())
+    clips = _spine_mc_clips(xml)
+    plan = _plan_for(_MOVEMENT_SPANS, tl.frame_duration)
+    for clip, move in zip(clips, plan, strict=True):
+        source = clip.find('mc-source[@srcEnable="video"]')
+        if move.identity:
+            assert source.find("adjust-transform") is None
+        else:
+            assert source.find("adjust-transform") is not None
+
+
+def test_static_framing_is_an_attribute_and_a_push_is_keyframes(fixture_dir):
+    """Paikallaan pysyvä kehys on attribuutti; liike on keyframeineen ja
+    leikkuuaika on klipin oma — nollasta kestoon, Final Cutin esimerkin
+    muodossa «s x y»-pareina."""
+    tl, xml = _multicam_cut(fixture_dir, segments=_MOVEMENT_SPANS,
+                            settings=_moved_settings())
+    clips = _spine_mc_clips(xml)
+    plan = _plan_for(_MOVEMENT_SPANS, tl.frame_duration)
+    checked = 0
+    for clip, move in zip(clips, plan, strict=True):
+        if move.identity:
+            continue
+        source = clip.find('mc-source[@srcEnable="video"]')
+        transform = source.find("adjust-transform")
+        checked += 1
+        if move.animated:
+            param = transform.find('param[@name="scale"]')
+            keyframes = param.findall("keyframeAnimation/keyframe")
+            assert len(keyframes) == 2
+            assert parse_time(keyframes[0].get("time")) == 0
+            # Keyframet ulottuvat klipin kestoon — ei yli eikä alle,
+            # sillä loppuun jäävä nousu olisi hyppäys seuraavaan kuvaan.
+            assert parse_time(keyframes[1].get("time")) == parse_time(
+                clip.get("duration"))
+            first = keyframes[0].get("value").split()
+            assert abs(float(first[0]) - move.start_scale) < 1e-6
+            last = keyframes[1].get("value").split()
+            assert abs(float(last[0]) - move.end_scale) < 1e-6
+        else:
+            assert transform.find("param") is None
+            scale = transform.get("scale").split()
+            assert abs(float(scale[0]) - move.start_scale) < 1e-6
+    assert checked, "yksikään kuva ei saanut käsittelyä"
+
+
+def test_moved_multicam_passes_the_fcp_dtd(fixture_dir, validate_fcpxml):
+    """Oma lukija hyväksyy enemmän kuin tuoja; DTD on se raja joka ratkaisee."""
+    _tl, xml = _multicam_cut(fixture_dir, segments=_MOVEMENT_SPANS,
+                             settings=_moved_settings())
+    validate_fcpxml(xml)
+
+
+def test_flat_export_moves_the_clip_itself(fixture_dir):
+    """Tasaviedossa kuva on ``asset-clip`` ja muunnos menee suoraan siihen —
+    ennen kiinnitettyjä mikkejä, koska DTD vaatii järjestyksen."""
+    tl, xml = _cut(fixture_dir, settings=_moved_settings())
+    clips = ET.fromstring(xml).findall(".//spine/asset-clip")
+    assert clips
+    for clip in clips:
+        kids = [c.tag for c in clip]
+        if "adjust-transform" in kids:
+            assert kids.index("adjust-transform") == 0, kids
+    _ = tl

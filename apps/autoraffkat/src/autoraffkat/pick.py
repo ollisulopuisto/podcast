@@ -42,7 +42,7 @@ def resolve(path: str) -> str:
 # Nimeen kirjoitettavat säätimet. Lista on tarkka eikä «mitä tahansa sanoja»:
 # muuten tunnus nielaisisi vieraat nimet, ja hakemistoon jätetty
 # "haastattelu-cut down.fcpxml" katoaisi lähdevalikosta.
-_TAG_WORDS = (*RHYTHM_PRESETS, *OVERLAP_RULES, *LONGTAKE_RULES, "audio")
+_TAG_WORDS = (*RHYTHM_PRESETS, *OVERLAP_RULES, *LONGTAKE_RULES, "audio", "move")
 
 # Oma vienti tunnuksineen: "jakso-cut.fcpxml", "jakso-cut hectic audio.fcpxml",
 # numeroituna "jakso-cut v3.fcpxml". Vanha suomenkielinen tunnus tunnistetaan

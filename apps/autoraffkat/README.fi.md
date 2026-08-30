@@ -231,6 +231,17 @@ keston, vaikka «Laajan kesto» olisi pienempi.
 Kaikkia kolmea koskee lyhin päällekkäispuheen kesto: ohikiitävä myötäily ei
 laukaise sääntöä.
 
+**Mikroliike** (oletuksena pois): pystyvientiä varten. Suunnitelma kirjoittaa
+jokaiselle kuvaklipille hienovaraisen, toistettavan skaalauksen — yhteensä
+100–106 %, lyhyet kuvat paikallaan, pidemmät hitaalla puskulla — jotta
+Smart Confin pystyrajaus tuntuu kameran vaihtelulta eikä kuvaruudulta.
+Paikkaa ei kosketeta (Smart Confin rajaus pysyy aitorivinä), laajat jäävät
+liikkeettömiksi, eivätkä vierekkäiset kuvat hyppää niin että siitä tulisi
+leikkaus. Samat asetukset antavat saman suunnitelman: uusinta tuottaa saman
+tiedoston. Viennin nimeen tulee `move`, jotta saman jaksoksi kaksi versiota
+erotuvat selaimessa, ja jokaisella klipillä on avainsana — puhujan nimi tai
+laajalla «Laaja» — jolla kuvajoukon valitsee Final Cutin hakemistosta.
+
 ## Säätäminen
 
 | Oire | Korjaus |
@@ -253,7 +264,8 @@ src/autoraffkat/
   audio/chain.py     kanavanauha: pedalboard + liitännäiset
   audio/mix.py       mitkä tiedostot, minne, synkan vahti     HIDAS
   analysis.py        verhokäyrät aikajanan ruudukolle
-  decide.py          kynnykset, kestot, päällekkäispuhe    NOPEA
+  decide.py          kynnykset, kestot, päällekkäispuhe      NOPEA
+  movement.py        pystyviennin mikroliikesuunnitelma      NOPEA
   preview.py         palkin tiivistys selaimelle
   project.py         asetukset JSONina XML:n viereen
   i18n.py            palvelimen viestit kahdella kielellä

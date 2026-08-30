@@ -228,6 +228,18 @@ Zero disables the rule. The wide never falls below the shortest shot, even if
 All three respect a minimum overlap duration: a fleeting "mm-hm" doesn't
 trigger the rule.
 
+**Micro-movement** (off by default): for vertical exports. The plan writes
+each spine clip a subtle, deterministic scale treatment — 100–106 % total,
+short cuts static, longer clips a slow push/pull — so a 9:16 Smart Conform
+cut feels like camera variation instead of a static centre crop. Position
+is never touched (Smart Conform's framing stays authoritative), wide shots
+stay still, and adjacent clips never jump far enough to read as a new edit.
+Same settings, same plan: a re-export reproduces the file. The export name
+carries `move` so the two versions of the same cut stay apart in the
+browser, and every clip carries a keyword — the speaker's name, or «Laaja»
+for the wide — which is how a batch of clips is selected in Final Cut's
+timeline index.
+
 ## Tuning
 
 | Symptom | Fix |
@@ -251,6 +263,7 @@ src/autoraffkat/
   audio/mix.py       which files, where, and the sync guard  SLOW
   analysis.py        envelopes onto the timeline grid
   decide.py          thresholds, durations, overlap rules    FAST
+  movement.py        vertical micro-movement plan            FAST
   preview.py         bar summarised for the browser
   project.py         settings as JSON beside the XML
   i18n.py            server messages in two languages

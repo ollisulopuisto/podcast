@@ -158,3 +158,10 @@ def test_a_foreign_word_after_the_suffix_is_still_a_source(tmp_path):
     """
     source = _touch(str(tmp_path / "haastattelu-cut down.fcpxml"))
     assert pick.candidates(str(tmp_path)) == [source]
+
+
+def test_movement_tagged_export_is_not_a_candidate(tmp_path):
+    """«move» on kirjoitettu tunnus, ei vieraan tiedoston sana."""
+    from autoraffkat.pick import _is_output
+
+    assert _is_output("jakso-cut broadcast move.fcpxml")
