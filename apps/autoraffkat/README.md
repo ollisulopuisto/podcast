@@ -144,8 +144,11 @@ Three kinds of source are supported:
 * **project timeline** (`project` > `sequence` > `spine`), laid out by hand
 * **multicam clip** (`mc-clip`), cameras and microphones as angles
 
-Sync is read from the XML, never recalculated. Frame rate comes from the
-sequence or the video asset's format.
+Sync is read from the XML, never recalculated. The frame rate is probed from
+the first video file that exists on disk; the sequence or asset format is
+consulted only when the media cannot be read, and 25 fps is the last resort.
+A format resource that disagrees with the media loses — a 60 fps recording
+exported from a 25 fps project stays 60 fps.
 
 ### Multicam and parts
 
@@ -492,7 +495,7 @@ The form follows the source and cannot be switched mid-edit.
 | `File not found on disk` in the track list | The XML points at a path that doesn't exist: the material moved after the export, or the export points at proxies. Relink in Final Cut and export again. |
 | `No project or synchronised clip found in the XML` | What was exported was an event, for example. Select a synced clip or a project before exporting. |
 | `The wide shot and the microphones share no common time` | The roles point at media that don't overlap on the timeline. |
-| The bar looks right but Final Cut doesn't | Check the sequence frame rate. It is read from the XML, so a wrong value is in the source. |
+| The bar looks right but Final Cut doesn't | Check the sequence frame rate. It is probed from the media when any video file is readable, so a stale XML format can't force 25 fps; if the media was missing at load, relinking repairs it. |
 | Envelopes are recomputed every time | The cache key includes the modification time. A network volume that rewrites timestamps will never hit the cache. |
 
 ## Tests

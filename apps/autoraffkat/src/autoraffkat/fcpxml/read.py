@@ -6,8 +6,10 @@ Tuetaan kolmea lähdettä, joista kaikista saadaan sama tieto:
 * ``<project><sequence><spine>`` — käsin aseteltu aikajana
 * ``<mc-clip>`` — monikameraklippi, kamerat ja mikit kulmina
 
-Synkkaus luetaan XML:stä, ei lasketa. Ruutunopeus tulee sekvenssin tai
-video-assetin formaatista.
+Synkkaus luetaan XML:stä, ei lasketa. Ruutunopeus proobataan ensimmäisestä
+löytyvästä videotiedostosta: media voittaa aina XML:n formaatit, jotka voivat
+valehdella (60 fps -materiaali viedyssä 25 fps -projektissa). Ilmoitusta
+käytetään vain kun media ei ole luettavissa, ja viimesenä on 1/25-oletus.
 
 Aikamuunnos: klipin ``offset`` on isännän paikallisessa aikapohjassa, jonka
 nollakohta on isännän ``start``. Lapsen absoluuttinen aikajanapaikka on siis
@@ -622,6 +624,26 @@ def _stable_keys(items: list[MediaItem]) -> None:
         item.key = base if count == 0 else f"{base}#{count + 1}"
 
 
+def probed_frame_duration(items: list[MediaItem]) -> Fraction | None:
+    """Ensimmäisen löytyvän videotiedoston ruutunopeus, tai None.
+
+    Media voittaa aina XML:n formaattien ilmoituksen: formaatti voi väittää
+    1/25s, mutta tiedosto ei voi. Probedoitu nopeus kirjoitetaan myös itsem
+    itemiinsä, jotta vienti ei konformoisi tiedostoa väärään tahtiin.
+    """
+    from .. import probe
+    from ..timeline import parse_fps
+
+    for item in items:
+        if not (item.has_video and item.path and os.path.exists(item.path)):
+            continue
+        fps_val = probe.info(item.path).get("video", {}).get("fps")
+        if fps_val:
+            item.frame_duration = Fraction(1, parse_fps(str(fps_val)))
+            return item.frame_duration
+    return None
+
+
 def read_fcpxml(path: str) -> Timeline:
     """Lukee FCPXML:n aikajanaksi."""
     try:
@@ -641,7 +663,7 @@ def read_fcpxml(path: str) -> Timeline:
         tc_start = parse_time(container.get("tcStart"), ZERO)
         _walk(spine, -tc_start, ZERO, ctx)
         seq_format = formats.get(container.get("format", ""), {})
-        frame_duration = (
+        declared = (
             None
             if seq_format.get("name") == "FFVideoFormatRateUndefined"
             else seq_format.get("frame_duration")
@@ -649,7 +671,7 @@ def read_fcpxml(path: str) -> Timeline:
     else:
         _walk(container, ZERO, parse_time(container.get("start"), ZERO), ctx)
         fmt = formats.get(container.get("format", ""), {})
-        frame_duration = (
+        declared = (
             None
             if fmt.get("name") == "FFVideoFormatRateUndefined"
             else fmt.get("frame_duration")
@@ -701,33 +723,23 @@ def read_fcpxml(path: str) -> Timeline:
     for item in media:
         item.placements.sort(key=lambda p: p.offset)
 
+    frame_duration = probed_frame_duration(media)
+    if frame_duration is not None and declared is not None and declared != frame_duration:
+        # Formaatin valehdellut nopeus ei saa jäädä muiden itemeiden
+        # tietoihin: vienti kirjoittaa asset-formaatin sen perusteella, ja
+        # Final Cut konformoisi tiedoston väärään tahtiin.
+        for item in media:
+            if item.frame_duration == declared:
+                item.frame_duration = frame_duration
+    if frame_duration is None:
+        frame_duration = declared
     if frame_duration is None:
         video_durations = [
             item.frame_duration
             for item in media
             if item.has_video and item.frame_duration
         ]
-        if not video_durations:
-            for item in media:
-                if (
-                    item.has_video
-                    and not item.frame_duration
-                    and item.path
-                    and os.path.exists(item.path)
-                ):
-                    from .. import probe
-                    from ..timeline import parse_fps
-
-                    fps_val = probe.info(item.path).get("video", {}).get("fps")
-                    if fps_val:
-                        item.frame_duration = Fraction(1, parse_fps(str(fps_val)))
-                        video_durations.append(item.frame_duration)
-                        break
-
-        if video_durations:
-            frame_duration = video_durations[0]
-        else:
-            frame_duration = DEFAULT_FRAME_DURATION
+        frame_duration = video_durations[0] if video_durations else DEFAULT_FRAME_DURATION
 
 
     _stable_keys(media)

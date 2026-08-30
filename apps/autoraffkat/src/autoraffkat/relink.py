@@ -357,4 +357,14 @@ def relink_timeline(
                 item.name = os.path.basename(found)
             print(f"[relink] {item.key} -> {found}", flush=True)
 
+    if relinked:
+        # Löytynyt media voi kertoa ruutunopeuden, jonka puuttuvat tiedostot
+        # jättivät arvaamaksi — sama media-sääntö kuin lukijassa, muuten
+        # vienti jäisi 1/25-oletukseen tai formaatin ilmoitukseen.
+        from .fcpxml.read import probed_frame_duration
+
+        probed = probed_frame_duration(timeline.media)
+        if probed is not None:
+            timeline.frame_duration = probed
+
     return relinked

@@ -130,6 +130,84 @@ def test_windows_path_survives_the_url_round_trip(monkeypatch):
     assert reader._src_to_path(writer.file_url(unc)) == unc
 
 
+def test_probed_media_rate_overrides_declared_frame_duration(tmp_path, monkeypatch):
+    """Media voittaa aina XML-formaatin ilmoittaman ruutunopeuden.
+
+    60 fps -materiaalin voi viedä 25 fps -projektin XML:na: formaatti
+    väittää 1/25s, mutta tiedosto ei voi. Lukija probean ensimmäisen
+    löytyvän videotiedoston, ja probedoitu nopeus korvaa sekä sekvenssin
+    että asset-formaattien ilmoituksen — muuten vienti kirjoittaa
+    25 fps -aikajanan 60 fps -materiaalista.
+    """
+    import autoraffkat.probe as probe
+
+    monkeypatch.setattr(probe, "info", lambda p: {"video": {"fps": 60.0}})
+
+    dummy = tmp_path / "cam_a.mp4"
+    dummy.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+    dummy_b = tmp_path / "cam_b.mp4"
+    dummy_b.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<fcpxml version="1.10">
+  <resources>
+    <format id="r1" name="FFVideoFormat1080p25" frameDuration="1/25s" width="1920" height="1080"/>
+    <asset id="r2" name="cam_a" src="file://{dummy}" hasVideo="1" format="r1" duration="10s" start="0s"/>
+    <asset id="r3" name="cam_b" src="file://{dummy_b}" hasVideo="1" format="r1" duration="10s" start="0s"/>
+  </resources>
+  <library>
+    <event name="Event">
+      <project name="Project">
+        <sequence format="r1" duration="10s">
+          <spine>
+            <asset-clip ref="r2" offset="0s" name="cam_a" duration="10s" start="0s"/>
+            <asset-clip ref="r3" offset="0s" name="cam_b" duration="10s" start="0s"/>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>"""
+    path = tmp_path / "project_declared_25.fcpxml"
+    path.write_text(xml, encoding="utf-8")
+    tl = read_fcpxml(str(path))
+    assert tl.frame_duration == Fraction(1, 60)
+    # Formaatin valehdellut 1/25 ei saa jäädä toisen assetin tietoihin:
+    # vienti kirjoittaa asset-formaatin sen perusteella, ja Final Cut
+    # konformoisi tiedoston väärään tahtiin.
+    by_name = {m.name: m for m in tl.media}
+    assert by_name["cam_b"].frame_duration == Fraction(1, 60)
+
+
+def test_missing_media_leaves_declared_frame_duration_alone(tmp_path, monkeypatch):
+    """Puuttuva media ei saa arvata nopeutta: formaatin ilmoitus pysyy."""
+    import autoraffkat.probe as probe
+
+    monkeypatch.setattr(probe, "info", lambda p: {})
+
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<fcpxml version="1.10">
+  <resources>
+    <format id="r1" name="FFVideoFormat1080p25" frameDuration="1/25s" width="1920" height="1080"/>
+    <asset id="r2" name="cam" src="file:///net/missing/cam.mp4" hasVideo="1" format="r1" duration="10s" start="0s"/>
+  </resources>
+  <library>
+    <event name="Event">
+      <project name="Project">
+        <sequence format="r1" duration="10s">
+          <spine>
+            <asset-clip ref="r2" offset="0s" name="cam" duration="10s" start="0s"/>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>"""
+    path = tmp_path / "project_missing_media.fcpxml"
+    path.write_text(xml, encoding="utf-8")
+    tl = read_fcpxml(str(path))
+    assert tl.frame_duration == Fraction(1, 25)
+
+
 def test_rate_undefined_sequence_format_falls_back_to_video_asset_frame_duration(tmp_path):
     xml = """<?xml version="1.0" encoding="UTF-8"?>
 <fcpxml version="1.10">

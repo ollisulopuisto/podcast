@@ -60,6 +60,74 @@ def test_relink_fuzzy_naming(tmp_path):
     assert found == str(real_file.resolve())
 
 
+def test_relink_timeline_repairs_frame_duration(tmp_path, monkeypatch):
+    """Puuttuvien tiedostojen löytyminen korjaa myös ruutunopeuden.
+
+    Lukija probaa vain löytyviä tiedostoja: kun media oli poissa ladattaessa,
+    nopeus jäi formaatin ilmoitukseen tai 1/25-oletukseen. Uudelleenlinkityksen
+    jälkeen sama media-sääntää pätevät kuin media olisi ollut siellä alusta
+    asti.
+    """
+    import autoraffkat.probe as probe
+
+    monkeypatch.setattr(probe, "info", lambda p: {"video": {"fps": 60.0}})
+
+    media_dir = tmp_path / "media"
+    media_dir.mkdir()
+    real_cam = media_dir / "cam a Track1.mp4"
+    real_cam.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+
+    xml_file = tmp_path / "episode.fcpxml"
+    xml_file.write_text("<fcpxml/>")
+
+    item = MediaItem(
+        key="cam a Track1.mp4",
+        name="cam a Track1.mp4",
+        path="/old/path/cam a Track1.mp4",
+        src="file:///old/path/cam%20a%20Track1.mp4",
+        has_video=True,
+    )
+    tl = Timeline(
+        media=[item],
+        frame_duration=Fraction(1, 25),
+        kind="project",
+        name="Test",
+        source_path=str(xml_file),
+    )
+
+    relinked = relink_timeline(tl, xml_path=str(xml_file))
+    assert relinked == {"cam a Track1.mp4": str(real_cam.resolve())}
+    assert tl.frame_duration == Fraction(1, 60)
+
+
+def test_relink_audio_only_leaves_frame_duration(tmp_path):
+    """Pelkkien äänitiedostojen linkitys ei muuta kuvatahtia."""
+    audio_dir = tmp_path / "audio"
+    audio_dir.mkdir()
+    (audio_dir / "mic a Track1.wav").write_bytes(b"RIFF dummy wav data")
+
+    xml_file = tmp_path / "episode.fcpxml"
+    xml_file.write_text("<fcpxml/>")
+
+    item = MediaItem(
+        key="mic a Track1.wav",
+        name="mic a Track1.wav",
+        path="/old/path/mic a Track1.wav",
+        src="file:///old/path/mic%20a%20Track1.wav",
+        has_audio=True,
+    )
+    tl = Timeline(
+        media=[item],
+        frame_duration=Fraction(1, 25),
+        kind="project",
+        name="Test",
+        source_path=str(xml_file),
+    )
+
+    relink_timeline(tl, xml_path=str(xml_file))
+    assert tl.frame_duration == Fraction(1, 25)
+
+
 def test_relink_timeline(tmp_path):
     audio_dir = tmp_path / "audio"
     audio_dir.mkdir()

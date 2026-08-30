@@ -90,7 +90,7 @@ requires-dist = [
 
 [[package]]
 name = "autoraffkat"
-version = "2026.8.28.3"
+version = "2026.8.30.1"
 source = { editable = "apps/autoraffkat" }
 dependencies = [
     { name = "fastapi" },

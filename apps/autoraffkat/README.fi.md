@@ -147,8 +147,11 @@ omilla laneillaan
 mikit on aseteltu käsin
 * **monikameraklippi** (`mc-clip`), jonka kamerat ja mikit ovat kulmina
 
-Synkkaus luetaan XML:stä, ei lasketa. Ruutunopeus otetaan sekvenssin tai
-video-assetin formaatista.
+Synkkaus luetaan XML:stä, ei lasketa. Ruutunopeus proobataan ensimmäisestä
+levyltä löytyvästä videotiedostosta; sekvenssin tai assetin formaatti ratkaisee
+vain, jos mediaa ei voi lukea, ja viimesenä on 25 fps:n oletus. Formaatti,
+joka kiistaa median, häviää — 60 fps -materiaali 25 fps -projektista vietynä
+pysyy 60 fps:nä.
 
 ### Monikamera ja osat
 
@@ -301,7 +304,7 @@ roolit ovat kesken. Se on normaali välitila, ei virhe.
 | `Tiedostoa ei löydy levyltä` raitalistassa | XML viittaa polkuun jota ei ole: materiaali on siirtynyt viennin jälkeen tai vienti osoittaa proxyihin. Yhdistä media Final Cutissa ja vie uudestaan. |
 | `XML:stä ei löytynyt projektia eikä synkronoitua klippiä` | Viety on esimerkiksi pelkkä event. Valitse synkattu klippi tai projekti ennen vientiä. |
 | `Laajalla kuvalla ja mikeillä ei ole yhteistä aikaa` | Roolitus osoittaa medioihin jotka eivät ole päällekkäin aikajanalla. |
-| Palkki näyttää oikealta, Final Cut ei | Tarkista sekvenssin ruutunopeus. Se luetaan XML:stä, joten väärä arvo on lähteessä. |
+| Palkki näyttää oikealta, Final Cut ei | Tarkista sekvenssin ruutunopeus. Se proobataan mediasta, kun yhtään videotiedostoa voi lukea, eikä vanhentunut XML-formaatti voi pakottaa 25 fps:ään; jos media puuttui ladattaessa, uudelleenlinkitys korjaa sen. |
 | Verhokäyrät lasketaan aina uudestaan | Välimuistin avaimessa on muokkausaika. Verkkolevy joka muuttaa aikaleimoja ei osu välimuistiin. |
 
 ## Ulostulo
