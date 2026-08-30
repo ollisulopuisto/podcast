@@ -603,9 +603,10 @@ def _pick_container(root) -> tuple[ET.Element, str, str]:
     for sync in root.iter("sync-clip"):
         return sync, "sync-clip", sync.get("name", "Synkkaklippi")
     # Viimeinen oljenkorsi: irrallinen sequence tai event-tason clip.
-    for sequence in root.iter("sequence"):
-        if sequence.find("spine") is not None:
-            return sequence, "project", "Sekvenssi"
+    for event in root.iter("event"):
+        for sequence in event.iter("sequence"):
+            if sequence.find("spine") is not None:
+                return sequence, "project", event.get("name", "Sekvenssi")
     raise ReadError(t("read.no_project"))
 
 
@@ -640,11 +641,18 @@ def read_fcpxml(path: str) -> Timeline:
         tc_start = parse_time(container.get("tcStart"), ZERO)
         _walk(spine, -tc_start, ZERO, ctx)
         seq_format = formats.get(container.get("format", ""), {})
-        frame_duration = seq_format.get("frame_duration")
+        frame_duration = (
+            None
+            if seq_format.get("name") == "FFVideoFormatRateUndefined"
+            else seq_format.get("frame_duration")
+        )
     else:
         _walk(container, ZERO, parse_time(container.get("start"), ZERO), ctx)
-        frame_duration = formats.get(container.get("format", ""), {}).get(
-            "frame_duration"
+        fmt = formats.get(container.get("format", ""), {})
+        frame_duration = (
+            None
+            if fmt.get("name") == "FFVideoFormatRateUndefined"
+            else fmt.get("frame_duration")
         )
 
     if not ctx.hits:
@@ -694,12 +702,33 @@ def read_fcpxml(path: str) -> Timeline:
         item.placements.sort(key=lambda p: p.offset)
 
     if frame_duration is None:
-        for item in media:
-            if item.has_video and item.frame_duration:
-                frame_duration = item.frame_duration
-                break
-    if frame_duration is None:
-        frame_duration = DEFAULT_FRAME_DURATION
+        video_durations = [
+            item.frame_duration
+            for item in media
+            if item.has_video and item.frame_duration
+        ]
+        if not video_durations:
+            for item in media:
+                if (
+                    item.has_video
+                    and not item.frame_duration
+                    and item.path
+                    and os.path.exists(item.path)
+                ):
+                    from .. import probe
+                    from ..timeline import parse_fps
+
+                    fps_val = probe.info(item.path).get("video", {}).get("fps")
+                    if fps_val:
+                        item.frame_duration = Fraction(1, parse_fps(str(fps_val)))
+                        video_durations.append(item.frame_duration)
+                        break
+
+        if video_durations:
+            frame_duration = video_durations[0]
+        else:
+            frame_duration = DEFAULT_FRAME_DURATION
+
 
     _stable_keys(media)
     for item in media:
@@ -713,7 +742,7 @@ def read_fcpxml(path: str) -> Timeline:
     if ctx.multicams:
         kind = "multicam"
 
-    return Timeline(
+    tl = Timeline(
         media=media,
         frame_duration=frame_duration,
         kind=kind,
@@ -722,3 +751,8 @@ def read_fcpxml(path: str) -> Timeline:
         tracks=tracks,
         multicams=ctx.multicams,
     )
+    if any(not m.path or not os.path.exists(m.path) for m in media):
+        from ..relink import relink_timeline
+
+        relink_timeline(tl, xml_path=path)
+    return tl

@@ -144,7 +144,7 @@ def _want_array(grid: Grid, g: Globals) -> tuple[np.ndarray, np.ndarray]:
         want[brief] = loudest[brief]
 
         if g.overlap_rule == OVERLAP_WIDE:
-            want[overlap] = WIDE
+            want[overlap] = WIDE if grid.wide_key else HOLD
         elif g.overlap_rule == OVERLAP_HOLD:
             want[overlap] = HOLD
         else:  # OVERLAP_LOUDER
@@ -154,10 +154,10 @@ def _want_array(grid: Grid, g: Globals) -> tuple[np.ndarray, np.ndarray]:
             want[strong] = loudest[strong]
             want[overlap & ~strong] = HOLD
 
-    # Puhuja ilman lähikuvaa näytetään laajana.
+    # Puhuja ilman lähikuvaa näytetään laajana (tai pidetään edellinen jos ei laajaa).
     for i, sp in enumerate(grid.speakers):
         if sp.close_key is None:
-            want[want == i] = WIDE
+            want[want == i] = WIDE if grid.wide_key else HOLD
         elif sp.available is not None:
             want[(want == i) & ~sp.available] = HOLD
 
@@ -219,6 +219,7 @@ def _cut_points(
     g: Globals,
     tempo: np.ndarray | None = None,
     active: np.ndarray | None = None,
+    initial_target: int = WIDE,
 ) -> list[tuple[float, int]]:
     """Kestorajoitukset: vahvistusaika, ennakko (J-cut), häntä (L-cut), tempo.
 
@@ -236,8 +237,8 @@ def _cut_points(
     leikkauksen jakson yli, kuva jää edelliseen puhujaan.
     """
     confirm = _hops(g.confirm)
-    current = WIDE
-    cuts: list[tuple[float, int]] = [(0.0, WIDE)]
+    current = initial_target
+    cuts: list[tuple[float, int]] = [(0.0, initial_target)]
     last_cut = -g.min_shot
     hang = g.hang if (g.hang > 0 and active is not None and active.size) else 0.0
     last_speech = _last_speech(active) if hang else None
@@ -544,7 +545,16 @@ def decide(grid: Grid, g: Globals, marks=None) -> Decision:
     """
     want, active = _want_array(grid, g)
     tempo = _compute_tempo(active, grid.n)
-    cuts = _cut_points(want, g, tempo=tempo, active=active)
+    if grid.wide_key:
+        initial_target = WIDE
+    else:
+        initial_target = next(
+            (int(t) for _, _, t in _runs(want) if t >= 0),
+            0 if grid.speakers else WIDE,
+        )
+    cuts = _cut_points(
+        want, g, tempo=tempo, active=active, initial_target=initial_target
+    )
     total = grid.duration
 
     segments: list[Segment] = []
@@ -559,6 +569,10 @@ def decide(grid: Grid, g: Globals, marks=None) -> Decision:
             key, label = (sp.close_key or grid.wide_key), sp.name
             if not sp.close_key:
                 label = WIDE_LABEL
+        if not key and grid.speakers:
+            first_sp = next((s for s in grid.speakers if s.close_key), None)
+            if first_sp:
+                key, label = first_sp.close_key, first_sp.name
         segments.append(
             Segment(key, label, grid.program_start + at, grid.program_start + end)
         )
@@ -578,3 +592,4 @@ def decide(grid: Grid, g: Globals, marks=None) -> Decision:
         chosen[max(0, lo) : max(0, hi)] = key_to_index.get(seg.angle, WIDE)
 
     return Decision(segments=segments, active=active, chosen=chosen)
+

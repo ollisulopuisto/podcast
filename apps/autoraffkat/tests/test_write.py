@@ -1111,3 +1111,114 @@ def test_without_the_setting_the_audio_stays_on_the_multicam(scratch_xml):
     assert not list(root.iter("ref-clip"))
     assert all(c.get("srcEnable") is None
                for c in root.findall(".//project/sequence/spine/mc-clip"))
+
+
+def test_multicam_merges_adjacent_clips_from_same_video_source(fixture_dir):
+    """Peräkkäiset samasta videolähteestä/kulmasta tulevat klipit yhdistetään."""
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    segments = [
+        Segment("WIDE", "Laaja", 0.0, 4.0),
+        Segment("CLOSE_A", "Host 1", 4.0, 8.0),
+        Segment("CLOSE_A", "Host 2", 8.0, 12.0),
+        Segment("CLOSE_B", "Guest", 12.0, 20.0),
+    ]
+    xml = build_multicam_fcpxml(
+        tl,
+        segments,
+        [("host Track1", "Host"), ("guest Track2", "Guest")],
+        Fraction(0),
+        Fraction(20),
+        "MergeTest",
+    )
+    clips = ET.fromstring(xml).findall(".//spine/mc-clip")
+    assert len(clips) == 4  # WIDE, CLOSE_A (yhdistetty 4-12 s), CLOSE_B (12-18 s osassa A, 18-20 s osassa B)
+    host_clips = [c for c in clips if c.get("name", "").startswith("Host")]
+    assert len(host_clips) == 1
+    assert parse_time(host_clips[0].get("offset")) == 4
+    assert parse_time(host_clips[0].get("duration")) == 8
+
+
+def test_flat_merges_adjacent_clips_from_same_video_source(fixture_dir):
+    """Littanassa peräkkäiset samasta videolähteestä tulevat klipit yhdistetään."""
+    tl = read_fcpxml(str(fixture_dir / "sync.fcpxml"))
+    by_key = {m.key: m for m in tl.media}
+    segments = [
+        Segment("WIDE.mp4", "Laaja", 0.0, 3.0),
+        Segment("CLOSE_A.mp4", "Host 1", 3.0, 6.0),
+        Segment("CLOSE_A.mp4", "Host 2", 6.0, 10.0),
+    ]
+    xml = build_fcpxml(
+        by_key,
+        segments,
+        [],
+        tl.frame_duration,
+        Fraction(0),
+        Fraction(10),
+        "MergeTestFlat",
+    )
+    clips = ET.fromstring(xml).findall(".//spine/asset-clip")
+    assert len(clips) == 2  # WIDE (0-3 s), CLOSE_A (yhdistetty 3-10 s)
+    assert parse_time(clips[1].get("offset")) == 3
+    assert parse_time(clips[1].get("duration")) == 7
+
+
+def test_export_from_compound_source_preserves_video_format(scratch_xml, tmp_path, validate_fcpxml):
+    """Jos lähde-XML on aiempi yhdistelmä-äänen vienti, uusi vienti ei saa periä
+    äänen määrittelemätöntä formaattia pääsekvenssilleen."""
+    from test_endtoend import _multicam_tracks
+
+    from autoraffkat.analysis import analyze, build_grid, resolve_roles
+    from autoraffkat.decide import decide
+    from autoraffkat.project import ProjectSettings
+
+    xml1 = _compound_xml(scratch_xml, compound_audio=True, master_db=-8.0)
+    source_path = tmp_path / "first_cut.fcpxml"
+    source_path.write_text(xml1, encoding="utf-8")
+
+    tl = read_fcpxml(str(source_path))
+    settings = ProjectSettings(tracks=_multicam_tracks())
+    roles = resolve_roles(tl, settings.tracks)
+    analysis = analyze(tl)
+    grid, p_start, p_end = build_grid(analysis, settings.tracks, roles)
+    decision = decide(grid, settings.globals, roles)
+    mics = [(k, s) for s, keys in roles.mics.items() for k in keys]
+
+    xml2 = build_multicam_fcpxml(
+        tl, decision.segments, mics, p_start, p_end,
+        settings=settings, roles=roles,
+    )
+    root = ET.fromstring(xml2)
+    seq = root.find(".//project/sequence")
+    assert seq is not None
+    seq_fmt_id = seq.get("format")
+
+    formats = {f.get("id"): f for f in root.iter("format")}
+    seq_fmt = formats.get(seq_fmt_id)
+    assert seq_fmt is not None
+    assert seq_fmt.get("name") != "FFVideoFormatRateUndefined"
+    assert seq_fmt.get("frameDuration") is not None
+    validate_fcpxml(xml2)
+
+
+def test_multicam_export_matches_timeline_frame_duration(fixture_dir):
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    tl.frame_duration = Fraction(1, 60)
+    segments = [Segment("WIDE", "Laaja", 0.0, 4.0)]
+    xml = build_multicam_fcpxml(
+        tl,
+        segments,
+        [("host Track1", "Host")],
+        Fraction(0),
+        Fraction(4),
+        "FpsTest",
+    )
+    root = ET.fromstring(xml)
+    seq = root.find(".//project/sequence")
+    assert seq is not None
+    seq_fmt_id = seq.get("format")
+    formats = {f.get("id"): f for f in root.iter("format")}
+    seq_fmt = formats[seq_fmt_id]
+    assert seq_fmt.get("frameDuration") in ("1/60s", "100/6000s")
+
+
+

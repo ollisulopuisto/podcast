@@ -170,15 +170,41 @@ def test_defaults_are_guessed_but_speakers_are_asked(scratch_xml):
     assert any("puhujaa" in p or "speaker" in p.lower() for p in result["problems"])
 
 
-def test_no_wide_is_reported(scratch_xml):
+def test_wide_can_be_excluded_and_exported(scratch_xml):
+    """Laajan kuvan voi jättää käyttämättömäksi (unused), jolloin leikkaus käyttää vain lähikuvia."""
     state = AppState(xml_path=str(scratch_xml()))
     state.load()
+    for _ in range(200):
+        if state.progress.get("ready"):
+            break
+        time.sleep(0.05)
+    assert state.progress["ready"], "verhokäyrät eivät valmistuneet"
+
     client = TestClient(create_app(state))
-    payload = {"tracks": {k: v.to_json() for k, v in _tracks().items()}, "globals": {}}
+    payload = {
+        "tracks": {k: v.to_json() for k, v in _tracks().items()},
+        "globals": Globals(min_shot=1.5, lead=0.15, confirm=0.3, min_overlap=0.4).to_json(),
+    }
     payload["tracks"]["WIDE.mp4"]["role"] = "unused"
     result = client.post("/api/settings", json=payload).json()
-    assert not result["ok"]
-    assert any("laajaksi" in p or "wide" in p.lower() for p in result["problems"])
+    assert result["ok"], result.get("problems")
+    assert result["segments"], "leikkauslista ei saa olla tyhjä"
+    assert any(s["label"] == "Host" for s in result["segments"])
+    assert any(s["label"] == "Guest" for s in result["segments"])
+    assert all(s["label"] in ("Host", "Guest") for s in result["segments"])
+    assert all(s["angle"] in ("CLOSE_A.mp4", "CLOSE_B.mp4") for s in result["segments"])
+
+    # Viedään XML ja varmistetaan ettei laaja kuva päädy mukaan resursseihin tai spinelle
+    exp = client.post("/api/export").json()
+    assert exp["ok"], exp.get("problems")
+    xml = pathlib.Path(exp["path"]).read_text(encoding="utf-8")
+    root = ET.fromstring(xml)
+    media_srcs = [rep.get("src", "") for rep in root.findall(".//media-rep")]
+    assert any("CLOSE_A.mp4" in s for s in media_srcs)
+    assert any("CLOSE_B.mp4" in s for s in media_srcs)
+    assert not any("WIDE.mp4" in s for s in media_srcs)
+
+
 
 
 # ------------------------------------------------------------------ multicam
@@ -265,6 +291,45 @@ def test_multicam_server_round_trip(scratch_xml):
     # Rajaylitykset pilkkoutuvat, joten klippejä on vähintään yhtä monta.
     assert len(clips) >= exported["cuts"]
     assert {c.get("ref") for c in clips} == {"mA", "mB"}
+
+
+def test_multicam_wide_can_be_excluded(scratch_xml):
+    """Monikamerasta voi jättää laajan kulman pois."""
+    state = AppState(xml_path=str(scratch_xml("multicam.fcpxml")))
+    state.load()
+    for _ in range(200):
+        if state.progress.get("ready"):
+            break
+        time.sleep(0.05)
+
+    client = TestClient(create_app(state))
+    tracks = {k: v.to_json() for k, v in _multicam_tracks().items()}
+    tracks["WIDE"]["role"] = "unused"
+    payload = {
+        "tracks": tracks,
+        "globals": Globals(
+            min_shot=1.5,
+            lead=0.15,
+            confirm=0.3,
+            min_overlap=0.4,
+            project_name="Monikamera",
+        ).to_json(),
+    }
+    result = client.post("/api/settings", json=payload).json()
+    assert result["ok"], result.get("problems")
+    assert all(s["label"] in ("Host", "Guest") for s in result["segments"])
+    assert all(s["angle"] in ("CLOSE_A", "CLOSE_B") for s in result["segments"])
+
+    exported = client.post("/api/export", json=payload).json()
+    assert exported["ok"]
+    written = ET.parse(exported["path"]).getroot()
+    clips = written.findall(".//spine/mc-clip")
+    assert clips
+    # Varmistetaan että kaikki leikkaukset käyttävät vain lähikuvakulmia
+    sources = [c.find("mc-source") for c in clips if c.find("mc-source") is not None]
+    wide_angle_ids = set({t.key: t for t in state.timeline.tracks}["WIDE"].angle_ids)
+    assert not any(s.get("angleID") in wide_angle_ids for s in sources)
+
 
 
 def test_multicam_defaults_guess_speakers_from_mic_names(scratch_xml):

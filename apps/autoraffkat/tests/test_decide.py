@@ -503,6 +503,33 @@ def test_without_a_wide_shot_there_is_nothing_to_force():
     assert all(s.angle != "W" for s in d.segments)
 
 
+def test_without_wide_shot_alternates_between_closeups_only():
+    """Ilman laajaa kuvaa leikkaus vuorottelee pelkkien lähikuvien välillä."""
+    grid = grid_for([(2, 10), (20, 30)], [(10, 20), (30, 40)], seconds=40.0)
+    grid.wide_key = ""
+    d = decide(grid, Globals())
+
+    assert d.segments, "leikkauksen pitää syntyä"
+    assert all(s.angle in ("CA", "CB") for s in d.segments)
+    assert all(s.label in ("A", "B") for s in d.segments)
+    assert d.segments[0].angle == "CA"
+    assert d.segments[-1].angle == "CB"
+    assert -2 not in d.chosen
+
+
+def test_without_wide_shot_overlap_does_not_cut_to_wide():
+    """Päällekkäispuheen sääntö 'wide' ei leikkaa laajaan jos laajaa ei ole."""
+    grid = grid_for([(2, 15)], [(10, 20)], seconds=25.0)
+    grid.wide_key = ""
+    g = Globals(overlap_rule=OVERLAP_WIDE)
+    d = decide(grid, g)
+
+    assert d.segments
+    assert all(s.angle in ("CA", "CB") for s in d.segments)
+    assert all(s.label in ("A", "B") for s in d.segments)
+
+
+
 # ------------------------------------------------- mikin vaimennus
 
 

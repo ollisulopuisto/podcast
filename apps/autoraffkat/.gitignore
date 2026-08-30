@@ -15,3 +15,11 @@ out/
 * [room].wav
 
 *.iconset/
+
+# Varmuuskopio- ja väliaikaistiedostot
+*~
+*.bak
+*.backup
+*.swp
+*.swo
+*.tmp

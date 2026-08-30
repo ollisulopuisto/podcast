@@ -1215,6 +1215,39 @@ def create_app(state: AppState) -> FastAPI:
         start = os.path.dirname(state.xml_path) if state.xml_path else ""
         return {"path": pick.native(start, force=True) or ""}
 
+    @app.post("/api/pick-folder")
+    def pick_folder():
+        """Finderin hakemistovalintaikkuna palvelimen puolelta."""
+        if sys.platform != "darwin":
+            return {"path": "", "unavailable": True}
+        start = os.path.dirname(state.xml_path) if state.xml_path else ""
+        return {"path": pick.native_folder(start, force=True) or ""}
+
+    @app.post("/api/relink")
+    def relink_files(payload: dict | None = None):
+        """Etsii ja uudelleenlinkittää puuttuvat mediatiedostot."""
+        if state.timeline is None:
+            raise HTTPException(409, state.load_error or t("export.not_loaded"))
+        search_dir = str((payload or {}).get("search_dir") or "").strip()
+        from ..relink import relink_timeline
+
+        relinked = relink_timeline(
+            state.timeline,
+            search_dir=search_dir if search_dir else None,
+            xml_path=state.xml_path,
+        )
+        if relinked:
+            with state.lock:
+                if state.analysis:
+                    for k in relinked:
+                        state.analysis.errors.pop(k, None)
+            threading.Thread(target=state._analyze, daemon=True).start()
+        return {
+            "ok": True,
+            "relinked": len(relinked),
+            "items": relinked,
+        }
+
     @app.post("/api/settings")
     def post_settings(payload: dict):
         """Ottaa säätimet vastaan, ajaa päätöksen ja tallentaa asetukset.

@@ -22,7 +22,16 @@ from ..audio.mix import ROOM_ROLE
 from ..decide import WIDE_LABEL
 from ..i18n import t
 from ..model import DEFAULT_PROJECT_NAME, MediaItem, Segment
-from ..timeline import FPS_LABELS, format_time, fps_of, frames_str, to_frames
+from ..timeline import (
+    FPS_LABELS,
+    ZERO,
+    format_name,
+    format_time,
+    fps_of,
+    frames_str,
+    parse_time,
+    to_frames,
+)
 
 if TYPE_CHECKING:  # vain tyypitystä varten: kirjoitus ei riipu asetuksista
     from ..project import ProjectSettings
@@ -171,6 +180,23 @@ def _quantize(
         if end > start:
             spans.append((segment, start, end))
     return spans
+
+
+def _merge_spans(
+    spans: list[tuple[Segment, int, int]],
+) -> list[tuple[Segment, int, int]]:
+    """Yhdistää peräkkäiset samasta kulmasta/lähteestä tulevat kehysvälit."""
+    merged: list[tuple[Segment, int, int]] = []
+    for seg, a, b in spans:
+        if b <= a:
+            continue
+        if merged and merged[-1][0].angle == seg.angle and merged[-1][2] == a:
+            prev_seg, prev_a, _ = merged[-1]
+            merged[-1] = (prev_seg, prev_a, b)
+        else:
+            merged.append((seg, a, b))
+    return merged
+
 
 
 # ------------------------------------------------------- säätimet ulos XML:ään
@@ -406,6 +432,7 @@ def build_fcpxml(
         raise WriteError(t("write.zero_duration"))
 
     spans = _quantize(segments, program_start, program_frames, frame_duration)
+    spans = _merge_spans(spans)
     if not spans:
         raise WriteError(t("write.cuts_collapsed"))
     used_segments = [segment for segment, _, _ in spans]
@@ -682,6 +709,60 @@ def _split_spans(spans, marks: list[int]):
                 cursor = mark
         out.append((segment, cursor, b))
     return [(s, x, y) for s, x, y in out if y > x]
+
+
+def _merge_multicam_spans(
+    spans: list[tuple[Segment, int, int]],
+    timeline,
+    angles_of: dict[str, list[str]],
+    program_start: Fraction,
+    frame_duration: Fraction,
+) -> list[tuple[Segment, int, int]]:
+    """Yhdistää peräkkäiset samasta videolähteestä/kulmasta tulevat kehysvälit.
+
+    Jos kaksi peräkkäistä jaksoa viittaavat samaan multicamiin ja sen samaan
+    videokulmaan, ne yhdistetään yhdeksi klipiksi ennen FCPXML-vientiä. Tämä
+    estää turhat leikkaukset, jotka 9:16 Smart Conform -muunnoksessa voisivat
+    aiheuttaa eri rajauksen samalle kameralle.
+    """
+    merged: list[tuple[Segment, int, int]] = []
+    for seg, a, b in spans:
+        if b <= a:
+            continue
+        at = program_start + frame_duration * a
+        mc = timeline.multicam_at(at)
+        video_angle = ""
+        mc_id = None
+        if mc is not None:
+            mc_id = mc.media_id
+            own = set(mc.angle_ids)
+            video_angle = next((x for x in angles_of.get(seg.angle, []) if x in own), "")
+
+        if merged and merged[-1][2] == a:
+            prev_seg, prev_a, _ = merged[-1]
+            prev_at = program_start + frame_duration * prev_a
+            prev_mc = timeline.multicam_at(prev_at)
+            prev_video_angle = ""
+            prev_mc_id = None
+            if prev_mc is not None:
+                prev_mc_id = prev_mc.media_id
+                prev_own = set(prev_mc.angle_ids)
+                prev_video_angle = next(
+                    (x for x in angles_of.get(prev_seg.angle, []) if x in prev_own), ""
+                )
+
+            if (mc is None and prev_mc is None) or (
+                mc is not None
+                and prev_mc is not None
+                and mc_id == prev_mc_id
+                and video_angle == prev_video_angle
+            ):
+                merged[-1] = (prev_seg, prev_a, b)
+                continue
+
+        merged.append((seg, a, b))
+    return merged
+
 
 
 def _pan_line(indent: str, amount: float) -> list[str]:
@@ -1011,11 +1092,91 @@ def _next_resource_id(resources) -> str:
     return f"a{index}"
 
 
+def _find_seq_format(
+    root,
+    resources,
+    frame_duration: Fraction | None = None,
+    width: int = 1920,
+    height: int = 1080,
+) -> str:
+    """Etsii sekvenssille kelvollisen kuvaformaatin id:n.
+
+    Projektin sekvenssi voittaa jos sen ruutunopeus täsmää. Jos mikään formaatti
+    ei täsmää pyydettyyn ruutunopeuteen, luodaan resources-lohkoon uusi formaatti.
+    """
+    formats = {f.get("id"): f for f in resources.findall("format")}
+
+    def is_valid_video_format(fmt_id: str) -> bool:
+        if not fmt_id or fmt_id not in formats:
+            return False
+        fmt = formats[fmt_id]
+        if fmt.get("name") == "FFVideoFormatRateUndefined":
+            return False
+        if frame_duration is not None:
+            fd = parse_time(fmt.get("frameDuration"), ZERO)
+            if fd != frame_duration:
+                return False
+        return bool(fmt.get("frameDuration"))
+
+    # 1. Projekti ensin
+    for project in root.iter("project"):
+        seq = project.find("sequence")
+        if seq is not None and is_valid_video_format(seq.get("format", "")):
+            return seq.get("format", "")
+
+    # 2. Event-tason sekvenssit (ei resources-lohkon sisäiset)
+    for event in root.iter("event"):
+        for seq in event.iter("sequence"):
+            if is_valid_video_format(seq.get("format", "")):
+                return seq.get("format", "")
+
+    # 3. Multicam-elementit
+    for mc in root.iter("multicam"):
+        if is_valid_video_format(mc.get("format", "")):
+            return mc.get("format", "")
+
+    # 4. Video-assetit
+    for asset in resources.findall("asset"):
+        if asset.get("hasVideo") == "1" and is_valid_video_format(asset.get("format", "")):
+            return asset.get("format", "")
+
+    # 5. Mikä tahansa kelvollinen kuvaformaatti resources-lohkossa
+    for fmt_id in formats:
+        if fmt_id and is_valid_video_format(fmt_id):
+            return fmt_id
+
+    # Jos frame_duration on annettu mutta mikään formaatti ei täsmännyt, luodaan uusi
+    if frame_duration is not None:
+        from xml.etree import ElementTree as ET
+
+        fmt_id = _next_resource_id(resources)
+        attrs = {
+            "id": fmt_id,
+            "frameDuration": format_time(frame_duration),
+            "width": str(width or 1920),
+            "height": str(height or 1080),
+            "colorSpace": "1-1-1 (Rec. 709)",
+        }
+        name = format_name(width or 1920, height or 1080, frame_duration)
+        if name and name != "FFVideoFormatRateUndefined":
+            attrs["name"] = name
+        fmt_elem = ET.Element("format", attrs)
+        resources.append(fmt_elem)
+        return fmt_id
+
+    # Viimeinen oljenkorsi
+    seq = root.find(".//project/sequence") or root.find(".//sequence")
+    return seq.get("format", "") if seq is not None else ""
+
+
 def _source_resources(
     path: str,
     redirects: dict[str, str] | None = None,
     room: list[tuple[str, str]] | None = None,
     angle_speakers: dict[str, str] | None = None,
+    frame_duration: Fraction | None = None,
+    width: int = 1920,
+    height: int = 1080,
 ) -> tuple[str, str, str, dict[str, str], dict[str, str]]:
     """Lähde-XML:n ``<resources>``, versio, sekvenssin formaatti ja tilaääni-id:t.
 
@@ -1031,8 +1192,9 @@ def _source_resources(
     resources = root.find("resources")
     if resources is None:
         raise WriteError(t("write.no_resources"))
-    sequence = root.find(".//sequence")
-    seq_format = sequence.get("format", "") if sequence is not None else ""
+    seq_format = _find_seq_format(
+        root, resources, frame_duration=frame_duration, width=width, height=height
+    )
 
     # Raakakulmat ennen ohjausta: kopio perii alkuperäisen ``src``:n ja
     # ``<bookmark>``in, eikä ohjattua tiedostoa tarvitse arvata takaisin.
@@ -1225,10 +1387,12 @@ def build_multicam_fcpxml(
     spans = _split_spans(
         spans, _boundaries(timeline, program_start, frame_duration, program_frames)
     )
+    angles_of = {t.key: t.angle_ids for t in timeline.tracks}
+    spans = _merge_multicam_spans(
+        spans, timeline, angles_of, program_start, frame_duration
+    )
     if not spans:
         raise WriteError(t("write.cuts_collapsed"))
-
-    angles_of = {t.key: t.angle_ids for t in timeline.tracks}
 
     # Käsitelty ääni ohjataan resurssitasolla: kulmat ja mc-sourcet viittaavat
     # assettiin, joten yksi src riittää eikä leikkauslistaan tarvitse koskea.
@@ -1246,9 +1410,19 @@ def build_multicam_fcpxml(
         for key, speaker in mic_tracks
         for angle_id in angles_of.get(key, [])
     }
+    reference = next((m for m in timeline.media if m.has_video), None)
+    seq_width = reference.width if reference and reference.width else 1920
+    seq_height = reference.height if reference and reference.height else 1080
     resources, version, seq_format, room_ids, raw_angles = _source_resources(
-        timeline.source_path, redirects, room_jobs, angle_speakers
+        timeline.source_path,
+        redirects,
+        room_jobs,
+        angle_speakers,
+        frame_duration=frame_duration,
+        width=seq_width,
+        height=seq_height,
     )
+
 
     body: list[str] = []
     attached_room = False
