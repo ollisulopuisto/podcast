@@ -1200,3 +1200,25 @@ def test_export_from_compound_source_preserves_video_format(scratch_xml, tmp_pat
     validate_fcpxml(xml2)
 
 
+def test_multicam_export_matches_timeline_frame_duration(fixture_dir):
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    tl.frame_duration = Fraction(1, 60)
+    segments = [Segment("WIDE", "Laaja", 0.0, 4.0)]
+    xml = build_multicam_fcpxml(
+        tl,
+        segments,
+        [("host Track1", "Host")],
+        Fraction(0),
+        Fraction(4),
+        "FpsTest",
+    )
+    root = ET.fromstring(xml)
+    seq = root.find(".//project/sequence")
+    assert seq is not None
+    seq_fmt_id = seq.get("format")
+    formats = {f.get("id"): f for f in root.iter("format")}
+    seq_fmt = formats[seq_fmt_id]
+    assert seq_fmt.get("frameDuration") in ("1/60s", "100/6000s")
+
+
+

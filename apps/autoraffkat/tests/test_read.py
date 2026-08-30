@@ -128,3 +128,31 @@ def test_windows_path_survives_the_url_round_trip(monkeypatch):
     # URLin isäntäkenttään jätettäväksi.
     unc = r"\\arkisto\kuvat\host.mov"
     assert reader._src_to_path(writer.file_url(unc)) == unc
+
+
+def test_rate_undefined_sequence_format_falls_back_to_video_asset_frame_duration(tmp_path):
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<fcpxml version="1.10">
+  <resources>
+    <format id="r1" name="FFVideoFormatRateUndefined"/>
+    <format id="r2" name="FFVideoFormat1080p60" frameDuration="1/60s" width="1920" height="1080"/>
+    <asset id="r3" name="cam" hasVideo="1" format="r2" duration="10s" start="0s"/>
+  </resources>
+  <library>
+    <event name="Event">
+      <project name="Project">
+        <sequence format="r1" duration="10s">
+          <spine>
+            <asset-clip ref="r3" offset="0s" name="cam" duration="10s" start="0s"/>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>"""
+    path = tmp_path / "project_60.fcpxml"
+    path.write_text(xml, encoding="utf-8")
+    tl = read_fcpxml(str(path))
+    assert tl.frame_duration == Fraction(1, 60)
+
+
