@@ -1161,3 +1161,42 @@ def test_flat_merges_adjacent_clips_from_same_video_source(fixture_dir):
     assert parse_time(clips[1].get("offset")) == 3
     assert parse_time(clips[1].get("duration")) == 7
 
+
+def test_export_from_compound_source_preserves_video_format(scratch_xml, tmp_path, validate_fcpxml):
+    """Jos lähde-XML on aiempi yhdistelmä-äänen vienti, uusi vienti ei saa periä
+    äänen määrittelemätöntä formaattia pääsekvenssilleen."""
+    from test_endtoend import _multicam_tracks
+
+    from autoraffkat.analysis import analyze, build_grid, resolve_roles
+    from autoraffkat.decide import decide
+    from autoraffkat.project import ProjectSettings
+
+    xml1 = _compound_xml(scratch_xml, compound_audio=True, master_db=-8.0)
+    source_path = tmp_path / "first_cut.fcpxml"
+    source_path.write_text(xml1, encoding="utf-8")
+
+    tl = read_fcpxml(str(source_path))
+    settings = ProjectSettings(tracks=_multicam_tracks())
+    roles = resolve_roles(tl, settings.tracks)
+    analysis = analyze(tl)
+    grid, p_start, p_end = build_grid(analysis, settings.tracks, roles)
+    decision = decide(grid, settings.globals, roles)
+    mics = [(k, s) for s, keys in roles.mics.items() for k in keys]
+
+    xml2 = build_multicam_fcpxml(
+        tl, decision.segments, mics, p_start, p_end,
+        settings=settings, roles=roles,
+    )
+    root = ET.fromstring(xml2)
+    seq = root.find(".//project/sequence")
+    assert seq is not None
+    seq_fmt_id = seq.get("format")
+
+    formats = {f.get("id"): f for f in root.iter("format")}
+    seq_fmt = formats.get(seq_fmt_id)
+    assert seq_fmt is not None
+    assert seq_fmt.get("name") != "FFVideoFormatRateUndefined"
+    assert seq_fmt.get("frameDuration") is not None
+    validate_fcpxml(xml2)
+
+

@@ -1083,6 +1083,55 @@ def _next_resource_id(resources) -> str:
     return f"a{index}"
 
 
+def _find_seq_format(root, resources) -> str:
+    """Etsii sekvenssille kelvollisen kuvaformaatin id:n.
+
+    Projektin sekvenssi voittaa. Jos XML on aiempi vienti jossa on
+    yhdistelmä-ääni (<media><sequence format="r14">), sen formaatti on
+    FFVideoFormatRateUndefined eikä sitä saa valita pääsekvenssin formaatiksi.
+    """
+    formats = {f.get("id"): f for f in resources.findall("format")}
+
+    def is_valid_video_format(fmt_id: str) -> bool:
+        if not fmt_id or fmt_id not in formats:
+            return False
+        fmt = formats[fmt_id]
+        if fmt.get("name") == "FFVideoFormatRateUndefined":
+            return False
+        return bool(fmt.get("frameDuration"))
+
+    # 1. Projekti ensin
+    for project in root.iter("project"):
+        seq = project.find("sequence")
+        if seq is not None and is_valid_video_format(seq.get("format", "")):
+            return seq.get("format", "")
+
+    # 2. Event-tason sekvenssit (ei resources-lohkon sisäiset)
+    for event in root.iter("event"):
+        for seq in event.iter("sequence"):
+            if is_valid_video_format(seq.get("format", "")):
+                return seq.get("format", "")
+
+    # 3. Multicam-elementit
+    for mc in root.iter("multicam"):
+        if is_valid_video_format(mc.get("format", "")):
+            return mc.get("format", "")
+
+    # 4. Video-assetit
+    for asset in resources.findall("asset"):
+        if asset.get("hasVideo") == "1" and is_valid_video_format(asset.get("format", "")):
+            return asset.get("format", "")
+
+    # 5. Mikä tahansa kelvollinen kuvaformaatti resources-lohkossa
+    for fmt_id in formats:
+        if fmt_id and is_valid_video_format(fmt_id):
+            return fmt_id
+
+    # Viimeinen oljenkorsi
+    seq = root.find(".//project/sequence") or root.find(".//sequence")
+    return seq.get("format", "") if seq is not None else ""
+
+
 def _source_resources(
     path: str,
     redirects: dict[str, str] | None = None,
@@ -1103,8 +1152,7 @@ def _source_resources(
     resources = root.find("resources")
     if resources is None:
         raise WriteError(t("write.no_resources"))
-    sequence = root.find(".//sequence")
-    seq_format = sequence.get("format", "") if sequence is not None else ""
+    seq_format = _find_seq_format(root, resources)
 
     # Raakakulmat ennen ohjausta: kopio perii alkuperäisen ``src``:n ja
     # ``<bookmark>``in, eikä ohjattua tiedostoa tarvitse arvata takaisin.

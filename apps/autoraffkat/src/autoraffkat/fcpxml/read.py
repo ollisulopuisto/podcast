@@ -603,9 +603,10 @@ def _pick_container(root) -> tuple[ET.Element, str, str]:
     for sync in root.iter("sync-clip"):
         return sync, "sync-clip", sync.get("name", "Synkkaklippi")
     # Viimeinen oljenkorsi: irrallinen sequence tai event-tason clip.
-    for sequence in root.iter("sequence"):
-        if sequence.find("spine") is not None:
-            return sequence, "project", "Sekvenssi"
+    for event in root.iter("event"):
+        for sequence in event.iter("sequence"):
+            if sequence.find("spine") is not None:
+                return sequence, "project", event.get("name", "Sekvenssi")
     raise ReadError(t("read.no_project"))
 
 
