@@ -5,6 +5,7 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
+from autoraffkat.decide import WIDE_LABEL
 from autoraffkat.fcpxml.read import read_fcpxml
 from autoraffkat.fcpxml.write import (
     WriteError,
@@ -144,7 +145,7 @@ def test_role_sanitizing():
 
 
 def _multicam_cut(fixture_dir, segments=None, settings=None, pans=None,
-                  ducks=None):
+                  ducks=None, reframer=None):
     """Monikameraleikkaus fixturesta. Kolmas kuva ylittää osien rajan 18 s."""
     tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
     segments = segments or [
@@ -164,6 +165,7 @@ def _multicam_cut(fixture_dir, segments=None, settings=None, pans=None,
         source="multicam.fcpxml",
         pans=pans,
         ducks=ducks,
+        reframer=reframer,
     )
     return tl, xml
 
@@ -1043,7 +1045,6 @@ def _compound_xml(scratch_xml, **globals_kw):
 
     from autoraffkat.analysis import analyze, build_grid, resolve_roles
     from autoraffkat.decide import decide
-    from autoraffkat.fcpxml.read import read_fcpxml
     from autoraffkat.project import ProjectSettings
 
     timeline = read_fcpxml(str(scratch_xml("multicam.fcpxml")))
@@ -1375,3 +1376,146 @@ def test_flat_export_moves_the_clip_itself(fixture_dir):
         if "adjust-transform" in kids:
             assert kids.index("adjust-transform") == 0, kids
     _ = tl
+
+
+# --------------------------------------------------------------- pystyvienti
+
+
+def _vertical_settings(movement=False):
+    from autoraffkat.model import Globals
+    from autoraffkat.project import ProjectSettings
+
+    return ProjectSettings(
+        globals=Globals(vertical=True, movement=movement))
+
+
+class _StubReframer:
+    """Kirjoittajan eristys: vastaa aina saman kehyksen, mutta muistaa
+    keneen ja mille ajalle sitä kysyttiin."""
+
+    def __init__(self, ok=True, scale=3.1605, pos_x=20.0):
+        self.calls = []
+        self.ok = ok
+        self.scale = scale
+        self.pos_x = pos_x
+
+    def from_item(self, item, t0, t1):
+        from autoraffkat import reframe
+
+        self.calls.append((item.key, round(t0, 3), round(t1, 3)))
+        if not self.ok:
+            return None
+        return reframe.Reframe(scale=self.scale, pos_x=self.pos_x)
+
+
+def test_vertical_export_has_a_vertical_sequence(fixture_dir):
+    """Pystyvienti kirjoittaa projektin valmiiksi 1080×1920 — tuonti on
+    lopputulos eikä välietappi, eikä Smart Conformia tarvita."""
+    _, xml = _multicam_cut(fixture_dir, segments=_MOVEMENT_SPANS,
+                           settings=_vertical_settings())
+    root = ET.fromstring(xml)
+    seq = root.find(".//sequence")
+    fmt = next(f for f in root.iter("format")
+               if f.get("id") == seq.get("format"))
+    assert fmt.get("width") == "1080"
+    assert fmt.get("height") == "1920"
+
+
+def test_vertical_close_up_is_reframed_on_the_angle(fixture_dir):
+    """Lähikuva saa mitatun kehystksen kulmalleen: skaala täyttää korkeuden
+    ja siirto vie kasvot keskiviivalle. Laaja saa letterboxin — huoneen
+    rajaus ei ole mittaus eikä mielipide, joten sitä ei arvata."""
+    stub = _StubReframer()
+    _, xml = _multicam_cut(fixture_dir, segments=_MOVEMENT_SPANS,
+                           settings=_vertical_settings(), reframer=stub)
+    clips = _spine_mc_clips(xml)
+    for clip, seg in zip(clips, _MOVEMENT_SPANS, strict=True):
+        source = clip.find('mc-source[@srcEnable="video"]')
+        transform = source.find("adjust-transform")
+        if seg.label == WIDE_LABEL:
+            assert transform is None, "laajaa ei kehyksetä"
+            continue
+        assert transform is not None
+        assert transform.get("position") == "20 0"
+        scale = float(transform.get("scale").split()[0])
+        assert abs(scale - 3.1605) < 0.001
+    assert stub.calls, "kehyystä ei kysytty kertaakaan"
+
+
+def test_reframe_composes_with_movement(fixture_dir):
+    """Liike on kerroin kehystyksen päällä — Final Cutissa on vain yksi
+    ``adjust-transform``, joten kaksi kerrosta sulautuu yhdeksi, ja
+    keyframien arvot kantavat kehystyksen mukanaan."""
+
+    stub = _StubReframer(scale=2.0)
+    tl, xml = _multicam_cut(fixture_dir, segments=_MOVEMENT_SPANS,
+                            settings=_vertical_settings(movement=True),
+                            reframer=stub)
+    clips = _spine_mc_clips(xml)
+    plan = _plan_for(_MOVEMENT_SPANS, tl.frame_duration)
+    checked = 0
+    for clip, seg, move in zip(clips, _MOVEMENT_SPANS, plan, strict=True):
+        if seg.label == WIDE_LABEL or move.identity:
+            continue
+        source = clip.find('mc-source[@srcEnable="video"]')
+        transform = source.find("adjust-transform")
+        checked += 1
+        if move.animated:
+            values = [float(k.get("value").split()[0])
+                      for k in transform.iter("keyframe")]
+            assert len(values) == 2
+            assert abs(values[0] - 2.0 * move.start_scale) < 1e-6
+            assert abs(values[1] - 2.0 * move.end_scale) < 1e-6
+        else:
+            scale = float(transform.get("scale").split()[0])
+            assert abs(scale - 2.0 * move.start_scale) < 1e-6
+    assert checked
+
+
+def test_vertical_without_measurements_letterboxes(fixture_dir):
+    """Mittaamaton jakso saa pystyprojektin jossa mitään ei kehyksetä —
+    arvaus on ainoa vaihtoehto joka on huonompi kuin letterbox, ja sitä
+    ei tehdä koskaan."""
+    stub = _StubReframer(ok=False)
+    _, xml = _multicam_cut(fixture_dir, segments=_MOVEMENT_SPANS,
+                           settings=_vertical_settings(), reframer=stub)
+    root = ET.fromstring(xml)
+    assert not root.findall(".//spine//adjust-transform")
+    seq = root.find(".//sequence")
+    fmt = next(f for f in root.iter("format")
+               if f.get("id") == seq.get("format"))
+    assert fmt.get("height") == "1920"
+
+
+def test_vertical_off_keeps_the_source_geometry(fixture_dir):
+    """Kytkin pois: projektin muoto tulee lähteestä eikä asetuksesta."""
+    from autoraffkat.model import Globals
+    from autoraffkat.project import ProjectSettings
+
+    _, xml = _multicam_cut(
+        fixture_dir, segments=_MOVEMENT_SPANS,
+        settings=ProjectSettings(globals=Globals(vertical=False)),
+    )
+    root = ET.fromstring(xml)
+    seq = root.find(".//sequence")
+    fmt = next(f for f in root.iter("format")
+               if f.get("id") == seq.get("format"))
+    assert fmt.get("width") != "1080" or fmt.get("height") != "1920"
+
+
+def test_vertical_multicam_passes_the_fcp_dtd(fixture_dir, validate_fcpxml):
+    """Oma lukija hyväksyy enemmän kuin tuoja; DTD on se raja joka ratkaisee."""
+    _, xml = _multicam_cut(fixture_dir, segments=_MOVEMENT_SPANS,
+                           settings=_vertical_settings(movement=True),
+                           reframer=_StubReframer())
+    validate_fcpxml(xml)
+
+
+def test_vertical_flat_export_has_a_vertical_sequence(fixture_dir):
+    """Tasaviedokin on pysty projekti — sama kytkin, sama muoto."""
+    _, xml = _cut(fixture_dir, settings=_vertical_settings())
+    root = ET.fromstring(xml)
+    seq = root.find(".//sequence")
+    fmt = next(f for f in root.iter("format")
+               if f.get("id") == seq.get("format"))
+    assert fmt.get("height") == "1920"

@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from urllib.request import pathname2url
 from xml.sax.saxutils import escape, quoteattr
 
-from .. import __version__, movement
+from .. import __version__, movement, reframe
 from ..audio.mix import ROOM_ROLE
 from ..decide import WIDE_LABEL
 from ..i18n import t
@@ -413,6 +413,7 @@ def build_fcpxml(
     room: list[tuple[str, str]] | None = None,
     settings: "ProjectSettings | None" = None,
     source: str = "",
+    reframer=None,
 ) -> str:
     """Rakentaa FCPXML-merkkijonon.
 
@@ -457,8 +458,14 @@ def build_fcpxml(
         ),
         None,
     )
-    seq_width = reference.width if reference else 1920
-    seq_height = reference.height if reference else 1080
+    # Pystyvienti: projektin muoto on 1080×1920 eikä lähteen oma. Formaatin
+    # nimeä (FFVideoFormat…) tälle korkeudelle ei ole eikä keksitä: attribuutit
+    # kantavat totuuden, ja Final Cut hyväksyy nimettömän formaatin.
+    if settings is not None and settings.globals.vertical:
+        seq_width, seq_height = reframe.PROJECT_W, reframe.PROJECT_H
+    else:
+        seq_width = reference.width if reference else 1920
+        seq_height = reference.height if reference else 1080
     seq_format = formats.get(seq_width, seq_height, frame_duration, next_id)
 
     needed: list[str] = []
@@ -548,12 +555,14 @@ def build_fcpxml(
         if src_enable:
             attrs.append(f'srcEnable="{src_enable}"')
         clip = "            <asset-clip " + " ".join(attrs)
-        # Mikroliike menee suoraan kuvalle, ennen kiinnitettyjä mikkejä:
-        # DTD asettaa intrinsic-params-sisällön ennen ankkuroituja klippejä.
-        transform = (
-            _movement_lines(moves[index], b - a, frame_duration, "              ")
-            if moves else []
-        )
+        # Kehystys ja liike menevät suoraan kuvalle, ennen kiinnitettyjä
+        # mikkejä: DTD asettaa intrinsic-params-sisällön ennen ankkuroituja
+        # klippejä.
+        shot = _span_reframe(
+            reframer, item, seg, seg_start_tl, program_start + frame_duration * b)
+        move = moves[index] if moves else _NO_MOVE
+        transform = _transform_lines(
+            shot, move, b - a, frame_duration, "              ")
 
         if index == 0 and (mic_tracks or room_ids):
             body.append(clip + ">")
@@ -853,47 +862,74 @@ def _movement_plan(
     )
 
 
-def _movement_lines(
+def _transform_lines(
+    shot: "reframe.Reframe | None",
     move: movement.Move,
     frames: int,
     frame_duration: Fraction,
     indent: str,
 ) -> list[str]:
-    """``<adjust-transform>`` yhdelle kuvalle, tai ei mitään.
+    """``<adjust-transform>`` yhdelle kuvalle: kehystys ja liike samassa.
 
-    Paikallaan pysyvä kehys on attribuutti, liike on ``<param
-    name="scale">`` keyframeineen. Apple esittää muodon omassa esimerkissään:
-    keyframen arvo ohittaa attribuutin, arvo on x-y-pari murto-osana
-    (1 = 100 %), ja ajat ovat klipin omaa aikaa nollasta kestoon — sama
-    paikallinen aikakanta kuin ``adjust-volume``n keyframeilla. Interpolaatio
-    jätetään DTD:n oletukseen (``curve="smooth"``): pehmeä käyrä on juuri se
-    mikä erottaa valekameran lineaarisesta zoomista.
+    Final Cutissa on vain yksi ``adjust-transform``, joten pystyviennin
+    kehystys ja mikroliike sulautetaan yhdeksi muodoksi: kehystys on
+    perusluku ja liike kerrotaan sen päälle. Staattinen kohde on
+    attribuutti, liike on ``<param name="scale">`` keyframeineen, ja
+    siirto pysyy attribuuttina keyframien rinnalla koska se ei liiku —
+    Apple esittää saman muodon omassa esimerkissään: keyframen arvo
+    ohittaa attribuutin, arvo on x-y-pari murto-osana (1 = 100 %), ja
+    ajat ovat klipin omaa aikaa nollasta kestoon, sama paikallinen
+    aikakanta kuin ``adjust-volume``n keyframeilla. Interpolaatio jätetään
+    DTD:n oletukseen (``curve="smooth"``): pehmeä käyrä on juuri se mikä
+    erottaa valekameran lineaarisesta zoomista.
 
-    Identtinen ykkönen ei kirjoita mitään: tyhjä asetus olisi Final Cutille
-    asetus siinä missä mikä tahansa, samasta syystä kuin panoroinnissa.
+    Mitään ei kirjoiteta, kun kehystystä ei ole ja liike on identtinen:
+    tyhjä asetus olisi Final Cutille asetus siinä missä mikä tahansa,
+    samasta syystä kuin panoroinnissa.
     """
-    if move.identity:
+    base = shot.scale if shot else 1.0
+    if not move.animated and shot is None and move.identity:
         return []
 
     def _pair(value: float) -> str:
         return f"{_number(value)} {_number(value)}"
 
+    pos = f' position="{_number(shot.pos_x)} {_number(shot.pos_y)}"' if shot else ""
+    start = base * move.start_scale
     if not move.animated:
-        return [
-            f'{indent}<adjust-transform scale="{_pair(move.start_scale)}"/>',
-        ]
+        return [f'{indent}<adjust-transform scale="{_pair(start)}"{pos}/>']
+    end = base * move.end_scale
     return [
-        f"{indent}<adjust-transform>",
+        f"{indent}<adjust-transform{pos}>",
         f'{indent}  <param name="scale">',
         f"{indent}    <keyframeAnimation>",
         f'{indent}      <keyframe time="{frames_str(0, frame_duration)}" '
-        f'value="{_pair(move.start_scale)}"/>',
+        f'value="{_pair(start)}"/>',
         f'{indent}      <keyframe time="{frames_str(frames, frame_duration)}" '
-        f'value="{_pair(move.end_scale)}"/>',
+        f'value="{_pair(end)}"/>',
         f"{indent}    </keyframeAnimation>",
         f"{indent}  </param>",
         f"{indent}</adjust-transform>",
     ]
+
+
+def _span_reframe(reframer, item, seg, t0: Fraction, t1: Fraction):
+    """Pystyviennin kehystys yhdelle spanille, tai ``None``.
+
+    Laajat jätetään kehyksittä: huoneen rajaus ei ole mittaus eikä
+    mielipide, joten sitä ei arvata — ne saavat letterboxin. Mittaamaton
+    lähikuva saa saman kohtelun, ja viennin varoitukset kertovat montako
+    jäi ilman (sama sääntö kuin reaktiokuvissa: hiljaisuus on tämän
+    projektin toistuvin vika).
+    """
+    if reframer is None or seg.label == WIDE_LABEL or item is None:
+        return None
+    return reframer.from_item(item, float(t0), float(t1))
+
+
+# Liikkeen identtisyys, kun kytkin on pois päältä: kehystys kysytään
+# silti, ja sulautettu muoto palauttaa pelkän kehystyksen.
+_NO_MOVE = movement.Move(1.0, 1.0)
 
 
 def _mc_sources(
@@ -1184,8 +1220,10 @@ def _find_seq_format(
 ) -> str:
     """Etsii sekvenssille kelvollisen kuvaformaatin id:n.
 
-    Projektin sekvenssi voittaa jos sen ruutunopeus täsmää. Jos mikään formaatti
-    ei täsmää pyydettyyn ruutunopeuteen, luodaan resources-lohkoon uusi formaatti.
+    Projektin sekvenssi voittaa jos sen ruutunopeus **ja mitat** täsmäävät —
+    pelkkä ruutunopeus palautti 16:9-formaatin pystyprojektiin, mikä olisi
+    vaientanut projektin geometrian hiljaa. Jos mikään formaatti ei täsmää,
+    luodaan resources-lohkoon uusi pyydetymittojen formaatti.
     """
     formats = {f.get("id"): f for f in resources.findall("format")}
 
@@ -1199,6 +1237,10 @@ def _find_seq_format(
             fd = parse_time(fmt.get("frameDuration"), ZERO)
             if fd != frame_duration:
                 return False
+        if width and height and (
+            fmt.get("width") != str(width) or fmt.get("height") != str(height)
+        ):
+            return False
         return bool(fmt.get("frameDuration"))
 
     # 1. Projekti ensin
@@ -1446,6 +1488,7 @@ def build_multicam_fcpxml(
     roles=None,
     pans: dict[str, float] | None = None,
     ducks: dict[str, list] | None = None,
+    reframer=None,
 ) -> str:
     """Rakentaa monikameraleikkauksen: yksi ``<mc-clip>`` per kuva.
 
@@ -1494,8 +1537,13 @@ def build_multicam_fcpxml(
         for angle_id in angles_of.get(key, [])
     }
     reference = next((m for m in timeline.media if m.has_video), None)
-    seq_width = reference.width if reference and reference.width else 1920
-    seq_height = reference.height if reference and reference.height else 1080
+    # Pystyvienti vaihtaa projektin muodon lähteestä riippumatta, sama
+    # sääntö kuin tasaviedossa.
+    if settings is not None and settings.globals.vertical:
+        seq_width, seq_height = reframe.PROJECT_W, reframe.PROJECT_H
+    else:
+        seq_width = reference.width if reference and reference.width else 1920
+        seq_height = reference.height if reference and reference.height else 1080
     resources, version, seq_format, room_ids, raw_angles = _source_resources(
         timeline.source_path,
         redirects,
@@ -1527,6 +1575,19 @@ def build_multicam_fcpxml(
             )
             continue
 
+        # Kehystys: spanin osa se media-alkio jonka sijoitus kattaa alun —
+        # _split_spans on jo rajannut spanin yhteen osaan.
+        shot = None
+        if reframer is not None and seg.label != WIDE_LABEL:
+            part = next(
+                (i for i in timeline.track_media(seg.angle)
+                 if i.placement_at(at)),
+                None,
+            )
+            if part is not None:
+                shot = reframer.from_item(
+                    part, float(at), float(program_start + frame_duration * b))
+
         own = set(mc.angle_ids)
         video_angle = next((x for x in angles_of.get(seg.angle, []) if x in own), "")
         audio_angles = []
@@ -1546,11 +1607,9 @@ def build_multicam_fcpxml(
         sources = _mc_sources(
             video_angle, audio_angles, mc.angle_roles, raw_angles, pans,
             ducks, (at, program_start + frame_duration * b), mc, frame_duration,
-            transform=(
-                _movement_lines(moves[index], b - a, frame_duration,
-                                "                ")
-                if moves else []
-            ),
+            transform=_transform_lines(
+                shot, moves[index] if moves else _NO_MOVE,
+                b - a, frame_duration, "                "),
         )
         # Puhujan nimi avainsanaksi. Selaimessa monikameraklipin nimi on
         # median oma («A-osa»), joten kaikki kuvat näyttävät samalta;
