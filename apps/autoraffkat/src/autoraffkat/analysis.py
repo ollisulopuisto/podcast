@@ -211,15 +211,13 @@ def resolve_roles(timeline: Timeline, tracks: dict[str, TrackConfig]) -> Roles:
                 roles.speakers.append(name)
             roles.closes[name] = track.key
 
-    if not roles.wide_key:
-        roles.problems.append(t("roles.no_wide"))
     if not roles.mics:
         roles.problems.append(t("roles.no_mic"))
     for name in roles.speakers:
         if name not in roles.mics:
             roles.problems.append(t("roles.speaker_without_mic", name=name))
     # Ilman yhtäkään lähikuvaa päätös on kelvollinen mutta hyödytön: koko
-    # ohjelma olisi yhtä laajaa kuvaa. Se on roolituksen puute eikä tulos,
+    # ohjelma olisi yhtä laajaa kuvaa (tai ilman kuvaa lainkaan). Se on roolituksen puute eikä tulos,
     # joten se sanotaan ääneen eikä viedä XML:ksi.
     if roles.mics and not roles.closes:
         roles.problems.append(t("roles.no_closeups"))
