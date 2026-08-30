@@ -793,6 +793,23 @@ function renderGlobals() {
     body: (body) => { movementBody(body); },
   }).row);
 
+  /* Pystyvienti: mitattu kehystys klippeihin ja 1080×1920-projekti, jotta
+     Final Cutiin tuonti on lopputulos eikä välietappi. Laajat saavat
+     letterboxin — huoneen rajaus ei ole mittaus eikä mielipide. */
+  rows.append(settingRow({
+    key: 'vertical',
+    label: T('vertical.title'),
+    hint: T('vertical.hint'),
+    value: state.globals.vertical
+      ? (video && video.measured ? T('panning.on') : T('vertical.unmeasured'))
+      : T('audio.off'),
+    toggle: {
+      checked: state.globals.vertical,
+      onChange: (on) => { state.globals.vertical = on; renderGlobals(); schedule(0); },
+    },
+    body: (body) => { verticalBody(body); },
+  }).row);
+
   const overlapChosen = OVERLAP_RULES()
     .find(([value]) => value === state.globals.overlap_rule);
   rows.append(settingRow({
@@ -955,6 +972,17 @@ function movementBody(host) {
   const note = document.createElement('p');
   note.className = 'why';
   note.textContent = T('why.movement');
+  host.append(note);
+}
+
+
+/* Pystyviennin runko. Ei säätimiä: kehyksen numero on mittauksesta
+   johdettu, ja «kuinka paljon kehystystä» on kysymys johon käyttäjällä ei
+   ole vastausta — sama rivi kuin mikrolikkeelläkin. */
+function verticalBody(host) {
+  const note = document.createElement('p');
+  note.className = 'why';
+  note.textContent = T('why.vertical');
   host.append(note);
 }
 
