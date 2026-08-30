@@ -250,6 +250,12 @@ class Globals:
     # vienti on täsmälleen entisensä. Rajat eivät ole säätimiä — ks.
     # ``movement.py``n docstring.
     movement: bool = False
+    # Pystyvienti: projekti kirjoitetaan valmiiksi 1080×1920 ja lähikuville
+    # kirjoitetaan mitattu kehystys (``reframe.py``), jotta Final Cutiin
+    # tuonti on lopputulos eikä välietappi. Oletus pois: se on tyylivalinta
+    # jota ei kaikille jaksoille tehdä, ja pois päältä vienti on
+    # täsmälleen entisensä. Rajat eivät ole säätimiä — ks. ``reframe.py``.
+    vertical: bool = False
     # Painot. Näitä on tarkoitus säätää, ja siksi mittaukset ovat
     # välimuistissa pisteiden sijaan: säätö ei maksa uutta purkua.
     # Portin läpäisseiden järjestys. Suoruus edellä; loput pieninä, koska

@@ -103,6 +103,11 @@ def name_tag(settings: ProjectSettings) -> str:
     # selaimessa saa jäädä epäselväksi kumpi niistä liikkuu.
     if g.movement:
         parts.append("move")
+    # Pystyvienti vaihtaa projektin muodon: tuonti on lopputulos eikä
+    # välietappi, ja selaimessa saa jäädä epäselväksi kumpi variantti
+    # tämä on.
+    if g.vertical:
+        parts.append("vertical")
     if settings.audio.enabled:
         parts.append("audio")
     return " ".join(parts)

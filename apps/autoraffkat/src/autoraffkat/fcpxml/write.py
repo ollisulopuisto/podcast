@@ -239,6 +239,7 @@ def settings_note(settings: "ProjectSettings", source: str = "") -> str:
         longtake=t(f"longtake.{g.long_take_rule}"),
         audio=t("export.audio_on" if settings.audio.enabled else "export.audio_off"),
         movement=t("export.movement_on" if g.movement else "export.movement_off"),
+        vertical=t("export.vertical_on" if g.vertical else "export.vertical_off"),
         source=os.path.basename(source),
     )
 
@@ -268,6 +269,7 @@ def settings_metadata(settings: "ProjectSettings", source: str = "") -> list[str
         _md("wide_hold", _number(g.wide_hold), "float"),
         _md("long_take_rule", g.long_take_rule),
         _md("movement", "1" if g.movement else "0", "boolean"),
+        _md("vertical", "1" if g.vertical else "0", "boolean"),
         _md("audio.enabled", "1" if settings.audio.enabled else "0", "boolean"),
         _md(
             "settings",

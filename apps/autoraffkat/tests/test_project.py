@@ -288,3 +288,14 @@ def test_name_tag_mentions_micro_movement(tmp_path):
     assert project.next_output_path(str(xml), "broadcast move") == str(
         tmp_path / "jakso-cut broadcast move.fcpxml"
     )
+
+
+def test_name_tag_mentions_vertical(tmp_path):
+    """Pystyvienti on oma leikkauksensa: sama jakso kaksi kertaa, ja pelkkä
+    numerointi ei kerro kumpi niistä on jo kehyksinen."""
+    xml = tmp_path / "jakso.fcpxml"
+    moved = ProjectSettings(globals=Globals(vertical=True))
+    assert project.name_tag(moved) == "broadcast vertical"
+    assert project.next_output_path(str(xml), "broadcast vertical") == str(
+        tmp_path / "jakso-cut broadcast vertical.fcpxml"
+    )

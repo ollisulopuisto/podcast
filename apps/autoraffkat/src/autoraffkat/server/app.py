@@ -516,6 +516,16 @@ class AppState:
                 self.start_seating()
         if "movement" in raw:
             g.movement = bool(raw["movement"])
+        if "vertical" in raw:
+            was = g.vertical
+            g.vertical = bool(raw["vertical"])
+            # Sama sääntö kuin panoroinnissa: kytkin käynnistää oman
+            # mittauksensa. Ominaisuus joka vaatii toisen ominaisuuden
+            # mittausnapin painamista ensin, on ominaisuus joka näyttää
+            # rikkuneelta.
+            if g.vertical and not was and not self.video_tables \
+                    and not self.video_progress.get("running"):
+                threading.Thread(target=self.measure_video, daemon=True).start()
         if raw.get("overlap_rule") in OVERLAP_RULES:
             g.overlap_rule = raw["overlap_rule"]
         if raw.get("long_take_rule") in LONGTAKE_RULES:

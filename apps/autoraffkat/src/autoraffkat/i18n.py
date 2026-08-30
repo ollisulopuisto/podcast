@@ -244,11 +244,11 @@ CATALOG: dict[str, dict[str, str]] = {
         "fi": "autoraffkat {version} · rytmi: {rhythm} · lyhin kuva {min_shot} s · "
         "ennakko {lead} s · häntä {hang} s · päällekkäispuhe: {overlap} · "
         "pitkä puheenvuoro: {longtake} · mikit: {audio} · mikroliike: {movement} · "
-        "lähde: {source}",
+        "pysty: {vertical} · lähde: {source}",
         "en": "autoraffkat {version} · rhythm: {rhythm} · shortest shot {min_shot} s · "
         "lead {lead} s · hang {hang} s · overlapping speech: {overlap} · "
         "long turn: {longtake} · microphones: {audio} · "
-        "micro-movement: {movement} · source: {source}",
+        "micro-movement: {movement} · vertical: {vertical} · source: {source}",
     },
     "export.audio_on": {
         "fi": "käsitelty",
@@ -263,6 +263,14 @@ CATALOG: dict[str, dict[str, str]] = {
         "en": "on",
     },
     "export.movement_off": {
+        "fi": "ei",
+        "en": "off",
+    },
+    "export.vertical_on": {
+        "fi": "kehyksinen",
+        "en": "reframed",
+    },
+    "export.vertical_off": {
         "fi": "ei",
         "en": "off",
     },
