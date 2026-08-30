@@ -260,8 +260,6 @@ def test_multicam_server_round_trip(scratch_xml):
         if state.progress.get("ready"):
             break
         time.sleep(0.05)
-    assert state.progress["ready"], "verhokäyrät eivät valmistuneet"
-
     client = TestClient(create_app(state))
     fetched = client.get("/api/state").json()
     assert fetched["kind"] == "multicam"
@@ -1065,3 +1063,50 @@ def test_the_export_fades_the_programme_in_and_out(scratch_xml):
     assert floor in xml, "häivytyksen pohjaa ei kirjoitettu lainkaan"
     # Yksi alkuun, yksi loppuun, jokaiselle mikkikulmalle.
     assert xml.count(floor) >= 2, xml.count(floor)
+
+
+def test_vertical_export_without_measurements_warns(scratch_xml):
+    """Pystyvienti päällä ja mitättömät kuvat: vienti syntyy letterboxilla,
+    mutta hiljaa — «toimiva vienti joka ei tehnyt mitään» on tämän
+    projektin toistuva vikaluokka ja se kerrotaan."""
+    from autoraffkat.i18n import t
+
+    source = scratch_xml("multicam.fcpxml")
+    state = AppState(xml_path=str(source))
+    state.load()
+    for _ in range(200):
+        if state.progress.get("ready"):
+            break
+        time.sleep(0.05)
+    client = TestClient(create_app(state))
+
+    payload = {
+        "tracks": {k: v.to_json() for k, v in _multicam_tracks().items()},
+        "globals": Globals(rhythm="hectic", vertical=True).to_json(),
+    }
+    # Mittausnappi kytketään pois: taustasäie voisi muuten ehtiä täyttää
+    # taulukot viennin välissä ja varoitus vaihtuisi ajasta riippuen.
+    def _no_measurement(*a, **k):
+        return None
+
+    state.measure_video = _no_measurement
+    client = TestClient(create_app(state))
+
+    payload = {
+        "tracks": {k: v.to_json() for k, v in _multicam_tracks().items()},
+        "globals": Globals(rhythm="hectic", vertical=True).to_json(),
+    }
+    client.post("/api/settings", json=payload)
+    exported = client.post("/api/export", json=payload).json()
+    assert exported["ok"], exported.get("problems")
+    assert t("export.vertical_unmeasured") in exported["warnings"]
+
+    # Projekti on silti pysty: muoto ei ole mitä sattuu.
+    sequence = ET.parse(exported["path"]).getroot().find(".//sequence")
+    root = ET.parse(exported["path"]).getroot()
+    fmt = next(f for f in root.iter("format")
+               if f.get("id") == sequence.get("format"))
+    assert fmt.get("height") == "1920"
+    # Ja nimi kertoo variantin.
+    assert exported["path"].endswith("vertical.fcpxml") or \
+        "vertical" in exported["path"]

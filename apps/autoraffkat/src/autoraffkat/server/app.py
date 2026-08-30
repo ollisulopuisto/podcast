@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from speechmix import chain, editor
 from speechmix.chain import ChainError
 
-from .. import i18n, pick, probe, project, reactions, staging, thumbs
+from .. import i18n, pick, probe, project, reactions, reframe, staging, thumbs
 from ..analysis import Analysis, AnalysisError, analyze, build_grid, resolve_roles
 from ..audio import mix
 from ..decide import WIDE_LABEL, decide
@@ -1377,6 +1377,21 @@ def create_app(state: AppState) -> FastAPI:
                     warnings.append(t("video.none_measured")
                                     if not state.video_tables
                                     else t("video.no_candidates"))
+
+                # Pystyviennin kehystys: sama kahden tyhjän tapauksen sääntö.
+                # Mittaamaton jakso saa letterboxin, mutta kokonaan hiljainen
+                # tulos olisi «toimiva vienti joka ei tehnyt mitään», ja se
+                # kerrotaan eri sanoin kuin tyhjä mittaus.
+                reframer = None
+                framed = 0
+                if state.settings.globals.vertical:
+                    reframer = reframe.Reframer(state.video_tables)
+                    framed = reframe.framed_count(
+                        reframer, state.timeline, decision.segments)
+                    if not state.video_tables:
+                        warnings.append(t("export.vertical_unmeasured"))
+                    elif not framed:
+                        warnings.append(t("export.vertical_unframed"))
                 if state.timeline.multicams:
                     # Monikamerassa ulos tulee monikameraleikkaus: kuvakulman
                     # voi vaihtaa Final Cutissa jälkikäteen.
@@ -1395,6 +1410,7 @@ def create_app(state: AppState) -> FastAPI:
                         roles=roles,
                         pans=state.pans_now(),
                         ducks=ducks,
+                        reframer=reframer,
                     )
                 else:
                     xml = build_fcpxml(
@@ -1409,6 +1425,7 @@ def create_app(state: AppState) -> FastAPI:
                         room=room,
                         settings=state.settings,
                         source=state.xml_path,
+                        reframer=reframer,
                     )
                 write_fcpxml(out_path, xml)
             except (WriteError, OSError) as exc:

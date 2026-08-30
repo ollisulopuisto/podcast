@@ -24,6 +24,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .decide import WIDE_LABEL
+
 PROJECT_W = 1080
 PROJECT_H = 1920
 
@@ -118,3 +120,37 @@ class Reframer:
         return plan_shot(
             float(np.median(table["cx"][rows])), item.width, item.height
         )
+
+
+def items_for(timeline, key: str) -> list:
+    """Segmentin kulman media-alkiot: raita osineen tai suora media-avain.
+
+    Monikamerassa kulma on raita (osineen); tasaviedossa avain on media.
+    Molemmat päättyvät tänne, jotta laskuri ja kirjoittaja eivät voi
+    eriä siitä mistä kehys kysytään.
+    """
+    items = timeline.track_media(key)
+    if items:
+        return items
+    by_key = timeline.media_by_key()
+    return [by_key[key]] if key in by_key else []
+
+
+def framed_count(reframer: Reframer, timeline, segments: list) -> int:
+    """Montako lähikuvaa saa kehyksen — sama kysymys kuin kirjoittajalla.
+
+    Laajat ohitetaan ja mittaamattomat jäävät ilman. Luku erottaa
+    «mitattu mutta mikään ei täytä» tyhjästä mittauksesta: molemmat
+    kuuluvat, mutta eri varoituksella eikä hiljaisuudella.
+    """
+    count = 0
+    for seg in segments:
+        if seg.label == WIDE_LABEL or not seg.angle:
+            continue
+        for item in items_for(timeline, seg.angle):
+            if item.placement_at(seg.start) is None:
+                continue
+            if reframer.from_item(item, seg.start, seg.end) is not None:
+                count += 1
+                break
+    return count

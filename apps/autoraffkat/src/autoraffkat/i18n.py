@@ -274,6 +274,16 @@ CATALOG: dict[str, dict[str, str]] = {
         "fi": "ei",
         "en": "off",
     },
+    "export.vertical_unmeasured": {
+        "fi": "Pystyvienti päällä mutta kuvia ei ole mitattu: vienti syntyy "
+        "ilman kehyksiä. Paina «Mittaa kuva».",
+        "en": "Vertical export is on but no video has been measured: the "
+        "export has no reframing. Press “Measure video”.",
+    },
+    "export.vertical_unframed": {
+        "fi": "Kuvat on mitattu, mutta yksikään lähikuva ei saanut kehystä.",
+        "en": "Video has been measured, but no close-up qualified for reframing.",
+    },
     # Säätimien arvot muistiinpanossa. Sanamuodot ovat samat kuin
     # `static/i18n.js`:ssä; kaksi luetteloa siksi, että selain ei lue
     # palvelimen katalogia eikä palvelin selaimen.
