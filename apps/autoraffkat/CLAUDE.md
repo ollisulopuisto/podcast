@@ -1030,6 +1030,48 @@ own base from zero to the clip's length, interpolation left at the DTD's
 `curve="smooth"` default — the softness is the feature. The keyframe
 overrides the attribute, so the attribute carries the static case.
 
+## Reframe is a measured transform or a letterbox
+
+`reframe.py` answers the vertical workflow: the export is already
+1080×1920, so importing is the final step instead of Smart Conform being
+the middle one. The rules it lives by:
+
+* **The face position is a measurement, never a guess.** `cx` is already
+  measured per keyframe per file by the same Vision pass the reaction
+  layer uses; the reframe takes the **median over the shot's own rows**
+  (median because the classes settle immediately, the same reasoning as
+  seating's sign). Fewer than `MIN_SAMPLES` found rows in the shot — no
+  transform. The unmeasured clip letterboxes and the export says how
+  many went unframed; two empty cases get two different warnings
+  («nothing measured» vs «measured but nothing qualified»), because
+  silence is this project's recurring failure.
+* **`pos_y` is always zero, and that is geometry, not restraint.** After
+  filling the height the displayed content *is* the project height, so
+  the whole source height is visible and any vertical offset would
+  reveal an edge. Reframing is horizontal only, clamped so the crop
+  window never leaves the content. Drift correction (keyframed
+  position) does not exist until someone measures how often the head
+  actually leaves the window.
+* **The units come from Apple's own FCPXML «Animation» doc**: position is
+  percent of the project's height on *both* axes, scale is a fraction of
+  the clip's fitted baseline (for 16:9 into 9:16: fill scale 3.1605,
+  displayed width 3413 px). The derivation is in `reframe.py`'s
+  docstring and the first real import into Final Cut is what verifies
+  it — same rule as every literal this project could not get from a
+  DTD.
+* **Reframe and micro-movement merge into one `adjust-transform`** —
+  Final Cut has only one per clip, so `_transform_lines` composes them:
+  reframe is the static scale+position baseline, movement multiplies
+  into the scale keyframes. A test holds the product, not the factors.
+* **Wides are letterboxed on purpose** — the framing of a room is not a
+  measurement — and the sequence format is unnamed (`FFVideoFormat1920p`
+  does not exist; attributes carry the truth). The sequence-format search
+  enforces the *requested dimensions*, not just the frame rate: matching
+  by rate alone handed a 16:9 format to a vertical project silently.
+* **Turning the switch on starts the scan** when no tables exist, the
+  same rule as panning: a feature that silently requires another
+  feature's button pressed first is a feature that looks broken.
+
 ## Tests
 
 `tests/make_fixture.py` synthesises the material with ffmpeg: sine bursts at

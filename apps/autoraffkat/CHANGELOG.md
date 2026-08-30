@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [autoraffkat-v2026.8.30.3] - 2026-08-30
+
+### Added
+- **Vertical Export with Measured Reframing** (`reframe.py`): a toggle, off by default, that writes the project as 1080×1920 with a per-shot reframe on every measured close-up — importing into Final Cut becomes the final step, and the Smart Conform round-trip disappears.
+  - **The framing is a measurement, not a guess.** Face centre-x is already measured per keyframe per file by the reaction layer's Vision pass; the reframe takes the median over the shot's own rows (≥ 3 samples, else nothing). The picture fills the height and the face lands on the centreline; the horizontal offset is clamped so the crop window never leaves the content.
+  - **`pos_y` is always zero — geometry, not restraint.** After filling the height the displayed content *is* the project height, so any vertical offset would reveal an edge. Reframing is horizontal only; drift correction does not exist until someone measures how often the head leaves the window.
+  - **Units from Apple's FCPXML «Animation» doc**: position in percent of project height on both axes, scale as a fraction of the fitted baseline (3.1605 for 16:9 into 9:16). Verified against Final Cut's own v1.10 DTD; the derivation is flagged for verification at the first real import.
+  - **Composes with micro-movement.** Final Cut has one `adjust-transform` per clip, so reframe is the static scale+position baseline and movement multiplies into the scale keyframes; a test holds the product.
+  - **Wides and unmeasured clips letterbox — never a guess** — and the export warns in two distinct cases: nothing measured (press «Measure video»), or measured but nothing qualified. The toggle starts the scan itself when no tables exist (the panning rule).
+  - **The sequence-format search now enforces requested dimensions**, not just frame rate — matching by rate alone silently handed a 16:9 format to a vertical project. Export name carries `vertical`; note and `<metadata>` record the setting.
+
 ## [autoraffkat-v2026.8.30.2] - 2026-08-30
 
 ### Added

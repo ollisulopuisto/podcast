@@ -242,6 +242,16 @@ tiedoston. Viennin nimeen tulee `move`, jotta saman jaksoksi kaksi versiota
 erotuvat selaimessa, ja jokaisella klipillä on avainsana — puhujan nimi tai
 laajalla «Laaja» — jolla kuvajoukon valitsee Final Cutin hakemistosta.
 
+**Pystyvienti** (oletuksena pois): projekti kirjoitetaan valmiiksi
+1080×1920 ja jokainen lähikuva saa *mitatun* kehystyksen — kuva täyttää
+korkeuden ja puhujan kasvot osuvat keskiviivalle — joten Final Cutiin
+tuonti on viimeinen askel; Smart Conform -kierretta ei tarvita. Kehystys
+on kuvan aikaisen kasvokohdan mediaani samasta mittauksesta kuin
+reaktiokuvatkin (paina kerran «Mittaa kuva»; kytkin käynnistää mittauksen
+itse). Mittaamattomat kuvat ja laajat jäävät letterboxiin arvaamisen
+sijaan, ja vienti varoittaa molemmista. Yhdistettävissä mikroliikkeen
+kanssa, joka kertautuu kehystyksen päälle.
+
 ## Säätäminen
 
 | Oire | Korjaus |
@@ -266,6 +276,7 @@ src/autoraffkat/
   analysis.py        verhokäyrät aikajanan ruudukolle
   decide.py          kynnykset, kestot, päällekkäispuhe      NOPEA
   movement.py        pystyviennin mikroliikesuunnitelma      NOPEA
+  reframe.py         pystyviennin kehystys kasvomittauksesta NOPEA
   preview.py         palkin tiivistys selaimelle
   project.py         asetukset JSONina XML:n viereen
   i18n.py            palvelimen viestit kahdella kielellä
