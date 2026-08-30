@@ -34,6 +34,10 @@ def test_interface_runs_without_errors(tmp_path, session_file):
     testin ollessa vihreä.
     """
     client = TestClient(create_app(start_dir=str(session_file.parent)))
+    # Siirron ennakko tarvitsee lähteen, jolla on litterointi. Kopio kelpaa:
+    # saman nauhoitteen kesto on sama, joten raportti on aidosti kopioiva.
+    source_file = session_file.parent / "lahde.nhsx"
+    source_file.write_text(session_file.read_text(encoding="utf-8"), encoding="utf-8")
     answers = {
         "/api/state": client.get("/api/state").json(),
         "/api/job": {"running": False, "id": 0},
@@ -57,6 +61,18 @@ def test_interface_runs_without_errors(tmp_path, session_file):
         ).json(),
         "/api/silence/run": {"id": 9, "module": "silence", "running": True,
                              "log": [], "result": {}, "elapsed": 0},
+        "/api/script/preview": client.post(
+            "/api/script/preview", json={"session": str(session_file)}
+        ).json(),
+        "/api/script/run": {"id": 9, "module": "script", "running": True,
+                            "log": [], "result": {}, "elapsed": 0},
+        "/api/merge/info": client.get("/api/merge/info").json(),
+        "/api/merge/preview": client.post(
+            "/api/merge/preview",
+            json={"session": str(session_file), "source": str(source_file)},
+        ).json(),
+        "/api/merge/run": {"id": 9, "module": "merge", "running": True,
+                           "log": [], "result": {}, "elapsed": 0},
     }
     answers_file = tmp_path / "answers.json"
     answers_file.write_text(json.dumps(answers), encoding="utf-8")

@@ -1,16 +1,18 @@
 # Podcast Magic
 
-Two Hindenburg chores, done on your own Mac instead of in Google Colab:
-transcribing the session's audio pool, and muting everything nobody says.
-One window, one session file, two tools — and room for a third.
+Four Hindenburg chores, done on your own Mac instead of in Google Colab:
+transcribing the session's audio pool, muting everything nobody says,
+showing the transcription as a readable script, and carrying a
+transcription from an uncut session into a hand-edited one. One window,
+one session file.
 
 *[Suomenkielinen README](README.fi.md)*
 
 * **Transcription runs on the GPU.** Whisper through Apple's MLX, which means
   Metal. No upload, no runtime disconnecting halfway, no Drive mount.
-* **The session is the format.** Both tools read and write the same `.nhsx`.
-  Words go into the audio pool with their timings; the silencer reads them
-  back out and cuts the tracks.
+* **The session is the format.** Every tool reads and writes the same
+  `.nhsx`. Words go into the audio pool with their timings; the silencer
+  reads them back out and cuts the tracks.
 * **Nothing is overwritten.** Every run writes a new file next to the source,
   and an existing result becomes `… v2`, never a replacement.
 
@@ -274,7 +276,7 @@ that registers a panel. `modules.py` lists them; the shell and the server do
 not change. The shell owns the session picker and the job queue, so a new
 module inherits both.
 
-The intended third is [automixer](https://github.com/ollisulopuisto/automixer)'s
+The intended fifth is [automixer](https://github.com/ollisulopuisto/automixer)'s
 speech chain. `nhsx/pipeline.py` already exposes the session in the shape that
 chain expects — a track with a speaker and a list of spans on the programme
 timeline — so the work left is the chain itself, not the plumbing.
@@ -290,8 +292,14 @@ src/podcastmagic/
     prospect.py                     what the format actually contains
   transcribe/  backends/            Whisper: one interface, several engines
   silence/                          speech intervals, region splitting
+  script/                           the transcription as readable markdown
+  merge/                            a transcription carried between sessions
   modules.py                        the registry
 ```
+
+The `.nhsx` data model itself is written down in
+[docs/hindenburg-session-spec.md](docs/hindenburg-session-spec.md) — the
+document `nhsx/read.py` grew out of.
 
 Code, comments and docstrings are in Finnish; the interface and the
 documentation are in Finnish and English.

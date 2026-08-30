@@ -1,0 +1,1 @@
+"""Litteroinnin siirto istunnosta toiseen."""

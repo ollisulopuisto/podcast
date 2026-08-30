@@ -84,6 +84,25 @@ const STRINGS = {
     'si.quiet': 'Liian hiljaisia',
     'si.bled': 'Vuotoa',
     'si.untouched': 'ei kosketa',
+
+    'sc.about': 'Litteroinnista luettava käsikirjoitus: puhujat, aikaleimat ja sanat siinä järjestyksessä kuin jakso etenee.',
+    'sc.preview': 'Esikatselu',
+    'sc.run': 'Tallenna markdown',
+
+    'mg.about': 'Kopioi litteroinnin leikkaamattomasta istunnosta tähän, käsin editoituun. Tiedostot täsmäytetään nimellä, ja saman nimisen nauhoitteen kesto mitataan molemmilta — eri mittainen jätetään pois.',
+    'mg.source': 'Lähdeistunto',
+    'mg.sourceHint': 'Polku leikkaamattomaan istuntoon, jossa litterointi on',
+    'mg.overwrite': 'Korvaa olemassa oleva litterointi',
+    'mg.overwriteWhy': 'Oletuksena tiedoston oma litterointi jää ja jää omaan lukuunsa. Tämä korvaa sen — huolella, koska kumpikaan ei säily tiedostossa.',
+    'mg.preview': 'Mitä tehdään',
+    'mg.run': 'Siirrä',
+    'mg.copied': 'Kopioidaan',
+    'mg.overwritten': 'Korvataan',
+    'mg.kept': 'Jää koskematta',
+    'mg.mismatched': 'Eri mittainen nauhoite — ei kopioida',
+    'mg.unverified': 'Kestoa ei voitu mitata',
+    'mg.unverifiedWhy': 'Kestoa ei voi mitata ilman äänitiedostoja levyltä. Tarkista ennen ajamista, että molemmissa istunnoissa on sama nauhoitus.',
+    'mg.missing': 'Ei vastinetta kohteessa',
   },
 
   en: {
@@ -166,6 +185,25 @@ const STRINGS = {
     'si.quiet': 'Too quiet',
     'si.bled': 'Bleed',
     'si.untouched': 'left alone',
+
+    'sc.about': 'The transcription as a readable script: speakers, time codes and words in the order the episode runs.',
+    'sc.preview': 'Preview',
+    'sc.run': 'Save markdown',
+
+    'mg.about': 'Carries the transcription from the uncut session into this, the hand-edited one. Files are matched by name, and the duration of each name pair is measured from both — a different length is left out.',
+    'mg.source': 'Source session',
+    'mg.sourceHint': 'Path to the uncut session that holds the transcription',
+    'mg.overwrite': 'Replace an existing transcription',
+    'mg.overwriteWhy': 'By default the file\'s own transcription is kept, and counted on its own line. This replaces it — carefully, because neither survives in the file.',
+    'mg.preview': 'What will happen',
+    'mg.run': 'Merge',
+    'mg.copied': 'Copied',
+    'mg.overwritten': 'Replaced',
+    'mg.kept': 'Left alone',
+    'mg.mismatched': 'Different recording length — not copied',
+    'mg.unverified': 'Duration could not be measured',
+    'mg.unverifiedWhy': 'The duration can only be measured when the audio files are on disk. Before running, check that both sessions hold the same recording.',
+    'mg.missing': 'No counterpart in the target',
   },
 };
 

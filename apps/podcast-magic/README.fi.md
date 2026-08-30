@@ -1,8 +1,9 @@
 # Podcast Magic
 
-Kaksi Hindenburg-työvaihetta omalla Macilla Google Colabin sijaan: istunnon
-äänipoolin litterointi ja hiljaisten kohtien vaimennus. Yksi ikkuna, yksi
-istuntotiedosto, kaksi työkalua — ja tilaa kolmannelle.
+Neljä Hindenburg-työvaihetta omalla Macilla Google Colabin sijaan: istunnon
+äänipoolin litterointi, hiljaisten kohtien vaimennus, litteroinnin näyttäminen
+luettavana käsikirjoituksena ja litteroinnin siirto leikkaamattomasta
+istunnosta käsin editoituun. Yksi ikkuna, yksi istuntotiedosto.
 
 *[README in English](README.md)*
 
@@ -74,6 +75,16 @@ Työjärjestys:
 4. **Vaimennus** — kirjoittaa `jakso 8 litteroitu vaimennettu.nhsx`.
 5. Avaa se Hindenburgissa. Jokainen tauko on vaimennettu alue, jonka saa
    takaisin kuuluviin.
+
+Kaksi työkalua nauhoituksen ympärillä, ei itse äänen:
+
+* **Käsikirjoitus** — litteroinnista luettava markdown puhujineen ja
+  aikaleimoineen, `jakso 8 litteroitu.md` istunnon viereen.
+* **Litteroinnin siirto** — kun leikkaus on tehty käsin editoituun istuntoon
+  ja litterointi on leikkaamattomassa, siirto kopioi sanat leikatun puolelle.
+  Nauhoitteiden kestot mitataan, ja eri mittainen pari jätetään pois ja
+  sanotaan — vanha versio (`hindenburg-helpers`/`xml-merge.py`) kirjoitti
+  kelvollisen tiedoston jonka sanat olivat väärissä kohdissa.
 
 ## Mikä Whisper
 

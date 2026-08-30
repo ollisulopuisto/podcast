@@ -185,6 +185,16 @@ select { cursor: pointer; }
 
 .rows { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
 
+/* Käsikirjoituksen esikatselu. Sama asiakirja kuin levylle kirjoitetaan,
+   näytettynä sellaisenaan — ei markdownin jälkeistä uudelleenmuotoilua. */
+pre.script {
+  margin: 0; padding: 12px 14px; border-radius: 8px;
+  background: var(--panel); border: 1px solid var(--line);
+  max-height: 340px; overflow-y: auto;
+  font: 13px/1.6 ui-monospace, Menlo, monospace;
+  white-space: pre-wrap; word-break: break-word;
+}
+
 .banner {
   border-radius: 8px; padding: 10px 14px;
   background: #3a2a22; border: 1px solid #5c4130; color: var(--warn);

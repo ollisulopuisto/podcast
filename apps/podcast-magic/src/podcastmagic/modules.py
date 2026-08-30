@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .merge import api as merge_api
+from .script import api as script_api
 from .silence import api as silence_api
 from .transcribe import api as transcribe_api
 
@@ -54,6 +56,24 @@ MODULES: tuple[ModuleSpec, ...] = (
         blurb_en="Mutes what nobody says, track by track, from the transcription.",
         script="mod_silence.js",
         router=silence_api.router,
+    ),
+    ModuleSpec(
+        key="script",
+        title_fi="Käsikirjoitus",
+        title_en="Script",
+        blurb_fi="Litteroinnista luettava markdown puhujineen ja aikaleimoineen.",
+        blurb_en="A readable markdown transcript, with speakers and time codes.",
+        script="mod_script.js",
+        router=script_api.router,
+    ),
+    ModuleSpec(
+        key="merge",
+        title_fi="Litteroinnin siirto",
+        title_en="Merge transcription",
+        blurb_fi="Kopioi litteroinnin leikkaamattomasta istunnosta leikattuun.",
+        blurb_en="Carries the transcription from the uncut session into the edited one.",
+        script="mod_merge.js",
+        router=merge_api.router,
     ),
 )
 

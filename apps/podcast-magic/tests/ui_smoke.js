@@ -164,7 +164,8 @@ const sandbox = {
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 
-for (const file of ['i18n.js', 'app.js', 'mod_transcribe.js', 'mod_silence.js']) {
+for (const file of ['i18n.js', 'app.js', 'mod_transcribe.js', 'mod_silence.js',
+                    'mod_script.js', 'mod_merge.js']) {
   vm.runInContext(fs.readFileSync(path.join(staticDir, file), 'utf8'), sandbox, { filename: file });
 }
 
@@ -180,11 +181,26 @@ async function settle() {
   await vm.runInContext('PM.start()', sandbox);
   await settle();
 
+  /* Moduulilista tulee palvelimelta, ei tästä: uusi moduuli jättää itsensä
+     testamatta huomaamatta vain jos tämä lista on käsin kopioitu. */
+  const keys = vm.runInContext(
+    'Array.from(PM.modules.keys()).join(",")', sandbox).split(',');
+
   for (const lang of ['fi', 'en']) {
     vm.runInContext(`I18N.set('${lang}')`, sandbox);
-    for (const key of ['transcribe', 'silence']) {
+    for (const key of keys) {
       vm.runInContext(`PM.session = ${JSON.stringify('/tmp/jakso.nhsx')}; PM.selectModule('${key}')`, sandbox);
       await settle();
+      /* Litteroinnin siirto kysyy lähdettä, jota ei ole ennen kuin se
+         kirjoitetaan: kenttä täytetään ja muutos lähetetään, jotta myös
+         ennakko piirtyy. */
+      if (key === 'merge') {
+        const source = byId.get('mg-source');
+        source.value = '/tmp/lahde.nhsx';
+        const panel = byId.get('panels').children[0];
+        panel.dispatchEvent({ type: 'input', target: source });
+        await settle();
+      }
       /* Tyhjä paneeli on juuri se vika jota tämä etsii: piirto keskeytyi
          eikä siitä sanottu mitään. Siksi tyhjyys on virhe, ei tulos. */
       const panel = byId.get('panels').children[0];
@@ -251,9 +267,13 @@ async function settle() {
   }
 
   if (!calls.includes('/api/state')) throw new Error('kuori ei kysynyt tilaa');
-  if (byId.get('tabs').children.length !== 2) throw new Error('välilehtiä ei piirretty');
+  if (byId.get('tabs').children.length !== keys.length) {
+    throw new Error('välilehtiä ei piirretty');
+  }
   for (const needed of ['/api/transcribe/info', '/api/silence/info',
-                        '/api/transcribe/plan', '/api/silence/preview']) {
+                        '/api/transcribe/plan', '/api/silence/preview',
+                        '/api/script/preview', '/api/merge/info',
+                        '/api/merge/preview']) {
     if (!calls.includes(needed)) throw new Error(`moduuli ei kutsunut ${needed}`);
   }
   console.log(`OK — ${created.length} elementtiä, ${calls.length} kutsua`);

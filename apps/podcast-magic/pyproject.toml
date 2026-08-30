@@ -1,6 +1,6 @@
 [project]
 name = "podcast-magic"
-version = "2026.8.28.3"
+version = "2026.8.30.1"
 description = "Hindenburg-jälkityöt macOS:llä: litterointi ja hiljaisten kohtien vaimennus"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -32,6 +32,7 @@ podcast-magic = "podcastmagic.__main__:main"
 # `nhsx/`, numpy ja ffmpeg. Oma komentonsa eikä `podcast-magic`in valitsin,
 # koska sen koko pointti on olla se joka toimii kun muuta ei ole.
 nhsx-render = "podcastmagic.nhsx.cli:main"
+json-to-text = "podcastmagic.transcribe.json_to_text:main"
 
 [project.optional-dependencies]
 # Apple Silicon: Metal-kiihdytetty Whisper. Ei asennu Intelille eikä Linuxille,
