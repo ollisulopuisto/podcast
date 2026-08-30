@@ -1,0 +1,75 @@
+"""Vertical reframing: per-shot framing from measured face positions.
+
+Lähde on jo Vision-mitattu keyframeä kohden tiedostoa kohden — sama
+välimuisti jota reaktiokerros käyttää — ja tämä moduuli kääntää mittauksen
+klipin muodoksi: lähde täyttää projektin korkeuden ja kasvot osuvat
+keskiviivalle. Tiedostoa ei avata täällä, sama sääntö kuin ``decide.py``ssä.
+
+Geometria (Apuen oma FCPXML «Animation»-dokumentti, jonka mukaan position
+yksikkö on projektin korkeuden prosentti **molemmissa** akseleissa ja scale
+on murto-osa klipin sovitetusta peruskoosta — ensimmäinen aito tuonti
+Final Cutiin varmistaa johdannaisen, ei tämä tiedosto):
+
+1920×1080-lähde 1080×1920-projektissa: sovitus skaalaa 0.5625
+(1080×607.5), korkeuden täyttö vaatii kertaa 3.1605, jolloin leveyttä
+näkyy 3413 px ja lähdeleveydestä 1080/3413 ≈ 0.3165. Täytön jälkeen
+näytetty korkeus on täsmälleen projektin korkeus, eli koko lähdekorkeus
+on näkyvissä — **pystysiirtoa ei koskaan tarvita, ja mikä tahansa
+nollasta poikkeava y paljastaisi reunan.** Siksi ``pos_y`` on aina nolla.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+PROJECT_W = 1080
+PROJECT_H = 1920
+
+# Tämän vähemmän näytteitä ei ole kehys, vaan sattuma: alle kolmen
+# keyframen mediaani on kohinaa, kolme sekuntia on lyhin mitä kehykseksi
+# kutsutaan.
+MIN_SAMPLES = 3
+
+# Aikatoleranssi kun kehyksen rivit poimitaan taulukosta, sekunteina.
+# Keyframien aikaleimat horjuvat kehyksen verran GOP:n reunoilla.
+EPS_S = 0.05
+
+
+@dataclass
+class Reframe:
+    """Yhden kuvan kehys: täyttöskaala ja vaakasiirto, ``pos_y`` aina nolla.
+
+    Skaala on murto-osa klipin sovitetusta peruskoosta (fit), siirto
+    projektin korkeuden prosentteina — Final Cutin omat yksiköt, eivät
+    pikseleitä.
+    """
+
+    scale: float
+    pos_x: float
+    pos_y: float = 0.0
+
+
+def plan_shot(cx: float, width: int, height: int) -> Reframe | None:
+    """Yhden kuvan kehys mediaanikasvo-x:stä ja lähteen mitoista.
+
+    ``cx`` on kasvojen keskipiste normalisoituna lähteen leveydestä
+    (0 = vasen reuna). Palauttaa ``None`` kun kehystä ei ole: mitat
+    puuttuvat tai lähde täyttää korkeutensa jo sovituksella, jolloin
+    mitään ei kirjoiteta — tyhjä muunnos olisi Final Cutille asetus
+    siinä missä mikä tahansa.
+    """
+    if not width or not height:
+        return None
+    fit = min(PROJECT_W / width, PROJECT_H / height)
+    extra = PROJECT_H / (height * fit)
+    if extra <= 1.0:
+        # Sovitus täyttää korkeuden jo valmiiksi: ei rajattavaa, ei
+        # muotoa. Skaala alle ykkösen ei ole kehystys vaan venytys.
+        return None
+    displayed_w = width * fit * extra
+    # Siirto rajataan niin että rajausikkuna ei koskaan astu sisällön
+    # ulkopuolelle — reunalle paljastuisi rako eikä kameraa olekaan.
+    half_gap = (displayed_w - PROJECT_W) / 2 / displayed_w
+    cx = min(0.5 + half_gap, max(0.5 - half_gap, cx))
+    pos_x = -(cx - 0.5) * displayed_w / PROJECT_H * 100
+    return Reframe(scale=extra, pos_x=pos_x)
