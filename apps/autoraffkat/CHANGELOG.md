@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [autoraffkat-v2026.8.31.1] - 2026-08-31
+
+### Fixed
+- **The file picker dialog comes to the front** (`pick.py`): the native `choose file`/`choose folder` dialog opened behind every window — a plain Python process gets no foreground activation — and the app looked hung for up to 300 s. The same failure class and the same measured fix as the plug-in editor: activation policy regular, activate, and a second activation one second later once the dialog exists. Nothing else about picking changed; `--pick`, cancel handling and return values are untouched.
+
 ## [autoraffkat-v2026.8.30.3] - 2026-08-30
 
 ### Added
