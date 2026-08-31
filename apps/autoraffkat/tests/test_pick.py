@@ -160,6 +160,92 @@ def test_a_foreign_word_after_the_suffix_is_still_a_source(tmp_path):
     assert pick.candidates(str(tmp_path)) == [source]
 
 
+def test_dialog_nostetaan_eteen_ennen_kuin_osascript_ajetaan(monkeypatch):
+    """Ikkuna joka jää muiden taakse näyttää jumiutuneelta työkalulta.
+
+    Tavallinen Python-prosessi ei ole macOS:lle käyttöliittymäsovellus, joten
+    ``osascript``in valintaikkuna jäi taakse ja odotti 300 s käyttäjää joka
+    etsi sen Cmd+`-näppäimellä — sama vikaluokka kuin liitännäisen ikkunalla
+    (``speechmix.editor``). Nosto tapahtuu jokaisen ikkunayrityksen edellä,
+    ennen AppleScriptia.
+    """
+    jarjestys = []
+
+    def kirjaa_eteen():
+        jarjestys.append("eteen")
+        return True
+
+    vastaukset = iter([None, "", ""])  # virhe, sitten kaksi käyttäjän peruutusta
+
+    def vale_osascript(script):
+        jarjestys.append("osascript")
+        return next(vastaukset)
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(pick, "interactive", lambda: True)
+    monkeypatch.setattr(pick, "_ensure_foreground", kirjaa_eteen)
+    monkeypatch.setattr(pick, "_osascript", vale_osascript)
+    assert pick.native("/jokin/hakemisto") is None
+    # Jokaista ikkunayritystä kohti yksi nosto, aina ennen AppleScriptia.
+    assert jarjestys == ["eteen", "osascript", "eteen", "osascript"]
+
+    jarjestys.clear()
+    assert pick.native_folder("/jokin/hakemisto") is None
+    assert jarjestys == ["eteen", "osascript"]
+
+
+def test_eteen_nosto_ei_kaadu_ilman_ikkunapalvelinta(monkeypatch):
+    """AppKitin puuttuminen tai ikkunapalvelimen pois jääminen ei ole virhe.
+
+    Ikkuna aukeaa silloinkin, se on vain etsittävä itse — sama kuin
+    ``speechmix.editor``issä. CI:n pytestissä ei ole ikkunapalvelinta, joten
+    apurin saa kutsua missä vain eikä se saa koskaan nostaa poikkeusta.
+    """
+    monkeypatch.setattr(sys, "platform", "win32")
+
+    def ei_saa_koskea():
+        raise AssertionError("ei-darwinilla AppKitia ei kosketa")
+
+    monkeypatch.setattr(pick, "_load_appkit", ei_saa_koskea)
+    assert pick._ensure_foreground() is False
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+
+    def ilman_appkitia():
+        raise ImportError("No module named 'AppKit'")
+
+    monkeypatch.setattr(pick, "_load_appkit", ilman_appkitia)
+    assert pick._ensure_foreground() is False
+
+
+def test_eteen_nosto_tekee_prosessista_tavallisen_sovelluksen(monkeypatch):
+    """Kaksi askeltä, samat kuin ``speechmix.editor``issä.
+
+    ``NSApplicationActivationPolicyRegular`` antaa prosessille Dock-kuvakkeen
+    ja oikeuden nousta eteen, ja aktivointi nostaa sen ylimmäksi. Molemmat
+    ennen ikkunan avaamista.
+    """
+    kutsut = []
+
+    class ValeSovellus:
+        def setActivationPolicy_(self, policy):
+            kutsut.append(("policy", policy))
+
+        def activateIgnoringOtherApps_(self, lippu):
+            kutsut.append(("activate", lippu))
+
+    class ValeNSApplication:
+        @staticmethod
+        def sharedApplication():
+            return ValeSovellus()
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(pick, "_load_appkit", lambda: (ValeNSApplication, "regular"))
+    assert pick._ensure_foreground() is True
+    assert ("policy", "regular") in kutsut
+    assert ("activate", True) in kutsut
+
+
 def test_movement_tagged_export_is_not_a_candidate(tmp_path):
     """«move» on kirjoitettu tunnus, ei vieraan tiedoston sana."""
     from autoraffkat.pick import _is_output

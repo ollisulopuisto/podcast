@@ -12,10 +12,12 @@ molemmat tarkoittavat tässä samaa asiaa.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import subprocess
 import sys
+import threading
 
 from .model import LONGTAKE_RULES, OVERLAP_RULES, RHYTHM_PRESETS
 from .project import LEGACY_OUTPUT_SUFFIXES, OUTPUT_SUFFIX
@@ -166,6 +168,55 @@ def _osascript(script: str) -> str | None:
     return done.stdout.strip()
 
 
+def _load_appkit():
+    """AppKit tuodaan tässä, jotta testi voi pakottaa tuontivirheen."""
+    from AppKit import NSApplication, NSApplicationActivationPolicyRegular
+
+    return NSApplication, NSApplicationActivationPolicyRegular
+
+
+def _ensure_foreground() -> bool:
+    """Tekee prosessista sellaisen, jonka valintaikkuna nousee eteen.
+
+    Pelkkä Python-prosessi ei ole macOS:lle käyttöliittymäsovellus, joten
+    ``osascript``in valintaikkuna jäi muiden ikkunoiden taakse: käyttäjä näki
+    työkalun jumiutuneena 300 s, kunnes löysi ikkunan Cmd+`-näppäimellä. Sama
+    vikaluokka kuin liitännäisen ikkunalla, jonka ``speechmix.editor`` mittasi
+    ratkaistun: ikkuna kyllä syntyy — siellä mitattuna 536×392 kohdassa
+    (0, 37), kolmastoista ylimmästä — mutta ei nouse koskaan eteen. Samat
+    kaksi askeltä täälläkin: ``NSApplicationActivationPolicyRegular`` antaa
+    Dock-kuvakkeen ja oikeuden nousta eteen, ja aktivointi nostaa prosessin
+    ylimmäksi.
+
+    AppKit ei ole tämän sovelluksen oma riippuvuus, joten puuttuminen ei ole
+    virhe: ikkuna aukeaa silloinkin, se on vain etsittävä itse. Ei-macOSissa
+    tai ikkunapalvelinttömässä ympäristössä (pytest CI:ssä) apuri palauttaa
+    kohteliaasti ``False``-arvon, ei koskaan poikkeusta.
+    """
+    if sys.platform != "darwin":
+        return False
+    try:
+        NSApplication, regular = _load_appkit()
+    except Exception:
+        return False
+    app = NSApplication.sharedApplication()
+    app.setActivationPolicy_(regular)
+    app.activateIgnoringOtherApps_(True)
+
+    def nostetaan_uudelleen() -> None:
+        # Toinen aktivointi kun ikkuna on oikeasti olemassa: ensimmäinen
+        # tapahtuu ennen kuin valintaikkuna on piirtynyt. Aikaväli 1,0 s on
+        # kopioitu ``speechmix.editor``istä, jossa se on mitattu riittäväksi.
+        import time
+
+        time.sleep(1.0)
+        with contextlib.suppress(Exception):
+            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+
+    threading.Thread(target=nostetaan_uudelleen, daemon=True).start()
+    return True
+
+
 def native(directory: str = "", force: bool = False) -> str | None:
     """Finderin valintaikkuna. ``None`` jos peruttiin tai ei ole macOS.
 
@@ -179,6 +230,8 @@ def native(directory: str = "", force: bool = False) -> str | None:
     prompt = '"Valitse Final Cutista viety FCPXML"'
     start = f'default location POSIX file "{directory}"' if directory else ""
     for template in (_CHOOSE_FILE, _CHOOSE_FOLDER):
+        # Ikkuna eteen ennen kuin se avataan, joka yrityksellä erikseen.
+        _ensure_foreground()
         result = _osascript(template.format(prompt=prompt, start=start))
         if result:
             return resolve(result.rstrip("/"))
@@ -195,6 +248,7 @@ def native_folder(directory: str = "", force: bool = False) -> str | None:
         return None
     prompt = '"Valitse mediatiedostojen kansio"'
     start = f'default location POSIX file "{directory}"' if directory else ""
+    _ensure_foreground()
     result = _osascript(_CHOOSE_FOLDER.format(prompt=prompt, start=start))
     if result:
         return os.path.abspath(result.rstrip("/"))
