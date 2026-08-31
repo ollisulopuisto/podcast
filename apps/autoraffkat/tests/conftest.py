@@ -15,6 +15,23 @@ import make_fixture
 HAS_FFMPEG = shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
 needs_ffmpeg = pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg puuttuu")
 
+
+@pytest.fixture(autouse=True)
+def pinned_language(monkeypatch):
+    """Kielten väitteet ovat samoja joka koneella.
+
+    Sovelluksen oletuskieli tulee järjestelmästä (`i18n.detect`), joten
+    ilman kiinnitystä testi joka väittää suomenkielisen viestin on vihreä
+    suomenkielisellä koneella ja punainen CI-ajurilla — eikä kumpikaan
+    kerro koodista mitään. Sarja väittää suomeksi, joten suomi kiinnitetään:
+    ympäristömuuttuja on se mitä `detect` lukee ensin, ja ContextVar
+    asetetaan myös testiprosessin omille `t`-kutsuille.
+    """
+    monkeypatch.setenv("AUTORAFFKAT_LANG", "fi")
+    from autoraffkat import i18n
+
+    i18n.set_language("fi")
+
 # Final Cutin omat DTD:t. Ne ovat ainoa tapa tarkistaa vienti sillä
 # mittapuulla, jolla Final Cut sen hylkää — oma lukija hyväksyy paljon
 # enemmän kuin tuonti.
