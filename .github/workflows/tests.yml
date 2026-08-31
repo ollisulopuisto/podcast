@@ -34,7 +34,7 @@ jobs:
       # kuin automixerillä oli 44 virhettä; ne on nyt korjattu, ja jaettu
       # portti oli tarkoitettu väliaikaiseksi.
       - name: Lint
-        run: uv run ruff check packages/speechmix apps/autoraffkat apps/podcast-magic
+        run: uv run ruff check packages/speechmix apps/autoraffkat apps/podcast-magic colab-transcribe
 
       # automixer on kesken muutossa, sama velka kuin sen testeillä alla:
       # 44 virhettä, joista yksikään ei ole tässä muutoksessa syntynyt.
@@ -63,6 +63,9 @@ jobs:
 
       - name: podcast-magic
         run: uv run --directory apps/podcast-magic pytest -q
+
+      - name: colab-transcribe
+        run: uv run --directory colab-transcribe pytest -q
 
       # Ohittunut testi on vihreä testi. Savutesti ohittuu jos ajurilta
       # puuttuu node, eikä siitä sanota mitään — joten sen ajaminen

@@ -65,8 +65,18 @@ def shown(path: Path) -> str:
 
 
 def members() -> dict[str, Path]:
-    """Nimi hakemistoon. Luettelo levyltä, jotta neljäs sovellus toimii heti."""
-    found = [*ROOT.glob("apps/*/pyproject.toml"), *ROOT.glob("packages/*/pyproject.toml")]
+    """Nimi hakemistoon. Luettelo levyltä, jotta uusi sovellus toimii heti.
+
+    Sama johdannaisjoukko kuin `tests/test_workspace_agrees.py`ssä: jäsen
+    on hakemisto jossa on `pyproject.toml`, myös juuressa — tällä hetkellä
+    `colab-transcribe`, joka ei seiso `apps/`issa (syy juuren
+    `pyproject.toml`issa).
+    """
+    found = [
+        *ROOT.glob("apps/*/pyproject.toml"),
+        *ROOT.glob("packages/*/pyproject.toml"),
+        *ROOT.glob("*/pyproject.toml"),
+    ]
     return {p.parent.name: p.parent for p in sorted(found)}
 
 

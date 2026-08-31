@@ -1,8 +1,12 @@
 # Working in this repo
 
-Three apps and the pipeline they share. `README.md` says what each one is;
-this file says how work is done in all of them, and it is the only place that
-says it. `CONTRIBUTING.md` covers the commands and the migration story.
+Four apps. Three of them share one pipeline; the fourth drives the same job
+on a Colab GPU, where the workspace cannot be imported — so its script is a
+snapshot that does not follow changes to `packages/speechmix` automatically,
+and `colab-transcribe/CLAUDE.md` is the place that risk is written down.
+`README.md` says what each one is; this file says how work is done in all of
+them, and it is the only place that says it. `CONTRIBUTING.md` covers the
+commands and the migration story.
 
 Each app has its own `CLAUDE.md` with what is true about *that* app — the
 FCPXML time base, the `.nhsx` word clock, the mlx chain. Those are domain
@@ -48,12 +52,16 @@ contradicted by them.
 
 ## What the shape is for
 
-The apps depend on `packages/speechmix` through the workspace, not through a
-release, so a change to the pipeline reaches all three in the same commit.
-There is no version to bump and no window in which the apps disagree about
-what the chain does. That is the whole point: three copies of this pipeline
-drifted apart once already, and automixer was four measured audio fixes
-behind when it was merged.
+The apps that process audio depend on `packages/speechmix` through the
+workspace, not through a release, so a change to the pipeline reaches every
+one of them in the same commit. There is no version to bump and no window in
+which they disagree about what the chain does. That is the whole point:
+three copies of this pipeline drifted apart once already, and automixer was
+four measured audio fixes behind when it was merged.
+
+colab-transcribe is the shape's standing demonstration of the cost of
+standing outside it: its Colab script is a copy that no commit reaches, so
+every measured fix lands there only when someone carries it over.
 
 The same reasoning is why the toolchain is shared and asserted. An unpinned
 linter, a per-app lockfile or a second ruff config is the same failure in a

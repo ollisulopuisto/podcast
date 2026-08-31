@@ -1,12 +1,14 @@
 # podcast
 
-Three tools that share one speech-mixing pipeline.
+Four tools around one speech-mixing pipeline. Three of them run it; the
+fourth drives the same job on a Colab GPU.
 
 | | what it reads | what it produces |
 |---|---|---|
 | `apps/autoraffkat` | Final Cut FCPXML | FCPXML, the picture cut to whoever is talking |
 | `apps/automixer` | its own session config | a rendered podcast mix |
 | `apps/podcast-magic` | Hindenburg `.nhsx` | transcription, and everything nobody says muted |
+| `colab-transcribe` | `.nhsx` sessions + audio + a `colab` CLI | the same, transcribed on a Colab GPU instead of your machine |
 
 Three session formats, one pipeline. The thing they have in common is not
 the file — it is **tracks placed on a programme timeline**, which `.fcpxml`,
@@ -30,10 +32,17 @@ uv run podcast-magic ~/Podcast/episode8/  # Hindenburg: transcribe and mute
 uv run autoraffkat                        # Final Cut: cut the picture
 uv run automixer                          # render a mix
 
+uv run colab-transcribe --input ~/jakso/  # the same job on a Colab GPU;
+                                          # needs the `colab` CLI
+
 uv run nhsx-render "episode 8.nhsx"       # a Hindenburg session → a WAV
 ```
 
-All three run the same chain. automixer was the last one in and the last to
+All three macOS tools run the same chain. colab-transcribe runs the same
+*job* in the cloud: its Colab script is a snapshot of this chain that
+cannot import the workspace, so a measured fix lands there only when
+someone carries it over — `colab-transcribe/CLAUDE.md` keeps that risk
+written down. automixer was the last one in and the last to
 get all of it: the shared pipeline reaches the timeline through *tracks with
 spans*, that shape used to be buildable only from FCPXML, and so the four
 stages that need it were locked to one app. They are not any more —
@@ -70,8 +79,13 @@ regions, and the mix played back — plus a Quick Look extension that shows the
 same view in Finder — press space, see the tracks and
 regions, hear the mix. It is Swift, because a macOS app extension cannot
 be anything else, and it is at the repo root rather than under `apps/`
-because a directory there without a `pyproject.toml` breaks `uv sync` for the
-whole workspace.
+because a directory there without a `pyproject.toml` breaks `uv sync` for
+the whole workspace.
+
+`colab-transcribe` is the fourth app, and it also lives at the root: its
+pipeline runs on Colab, so it cannot import `speechmix` through the
+workspace, and it is a member only through an explicit line in the root
+`pyproject.toml`.
 
 It parses the session again in Swift rather than calling `nhsx-render`: a
 preview extension is sandboxed and cannot spawn a subprocess. Two parsers of

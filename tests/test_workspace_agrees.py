@@ -25,13 +25,26 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 # Jäsen on hakemisto jossa on `pyproject.toml`. Luettelo johdetaan levyltä
-# eikä kirjoiteta tähän: neljäs sovellus ei saa livahtaa mukaan ilman että
-# nämä väitteet koskevat sitä.
+# eikä kirjoiteta tähän: uusi sovellus ei saa livahtaa mukaan ilman että
+# nämä väitteet koskevat sitä. Ylätason `*/pyproject.toml` ottaa mukaan
+# juuressa asuvat jäsenet — tällä hetkellä `colab-transcribe`, joka ei seiso
+# `apps/`issa koska sen ketju ajaa Colabissa eikä se voi tuoda `speechmix`ia
+# työtilasta (juuren `pyproject.toml` selittää miksi).
 MEMBERS = sorted(
-    p.parent
-    for p in [*ROOT.glob("apps/*/pyproject.toml"), *ROOT.glob("packages/*/pyproject.toml")]
+    {
+        p.parent
+        for p in [
+            *ROOT.glob("apps/*/pyproject.toml"),
+            *ROOT.glob("packages/*/pyproject.toml"),
+            *ROOT.glob("*/pyproject.toml"),
+        ]
+    },
+    key=lambda p: p.name,
 )
-APPS = [m for m in MEMBERS if m.parent.name == "apps"]
+# Sovellukset ovat kaikki muut paitsi jaettu paketti. Juuressa asuvan
+# jäsenen vanhempi on työtilahakemisto itse, joten nimeen vetoaminen olisi
+# parsittava koneeltta eikä sääntö.
+APPS = [m for m in MEMBERS if m.parent.name != "packages"]
 
 CALVER = re.compile(r"^\d{4}\.\d{1,2}\.\d{1,2}\.\d+$")
 
@@ -53,11 +66,17 @@ def root() -> dict:
     return toml(ROOT / "pyproject.toml")
 
 
-def test_the_members_are_the_four_we_think_they_are():
-    """Sattumalta tyhjä luettelo tekisi jokaisesta alla olevasta testin joka ei testaa mitään."""
+def test_the_members_are_the_five_we_think_they_are():
+    """Sattumalta tyhjä luettelo tekisi jokaisesta alla olevasta testin joka ei testaa mitään.
+
+    colab-transcribe on jäsen vaikka ei ole `apps/`issa — se on juuressa
+    `viewer/`in tapaan, mutta pyproject.tomlilla, ja listattu eksplisiittisesti
+    juuren `[tool.uv.workspace]`iin.
+    """
     assert [name(m) for m in MEMBERS] == [
         "automixer",
         "autoraffkat",
+        "colab-transcribe",
         "podcast-magic",
         "speechmix",
     ]

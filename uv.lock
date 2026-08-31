@@ -6,6 +6,7 @@ requires-python = ">=3.13"
 members = [
     "automixer",
     "autoraffkat",
+    "colab-transcribe",
     "podcast-magic",
     "speechmix",
 ]
@@ -377,6 +378,17 @@ sdist = { url = "https://files.pythonhosted.org/packages/e4/46/7eea92b6aa2d68af7
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5e/da/ec1a6e36624000b6df0dd61183c42342ee5814c073315e802cadaad04d2f/clr_loader-0.3.1-py3-none-any.whl", hash = "sha256:cbad189de20d202a7d621956b0fc38049e13c9bf7ca2923441eff725cd121aa1", size = 55730, upload-time = "2026-04-18T17:49:42.99Z" },
 ]
+
+[[package]]
+name = "colab-transcribe"
+version = "2026.8.30.1"
+source = { editable = "colab-transcribe" }
+dependencies = [
+    { name = "textual" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "textual", specifier = ">=8.0.0" }]
 
 [[package]]
 name = "colorama"

@@ -1,0 +1,33 @@
+[project]
+name = "colab-transcribe"
+version = "2026.8.30.1"
+description = "Litterointi ja Auto-Silence Colabin näytönohjaimella: paikallinen ajuri ja TUI, ketju pilvessä"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Olli Sulopuisto" }]
+keywords = ["colab", "whisper", "transcription", "hindenburg", "nhsx", "podcast"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio :: Editors",
+]
+dependencies = [
+    "textual>=8.0.0",
+]
+
+[project.scripts]
+colab-transcribe = "colabtranscribe.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/colabtranscribe"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

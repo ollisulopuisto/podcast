@@ -1,7 +1,9 @@
 # Where the work happens
 
-**This repo is the source of truth.** All three apps live here, under
-`apps/`, and so does the pipeline they share, under `packages/speechmix`.
+**This repo is the source of truth.** The four apps live here — three under
+`apps/`, and `colab-transcribe` at the root, because its chain runs on a
+Colab GPU and cannot import the workspace (`colab-transcribe/CLAUDE.md`).
+The pipeline the macOS apps share lives under `packages/speechmix`.
 
 The three standalone repos — `ollisulopuisto/autoraffkat`, `automixer`,
 `podcast-magic` — are where these projects came from. They are kept for
@@ -21,6 +23,7 @@ uv run --directory packages/speechmix pytest -q
 uv run --directory apps/autoraffkat   pytest -q
 uv run --directory apps/automixer     pytest -q
 uv run --directory apps/podcast-magic pytest -q
+uv run --directory colab-transcribe   pytest -q
 ```
 
 Sama muoto jokaiselle jäsenelle, myös `packages/speechmix`ille: se sai
@@ -40,9 +43,12 @@ release:
 speechmix = { workspace = true }
 ```
 
-so a change to `packages/speechmix` is visible to all three apps in the
-same commit. That is the whole point — there is no version to bump and no
-window in which the apps disagree about what the chain does.
+so a change to `packages/speechmix` is visible to every app that imports it
+in the same commit. That is the whole point — there is no version to bump
+and no window in which the apps disagree about what the chain does. The
+exception proves the shape: colab-transcribe stands outside it, and its
+Colab script picks up a change to the chain only when someone carries it
+over by hand.
 
 ## Rules
 
