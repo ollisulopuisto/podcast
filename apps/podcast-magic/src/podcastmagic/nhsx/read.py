@@ -70,11 +70,15 @@ def time_to_seconds(value: str | None) -> float:
     """Lukee ajan sekunteina tai muodossa ``[HH:]MM:SS[.mmm]``.
 
     Hindenburg kirjoittaa yleensä sekunteja, mutta kaksoispistemuoto esiintyy
-    vanhemmissa istunnoissa. Virheellinen arvo on nolla eikä poikkeus:
-    yksi sekaisin mennyt attribuutti ei saa kaataa koko istunnon lukemista.
+    vanhemmissa istunnoissa. Puuttuva arvo (None) on nolla; rikkinäinen arvo
+    nostaa ``ValueError``in, jonka luku muuntaa ``NhsxError``iksi. Sama
+    sovitu kuin jaetussa ``nhsx``-paketissa ja Colabin snapshotissa: hiljainen
+    nolla sijoittaisi alueen väärään kohtaan eikä kukaan huomaisi.
     """
-    if not value:
+    if value is None:
         return 0.0
+    if not value:
+        raise ValueError("tyhjä aikaleima")
     try:
         if ":" in value:
             parts = value.split(":")
@@ -82,11 +86,11 @@ def time_to_seconds(value: str | None) -> float:
             # rikkinäinen, ei päivää. Ilman vartijaa 1:2:3:4 laskettaisiin
             # 223 384 s:ksi ja alue sijoittuisi kymmenen päivän päähän.
             if len(parts) > 3:
-                return 0.0
+                raise ValueError(f"virheellinen aikaleima: {value}")
             return sum(float(part) * 60**i for i, part in enumerate(reversed(parts)))
         return float(value)
-    except ValueError:
-        return 0.0
+    except ValueError as exc:
+        raise ValueError(f"virheellinen aikaleima: {value}") from exc
 
 
 def seconds_to_time(seconds: float) -> str:
@@ -243,19 +247,22 @@ def read(path: str | Path) -> Session:
             )
 
     tracks: list[TrackInfo] = []
-    for elem in descendants(root, "Track"):
-        track = TrackInfo(name=elem.get("Name", ""), elem=elem)
-        for region in children(elem, "Region"):
-            track.regions.append(
-                RegionInfo(
-                    ref=region.get("Ref", ""),
-                    start=time_to_seconds(region.get("Start")),
-                    length=time_to_seconds(region.get("Length")),
-                    offset=time_to_seconds(region.get("Offset", "0")),
-                    elem=region,
+    try:
+        for elem in descendants(root, "Track"):
+            track = TrackInfo(name=elem.get("Name", ""), elem=elem)
+            for region in children(elem, "Region"):
+                track.regions.append(
+                    RegionInfo(
+                        ref=region.get("Ref", ""),
+                        start=time_to_seconds(region.get("Start", "0")),
+                        length=time_to_seconds(region.get("Length")),
+                        offset=time_to_seconds(region.get("Offset", "0")),
+                        elem=region,
+                    )
                 )
-            )
-        tracks.append(track)
+            tracks.append(track)
+    except ValueError as exc:
+        raise NhsxError(f"Virheellinen aikaleima: {exc}") from exc
 
     if pool is None and not tracks:
         raise NhsxError(

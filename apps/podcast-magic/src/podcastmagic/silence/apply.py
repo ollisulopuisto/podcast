@@ -59,10 +59,15 @@ def split_track(track_elem, zones: list[tuple[float, float]]) -> tuple[int, int]
     originals = [c for c in track_elem if localname(c) == "Region"]
 
     for region in originals:
-        start = time_to_seconds(region.get("Start"))
-        length = time_to_seconds(region.get("Length"))
+        try:
+            start = time_to_seconds(region.get("Start"))
+            length = time_to_seconds(region.get("Length"))
+            offset = time_to_seconds(region.get("Offset", "0"))
+        except ValueError:
+            # Rikkinäinen alue jätetään koskematta: sekasin menee tieto ei
+            # ole päätös vaientaa (sama kuin raita ilman litterointia).
+            continue
         end = start + length
-        offset = time_to_seconds(region.get("Offset", "0"))
         position = list(track_elem).index(region)
 
         edges = {start, end}

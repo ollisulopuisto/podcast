@@ -286,8 +286,10 @@ def _truthy(value: str | None) -> bool:
 def _number(value: str | None, default: float) -> float:
     """Liukuluku attribuutista. Kelvoton arvo on oletus eikä poikkeus.
 
-    Sama päätös kuin ``read.time_to_seconds``issa: yksi sekaisin mennyt
-    attribuutti ei saa kaataa koko esikatselua.
+    Tarkoituksella hiljaisempi kuin ``read.time_to_seconds``: tason (Gain,
+    Pan) sekasin arvo ei saa kaataa koko esikatselua, joten palautetaan
+    oletus. Aikojen kohdalla sama hiljaisuus sijoittaisi alueen väärään
+    kohtaan, joten aika sen sijaan nostaa.
     """
     if value is None:
         return default
@@ -320,10 +322,15 @@ def _ramps(region_elem, length: float, unknown: dict[str, int]) -> tuple[Ramp, .
             if attr_name not in KNOWN_FADE_ATTRS:
                 key = f"{FADE_ELEMENT}/{attr_name}"
                 unknown[key] = unknown.get(key, 0) + 1
-        span = time_to_seconds(child.get("Length"))
+        try:
+            span = time_to_seconds(child.get("Length"))
+            begin = time_to_seconds(child.get("Start"))
+        except ValueError:
+            # Rikkinäinen häivytys jätetään väliin: esikatselua ei kaadeta
+            # yhden sekasin meneen attribuutin vuoksi.
+            continue
         if span <= 0:
             continue
-        begin = time_to_seconds(child.get("Start"))
         if begin >= length:
             continue
         ramps.append(

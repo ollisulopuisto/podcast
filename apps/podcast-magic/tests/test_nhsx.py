@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
+
 from podcastmagic import nhsx
-from podcastmagic.nhsx.read import locate, time_to_seconds
+from podcastmagic.nhsx.read import NhsxError, locate, time_to_seconds
 from podcastmagic.nhsx.read import read as read_session
 from podcastmagic.nhsx.write import next_free_path, set_transcription
 
@@ -33,8 +35,10 @@ def test_time_accepts_both_notations():
     assert time_to_seconds("12.5") == 12.5
     assert time_to_seconds("01:02:03") == 3723.0
     assert time_to_seconds("02:03") == 123.0
-    # Rikkinäinen arvo on nolla, ei poikkeus: yksi attribuutti ei kaada lukua.
-    assert time_to_seconds("kaksitoista") == 0.0
+    # Rikkinäinen arvo nostaa poikkeuksen (ei hiljaista nollaa); puuttuva
+    # arvo (None) on nolla. Sama sovitu kuin jaetussa nhsx-paketissa.
+    with pytest.raises(ValueError):
+        time_to_seconds("kaksitoista")
     assert time_to_seconds(None) == 0.0
 
 
@@ -42,10 +46,27 @@ def test_time_rejects_more_than_three_parts():
     """``HH:MM:SS`` on enimmäkseen: neljästä osasta koostuva arvo on rikkinäinen.
 
     Ilman vartijaa ``1:2:3:4`` laskettaisiin päiviksi (223 384 s) ja alue
-    sijoittuisi kymmenen päivän päähän hiljaisesti. Muut jäsennit hylkäävät
-    saman.
+    sijoittuisi kymmenen päivän päähän hiljaisesti. Kaikki jäsennit — tämä,
+    jaettu nhsx-paketti ja Colabin snapshot — hylkäävät sen poikkeuksella.
     """
-    assert time_to_seconds("1:2:3:4") == 0.0
+    with pytest.raises(ValueError):
+        time_to_seconds("1:2:3:4")
+
+
+def test_read_raises_nhsxerror_on_malformed_region_time(tmp_path):
+    """Rikkinäinen alueen aika on NhsxError, ei hiljainen nolla.
+
+    Sama sovitu kuin jaetussa ``nhsx``-paketissa: luku pinottaa NhsxErrorin,
+    eikä sijoita aluetta kymmenen päivän päähän.
+    """
+    (tmp_path / "s.nhsx").write_text(
+        """<?xml version="1.0"?><Session>
+          <Tracks><Track Name="t"><Region Ref="1" Start="1:2:3:4" Length="1"/></Track></Tracks>
+        </Session>""",
+        encoding="utf-8",
+    )
+    with pytest.raises(NhsxError):
+        read_session(tmp_path / "s.nhsx")
 
 
 def test_locate_does_not_treat_the_filename_as_a_glob(tmp_path):
