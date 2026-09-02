@@ -1,0 +1,14 @@
+{
+  "D1_tone_400.wav": {
+    "ui": "katso saumataulukko README-hakemistosta alla",
+    "expect": "400 Hz:n kuoren verhoussiirto saumassa"
+  },
+  "D2_tone_1000.wav": {
+    "ui": null,
+    "expect": "1000 Hz:n kuoren verhoussiirto saumassa"
+  },
+  "D3_long_noise.wav": {
+    "ui": "kaksi raitaa samaan istuntoon: kokonainen vs. kahtia pilkottu",
+    "expect": "render\u00f6intien differenssi = sauman muokkaus"
+  }
+}

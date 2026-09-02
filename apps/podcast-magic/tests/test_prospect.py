@@ -15,7 +15,7 @@ SESSION = """<?xml version="1.0" encoding="UTF-8"?>
 <Session Name="testi">
   <AudioPool Path=""><File Id="1" Name="a.wav" Path="a.wav"/></AudioPool>
   <Tracks>
-    <Track Name="Olli" Volume="0.5" Pan="-0.3">
+    <Track Name="Olli" Volume="0.5" Pan="-0.3" Kummallinen="3">
       <Region Ref="1" Start="0" Length="4" Gain="-3" Kummallinen="7"/>
       <Region Ref="1" Start="4" Length="4" Kummallinen="9"><Fade In="0.2"/></Region>
     </Track>
@@ -49,16 +49,29 @@ def test_it_separates_what_we_read_from_what_we_do_not(tmp_path):
     s = survey_of(SESSION, tmp_path)
     assert "Kummallinen" in s.unknown["Region"]
     assert "Gain" not in s.unknown["Region"]
-    # Raidan `Volume` on juuri se tapaus jonka takia tämä työkalu on: se voi
-    # olla se nimi jolla faderi oikeasti kirjoitetaan.
-    assert "Volume" in s.unknown["Track"]
+    # Raidan `Volume` oli ennen mittoja täsmälleen tämä tapaus: nimi jota
+    # epäiltiin faderin kirjoitukseksi. `h-test A` mittasi sen (+6 →
+    # −13,98 dBFS, −6 → −26,03), ja nyt se luetaan eikä enää epäillä.
+    assert "Volume" not in s.unknown["Track"]
+    assert "Kummallinen" in s.unknown["Track"]
+    # `In`/`Out` olivat keksittyjä. Mitattu häivytys on Start/Length/Gain.
+    assert "In" in s.unknown["Fade"]
+
+
+def test_measured_fade_attributes_are_known(tmp_path):
+    xml = SESSION.replace(
+        '<Fade In="0.2"/>',
+        '<Fade Start="0.2" Length="0.5" Gain="-10"/>',
+    )
+    s = survey_of(xml, tmp_path)
+    assert "Fade" not in s.unknown
 
 
 def test_the_report_names_the_unknown_ones(tmp_path):
     s = survey_of(SESSION, tmp_path)
     text = prospect.text(s)
     assert "Kummallinen" in text
-    assert "Volume" in text
+    assert "?" in text
     assert "Region" in text
 
 

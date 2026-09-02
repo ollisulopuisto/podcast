@@ -22,6 +22,27 @@ Siksi tämä sovellus ei myöskään seiso `apps/`issa sen enempää kuin se
 ottaisi `speechmix`ia: se on juuressa `viewer/`in tapaan, mutta
 pyproject.tomlilla, ja listattu eksplisiittisesti työtilan jäseneksi.
 
+## Luettu XML on aina kovennettu
+
+Kaikki `.nhsx`:n luenta kulkee saman kovennetun parserin läpi
+(`_SAFE_PARSER`: `lxml.etree`, ei DTD:n latausta, ei entiteettien
+ratkaisu, ei verkkoa), ja `<!DOCTYPE>`-julistus hylätään heti
+(`_reject_doctype`). XXE- ja entiteettipommi-iskuväylä on näin suljettu
+molemmissa ovia — `inject_transcriptions_to_nhsx` ja `run_auto_silence`
+kulkevat samaa tietä. Kovennus on käsin siirretty podcast-magicin lukijasta
+tähän snapshotiin, eli se on driftin vaaraan kuuluvaa: jos lukijaa muutetaan,
+tämä ei näe muutosta automaattisesti.
+
+## Luettu XML on aina kovennettu
+
+`.nhsx`:n molemmat lukupolut — transkriptioitten injektointi ja
+Auto-Silence — käyvät saman kovennetun parserin kautta. `<!DOCTYPE>`
+hylätään heti, ja parser ei lataa DTD:tä, ratkaise entiteettejä eikä ota
+yhteyttä verkkoon: XXE- ja entiteettipommien iskuväylä on suljettu
+molemmissa ovia kerralla. Tämäkin on käsin siirretty kopio
+podcast-magicin lukijasta, eli driftin vaara pätee: jos jompaa parseria
+muutetaan, toinen ei näe muutosta.
+
 ## Yksi suunnitelma, kolme ovea
 
 `driver.plan_commands` on ainoa paikka jossa Colab-komentoja rakennetaan.

@@ -72,6 +72,12 @@ Each app's own README has the rest: `apps/podcast-magic/README.md`
 ([suomeksi](apps/podcast-magic/README.fi.md)), `apps/autoraffkat/README.md`,
 `apps/automixer/README.md`.
 
+## The format, as measured
+
+`docs/hindenburg-nhsx-format.md` is a standalone reference to the
+Hindenburg session file — element by element, with every claim tagged
+measured, observed, or unknown. Written to be read outside this repo.
+
 ## The viewer
 
 `viewer/` is **NHSX Viewer**, a small app that opens a `.nhsx` — tracks,

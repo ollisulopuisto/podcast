@@ -1,0 +1,34 @@
+{
+  "B1_16bit_mono.wav": {
+    "ui": null,
+    "expect": "16-bittinen mono purkautuu"
+  },
+  "B2_24bit_mono.wav": {
+    "ui": null,
+    "expect": "24-bittinen mono purkautuu"
+  },
+  "B3_24bit_stereo.wav": {
+    "ui": null,
+    "expect": "stereo-alue: mit\u00e4 kanavat olivat (yhdistetty? toinen puoli?)"
+  },
+  "B4_long_file.wav": {
+    "ui": "alue alkaa 1,5 s tiedoston sis\u00e4lt\u00e4 (Offset)",
+    "expect": "Offset-lukema: \u00e4\u00e4ni oikeasta kohdasta"
+  },
+  "B5_lane1.wav": {
+    "ui": "lane 1, p\u00e4\u00e4llekk\u00e4in B6:n kanssa",
+    "expect": "molemmat alueet summautuvat"
+  },
+  "B6_lane2.wav": {
+    "ui": "lane 2, p\u00e4\u00e4llekk\u00e4in B5:n kanssa",
+    "expect": "molemmat alueet summautuvat"
+  },
+  "B7_muted_silence.wav": {
+    "ui": "alue mykistetty (Mute)",
+    "expect": "exportissa ei \u00e4\u00e4nt\u00e4"
+  },
+  "B8_music_pink.wav": {
+    "ui": "musiikkiradan tyyppi",
+    "expect": "raidan tyyppi n\u00e4kyy .nhsx:st\u00e4"
+  }
+}

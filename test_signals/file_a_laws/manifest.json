@@ -1,0 +1,46 @@
+{
+  "A1_level_m20.wav": {
+    "ui": null,
+    "expect": "render\u00f6idyn alueen huippu \u2248 \u221220 dBFS"
+  },
+  "A2_level_m35.wav": {
+    "ui": null,
+    "expect": "render\u00f6idyn alueen huippu \u2248 \u221235 dBFS"
+  },
+  "A3_level_m50.wav": {
+    "ui": null,
+    "expect": "render\u00f6idyn alueen huippu \u2248 \u221250 dBFS"
+  },
+  "A4_pan_0.625.wav": {
+    "ui": "alueen Pan = 0.625",
+    "expect": "L/R-RMS-suhde mittaa pan-lain"
+  },
+  "A5_pan_m0.55.wav": {
+    "ui": "alueen Pan = \u22120.55",
+    "expect": "L/R-RMS-suhde mittaa pan-lain"
+  },
+  "A6_pan_0.wav": {
+    "ui": "alueen Pan = 0 (keskitetty)",
+    "expect": "L/R-RMS-suhde \u2248 1"
+  },
+  "A7_fade_plateau.wav": {
+    "ui": "h\u00e4ivytys tasolle: 2,5 s ramp, 10 s hold, 2,5 s ramp alas",
+    "expect": "verhouksen muoto \u2014 k\u00e4yr\u00e4, ei vain p\u00e4\u00e4tepisteet"
+  },
+  "A8_fade_short.wav": {
+    "ui": "0,5 s h\u00e4ivytys ilman Gainia",
+    "expect": "p\u00e4\u00e4tteen lukema: palaaako yhden vai"
+  },
+  "A9_gain_plus6.wav": {
+    "ui": "alueen Gain +6 dB",
+    "expect": "huippu \u2248 \u221214 dBFS"
+  },
+  "A10_both_gain_clipgain.wav": {
+    "ui": "Gain +6 dB JA ClipGain +6 dB",
+    "expect": "ClipGain voittaa (\u2248 \u221214 dBFS), ei summa (\u2248 \u22128)"
+  },
+  "A11_track_fader_m6.wav": {
+    "ui": "oman raidan vaimennin \u22126 dB, vain t\u00e4m\u00e4 alue raidalla",
+    "expect": "huippu \u2248 \u221226 dBFS \u2014 raidan fader osallistuu summaan"
+  }
+}

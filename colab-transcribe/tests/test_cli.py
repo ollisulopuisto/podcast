@@ -47,7 +47,7 @@ def test_real_run_streams_output_and_reports_results(tmp_path, capsys, monkeypat
     (tmp_path / "puhe.wav").write_bytes(b"")
     calls = []
 
-    def fake_run(commands, log):
+    def fake_run(commands, log, timeout=None):
         calls.append(commands)
         log("Litteroitu .nhsx luotu: /content/output/j litteroitu.nhsx")
         return 0
@@ -62,7 +62,7 @@ def test_real_run_streams_output_and_reports_results(tmp_path, capsys, monkeypat
 def test_failing_remote_run_returns_its_code(tmp_path, monkeypatch):
     (tmp_path / "puhe.wav").write_bytes(b"")
 
-    def fake_run(commands, log):
+    def fake_run(commands, log, timeout=None):
         return 3
 
     monkeypatch.setattr(cli.driver, "run", fake_run)

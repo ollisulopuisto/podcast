@@ -1,6 +1,6 @@
 [project]
 name = "colab-transcribe"
-version = "2026.8.30.1"
+version = "2026.9.2.1"
 description = "Litterointi ja Auto-Silence Colabin näytönohjaimella: paikallinen ajuri ja TUI, ketju pilvessä"
 readme = "README.md"
 requires-python = ">=3.13"

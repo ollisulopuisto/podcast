@@ -1,0 +1,33 @@
+# NHSX parser — Hindenburg session reader and pipeline seam.
+
+[project]
+name = "nhsx"
+version = "2026.8.31.1"
+description = "Hindenburg .nhsx session parser and pipeline seam"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+authors = [{ name = "Olli Sulopuisto" }]
+keywords = ["hindenburg", "nhsx", "xml", "audio", "session"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio",
+]
+dependencies = [
+    "lxml>=5.0",
+    "speechmix",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nhsx"]
+
+[tool.uv.sources]
+speechmix = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

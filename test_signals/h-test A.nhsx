@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Session Version="Hindenburg PRO 2.05.2718" Samplerate="48000" Time="01:51.157">
+ <AudioPool Path="h-test Files" Location="/Users/dst/Downloads">
+  <File Id="1" Name="A1_level_m20.wav" Duration="05.000" Leq="-">
+   <MetaData OriginalPath="/Users/dst/Downloads/test_signals/file_a_laws/A1_level_m20.wav"/>
+  </File>
+  <File Id="2" Name="A2_level_m35.wav" Duration="05.000" Leq="-">
+   <MetaData OriginalPath="/Users/dst/Downloads/test_signals/file_a_laws/A2_level_m35.wav"/>
+  </File>
+  <File Id="3" Name="A3_level_m50.wav" Duration="05.000" Leq="-">
+   <MetaData OriginalPath="/Users/dst/Downloads/test_signals/file_a_laws/A3_level_m50.wav"/>
+  </File>
+  <File Id="4" Name="A4_pan_0.625.wav" Duration="05.000" Leq="-">
+   <MetaData OriginalPath="/Users/dst/Downloads/test_signals/file_a_laws/A4_pan_0.625.wav"/>
+  </File>
+  <File Id="5" Name="A5_pan_m0.55.wav" Duration="05.000" Leq="-">
+   <MetaData OriginalPath="/Users/dst/Downloads/test_signals/file_a_laws/A5_pan_m0.55.wav"/>
+  </File>
+  <File Id="6" Name="A6_pan_0.wav" Duration="05.000" Leq="-">
+   <MetaData OriginalPath="/Users/dst/Downloads/test_signals/file_a_laws/A6_pan_0.wav"/>
+  </File>
+  <File Id="7" Name="A7_fade_plateau.wav" Duration="15.000" Leq="-">
+   <MetaData OriginalPath="/Users/dst/Downloads/test_signals/file_a_laws/A7_fade_plateau.wav"/>
+  </File>
+  <File Id="8" Name="A8_fade_short.wav" Duration="03.000" Leq="-">
+   <MetaData OriginalPath="/Users/dst/Downloads/test_signals/file_a_laws/A8_fade_short.wav"/>
+  </File>
+  <File Id="9" Name="A9_gain_plus6.wav" Duration="05.000" Leq="-">
+   <MetaData OriginalPath="/Users/dst/Downloads/test_signals/file_a_laws/A9_gain_plus6.wav"/>
+  </File>
+  <File Id="10" Name="A10_both_gain_clipgain.wav" Duration="05.000" Leq="-">
+   <MetaData OriginalPath="/Users/dst/Downloads/test_signals/file_a_laws/A10_both_gain_clipgain.wav"/>
+  </File>
+  <File Id="11" Name="A11_track_fader_m6.wav" Duration="05.000" Leq="-">
+   <MetaData OriginalPath="/Users/dst/Downloads/test_signals/file_a_laws/A11_track_fader_m6.wav"/>
+  </File>
+ </AudioPool>
+ <Tracks>
+  <Track Name="A1-A3">
+   <Region Ref="1" Name="A1_level_m20" Length="05.000"/>
+   <Region Ref="2" Name="A2_level_m35" Start="09.400" Length="05.000"/>
+   <Region Ref="3" Name="A3_level_m50" Start="19.000" Length="05.000"/>
+   <Region Ref="7" Name="A7_fade_plateau" Start="01:00.000" Length="15.000">
+    <Fade Start="02.500" Length="01.666" Gain="-10"/>
+    <Fade Start="10.834" Length="01.666"/>
+   </Region>
+   <Region Ref="8" Name="A8_fade_short" Start="01:24.200" Length="03.000" FadeIn="01.600"/>
+  </Track>
+  <Track Name="A4" Pan="-0.25">
+   <Region Ref="4" Name="A4_pan_0.625" Start="30.200" Length="05.000"/>
+  </Track>
+  <Track Name="A5" Pan="0.1">
+   <Region Ref="5" Name="A5_pan_m0.55" Start="35.974" Length="05.000"/>
+  </Track>
+  <Track Name="A6">
+   <Region Ref="6" Name="A6_pan_0" Start="43.800" Length="05.000"/>
+  </Track>
+  <Track Name="A9-A10" Volume="6">
+   <Region Ref="9" Name="A9_gain_plus6" Start="01:34.000" Length="05.000"/>
+   <Region Ref="10" Name="A10_both_gain_clipgain" Start="01:42.601" Length="05.000" Gain="6.0"/>
+  </Track>
+  <Track Name="A11" Volume="-6">
+   <Region Ref="11" Name="A11_track_fader_m6" Start="01:51.157" Length="05.000"/>
+  </Track>
+ </Tracks>
+ <Clipboard>
+  <Group/>
+  <Group/>
+  <Group/>
+  <Group/>
+ </Clipboard>
+ <Markers>
+  <Marker Id="1" Name="Sisään" Time="01:02.500"/>
+  <Marker Id="2" Name="Ulos" Time="01:12.500"/>
+  <Marker Id="3" Name="A7 marker - duck begins at +2,5 sec, then ends and +10 s from that, goes to -10 dB" Time="01:00.000"/>
+  <Marker Id="4" Name="A8 fade in over some length" Time="01:24.200"/>
+ </Markers>
+</Session>

@@ -7,6 +7,7 @@ members = [
     "automixer",
     "autoraffkat",
     "colab-transcribe",
+    "nhsx",
     "podcast-magic",
     "speechmix",
 ]
@@ -381,7 +382,7 @@ wheels = [
 
 [[package]]
 name = "colab-transcribe"
-version = "2026.8.30.1"
+version = "2026.9.2.1"
 source = { editable = "colab-transcribe" }
 dependencies = [
     { name = "textual" },
@@ -1019,6 +1020,21 @@ wheels = [
 ]
 
 [[package]]
+name = "nhsx"
+version = "2026.8.31.1"
+source = { editable = "packages/nhsx" }
+dependencies = [
+    { name = "lxml" },
+    { name = "speechmix" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "lxml", specifier = ">=5.0" },
+    { name = "speechmix", editable = "packages/speechmix" },
+]
+
+[[package]]
 name = "numba"
 version = "0.67.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1343,7 +1359,7 @@ wheels = [
 
 [[package]]
 name = "podcast-magic"
-version = "2026.8.30.1"
+version = "2026.9.2.1"
 source = { editable = "apps/podcast-magic" }
 dependencies = [
     { name = "fastapi" },

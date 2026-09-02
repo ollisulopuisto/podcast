@@ -12,30 +12,100 @@ sovelluksen CLAUDE.mdiin, ei vaaneta.
 import argparse
 import json
 import os
-import re
 import subprocess
-from xml.etree import ElementTree
 
 from lxml import etree
+
+# Oletusaikarajat (sekunteina) aliprosesseille. Colabissa asennus ja
+# litterointi voivat kestään kauan, joten rajat ovat ydinsä.
+APT_TIMEOUT = 600  # 10 min apt-get:lle
+PIP_TIMEOUT = 600  # 10 min pip:lle
+WHISPER_TIMEOUT = 7200  # 2 h whisper-ctranslate2:lle (pitkät tiedostot)
+
+AUDIO_EXTENSIONS = (".wav", ".aiff", ".flac", ".m4a", ".mp4", ".mp3")
+
+# Istunto on käyttäjän tiedosto ja se jäsennetään aina tällä jäsentimellä:
+# ei DTD:tä, ei entiteettien ratkaisua, ei verkkoa. Samat rajat molemmissa
+# paikoissa, joissa .nhsx luetaan (injektio ja Auto-Silence), jotta kumpikaan
+# ei ehdi tulla löysäksi toista silmämääräämättä.
+_SAFE_PARSER = etree.XMLParser(
+    recover=False,
+    resolve_entities=False,
+    no_network=True,
+    dtd_validation=False,
+    load_dtd=False,
+)
+
+
+def _reject_doctype(raw: str, filename: str) -> None:
+    """Kielii DTD:n: kelvollinen istunto ei julista sitä koskaan.
+
+    ``<!DOCTYPE>`` avaisi ovi entiteettejä — tiedostojen luku (XXE) ja
+    laajennus — joten julistava tiedosto hylätään ennen jäsennystä.
+    """
+    if "<!doctype" in raw.lower():
+        raise ValueError(f"Istunto julistaa DTD:n, hylätään: {filename}")
+
+
+def _local(tag):
+    if not isinstance(tag, str):
+        return ""
+    return tag.rsplit("}", 1)[-1]
+
+
+def _iter_named(root, name):
+    elem = root.getroot() if hasattr(root, "getroot") else root
+    for node in elem.iter():
+        if _local(node.tag) == name:
+            yield node
+
+
+def _first_named(root, name):
+    return next(_iter_named(root, name), None)
+
+
+def _children_named(elem, name):
+    return [child for child in elem if _local(child.tag) == name]
+
+
+def _swap_audio_ext(filename, new_ext=".json"):
+    lower = filename.lower()
+    for ext in AUDIO_EXTENSIONS:
+        if lower.endswith(ext):
+            return filename[: len(filename) - len(ext)] + new_ext
+    return filename
+
+
+def _swap_suffix(path, old, new):
+    lower = path.lower()
+    if lower.endswith(old):
+        return path[: len(path) - len(old)] + new
+    return path + new
 
 
 # 1. Asennetaan tarvittavat kirjastot pilviympäristössä
 def install_dependencies():
     packages = ["CTranslate2", "whisper-ctranslate2", "lxml", "pydub"]
-    subprocess.run(["apt-get", "update", "-qq"], check=True)
-    subprocess.run(["apt-get", "install", "-y", "-qq", "libcublas11", "ffmpeg"], check=True)
-    subprocess.run(["pip", "install", "-q", "-U", *packages], check=True)
+    subprocess.run(["apt-get", "update", "-qq"], check=True, timeout=APT_TIMEOUT)
+    subprocess.run(["apt-get", "install", "-y", "-qq", "libcublas11", "ffmpeg"], check=True, timeout=APT_TIMEOUT)
+    subprocess.run(["pip", "install", "-q", "-U", *packages], check=True, timeout=PIP_TIMEOUT)
 
 # 2. Aikaleimojen apufunktiot
 def time_to_seconds(time_str):
+    if time_str is None:
+        # Hindenburg jättää Startin kirjoittamatta kun alue alkaa nollasta.
+        return 0.0
     if not time_str:
-        return 0.0
+        raise ValueError("tyhjä aikaleima")
     try:
-        if ":" in time_str:
-            return sum(float(x) * 60**i for i, x in enumerate(reversed(time_str.split(":"))))
-        return float(time_str)
-    except Exception:
-        return 0.0
+        parts = time_str.split(":")
+        if len(parts) > 3:
+            raise ValueError(f"liian monta osaa aikaleimassa: {time_str}")
+        return sum(float(x) * 60**i for i, x in enumerate(reversed(parts)))
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(f"virheellinen aikaleima: {time_str}") from e
 
 def seconds_to_time(s):
     return f"{s:.3f}"
@@ -43,9 +113,10 @@ def seconds_to_time(s):
 def merge_intervals_with_gap(intervals, max_gap=0.0):
     if not intervals:
         return []
-    intervals.sort()
-    merged = [list(intervals[0])]
-    for curr in intervals[1:]:
+    # Kopioi ja järjestä, älä muokkaa alkuperäistä
+    sorted_intervals = sorted(intervals)
+    merged = [list(sorted_intervals[0])]
+    for curr in sorted_intervals[1:]:
         if curr[0] <= merged[-1][1] + max_gap:
             merged[-1][1] = max(merged[-1][1], curr[1])
         else:
@@ -56,15 +127,12 @@ def merge_intervals_with_gap(intervals, max_gap=0.0):
 def run_transcription(input_dir, output_dir, initial_prompt):
     transcripts_dir = os.path.join(output_dir, "transcripts")
     os.makedirs(transcripts_dir, exist_ok=True)
-    audio_extensions = (".wav", ".aiff", ".flac", ".m4a", ".mp4", ".mp3")
-
     for dirpath, _, filenames in os.walk(input_dir):
         for filename in filenames:
-            if filename.lower().endswith(audio_extensions):
+            if filename.lower().endswith(AUDIO_EXTENSIONS):
                 full_path = os.path.join(dirpath, filename)
                 output_path = os.path.join(
-                    transcripts_dir,
-                    re.sub(r"\.(" + "|".join([e.lstrip(".") for e in audio_extensions]) + ")$", ".json", filename, flags=re.IGNORECASE)
+                    transcripts_dir, _swap_audio_ext(filename, ".json")
                 )
 
                 if not os.path.isfile(output_path):
@@ -85,91 +153,102 @@ def run_transcription(input_dir, output_dir, initial_prompt):
                         "--suppress_blank", "False",
                         "--condition_on_previous_text", "False"
                     ]
-                    subprocess.run(cmd, check=True)
+                    subprocess.run(cmd, check=True, timeout=WHISPER_TIMEOUT)
                 else:
                     print(f"Ohitetaan '{output_path}', se on jo litteroitu.")
 
 # 4. Injektoidaan litteroinnit .nhsx-rakenteeseen
 def inject_transcriptions_to_nhsx(input_dir, output_dir):
     transcripts_dir = os.path.join(output_dir, "transcripts")
+    transcripts_root = os.path.realpath(transcripts_dir)
     generated_nhsx = []
 
     for filename in os.listdir(input_dir):
-        if filename.lower().endswith(".nhsx") and not filename.endswith("_processed.nhsx"):
-            nhsx_in_path = os.path.join(input_dir, filename)
-            with open(nhsx_in_path, "r", encoding="utf-8") as f:
-                xml_elems = ElementTree.fromstring(f.read())
+        lower = filename.lower()
+        if not lower.endswith(".nhsx") or lower.endswith("_processed.nhsx"):
+            continue
+        nhsx_in_path = os.path.join(input_dir, filename)
+        with open(nhsx_in_path, "r", encoding="utf-8") as f:
+            raw = f.read()
+        _reject_doctype(raw, filename)
+        xml_elems = etree.fromstring(raw.encode("utf-8"), _SAFE_PARSER)
 
-            for session_elem in xml_elems:
-                if "AudioPool" in session_elem.tag:
-                    for audio_pool_elem in session_elem:
-                        if "File" in audio_pool_elem.tag:
-                            file_elem_name = audio_pool_elem.get("Name")
-                            if file_elem_name:
-                                audio_extensions = (".wav", ".aiff", ".flac", ".m4a", ".mp4")
-                                srt_filename = file_elem_name
-                                for ext in audio_extensions:
-                                    if srt_filename.lower().endswith(ext):
-                                        srt_filename = srt_filename.replace(ext, ".json")
-                                        break
+        for file_elem in _iter_named(xml_elems, "File"):
+            file_elem_name = file_elem.get("Name")
+            if not file_elem_name:
+                continue
+            json_name = _swap_audio_ext(os.path.basename(file_elem_name), ".json")
+            srt_path = os.path.realpath(os.path.join(transcripts_dir, json_name))
+            try:
+                inside = os.path.commonpath([transcripts_root, srt_path]) == transcripts_root
+            except ValueError:
+                inside = False
+            if not inside or not os.path.isfile(srt_path):
+                continue
 
-                                srt_path = os.path.join(transcripts_dir, srt_filename)
-                                if not os.path.exists(srt_path):
-                                    continue
+            try:
+                with open(srt_path, "r", encoding="utf-8") as sf:
+                    srt_data = json.load(sf)
+            except (OSError, ValueError):
+                continue
 
-                                try:
-                                    with open(srt_path, "r", encoding="utf-8") as sf:
-                                        srt_data = json.load(sf)
-                                except Exception:
-                                    continue
+            if _first_named(file_elem, "Transcription") is not None:
+                continue
 
-                                if audio_pool_elem.find("Transcription") is not None:
-                                    continue
+            transcription_elem = etree.SubElement(file_elem, "Transcription")
+            p_elem = etree.SubElement(transcription_elem, "p")
 
-                                transcription_elem = ElementTree.SubElement(audio_pool_elem, "Transcription")
-                                p_elem = ElementTree.SubElement(transcription_elem, "p")
+            for segment in srt_data.get("segments", []):
+                for word in segment.get("words", []):
+                    try:
+                        start = float(word["start"])
+                        end = float(word["end"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    text = (word.get("word") or "").strip()
+                    if not text:
+                        continue
+                    word_elem = etree.SubElement(p_elem, "w")
+                    word_elem.set("l", str(end - start))
+                    word_elem.set("s", str(start))
+                    word_elem.set("sp", "UU")
+                    word_elem.text = text
 
-                                for segment in srt_data.get("segments", []):
-                                    for word in segment.get("words", []):
-                                        word_elem = ElementTree.SubElement(p_elem, "w")
-                                        word_elem.set("l", str(word["end"] - word["start"]))
-                                        word_elem.set("s", str(word["start"]))
-                                        word_elem.set("sp", "UU")
-                                        word_elem.text = word["word"].strip()
-
-            nhsx_tree = ElementTree.ElementTree(xml_elems)
-            out_name = filename.replace(".nhsx", " litteroitu.nhsx")
-            out_file_path = os.path.join(output_dir, out_name)
-            nhsx_tree.write(out_file_path, encoding="unicode")
-            print(f"Litteroitu .nhsx luotu: {out_file_path}")
-            generated_nhsx.append(out_file_path)
+        out_name = _swap_suffix(filename, ".nhsx", " litteroitu.nhsx")
+        out_file_path = os.path.join(output_dir, out_name)
+        etree.ElementTree(xml_elems).write(out_file_path, encoding="UTF-8", xml_declaration=True)
+        print(f"Litteroitu .nhsx luotu: {out_file_path}")
+        generated_nhsx.append(out_file_path)
 
     return generated_nhsx
 
 # 5. Auto-Silence -käsittely
 def get_speech_intervals_for_track(tree, track_elem, audio_folder, rms_enabled, threshold):
-    from pydub import AudioSegment
     speech_on_timeline = []
-    audio_pool = tree.find("AudioPool")
+    audio_pool = _first_named(tree, "AudioPool")
     if audio_pool is None:
         return []
 
     loaded_audio = {}
-    for region in track_elem.findall("Region"):
-        ref_id = region.get("Ref")
-        file_elem = audio_pool.find(f".//File[@Id='{ref_id}']")
+    if rms_enabled:
+        from pydub import AudioSegment
+    files_by_id = {fe.get("Id"): fe for fe in _iter_named(audio_pool, "File") if fe.get("Id")}
+    for region in _children_named(track_elem, "Region"):
+        file_elem = files_by_id.get(region.get("Ref"))
         if file_elem is None:
             continue
 
-        transcription = file_elem.find("Transcription")
+        transcription = _first_named(file_elem, "Transcription")
         if transcription is not None:
             r_start = time_to_seconds(region.get("Start"))
             r_offset = time_to_seconds(region.get("Offset", "0"))
             r_len = time_to_seconds(region.get("Length"))
 
-            for word in transcription.findall(".//w"):
-                ws = float(word.get("s", 0))
-                wl = float(word.get("l", 0))
+            for word in _iter_named(transcription, "w"):
+                # Sanan aika on tiedoston aikaa ja voi olla muodossa MM:SS
+                # (vanhemmat istunnot); float() kaataisi kaksoispisteen.
+                ws = time_to_seconds(word.get("s"))
+                wl = time_to_seconds(word.get("l"))
 
                 if r_offset <= ws < (r_offset + r_len):
                     timeline_s = r_start + (ws - r_offset)
@@ -198,7 +277,7 @@ def process_track(track_elem, intervals, tail, gap):
     groups = merge_intervals_with_gap(intervals, gap)
     padded = [(max(0, s - tail), e + tail) for s, e in groups]
     audible_zones = merge_intervals_with_gap(padded, 0)
-    original_regions = list(track_elem.findall("Region"))
+    original_regions = _children_named(track_elem, "Region")
     parent = track_elem
 
     for r in original_regions:
@@ -222,12 +301,15 @@ def process_track(track_elem, intervals, tail, gap):
         parent.remove(r)
 
 def run_auto_silence(nhsx_path, audio_folder, rms_enabled, threshold, tail, gap):
-    output_path = nhsx_path.replace(".nhsx", "_processed.nhsx")
-    tree = etree.parse(nhsx_path)
+    output_path = _swap_suffix(nhsx_path, ".nhsx", "_processed.nhsx")
+    with open(nhsx_path, "r", encoding="utf-8") as f:
+        raw = f.read()
+    _reject_doctype(raw, os.path.basename(nhsx_path))
+    tree = etree.ElementTree(etree.fromstring(raw.encode("utf-8"), _SAFE_PARSER))
     print(f"\nSuoritetaan Auto-Silence: {os.path.basename(nhsx_path)}")
     print(f"RMS-tarkistus: {rms_enabled} (Kynnys: {threshold} dB) | Häntä: {tail}s | Tauko: {gap}s")
 
-    for track in tree.findall(".//Track"):
+    for track in _iter_named(tree, "Track"):
         track_name = track.get("Name", "Nimetön")
         print(f"  Raita: {track_name}...")
         intervals = get_speech_intervals_for_track(tree, track, audio_folder, rms_enabled, threshold)

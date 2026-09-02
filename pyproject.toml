@@ -86,7 +86,7 @@ ignore = [
 # osapolun perusteella ja lajittelee saman tiedoston eri tavalla juuresta
 # kuin sovelluksen sisältä ajettuna.
 [tool.ruff.lint.isort]
-known-first-party = ["automixer", "autoraffkat", "colabtranscribe", "podcastmagic", "speechmix"]
+known-first-party = ["automixer", "autoraffkat", "colabtranscribe", "nhsx", "podcastmagic", "speechmix"]
 
 [tool.ruff.lint.per-file-ignores]
 # Testit saavat toistaa itseään ja käyttää pitkiä nimiä: ne ovat

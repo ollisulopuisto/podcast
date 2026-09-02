@@ -103,9 +103,7 @@ def test_the_places_it_writes_are_the_places_the_agreement_test_reads():
 
 def test_the_script_only_offers_real_members(capsys):
     names = set(bump.members())
-    # colab-transcribe on juuressa eikä seiso apps/issa — syy juuren
-    # pyproject.tomlissa, ja molemmat johdannaiset (tämä ja
-    # test_workspace_agrees) laskevat jäsenet samalla kaavalla.
-    assert names == {"automixer", "autoraffkat", "colab-transcribe", "podcast-magic", "speechmix"}
+    # nhsx on uusi jaettu paketti Hindenburg-parserille
+    assert names == {"automixer", "autoraffkat", "colab-transcribe", "nhsx", "podcast-magic", "speechmix"}
     for member in bump.members().values():
         assert re.match(r"^\d{4}\.\d{1,2}\.\d{1,2}\.\d+$", bump.current_version(member))

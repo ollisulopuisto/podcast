@@ -1,0 +1,22 @@
+{
+  "C1_main_track.wav": {
+    "ui": "p\u00e4\u00e4raita + aux-l\u00e4hetys C2-raitaan",
+    "expect": "bussin osuus summassa"
+  },
+  "C2_aux_send.wav": {
+    "ui": "aux-raita",
+    "expect": "l\u00e4hetystaso n\u00e4kyy"
+  },
+  "C3_reverb.wav": {
+    "ui": "raidalla reverberointi (decay 0,5 s)",
+    "expect": "efekti osallistuu render\u00f6intiin"
+  },
+  "C4_master_fade.wav": {
+    "ui": "master-vaimentimen automaatio: 0 \u2192 \u221220 dB / 10 s",
+    "expect": "autamaation k\u00e4yr\u00e4"
+  },
+  "C5_pan_sweep.wav": {
+    "ui": "panorama-automatio: \u22121 \u2192 1 / 5 s",
+    "expect": "L/R-suhde muuttuu ajan funktiona"
+  }
+}

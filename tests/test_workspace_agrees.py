@@ -66,17 +66,20 @@ def root() -> dict:
     return toml(ROOT / "pyproject.toml")
 
 
-def test_the_members_are_the_five_we_think_they_are():
+def test_the_members_are_the_six_we_think_they_are():
     """Sattumalta tyhjä luettelo tekisi jokaisesta alla olevasta testin joka ei testaa mitään.
 
     colab-transcribe on jäsen vaikka ei ole `apps/`issa — se on juuressa
     `viewer/`in tapaan, mutta pyproject.tomlilla, ja listattu eksplisiittisesti
     juuren `[tool.uv.workspace]`iin.
+
+    nhsx on uusi jaettu paketti Hindenburg-parserille, se on `packages/`issa.
     """
     assert [name(m) for m in MEMBERS] == [
         "automixer",
         "autoraffkat",
         "colab-transcribe",
+        "nhsx",
         "podcast-magic",
         "speechmix",
     ]
@@ -276,12 +279,6 @@ def test_every_shared_module_has_a_consumer():
         and not any(module in names for stem, names in siblings.items() if stem != module)
     )
     assert not orphans, orphans
-
-
-    assert not orphans, orphans
-
-
-
 
 
 def declared_version(member: Path) -> str:

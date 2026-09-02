@@ -95,3 +95,57 @@ def test_parse_generated_reads_the_script_output():
 
 def test_parse_generated_empty_when_nothing():
     assert driver.parse_generated("Koko putki suoritettu onnistuneesti.") == []
+
+
+def test_list_input_files_excludes_hidden_files(tmp_path: Path):
+    (tmp_path / "puhe.wav").write_bytes(b"")
+    (tmp_path / ".DS_Store").write_bytes(b"")
+    (tmp_path / ".hidden").write_bytes(b"")
+    # piilotetut tiedostot eivät kuulu siirtoon
+    assert driver.list_input_files(tmp_path) == ["puhe.wav"]
+
+
+def test_list_input_files_excludes_hidden_directories(tmp_path: Path):
+    (tmp_path / "puhe.wav").write_bytes(b"")
+    cache = tmp_path / ".cache"
+    cache.mkdir()
+    (cache / "model.bin").write_bytes(b"")
+    assert driver.list_input_files(tmp_path) == ["puhe.wav"]
+
+
+def test_list_input_files_does_not_follow_symlinks_outside(tmp_path: Path):
+    inbox = tmp_path / "in"
+    inbox.mkdir()
+    (inbox / "puhe.wav").write_bytes(b"")
+    secret = tmp_path / "secret.wav"
+    secret.write_bytes(b"secret")
+    (inbox / "link.wav").symlink_to(secret)
+    assert driver.list_input_files(inbox) == ["puhe.wav"]
+
+
+def test_plan_commands_quotes_subdirectory_names_for_remote_shell(tmp_path: Path):
+    options = RunOptions(input_dir=str(tmp_path), output_dir=str(tmp_path / "out"))
+    commands = driver.plan_commands(options, ["x;touch pwned/a.wav"])
+    mkdir = [c[-1] for c in commands if c[1] == "exec" and "mkdir" in c[-1] and "pwned" in c[-1]]
+    assert mkdir
+    tokens = shlex.split(mkdir[0])
+    assert tokens[:2] == ["mkdir", "-p"]
+    assert tokens[2:] == ["/content/input/x;touch pwned"]
+
+
+def test_run_kills_a_hung_process_that_prints_nothing():
+    """Timeout pitää koskea myös prosessia joka ei sulje stdoutia.
+
+    ``wait(timeout=)`` ajettuna vasta kun stdout on luettu loppuun ei
+    koskaan laukea: ``sleep`` pitää putken auki kunnes se itse kuolee.
+    """
+    logs: list[str] = []
+    code = driver.run([["sleep", "10"]], logs.append, timeout=0.3)
+    assert code == 124
+    assert any("aikarajan" in line for line in logs)
+
+
+def test_command_timeout_outlasts_whisper():
+    from colabtranscribe.colab import pipeline
+
+    assert driver.COMMAND_TIMEOUT >= pipeline.WHISPER_TIMEOUT

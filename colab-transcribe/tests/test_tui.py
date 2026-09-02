@@ -19,7 +19,7 @@ class FakeRunner:
     def __init__(self):
         self.calls: list[list[list[str]]] = []
 
-    def __call__(self, commands, log):
+    def __call__(self, commands, log, timeout=None):
         self.calls.append(commands)
         log("colab new -s testi --gpu T4")
         log("valmis")

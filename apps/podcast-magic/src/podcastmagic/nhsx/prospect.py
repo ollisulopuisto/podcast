@@ -28,7 +28,7 @@ from pathlib import Path
 
 from lxml import etree
 
-from .mix import KNOWN_REGION_ATTRS, KNOWN_TRACK_ATTRS, localname_attr
+from .mix import KNOWN_FADE_ATTRS, KNOWN_REGION_ATTRS, KNOWN_TRACK_ATTRS, localname_attr
 from .read import NhsxError, localname
 
 # Litteroinnin sisus: tunnettu, dokumentoitu ja liian iso raportoitavaksi.
@@ -42,7 +42,7 @@ KNOWN: dict[str, frozenset[str]] = {
     "Track": KNOWN_TRACK_ATTRS,
     "File": frozenset({"Id", "Name", "Path"}),
     "AudioPool": frozenset({"Path"}),
-    "Fade": frozenset({"In", "Out"}),
+    "Fade": KNOWN_FADE_ATTRS,
     # Istunnon ja säiliöiden omat attribuutit eivät ole miksausta. Ne ovat
     # tunnettuja tässä siksi, että `?` tarkoittaisi jotain: raportti jossa
     # joka rivillä on kysymysmerkki ei osoita mihinkään.
@@ -69,7 +69,16 @@ class Survey:
 def survey(path: str | Path) -> Survey:
     """Käy istunnon läpi ja kertoo mitä siinä on."""
     try:
-        tree = etree.parse(str(path), etree.XMLParser(recover=False))
+        tree = etree.parse(
+            str(path),
+            etree.XMLParser(
+                recover=False,
+                resolve_entities=False,
+                no_network=True,
+                dtd_validation=False,
+                load_dtd=False,
+            ),
+        )
     except (OSError, etree.XMLSyntaxError) as exc:
         raise NhsxError(f"Istuntoa ei voi kartoittaa: {exc}") from exc
 

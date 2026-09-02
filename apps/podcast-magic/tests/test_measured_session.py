@@ -23,7 +23,8 @@ from podcastmagic.nhsx.read import read as read_session
 
 # Pienimmän neliösumman sovitus renderöidystä raidasta: R = k·L.
 # Ennuste (1-p)/(1+p) antaa 0,23077 ja 3,44444.
-MEASURED = {0.625: 0.23027, -0.55: 3.44347}
+# Kaksi jälkimmäistä `h-test A` -testi-istunnosta: poikkeama 0,000 dB.
+MEASURED = {0.625: 0.23027, -0.55: 3.44347, -0.25: 1.66667, 0.1: 0.81818}
 
 
 class TestPanIsLinearAndPositiveIsLeft:
@@ -121,3 +122,99 @@ class TestFadesAreEnvelopeRamps:
                             '<Fade Start="25.900" Length="02.500" Curve="log"/>'),
             encoding="utf-8")
         assert "Fade/Curve" in plan(read_session(tmp_path / "s.nhsx")).unknown
+
+
+class TestMissingStartIsZero:
+    """Hindenburg jättää `Start`in kirjoittamatta kun alue alkaa nollasta.
+
+    Mitattu `h-test A.nhsx` -testi-istunnosta (testisignaaleista rakennettu,
+    Hindenburg PRO 2.05.2718): ensimmäinen alue on kirjoitettu
+    `<Region Ref="1" Name="…" Length="05.000"/>` — ei `Start`ia lainkaan.
+    Lukija joka vaatii attribuutin kuolee ensimmäiseen oikeaan istuntoon.
+    """
+
+    def test_region_without_start_starts_at_zero(self, tmp_path):
+        session = SESSION.replace(
+            '<Region Ref="1" Start="35.600" Length="28.400" Offset="35.600">',
+            '<Region Ref="1" Length="28.400" Offset="35.600">')
+        (tmp_path / "a.wav").write_bytes(b"")
+        (tmp_path / "s.nhsx").write_text(session, encoding="utf-8")
+        clips = plan(read_session(tmp_path / "s.nhsx")).clips
+        assert clips[0].start == 0.0
+
+
+class TestTrackVolume:
+    """Raidan vaimennin on `Volume`, desibeleinä — ja se kuuluu summaan.
+
+    Mitattu `h-test A` -testi-istunnosta ja sen renderöinnistä: raita
+    `Volume="6"` → alueen rms −13,98 dBFS (lähde −20), raita `Volume="-6"`
+    → −26,03. Alueen `Gain` ja raidan `Volume` laskevat yhteen: mitattu
+    −8,06 dBFS, ennuste −20 + 6 + 6 = −8,00.
+
+    Ennen mittoa `Volume` kirjattiin tuntemattomaksi ja ohitettiin —
+    jokainen raidan fader asetti miksausbonuksen nollaksi, eli sama
+    hiljaisen vian muoto kuin `ClipGain`-ohitus oli.
+    """
+
+    def test_track_volume_is_the_track_gain(self, tmp_path):
+        session = SESSION.replace(
+            '<Track Name="Raita 1" Pan="0.625">',
+            '<Track Name="Raita 1" Pan="0.625" Volume="-6">')
+        (tmp_path / "a.wav").write_bytes(b"")
+        (tmp_path / "s.nhsx").write_text(session, encoding="utf-8")
+        clips = plan(read_session(tmp_path / "s.nhsx")).clips
+        assert clips[0].gain == pytest.approx(db_to_linear(-6.0))
+
+    def test_volume_stacks_with_region_gain(self, tmp_path):
+        """A10 mitattu −8,06 dBFS: `Gain` +6 alueella ja `Volume` +6 raidalla."""
+        session = SESSION.replace(
+            '<Track Name="Raita 1" Pan="0.625">',
+            '<Track Name="Raita 1" Pan="0.625" Volume="6">')
+        (tmp_path / "a.wav").write_bytes(b"")
+        (tmp_path / "s.nhsx").write_text(session, encoding="utf-8")
+        clips = plan(read_session(tmp_path / "s.nhsx")).clips
+        # alueen ClipGain -22,2 + raidan Volume +6
+        assert clips[1].gain == pytest.approx(db_to_linear(-22.2 + 6.0))
+
+    def test_volume_is_not_reported_as_unknown(self, tmp_path):
+        session = SESSION.replace(
+            '<Track Name="Raita 1" Pan="0.625">',
+            '<Track Name="Raita 1" Pan="0.625" Volume="6">')
+        (tmp_path / "a.wav").write_bytes(b"")
+        (tmp_path / "s.nhsx").write_text(session, encoding="utf-8")
+        assert "Track/Volume" not in plan(read_session(tmp_path / "s.nhsx")).unknown
+
+
+class TestFadeCurveIsRaisedCosine:
+    """Luiskan muoto on mitattu: raised-cosine S-käyrä, ei jana.
+
+    `h-test A` -testi-istunnon A7-alueelta (tasainen −20 dBFS kohina,
+    luiska −10 dB:iin ja takaisin): 20 ms ikkunoiden RMS-sovitus antaa
+    kosinille 0,29 dB RMS-virheen (mittauskohinan tuntumassa) ja janalle
+    1,04 dB, pahimmillaan 2,06 dB pielessä. Sekä ylös- että alaskäyrä
+    istuvat samaan muotoon.
+
+    Aiempi valinta oli lineaarinen, ja peruste oli «se joka ei väitä
+    mitään» — nyt muoto on mitattu, joten jana väittää väärin.
+    """
+
+    def test_quarter_ramp_is_above_the_chord(self, tmp_path):
+        """Luiskan neljäsosakohdassa käyrä on janan yläpuolella.
+
+        Jana antaisi 1 + (g−1)·0,25; kosini (1−cos(π/4))/2 osan, eli ~0,76 dB
+        korkeammalla. Mittausero 2 dB on suurempi kuin tämä, joten kohta
+        erottaa muodot varmasti.
+        """
+        first = _clips(tmp_path).clips[0]
+        g = db_to_linear(-11.2)
+        cosine = 1.0 + (g - 1.0) * (1 - math.cos(math.pi * 0.25)) / 2
+        chord = 1.0 + (g - 1.0) * 0.25
+        assert first.level_at(0.625) == pytest.approx(cosine, rel=1e-4)
+        assert first.level_at(0.625) != pytest.approx(chord, rel=1e-3)
+
+    def test_endpoints_and_plateau_are_unchanged(self, tmp_path):
+        """Muoto muuttaa vain väliä: päätteet ja tasanne ovat samat."""
+        first = _clips(tmp_path).clips[0]
+        assert first.level_at(0.0) == pytest.approx(1.0)
+        assert first.level_at(2.5) == pytest.approx(db_to_linear(-11.2))
+        assert first.level_at(10.0) == pytest.approx(db_to_linear(-11.2))

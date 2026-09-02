@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from podcastmagic import nhsx
-from podcastmagic.nhsx.read import time_to_seconds
+from podcastmagic.nhsx.read import locate, time_to_seconds
+from podcastmagic.nhsx.read import read as read_session
 from podcastmagic.nhsx.write import next_free_path, set_transcription
 
 
@@ -35,6 +36,65 @@ def test_time_accepts_both_notations():
     # Rikkinäinen arvo on nolla, ei poikkeus: yksi attribuutti ei kaada lukua.
     assert time_to_seconds("kaksitoista") == 0.0
     assert time_to_seconds(None) == 0.0
+
+
+def test_time_rejects_more_than_three_parts():
+    """``HH:MM:SS`` on enimmäkseen: neljästä osasta koostuva arvo on rikkinäinen.
+
+    Ilman vartijaa ``1:2:3:4`` laskettaisiin päiviksi (223 384 s) ja alue
+    sijoittuisi kymmenen päivän päähän hiljaisesti. Muut jäsennit hylkäävät
+    saman.
+    """
+    assert time_to_seconds("1:2:3:4") == 0.0
+
+
+def test_locate_does_not_treat_the_filename_as_a_glob(tmp_path):
+    """rglob(Name) tulkitsi ``*``:n kuvioksi ja osui ensimmäiseen tiedostoon."""
+    (tmp_path / "real.wav").write_bytes(b"")
+    (tmp_path / "other.wav").write_bytes(b"")
+    (tmp_path / "s.nhsx").write_text(
+        """<?xml version="1.0"?><Session>
+      <AudioPool Path="">
+        <File Id="1" Name="*" Path="*"/>
+      </AudioPool>
+      <Tracks><Track Name="t"><Region Ref="1" Start="0" Length="1"/></Track></Tracks>
+    </Session>""",
+        encoding="utf-8",
+    )
+    session = read_session(tmp_path / "s.nhsx")
+    assert locate(session, session.files[0]) == ""
+
+
+def test_read_does_not_resolve_external_entities(tmp_path):
+    """Istunto on käyttäjän tiedosto. Entiteetti ei saa lukea levyä."""
+    secret = tmp_path / "secret.txt"
+    secret.write_text("LEAKME", encoding="utf-8")
+    path = tmp_path / "evil.nhsx"
+    path.write_text(
+        f"""<?xml version="1.0"?>
+<!DOCTYPE Session [
+  <!ENTITY xxe SYSTEM "{secret.as_uri()}">
+]>
+<Session>
+  <AudioPool Path="">
+    <File Id="1" Name="a.wav" Path="a.wav">&xxe;</File>
+  </AudioPool>
+  <Tracks>
+    <Track Name="t"><Region Ref="1" Start="0" Length="1"/></Track>
+  </Tracks>
+</Session>
+""",
+        encoding="utf-8",
+    )
+    try:
+        session = nhsx.read(path)
+    except nhsx.NhsxError:
+        return
+    leaked = "LEAKME" in "".join(
+        [(f.name or "") + (f.path or "") + ((f.elem.text or "") if f.elem is not None else "")
+         for f in session.files]
+    )
+    assert not leaked
 
 
 def test_second_transcription_replaces_the_first(session_file):

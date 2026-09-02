@@ -27,13 +27,20 @@ public struct Clip {
     public var end: Double { start + length }
 
     /// Käyrän arvo `when` sekuntia leikkeen alusta.
+    ///
+    /// Luiskan muoto on mitattu: raised-cosine S-käyrä, ei jana. 20 ms
+    /// ikkunoiden RMS-sovitus `h-test A` -testi-istunnon A7-alueesta antaa
+    /// kosinille 0,29 dB RMS-virheen (mittauskohinaa) ja janalle 1,04 dB,
+    /// pahimmillaan 2,06 dB pielessä. Sama kaava molemmissa jäsenissä —
+    /// Python-puoli: `mix.py:_share`.
     public func level(at when: Double) -> Double {
         var level = 1.0
         for ramp in ramps {
             if when <= ramp.start { return level }
             if when >= ramp.end { level = ramp.gain; continue }
             if ramp.length <= 0 { return ramp.gain }
-            return level + (ramp.gain - level) * ((when - ramp.start) / ramp.length)
+            let share = (when - ramp.start) / ramp.length
+            return level + (ramp.gain - level) * (1 - cos(.pi * share)) / 2
         }
         return level
     }
@@ -145,7 +152,7 @@ public func plan(_ session: Session, extraDirectory: String = "") -> Mix {
     var seenMissing: Set<String> = []
 
     for track in session.tracks {
-        let trackGain = dbToLinear(track.gainDb ?? 0)
+        let trackGain = dbToLinear(track.totalGainDb)
         let trackPan = min(max(track.pan ?? 0, -1), 1)
         for name in track.unknown { mix.unknown[name, default: 0] += 1 }
 

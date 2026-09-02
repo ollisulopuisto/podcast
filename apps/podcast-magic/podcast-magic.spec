@@ -136,7 +136,7 @@ coll = COLLECT(exe, a.binaries, a.zipfiles, a.datas, strip=False, upx=False,
                upx_exclude=[], name="podcast-magic")
 
 if sys.platform == "darwin":
-    version = os.environ.get("PM_VERSION", "2026.8.30.1")
+    version = os.environ.get("PM_VERSION", "2026.9.2.1")
     app = BUNDLE(
         coll,
         name="Podcast Magic.app",

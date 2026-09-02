@@ -120,10 +120,17 @@ public struct Region {
 public struct Track {
     public let name: String
     public let muted: Bool
+    /// Raidan vahvistus. `Gain` on vanhempi kirjoitustapa, `Volume` on
+    /// vaimennin — mitattu `h-test A`:sta, molemmat desibeleinä, ja jos
+    /// molemmat esiintyvät, ne lasketaan yhteen (sama kuin Python-puoli).
     public let gainDb: Double?
+    public let volumeDb: Double?
     public let pan: Double?
     public let regions: [Region]
     public let unknown: [String]
+
+    /// Raidan yhteensä vahvistus desibeleinä.
+    public var totalGainDb: Double { (gainDb ?? 0) + (volumeDb ?? 0) }
 }
 
 public struct Session {
@@ -151,7 +158,7 @@ public let knownRegionAttributes: Set<String> = [
     "IsMusic", "UseTranscription",
 ]
 
-public let knownTrackAttributes: Set<String> = ["Name", "Gain", "Pan", "Muted"]
+public let knownTrackAttributes: Set<String> = ["Name", "Gain", "Pan", "Muted", "Volume"]
 
 public let fadeElement = "Fade"
 
@@ -172,7 +179,10 @@ public func readSession(at path: String) throws -> Session {
     let url = URL(fileURLWithPath: path)
     let document: XMLDocument
     do {
-        document = try XMLDocument(contentsOf: url, options: [.nodePreserveWhitespace])
+        document = try XMLDocument(
+            contentsOf: url,
+            options: [.nodePreserveWhitespace, .nodeLoadExternalEntitiesNever]
+        )
     } catch {
         throw NhsxError.unreadable(error.localizedDescription)
     }
@@ -232,6 +242,7 @@ public func readSession(at path: String) throws -> Session {
             name: element.attr("Name") ?? "",
             muted: truthy(element.attr("Muted")),
             gainDb: element.attr("Gain").flatMap(Double.init),
+            volumeDb: element.attr("Volume").flatMap(Double.init),
             pan: element.attr("Pan").flatMap(Double.init),
             regions: regions,
             unknown: element.attributeNames

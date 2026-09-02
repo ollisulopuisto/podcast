@@ -12,18 +12,9 @@ laskennassa: väärä kohta aikajanalla, väärä kerroin, väärä puoli.
 
 ## Mikä on mitattu ja mikä ei
 
-**Mitattua:** ``Start``, ``Length``, ``Offset`` ja ``Muted``. Ne ovat
-istunnoissa joita tämä repositorio on lukenut ja kirjoittanut alusta asti —
-``silence/apply.py`` kirjoittaa ``Muted="True"`` ja ``read.py`` on lukenut
-geometrian koko ajan.
-
-**Arvattua:** ``Gain``, ``Pan`` ja ``<Fade In= Out=>``. Kummassakaan
-repositoriossa **ei ole yhtään istuntoa, jossa taso, panorointi tai
-häivytys olisi asetettu**, eikä Hindenburgin formaattia ole dokumentoitu.
-Nimet ovat siis uskottavia eivätkä todettuja: ``<Fade>`` on se nimi jolla
-``tests/test_silence.py`` rakentaa alueen lapsielementin, ja ``apply.py``
-sanoo lapsielementeistä «esimerkiksi häivytyksiä» — se on huomio, ei
-mittaus.
+**Mitattua:** ``Start``, ``Length``, ``Offset``, ``Muted``, ``Gain``,
+``ClipGain``, ``Pan``, ``Volume`` ja ``<Fade Start Length Gain>``.
+``h-test A`` mittasi ne. ``In``/``Out`` häivytyksessä olivat keksittyjä.
 
 Tämän luokan vika on hiljainen: tiedosto aukeaa, leikkeet ovat oikean
 mittaisia, ääni tulee oikeasta kohtaa — ja taso on väärä. Siksi
@@ -42,9 +33,8 @@ keskelle sitä mukaa kun raitoja on enemmän. ``pan_gains`` pitää
 ``vasen² + oikea² = 1`` laidasta laitaan, jolloin keskikohta on −3,01 dB
 molemmilla puolilla.
 
-**Häivytys on lineaarinen.** Hindenburgin käyrän muotoa ei tiedetä, ja
-lineaarinen on niistä se joka ei väitä mitään. Kun muoto mitataan, se
-vaihdetaan tässä yhdessä funktiossa.
+**Häivytys on raised-cosine.** Mitattu `h-test A` -istunnon A7-alueesta:
+kosinille 0,29 dB RMS-virhe, janalle 1,04 dB. Muoto on `_share`.
 """
 
 from __future__ import annotations
@@ -75,8 +65,13 @@ KNOWN_REGION_ATTRS = frozenset(
 # ne kaksi olivat keksittyjä, eikä yksikään istunto ollut kiistänyt niitä.
 KNOWN_FADE_ATTRS = frozenset({"Start", "Length", "Gain"})
 
-# Sama raidalle. Raidan faderi ja leikkeen taso ovat eri säätimiä.
-KNOWN_TRACK_ATTRS = frozenset({"Name", "Gain", "Pan", "Muted"})
+# Sama raidalle. Raidan vaimennin ja leikkeen taso ovat eri säätimiä.
+# `Volume` on raidan vaimennin desibeleinä, mitattu `h-test A` -istunnosta
+# ja sen renderöinnistä: `Volume="6"` → alueen rms −13,98 dBFS (lähde
+# −20), `Volume="-6"` → −26,03. `Gain` on säilytetty, koska lukija tuki
+# sen ennen mittoja; jos molemmat joskus esiintyvät, ne lasketaan yhteen
+# kuten alueen `Gain` ja raidan `Volume` (mitattu: −8,06, ennuste −8,00).
+KNOWN_TRACK_ATTRS = frozenset({"Name", "Gain", "Pan", "Muted", "Volume"})
 
 # Alueen lapsielementti, joka on häivytys. Ks. moduulin alun varaus.
 FADE_ELEMENT = "Fade"
@@ -154,11 +149,27 @@ class Ramp:
         return self.start + self.length
 
 
+def _share(share: float) -> float:
+    """Luiskan kulkema osuus pisteessä ``share`` ∈ [0, 1]: raised-cosine.
+
+    Mitattu, ei valittu. `h-test A` -testi-istunnon A7-alue (tasainen
+    −20 dBFS kohina, luiska −10 dB:iin ja takaisin) sovitettiin 20 ms
+    ikkunoiden RMS:llä: kosinille 0,29 dB RMS-virhe — mittauskohinan
+    tuntumassa — janalle 1,04 dB, pahimmillaan 2,06 dB pielessä. Sekä
+    ylös- että alaskäyrä istuvat samaan muotoon.
+
+    Aiempi valinta oli jana, perusteena «se joka ei väitä mitään». Se
+    peruste kuoli mittaan: jana väittää nyt mitattavasti väärin.
+    """
+    return (1.0 - np.cos(np.pi * share)) / 2.0
+
+
 def level_at(ramps: "tuple[Ramp, ...]", when: float) -> float:
     """Käyrän arvo hetkellä ``when`` sekuntia leikkeen alusta.
 
-    Taso on ykkönen ensimmäiseen luiskaan asti, kulkee lineaarisesti
-    luiskan yli ja pysyy sen päätearvossa seuraavaan luiskaan asti.
+    Taso on ykkönen ensimmäiseen luiskaan asti, kääntyy raised-cosine
+    -muodossa (ks. ``_share``) luiskan yli ja pysyy sen päätearvossa
+    seuraavaan luiskaan asti.
     """
     level = 1.0
     for ramp in ramps:
@@ -170,7 +181,7 @@ def level_at(ramps: "tuple[Ramp, ...]", when: float) -> float:
         if ramp.length <= 0:
             return ramp.gain
         share = (when - ramp.start) / ramp.length
-        return level + (ramp.gain - level) * share
+        return level + (ramp.gain - level) * _share(share)
     return level
 
 
@@ -192,10 +203,11 @@ def envelope(length: float, sample_rate: int, ramps: "tuple[Ramp, ...]" = ()) ->
         if b > a:
             # Luiska voi jäädä kesken, jos alue loppuu sen keskellä; silloin
             # se katkeaa siihen eikä kutistu. Pilkottu pala on lyhyempi kuin
-            # alue, ei hitaampi.
+            # alue, ei hitaampi. Muoto on sama raised-cosine kuin kokonaisella
+            # luiskalla — ks. `_share`.
             span = max(1, int(round(ramp.length * sample_rate)))
             share = (np.arange(b - a, dtype=np.float32) + 1.0) / span
-            env[a:b] = level + (ramp.gain - level) * np.minimum(share, 1.0)
+            env[a:b] = level + (ramp.gain - level) * _share(np.minimum(share, 1.0))
         filled = b
         level = float(env[b - 1]) if b > a else level
         if b >= n:
@@ -368,6 +380,11 @@ def plan(session: Session, extra_dir: str = "") -> Mix:
             track_gain, track_pan = _gain_and_pan(
                 track_elem, KNOWN_TRACK_ATTRS, mixdown.unknown, prefix="Track/"
             )
+            # Raidan vaimennin on `Volume`, desibeleinä — mitattu h-test A:sta
+            # ja sen renderöinnistä (+6 → −13,98 dBFS, −6 → −26,03; lähde
+            # −20). Ennen mittoa se kirjattiin tuntemattomaksi ja ohitettiin,
+            # eli jokainen fader-asetus oli miksausbonukseltaan nolla.
+            track_gain *= db_to_linear(_number(track_elem.get("Volume"), 0.0))
             track_muted = _truthy(track_elem.get("Muted"))
 
         for region in track.regions:

@@ -33,6 +33,7 @@ import glob
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Iterator
 
 from lxml import etree
 
@@ -70,23 +71,23 @@ def time_to_seconds(value: str | None) -> float:
     """Lukee ajan sekunteina tai muodossa ``[HH:]MM:SS[.mmm]``.
 
     Hindenburg kirjoittaa yleensä sekunteja, mutta kaksoispistemuoto esiintyy
-    vanhemmissa istunnoissa. Virheellinen arvo on nolla eikä poikkeus:
-    yksi sekaisin mennyt attribuutti ei saa kaataa koko istunnon lukemista.
+    vanhemmissa istunnoissa. Virheellinen arvo nostaa ``ValueError``:
+    yksi sekaisin mennyt attribuutti ei saa kaataa koko istunnon lukemista,
+    mutta se saa nostaa poikkeuksen joka on käsiteltävä ylemmällä tasolla.
     """
-    if not value:
+    if value is None:
         return 0.0
+    if not value:
+        raise ValueError("tyhjä aikaleima")
     try:
         if ":" in value:
             parts = value.split(":")
-            # [HH:]MM:SS on enimmäkseen: neljästä osasta koostuva arvo on
-            # rikkinäinen, ei päivää. Ilman vartijaa 1:2:3:4 laskettaisiin
-            # 223 384 s:ksi ja alue sijoittuisi kymmenen päivän päähän.
             if len(parts) > 3:
-                return 0.0
+                raise ValueError(f"virheellinen aikaleima: {value}")
             return sum(float(part) * 60**i for i, part in enumerate(reversed(parts)))
         return float(value)
-    except ValueError:
-        return 0.0
+    except ValueError as exc:
+        raise ValueError(f"virheellinen aikaleima: {value}") from exc
 
 
 def seconds_to_time(seconds: float) -> str:
@@ -126,23 +127,19 @@ class FileInfo:
         node = self.transcription
         return node is not None and bool(descendants(node, "w"))
 
-    def words(self) -> list[Word]:
+    def words(self) -> Iterator[Word]:
         node = self.transcription
         if node is None:
-            return []
-        out = []
+            return
         for w in descendants(node, "w"):
             text = (w.text or "").strip()
             if not text:
                 continue
-            out.append(
-                Word(
-                    text=text,
-                    start=time_to_seconds(w.get("s")),
-                    length=time_to_seconds(w.get("l")),
-                )
+            yield Word(
+                text=text,
+                start=time_to_seconds(w.get("s")),
+                length=time_to_seconds(w.get("l")),
             )
-        return out
 
 
 @dataclass
@@ -164,7 +161,7 @@ class RegionInfo:
 class TrackInfo:
     name: str
     elem: object = field(repr=False, default=None)
-    regions: list[RegionInfo] = field(default_factory=list)
+    regions: list = field(default_factory=list)
 
 
 @dataclass
@@ -173,17 +170,17 @@ class Session:
 
     path: str
     tree: object = field(repr=False, default=None)
-    files: list[FileInfo] = field(default_factory=list)
-    tracks: list[TrackInfo] = field(default_factory=list)
+    files: list = field(default_factory=list)
+    tracks: list = field(default_factory=list)
     audio_dir: str = ""
 
-    def file_by_id(self, ref: str) -> FileInfo | None:
+    def file_by_id(self, ref: str):
         for f in self.files:
             if f.id == ref:
                 return f
         return None
 
-    def file_by_name(self, name: str) -> FileInfo | None:
+    def file_by_name(self, name: str):
         """Nimihaku. Ensin täsmälleen, sitten kirjainkoko sivuuttaen.
 
         Kirjainkoko on Macilla merkityksetön tiedostojärjestelmässä mutta ei
@@ -202,7 +199,7 @@ class Session:
 
     @property
     def word_count(self) -> int:
-        return sum(len(f.words()) for f in self.files)
+        return sum(len(list(f.words())) for f in self.files)
 
 
 def read(path: str | Path) -> Session:
@@ -230,7 +227,7 @@ def read(path: str | Path) -> Session:
             pool = elem
             break
 
-    files: list[FileInfo] = []
+    files = []
     if pool is not None:
         for elem in children(pool, "File"):
             files.append(
@@ -242,38 +239,38 @@ def read(path: str | Path) -> Session:
                 )
             )
 
-    tracks: list[TrackInfo] = []
-    for elem in descendants(root, "Track"):
-        track = TrackInfo(name=elem.get("Name", ""), elem=elem)
-        for region in children(elem, "Region"):
-            track.regions.append(
-                RegionInfo(
-                    ref=region.get("Ref", ""),
-                    start=time_to_seconds(region.get("Start")),
-                    length=time_to_seconds(region.get("Length")),
-                    offset=time_to_seconds(region.get("Offset", "0")),
-                    elem=region,
+    tracks_list = []
+    try:
+        for elem in descendants(root, "Track"):
+            track = TrackInfo(name=elem.get("Name", ""), elem=elem)
+            for region in children(elem, "Region"):
+                track.regions.append(
+                    RegionInfo(
+                        ref=region.get("Ref", ""),
+                        start=time_to_seconds(region.get("Start", "0")),
+                        length=time_to_seconds(region.get("Length")),
+                        offset=time_to_seconds(region.get("Offset", "0")),
+                        elem=region,
+                    )
                 )
-            )
-        tracks.append(track)
+            tracks_list.append(track)
+    except ValueError as exc:
+        raise NhsxError(f"Virheellinen aikaleima: {exc}") from exc
 
-    if pool is None and not tracks:
+    if pool is None and not tracks_list:
         raise NhsxError(
             "Tiedostosta ei löytynyt äänipoolia eikä raitoja. "
             "Onko tämä Hindenburgin istuntotiedosto?"
         )
 
-    # Äänipoolin oma Path on suhteellinen istuntotiedostoon nähden, ja
-    # Hindenburg jättää sen usein tyhjäksi. Tiedoston oma hakemisto on siis
-    # oikea oletus eikä varasija.
     pool_path = (pool.get("Path") or "").strip() if pool is not None else ""
     base = Path(path).resolve().parent
-    audio_dir = str((base / pool_path).resolve()) if pool_path else str(base)
+    audio_dir = str((base / pool_path).resolve()) if pool_path else str(Path(path).resolve().parent)
 
-    return Session(path=path, tree=tree, files=files, tracks=tracks, audio_dir=audio_dir)
+    return Session(path=path, tree=tree, files=files, tracks=tracks_list, audio_dir=audio_dir)
 
 
-def locate(session: Session, file_info, extra_dir: str = "") -> str:
+def locate(session, file_info, extra_dir: str = "") -> str:
     """Etsii äänipoolin tiedoston levyltä.
 
     ``Path`` on istunnoissa milloin absoluuttinen, milloin istuntoon nähden

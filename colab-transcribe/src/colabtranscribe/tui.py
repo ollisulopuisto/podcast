@@ -22,7 +22,7 @@ from . import driver
 from .options import GPUS, PRESETS, RunOptions
 
 CommandLog = Callable[[str], None]
-Runner = Callable[[list[list[str]], CommandLog], int]
+Runner = Callable[[list[list[str]], CommandLog, float | None], int]
 
 
 class TranscribeApp(App):
@@ -151,7 +151,7 @@ class TranscribeApp(App):
         def log(line: str) -> None:
             self.call_from_thread(self._write_log, line)
 
-        code = self._runner(plan, log)
+        code = self._runner(plan, log, timeout=driver.COMMAND_TIMEOUT)
         summary = "ajo valmis" if code == 0 else f"ajo pysähtyi koodiin {code}"
         self.call_from_thread(self._write_log, summary)
 

@@ -49,3 +49,8 @@ bin/
 xcuserdata/
 .build/
 DerivedData/
+
+# Testisignaalit: WAV-aineisto generoidaan `scripts/generate_test_signals.py`
+# (pelkkä ääni; lait ovat .nhsx:ssä ja manifesteissa). Isot binäärit eivät
+# kuulu gitiin — commitoidaan vain istunnot (.nhsx) ja manifestit (manifest.json).
+test_signals/**/*.wav
