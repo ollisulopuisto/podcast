@@ -333,4 +333,36 @@ def test_run_detects_precondition_failed_on_colab_new(monkeypatch):
     assert any("colab stop" in line for line in logs)
 
 
+def test_run_auto_opens_auth_url(monkeypatch):
+    import io
+    import webbrowser
+
+    opened_urls = []
+    monkeypatch.setattr(webbrowser, "open", lambda url: opened_urls.append(url) or True)
+
+    auth_url = (
+        "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline"
+        "&client_id=123.apps.googleusercontent.com&response_type=code"
+    )
+
+    class FakeProcess:
+        def __init__(self, cmd, **kwargs):
+            self.stdin = io.StringIO()
+            self.stdout = [
+                "[colab] REQUIRED: Google Drive Authorization needed.\n",
+                "Please visit:\n",
+                f"{auth_url}\n",
+            ]
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", FakeProcess)
+    logs = []
+    code = driver.run([["colab", "drivemount", "-s", "vst-pipeline"]], logs.append)
+    assert code == 0
+    assert opened_urls == [auth_url]
+    assert any("Avattu" in line or "valtuutus" in line.lower() for line in logs)
+
+
 

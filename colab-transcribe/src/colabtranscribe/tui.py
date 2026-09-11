@@ -284,7 +284,7 @@ class TranscribeApp(App):
                 yield Button("Aja", id="run", variant="primary")
                 yield Button("Alkuasetukset", id="onboarding_btn")
                 yield Label("q = lopeta, r = aja", id="hint")
-        yield RichLog(id="log", markup=False, highlight=False)
+        yield RichLog(id="log", markup=False, highlight=False, wrap=True)
         yield Footer()
 
     def on_mount(self) -> None:

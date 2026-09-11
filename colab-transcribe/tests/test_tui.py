@@ -178,3 +178,14 @@ def test_tui_stop_session_button(monkeypatch):
     run_scenario(scenario)
     assert stopped == ["custom-sess"]
 
+
+def test_tui_log_has_wrap_enabled():
+    async def scenario():
+        app = TranscribeApp()
+        async with app.run_test() as pilot:
+            log_widget = app.query_one("#log")
+            assert getattr(log_widget, "wrap", False) is True
+            await pilot.pause()
+
+    run_scenario(scenario)
+

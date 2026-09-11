@@ -14,6 +14,7 @@ import subprocess
 import tarfile
 import tempfile
 import threading
+import webbrowser
 from collections.abc import Callable
 from pathlib import Path
 
@@ -220,6 +221,12 @@ def _execute_single(
                 has_kernel_error = True
             if "Precondition Failed" in stripped or "TooManyAssignmentsError" in stripped:
                 has_precondition_error = True
+            if "accounts.google.com/o/oauth2" in stripped:
+                for token in stripped.split():
+                    if "accounts.google.com/o/oauth2" in token:
+                        webbrowser.open(token)
+                        log("[colab] Avattu Google Drive -valtuutuslinkki automaattisesti selaimeen.")
+                        break
             log(stripped)
         code = process.wait()
     except KeyboardInterrupt:
