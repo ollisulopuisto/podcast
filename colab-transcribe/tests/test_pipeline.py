@@ -275,3 +275,22 @@ def test_inject_rejects_a_doctype(tmp_path):
     )
     with pytest.raises(ValueError):
         inject_transcriptions_to_nhsx(str(inbox), str(outbox))
+
+
+def test_install_dependencies_does_not_require_libcublas11(monkeypatch):
+    from colabtranscribe.colab.pipeline import install_dependencies
+
+    commands = []
+
+    def mock_run(cmd, *args, **kwargs):
+        commands.append(cmd)
+
+    monkeypatch.setattr("subprocess.run", mock_run)
+    install_dependencies()
+
+    assert any(cmd[:2] == ["apt-get", "update"] for cmd in commands)
+    apt_installs = [cmd for cmd in commands if cmd[:2] == ["apt-get", "install"]]
+    assert apt_installs
+    for cmd in apt_installs:
+        assert "libcublas11" not in cmd
+        assert "ffmpeg" in cmd

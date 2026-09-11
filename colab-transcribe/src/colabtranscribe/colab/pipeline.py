@@ -87,7 +87,7 @@ def _swap_suffix(path, old, new):
 def install_dependencies():
     packages = ["CTranslate2", "whisper-ctranslate2", "lxml", "pydub"]
     subprocess.run(["apt-get", "update", "-qq"], check=True, timeout=APT_TIMEOUT)
-    subprocess.run(["apt-get", "install", "-y", "-qq", "libcublas11", "ffmpeg"], check=True, timeout=APT_TIMEOUT)
+    subprocess.run(["apt-get", "install", "-y", "-qq", "ffmpeg"], check=True, timeout=APT_TIMEOUT)
     subprocess.run(["pip", "install", "-q", "-U", *packages], check=True, timeout=PIP_TIMEOUT)
 
 # 2. Aikaleimojen apufunktiot

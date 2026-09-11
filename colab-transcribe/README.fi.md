@@ -17,7 +17,8 @@ tulokset takaisin: `<jakso> litteroitu.nhsx` ja `<jakso>_processed.nhsx`.
 Repositorion juuresta, kun `uv sync --all-packages` on ajettu:
 
 ```
-uv run colab-transcribe              # TUI
+uv run colab-transcribe              # TUI (interaktiivinen kansionvalinta + opastus)
+uv run colab-transcribe --check      # tarkista apuohjelmat ja tunnistetiedot
 ```
 
 Täysin skriptattuna, ilman käyttöliittymää:
@@ -26,8 +27,12 @@ Täysin skriptattuna, ilman käyttöliittymää:
 uv run colab-transcribe --input ~/jakso/ --output ~/valmis/ --preset intra-mic
 uv run colab-transcribe --input ~/jakso/ --dry-run     # tulosta suunnitelma, älä aja
 uv run colab-transcribe --input ~/jakso/ --gpu A100 --rms --thr -40
+uv run colab-transcribe --input ~/jakso/ --no-drive    # käytä vanhaa hidasta suoraa Colab-latausta
 ```
 
+Tiedostot siirretään oletuksena Google Driven kautta (`--transfer drive`), jolloin
+paketti ladataan Google Driveen resumable uploadina ja Colab-kone purkaa sen
+sisäverkon nopeudella sekunneissa.
 Esiasetukset ovat Colabissa ajettavan skriptin: `remote` (häntä 1,0 s,
 tauko 1,0 s) ja `intra-mic` (RMS-tarkistus päällä, häntä 0,4 s, tauko
 0,4 s). `--thr`, `--tail`, `--gap`, `--rms` ja `--prompt` korvaavat
@@ -35,7 +40,9 @@ esiasetuksen lukua.
 
 ## Vaatimukset
 
-* `colab`-komentorivityökalu ja Colab-tili jolla on GPU-käyttö.
+* `colab`-komentorivityökalu (`uv tool install google-colab-cli`) ja Colab-tili jolla on GPU-käyttö.
+* Google Cloud ADC -tunnistetiedot (`gcloud auth application-default login`) tai `GOOGLE_APPLICATION_CREDENTIALS`.
+* `colab-transcribe` opastaa käyttäjää (onboarding) automaattisesti TUI:ssa tai `--check`-valitsimella, jos työkaluja tai tunnisteita puuttuu.
 * Paikallisesti ei muuta: raskas työ ajaa pilvessä, ja ajettava skripti
   kulkee tämän paketin mukana.
 

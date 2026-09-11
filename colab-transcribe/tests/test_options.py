@@ -70,3 +70,20 @@ def test_tail_and_gap_must_be_positive():
         RunOptions(tail=-1.0)
     with pytest.raises(ValueError, match="gap"):
         RunOptions(gap=0.0)
+
+
+def test_transfer_default_is_drive():
+    options = RunOptions()
+    assert options.transfer == "drive"
+
+
+def test_transfer_choices():
+    from colabtranscribe.options import TRANSFERS
+
+    assert set(TRANSFERS) == {"drive", "direct"}
+
+
+def test_unknown_transfer_is_rejected():
+    with pytest.raises(ValueError, match="transfer"):
+        RunOptions(transfer="magic")
+

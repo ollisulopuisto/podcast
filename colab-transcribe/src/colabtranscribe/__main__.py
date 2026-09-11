@@ -13,7 +13,8 @@ import sys
 from pathlib import Path
 
 from . import __version__, driver
-from .options import DEFAULT_PROMPT, GPUS, PRESETS, RunOptions
+from .onboarding import check_environment
+from .options import DEFAULT_PROMPT, GPUS, PRESETS, TRANSFERS, RunOptions
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,6 +27,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--session", default="vst-pipeline", help="Colab-istunnon nimi")
     parser.add_argument("--gpu", choices=GPUS, default="T4", help="Colabin GPU (oletus: T4)")
     parser.add_argument("--preset", choices=PRESETS, default="remote", help="leikkauksen esiasetus")
+    parser.add_argument(
+        "--transfer",
+        choices=TRANSFERS,
+        default="drive",
+        help="siirtotapa: drive (nopea Google Drive) tai direct (hidas Colab-lataus)",
+    )
+    parser.add_argument(
+        "--no-drive",
+        action="store_true",
+        help="älä käytä Google Drivea vaan suoraa Colab-latausta",
+    )
     parser.add_argument("--rms", action="store_true", help="RMS-tarkistus Auto-Silencelle")
     parser.add_argument("--thr", type=int, default=-35, help="RMS-kynnys desibeleinä (oletus: -35)")
     parser.add_argument("--tail", type=float, default=1.0, help="häntä sekunteina (oletus: 1.0)")
@@ -36,22 +48,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true",
         help="tulosta ajettavat komennot äläkä aja mitään",
     )
+    parser.add_argument(
+        "--check", action="store_true",
+        help="tarkista apuohjelmat ja ympäristömuuttujat",
+    )
     parser.add_argument("--version", action="version", version=__version__)
     return parser
 
 
 def options_from_args(args: argparse.Namespace) -> RunOptions:
+    env_opts = RunOptions.from_env()
+    transfer = "direct" if args.no_drive else (
+        args.transfer if args.transfer != "drive" else env_opts.transfer
+    )
     return RunOptions(
-        session=args.session,
-        gpu=args.gpu,
-        input_dir=args.input or "",
-        output_dir=args.output,
-        preset=args.preset,
-        rms=args.rms,
-        thr=args.thr,
-        tail=args.tail,
-        gap=args.gap,
-        prompt=args.prompt,
+        session=args.session if args.session != "vst-pipeline" else env_opts.session,
+        gpu=args.gpu if args.gpu != "T4" else env_opts.gpu,
+        input_dir=args.input or env_opts.input_dir,
+        output_dir=args.output if args.output != "output" else env_opts.output_dir,
+        preset=args.preset if args.preset != "remote" else env_opts.preset,
+        transfer=transfer,
+        rms=args.rms or env_opts.rms,
+        thr=args.thr if args.thr != -35 else env_opts.thr,
+        tail=args.tail if args.tail != 1.0 else env_opts.tail,
+        gap=args.gap if args.gap != 1.0 else env_opts.gap,
+        prompt=args.prompt if args.prompt != DEFAULT_PROMPT else env_opts.prompt,
     )
 
 
@@ -69,6 +90,12 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
         for command in commands:
             print(shlex.join(command))
         return 0
+
+    report = check_environment()
+    if not report.is_ready:
+        print("Tarvittavat apuohjelmat tai tunnistetiedot puuttuvat:\n", file=sys.stderr)
+        print(report.summary(), file=sys.stderr)
+        return 1
 
     lines: list[str] = []
 
@@ -88,6 +115,11 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.check:
+        report = check_environment()
+        print(report.summary())
+        return 0 if report.is_ready else 1
 
     if not args.input or args.tui:
         from .tui import TranscribeApp

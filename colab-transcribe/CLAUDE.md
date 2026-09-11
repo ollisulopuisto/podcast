@@ -33,15 +33,16 @@ kulkevat samaa tietä. Kovennus on käsin siirretty podcast-magicin lukijasta
 tähän snapshotiin, eli se on driftin vaaraan kuuluvaa: jos lukijaa muutetaan,
 tämä ei näe muutosta automaattisesti.
 
-## Luettu XML on aina kovennettu
+## Nopea siirto Google Driven kautta
 
-`.nhsx`:n molemmat lukupolut — transkriptioitten injektointi ja
-Auto-Silence — käyvät saman kovennetun parserin kautta. `<!DOCTYPE>`
-hylätään heti, ja parser ei lataa DTD:tä, ratkaise entiteettejä eikä ota
-yhteyttä verkkoon: XXE- ja entiteettipommien iskuväylä on suljettu
-molemmissa ovia kerralla. Tämäkin on käsin siirretty kopio
-podcast-magicin lukijasta, eli driftin vaara pätee: jos jompaa parseria
-muutetaan, toinen ei näe muutosta.
+Oletussiirtotapa (`transfer="drive"`) pakkaa syötetiedostot paikallisesti
+`input.tar.gz`-paketiksi ja lataa sen suoraan Google Driveen (`gdrive.py`)
+resumable upload -protokollalla käyttäen olemassa olevia Colab CLI -tunnisteita
+(`token.json`). Colab-koneessa Google Drive liitetään (`colab drivemount`), jolloin
+tiedostot puretaan Google-sisäverkon nopeudella sekunneissa virtuaalikoneelle.
+Ajon päätteeksi väliaikainen siirtokansio siivotaan automaattisesti Drivesta.
+Haluttaessa vanha hidas suora siirto voidaan valita parametrilla `--transfer direct`
+tai `--no-drive`.
 
 ## Yksi suunnitelma, kolme ovea
 
@@ -50,12 +51,15 @@ TUI ja komentorivi molemmat kulkevat sen kautta, ja `--dry-run` tulostaa
 samat komennot jotka oikea ajo suorittaa. Jos komennon muoto muuttuu,
 muuttuu vain `driver.py` ja sen testit — ei kolmea kopiota.
 
-`colab`-työkalu on ulkoinen riippuvuus (ei pypi, ei brew-formulaa tässä
-repossa). Ajuri ei tarkista sen olemassaoloa etukäteen: puuttuva komento
-näkee vasta ensimmäinen ajo, ja se palauttaa 127:n lopettamatta mitään
-keskellä. Istunto jää auki keskeytyneen ajon jälkeen — sulku on aina
-suunnitelman viimeinen komento, ja keskeytyneen ajon jälkeen Colabin oma
-käyttöliittymä on se joka sen saa kiinni.
+`colab`-työkalu on ulkoinen riippuvuus (`google-colab-cli`, asennus `uv tool
+install google-colab-cli`). Järjestelmä tarkistaa apuohjelman olemassaolon
+sekä tunnistetiedot (`onboarding.py`): jos ne puuttuvat, TUI avaa opastusikkunan
+ja komentorivi antaa selkeät asennus- ja kirjautumiskomennot ennen ajoa.
+TUI:ssa syöte- ja tulostekansiot valitaan interaktiivisilla valintaikkunoilla
+(`picker.py`), joten polkuja ei tarvitse kirjoittaa käsin.
+Istunto jää auki keskeytyneen ajon jälkeen — sulku on aina suunnitelman
+viimeinen komento, ja keskeytyneen ajon jälkeen Colabin oma käyttöliittymä
+on se joka sen saa kiinni.
 
 ## Versio
 

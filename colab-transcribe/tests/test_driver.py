@@ -8,6 +8,7 @@ skripti ylös, äänet ylös, ajo alas, tulokset alas, istunto kiinni.
 from __future__ import annotations
 
 import shlex
+import subprocess
 from pathlib import Path
 
 from colabtranscribe import driver
@@ -23,8 +24,10 @@ def test_pipeline_script_ships_with_the_package():
     assert "whisper-ctranslate2" in script.read_text(encoding="utf-8")
 
 
-def test_plan_sequence(tmp_path: Path):
-    options = RunOptions(input_dir=str(tmp_path), output_dir=str(tmp_path / "out"))
+def test_plan_sequence_direct(tmp_path: Path):
+    options = RunOptions(
+        input_dir=str(tmp_path), output_dir=str(tmp_path / "out"), transfer="direct"
+    )
     commands = driver.plan_commands(options, ["pool/a.wav"])
 
     heads = [c[:3] for c in commands]
@@ -46,6 +49,35 @@ def test_plan_sequence(tmp_path: Path):
     assert heads[-2] == ["colab", "download", "-s"]
     assert heads[-1] == ["colab", "stop", "-s"]
     assert options.session in commands[0] and options.session in commands[-1]
+
+
+def test_plan_sequence_drive(tmp_path: Path):
+    options = RunOptions(
+        input_dir=str(tmp_path), output_dir=str(tmp_path / "out"), transfer="drive"
+    )
+    commands = driver.plan_commands(options, ["pool/a.wav"])
+
+    heads = [c[:2] for c in commands]
+    assert heads[0] == ["colab", "new"]
+    assert heads[1] == ["colab", "drivemount"]
+    assert heads[2] == ["colab", "exec"]
+    assert heads[3] == ["colab", "upload"]
+    assert heads[4] == ["drive", "upload"]
+    assert commands[4][2] == str(tmp_path)
+    assert f"ColabTranscribe/{options.session}/input.tar.gz" in commands[4][3]
+    # purkaminen Colabissa
+    assert heads[5] == ["colab", "exec"]
+    assert "tar -xzf" in commands[5][-1]
+    assert f"ColabTranscribe/{options.session}/input.tar.gz" in commands[5][-1]
+    # suoritus
+    assert any("pipeline.py" in c[-1] for c in commands if c[1] == "exec")
+    # lataus alas
+    assert any(c[1] == "download" for c in commands)
+    # väliaikaistiedostojen poisto Drivesta
+    assert any("rm -rf" in c[-1] and "ColabTranscribe" in c[-1] for c in commands if c[1] == "exec")
+    # lopetus
+    assert heads[-1] == ["colab", "stop"]
+
 
 
 def test_pipeline_args_land_in_the_exec_call(tmp_path: Path):
@@ -124,7 +156,9 @@ def test_list_input_files_does_not_follow_symlinks_outside(tmp_path: Path):
 
 
 def test_plan_commands_quotes_subdirectory_names_for_remote_shell(tmp_path: Path):
-    options = RunOptions(input_dir=str(tmp_path), output_dir=str(tmp_path / "out"))
+    options = RunOptions(
+        input_dir=str(tmp_path), output_dir=str(tmp_path / "out"), transfer="direct"
+    )
     commands = driver.plan_commands(options, ["x;touch pwned/a.wav"])
     mkdir = [c[-1] for c in commands if c[1] == "exec" and "mkdir" in c[-1] and "pwned" in c[-1]]
     assert mkdir
@@ -149,3 +183,108 @@ def test_command_timeout_outlasts_whisper():
     from colabtranscribe.colab import pipeline
 
     assert driver.COMMAND_TIMEOUT >= pipeline.WHISPER_TIMEOUT
+
+
+def test_run_translates_colab_exec_to_stdin(monkeypatch):
+    """colab exec ei ota koodia komentoriviltä vaan stdin-syötteenä."""
+    import io
+
+    recorded_calls = []
+
+    class FakeProcess:
+        def __init__(self, cmd, stdin=None, **kwargs):
+            recorded_calls.append((cmd, kwargs))
+            self.stdin = io.StringIO()
+            self.stdout = ["Valmis\n"]
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", FakeProcess)
+    logs = []
+    code = driver.run([["colab", "exec", "-s", "sess", "mkdir -p /content/input"]], logs.append)
+    assert code == 0
+    assert len(recorded_calls) == 1
+    cmd, _ = recorded_calls[0]
+    assert cmd == ["colab", "exec", "-s", "sess", "--timeout", str(driver.COMMAND_TIMEOUT)]
+
+
+def test_run_detects_colab_exec_traceback(monkeypatch):
+    """colab exec palauttaa 0 vaikka ytimessä tulisi poikkeus; ajurin on huomattava se."""
+    import io
+
+    class FakeProcess:
+        def __init__(self, cmd, stdin=None, **kwargs):
+            self.stdin = io.StringIO()
+            self.stdout = [
+                "---------------------------------------------------------------------------\n",
+                "RuntimeError: jotain meni pieleen\n",
+            ]
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", FakeProcess)
+    logs = []
+    code = driver.run([["colab", "exec", "-s", "sess", "python3 /content/pipeline.py"]], logs.append)
+    assert code != 0
+    assert any("Etäkomento epäonnistui" in line for line in logs)
+
+
+def test_run_handles_directory_download(monkeypatch, tmp_path):
+    """colab download ei voi ladata kansiota, joten se ladataan tar-pakettina ja puretaan."""
+    import io
+    import tarfile
+
+    out_dir = tmp_path / "output"
+
+    def fake_popen(cmd, stdin=None, **kwargs):
+        class P:
+            def __init__(self, c):
+                self.stdin = io.StringIO()
+                self.stdout = []
+
+            def wait(self):
+                if len(cmd) >= 6 and cmd[1] == "download" and cmd[4].endswith(".tar.gz"):
+                    local_tar = Path(cmd[5])
+                    local_tar.parent.mkdir(parents=True, exist_ok=True)
+                    with tarfile.open(local_tar, "w:gz") as tar:
+                        sample = tmp_path / "sample.txt"
+                        sample.write_text("testisisältö")
+                        tar.add(sample, arcname="sample.txt")
+                return 0
+
+        return P(cmd)
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    logs = []
+    code = driver.run(
+        [["colab", "download", "-s", "sess", "/content/output/", str(out_dir)]],
+        logs.append,
+    )
+    assert code == 0
+    assert (out_dir / "sample.txt").read_text() == "testisisältö"
+
+
+def test_run_handles_drive_upload(monkeypatch, tmp_path):
+    """drive upload luo paikallisen paketin ja lataa sen gdrive-moduulilla."""
+    in_dir = tmp_path / "input"
+    in_dir.mkdir()
+    (in_dir / "audio.wav").write_bytes(b"test")
+
+    uploaded = []
+
+    def fake_upload(local_dir, session, log):
+        uploaded.append((local_dir, session))
+        return "file-id-123"
+
+    monkeypatch.setattr(driver, "upload_input_to_drive", fake_upload)
+    logs = []
+    cmd = ["drive", "upload", str(in_dir), "ColabTranscribe/vst-pipeline/input.tar.gz"]
+    code = driver.run([cmd], logs.append)
+    assert code == 0
+    assert len(uploaded) == 1
+    assert uploaded[0] == (str(in_dir), "vst-pipeline")
+
+
+

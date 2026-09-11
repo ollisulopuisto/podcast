@@ -71,5 +71,68 @@ def test_run_button_plans_and_logs(tmp_path: Path):
     plan = fake.calls[0]
     heads = [c[:2] for c in plan]
     assert ["colab", "new"] in heads and ["colab", "stop"] in heads
-    uploaded = [c for c in plan if c[:2] == ["colab", "upload"]]
-    assert any("puhe.wav" in c[-2] for c in uploaded)
+    assert any(c[:2] == ["drive", "upload"] for c in plan)
+
+
+def test_browse_button_updates_input_path(tmp_path: Path):
+    target_dir = tmp_path / "valittu_kansio"
+    target_dir.mkdir()
+
+    async def scenario():
+        def fake_picker(initial="", prompt=""):
+            return str(target_dir)
+
+        app = TranscribeApp(folder_picker=fake_picker)
+        async with app.run_test() as pilot:
+            # Painetaan syötekansion selauspainiketta
+            app.query_one("#browse_input").press()
+            await pilot.pause()
+            await asyncio.sleep(0.05)
+            assert app.query_one("#input").value == str(target_dir)
+
+    run_scenario(scenario)
+
+
+def test_browse_button_updates_output_path(tmp_path: Path):
+    out_dir = tmp_path / "tulosteet"
+    out_dir.mkdir()
+
+    async def scenario():
+        def fake_picker(initial="", prompt=""):
+            return str(out_dir)
+
+        app = TranscribeApp(folder_picker=fake_picker)
+        async with app.run_test() as pilot:
+            app.query_one("#browse_output").press()
+            await pilot.pause()
+            await asyncio.sleep(0.05)
+            assert app.query_one("#output").value == str(out_dir)
+
+    run_scenario(scenario)
+
+
+def test_onboarding_modal_opens_when_not_ready():
+    from colabtranscribe.onboarding import OnboardingItem, OnboardingReport
+
+    not_ready_report = OnboardingReport(
+        items=[
+            OnboardingItem(
+                key="colab",
+                title="Google Colab CLI",
+                ok=False,
+                current_value="Ei löydy",
+                instructions="Asenna: uv tool install google-colab-cli",
+            )
+        ]
+    )
+
+    async def scenario():
+        app = TranscribeApp(onboarding_checker=lambda: not_ready_report)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            # OnboardingModal on ruudulla
+            from colabtranscribe.tui import OnboardingModal
+            assert any(isinstance(s, OnboardingModal) for s in app.screen_stack)
+
+    run_scenario(scenario)
+
