@@ -67,3 +67,8 @@ git tag autoraffkat-v2026.8.28.1
 Tagi käynnistää `build-<sovellus>.yml`in. Paketoitavia sovelluksia on kaksi
 (autoraffkat, podcast-magic); automixer on komentorivityökalu eikä sillä ole
 `.spec`iä, joten sillä ei ole julkaisuputkeakaan.
+
+## Feature Roadmaps & Ideas
+
+Looking for a high-impact feature to contribute?
+- **`autoraffkat`**: Adding multi-NLE support (DaVinci Resolve and Adobe Premiere Pro) — see [`apps/autoraffkat/ROADMAP.md`](apps/autoraffkat/ROADMAP.md).

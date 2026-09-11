@@ -3,8 +3,6 @@
 import os
 import sys
 
-import pytest
-
 from autoraffkat import pick
 
 
@@ -89,10 +87,6 @@ def test_missing_directory_is_not_an_error(tmp_path):
     assert pick.candidates(str(tmp_path / "ei-ole")) == []
 
 
-@pytest.mark.skipif(
-    sys.platform != "darwin",
-    reason="Natiivi valintaikkuna on osascript, siis vain macOS",
-)
 def test_browser_gets_the_picker_from_the_server(tmp_path, monkeypatch):
     """Selaimessa ei ole tiedostovalitsinta joka antaisi polun.
 
@@ -126,7 +120,7 @@ def test_browser_gets_the_picker_from_the_server(tmp_path, monkeypatch):
 
 
 def test_picker_says_so_when_there_is_none(tmp_path, monkeypatch):
-    """Muualla kuin macOSissa ikkunaa ei ole, ja siitä on kerrottava.
+    """Kun järjestelmässä ei ole valintaikkunaa, siitä on kerrottava.
 
     Selain saa ``unavailable``-lipun eikä tyhjää polkua: tyhjä näyttäisi
     peruutetulta valinnalta, jolloin «Avaa XML…» olisi taas se nappi joka ei
@@ -136,10 +130,11 @@ def test_picker_says_so_when_there_is_none(tmp_path, monkeypatch):
 
     from autoraffkat.server.app import AppState, create_app
 
-    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(pick, "has_native_picker", lambda: False)
     source = _touch(str(tmp_path / "jakso" / "a.fcpxml"))
     client = TestClient(create_app(AppState(xml_path=source)))
     assert client.post("/api/pick").json() == {"path": "", "unavailable": True}
+    assert client.post("/api/pick-folder").json() == {"path": "", "unavailable": True}
 
 
 def test_tagged_export_is_not_a_candidate(tmp_path):
@@ -251,3 +246,97 @@ def test_movement_tagged_export_is_not_a_candidate(tmp_path):
     from autoraffkat.pick import _is_output
 
     assert _is_output("jakso-cut broadcast move.fcpxml")
+
+
+def test_windows_picker_calls_powershell(monkeypatch):
+    """Windowsilla valinta kutsuu PowerShellia ja palauttaa polun."""
+    cmd_run = []
+
+    class MockCompletedProcess:
+        returncode = 0
+        stdout = r"C:\Media\project.fcpxml"
+
+    def mock_run(cmd, capture_output, text, timeout):
+        cmd_run.append(cmd)
+        return MockCompletedProcess()
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(
+        pick.shutil,
+        "which",
+        lambda name: r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+        if name == "powershell"
+        else None,
+    )
+    monkeypatch.setattr(pick.subprocess, "run", mock_run)
+
+    result = pick.native(force=True)
+    assert result == r"C:\Media\project.fcpxml"
+    assert "powershell" in cmd_run[0][0]
+
+
+def test_linux_picker_calls_zenity(monkeypatch):
+    """Linuxilla zenityn ollessa saatavilla sitä käytetään ensin."""
+    cmd_run = []
+
+    class MockCompletedProcess:
+        returncode = 0
+        stdout = "/home/user/project.fcpxml\n"
+
+    def mock_run(cmd, capture_output, text, timeout):
+        cmd_run.append(cmd)
+        return MockCompletedProcess()
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        pick.shutil, "which", lambda name: "/usr/bin/zenity" if name == "zenity" else None
+    )
+    monkeypatch.setattr(pick.subprocess, "run", mock_run)
+
+    result = pick.native(force=True)
+    assert result == "/home/user/project.fcpxml"
+    assert cmd_run[0][0] == "zenity"
+
+
+def test_native_folder_windows(monkeypatch):
+    """Windowsilla hakemistonvalinta käyttää FolderBrowserDialog-komentoa."""
+    cmd_run = []
+
+    class MockCompletedProcess:
+        returncode = 0
+        stdout = r"C:\Media\Folder"
+
+    def mock_run(cmd, capture_output, text, timeout):
+        cmd_run.append(cmd)
+        return MockCompletedProcess()
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(
+        pick.shutil, "which", lambda name: "powershell" if name == "powershell" else None
+    )
+    monkeypatch.setattr(pick.subprocess, "run", mock_run)
+
+    result = pick.native_folder(force=True)
+    assert result == r"C:\Media\Folder"
+    assert "FolderBrowserDialog" in cmd_run[0][-1]
+
+
+def test_has_native_picker_detects_tools(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(
+        pick.shutil,
+        "which",
+        lambda name: "/usr/bin/osascript" if name == "osascript" else None,
+    )
+    assert pick.has_native_picker() is True
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert pick.has_native_picker() is True
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(pick.shutil, "which", lambda name: None)
+    monkeypatch.setattr(pick, "_has_tk", lambda: False)
+    assert pick.has_native_picker() is False
+
+    monkeypatch.setattr(pick, "_has_tk", lambda: True)
+    assert pick.has_native_picker() is True

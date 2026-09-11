@@ -1232,15 +1232,15 @@ def create_app(state: AppState) -> FastAPI:
         mikään — siksi ikkuna avataan täällä. Palvelin on aina samalla
         koneella kuin selain, joten ikkuna aukeaa oikealle näytölle.
         """
-        if sys.platform != "darwin":
+        if not pick.has_native_picker():
             return {"path": "", "unavailable": True}
         start = os.path.dirname(state.xml_path) if state.xml_path else ""
         return {"path": pick.native(start, force=True) or ""}
 
     @app.post("/api/pick-folder")
     def pick_folder():
-        """Finderin hakemistovalintaikkuna palvelimen puolelta."""
-        if sys.platform != "darwin":
+        """Järjestelmän hakemistovalintaikkuna palvelimen puolelta."""
+        if not pick.has_native_picker():
             return {"path": "", "unavailable": True}
         start = os.path.dirname(state.xml_path) if state.xml_path else ""
         return {"path": pick.native_folder(start, force=True) or ""}

@@ -6,7 +6,7 @@ whoever is talking. The cut is decided from the microphone tracks. Nothing is
 ever rendered, and the result opens in Final Cut Pro as an ordinary multicam
 timeline you can keep editing by hand.
 
-*[Suomenkielinen README](README.fi.md) · [Design notes](DESIGN.md)*
+*[Suomenkielinen README](README.fi.md) · [Design notes](DESIGN.md) · [Roadmap](ROADMAP.md)*
 
 ![The track list drawn as a patch bay: three cameras on the left, two microphones on the right, each speaker's name once in the strip between them, with the preview bar and the cut list below.](screenshot.png)
 
@@ -539,6 +539,12 @@ but CI requires it.
 
 Test material is synthesised with ffmpeg: sine bursts at known positions, so
 the decision can be checked without real footage (`tests/make_fixture.py`).
+
+## Roadmap & Contributing
+
+Looking to contribute? Supporting additional NLEs like **Blackmagic DaVinci Resolve** and **Adobe Premiere Pro** is planned. Because the audio and cut decision engines are decoupled from XML generation, adding new interchange formats is a great, self-contained project for contributors.
+
+See [`ROADMAP.md`](ROADMAP.md) for details and how to get started.
 
 ## Licence
 

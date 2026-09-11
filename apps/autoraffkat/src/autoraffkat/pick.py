@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -33,7 +34,9 @@ def resolve(path: str) -> str:
     ``.fcpxmld``-paketti on hakemisto, joten sen sisältä otetaan XML. Näin
     työkalulle voi antaa sen mitä Finderissa näkyy.
     """
-    path = os.path.abspath(os.path.expanduser(path))
+    path = os.path.expanduser(path)
+    if not re.match(r"^[a-zA-Z]:[\\/]", path):
+        path = os.path.abspath(path)
     if os.path.isdir(path):
         inner = os.path.join(path, BUNDLE_INNER)
         if os.path.exists(inner):
@@ -217,41 +220,201 @@ def _ensure_foreground() -> bool:
     return True
 
 
-def native(directory: str = "", force: bool = False) -> str | None:
-    """Finderin valintaikkuna. ``None`` jos peruttiin tai ei ole macOS.
-
-    ``force`` on ``--pick``: silloin ikkuna avataan vaikka pääte puuttuisi,
-    koska käyttäjä nimenomaan pyysi sitä.
-    """
-    if sys.platform != "darwin":
-        return None
-    if not force and not interactive():
-        return None
-    prompt = '"Valitse Final Cutista viety FCPXML"'
+def _pick_macos(mode: str, directory: str = "") -> str | None:
+    """Finderin valintaikkuna AppleScriptillä."""
+    prompt = (
+        '"Valitse Final Cutista viety FCPXML"'
+        if mode == "file"
+        else '"Valitse mediatiedostojen kansio"'
+    )
     start = f'default location POSIX file "{directory}"' if directory else ""
-    for template in (_CHOOSE_FILE, _CHOOSE_FOLDER):
-        # Ikkuna eteen ennen kuin se avataan, joka yrityksellä erikseen.
+    templates = (_CHOOSE_FILE, _CHOOSE_FOLDER) if mode == "file" else (_CHOOSE_FOLDER,)
+    for template in templates:
         _ensure_foreground()
         result = _osascript(template.format(prompt=prompt, start=start))
         if result:
-            return resolve(result.rstrip("/"))
+            return result.rstrip("/")
         if result == "":
-            return None  # käyttäjä perui, ei yritetä uudestaan
+            return None
+    return None
+
+
+def _pick_windows(mode: str, directory: str = "") -> str | None:
+    """Windowsin valintaikkuna PowerShellin (tai tkinterin) kautta."""
+    escaped_dir = directory.replace("'", "''") if directory and os.path.exists(directory) else ""
+    if mode == "file":
+        init_part = f"$f.InitialDirectory = '{escaped_dir}';" if escaped_dir else ""
+        script = (
+            "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;"
+            "$f = New-Object System.Windows.Forms.OpenFileDialog;"
+            "$f.Title = 'Valitse FCPXML';"
+            "$f.Filter = 'FCPXML (*.fcpxml;*.fcpxmld)|*.fcpxml;*.fcpxmld|Kaikki tiedostot (*.*)|*.*';"
+            f"{init_part}"
+            "$f.RestoreDirectory = $true;"
+            "$top = New-Object System.Windows.Forms.Form;"
+            "$top.TopMost = $true;"
+            "if ($f.ShowDialog($top) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.FileName }"
+        )
+    else:
+        init_part = f"$f.SelectedPath = '{escaped_dir}';" if escaped_dir else ""
+        script = (
+            "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;"
+            "$f = New-Object System.Windows.Forms.FolderBrowserDialog;"
+            "$f.Description = 'Valitse mediatiedostojen kansio';"
+            f"{init_part}"
+            "$top = New-Object System.Windows.Forms.Form;"
+            "$top.TopMost = $true;"
+            "if ($f.ShowDialog($top) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }"
+        )
+    if shutil.which("powershell"):
+        try:
+            done = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            if done.returncode == 0 and done.stdout.strip():
+                return done.stdout.strip()
+            if done.returncode == 0 and not done.stdout.strip():
+                return None  # Käyttäjä perui
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return _pick_tk(mode, directory)
+
+
+def _pick_linux(mode: str, directory: str = "") -> str | None:
+    """Linuxin valintaikkuna (zenity, kdialog tai tkinter)."""
+    if shutil.which("zenity"):
+        if mode == "file":
+            cmd = [
+                "zenity",
+                "--file-selection",
+                "--title=Valitse FCPXML",
+                "--file-filter=FCPXML (*.fcpxml, *.fcpxmld) | *.fcpxml *.fcpxmld",
+                "--file-filter=Kaikki tiedostot | *",
+            ]
+        else:
+            cmd = [
+                "zenity",
+                "--file-selection",
+                "--directory",
+                "--title=Valitse mediatiedostojen kansio",
+            ]
+        if directory and os.path.exists(directory):
+            cmd.append(f"--filename={os.path.abspath(directory)}/")
+        try:
+            done = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if done.returncode == 0 and done.stdout.strip():
+                return done.stdout.strip()
+            if done.returncode == 1:
+                return None  # Käyttäjä perui
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    if shutil.which("kdialog"):
+        if mode == "file":
+            cmd = ["kdialog", "--getopenfilename", directory or ".", "*.fcpxml *.fcpxmld | FCPXML"]
+        else:
+            cmd = ["kdialog", "--getexistingdirectory", directory or "."]
+        try:
+            done = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if done.returncode == 0 and done.stdout.strip():
+                return done.stdout.strip()
+            if done.returncode == 1:
+                return None
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    return _pick_tk(mode, directory)
+
+
+def _has_tk() -> bool:
+    try:
+        import tkinter  # noqa: F401
+
+        return True
+    except (ImportError, OSError):
+        return False
+
+
+def _pick_tk(mode: str, directory: str = "") -> str | None:
+    """Alustariippumaton varavalitsin tkinterillä."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        with contextlib.suppress(Exception):
+            root.attributes("-topmost", True)
+            root.focus_force()
+        if mode == "file":
+            res = filedialog.askopenfilename(
+                initialdir=directory or None,
+                title="Valitse FCPXML",
+                filetypes=[("FCPXML files", "*.fcpxml;*.fcpxmld"), ("All files", "*.*")],
+            )
+        else:
+            res = filedialog.askdirectory(
+                initialdir=directory or None,
+                title="Valitse mediatiedostojen kansio",
+            )
+        root.destroy()
+        return res or None
+    except Exception:
+        return None
+
+
+def has_native_picker() -> bool:
+    """Tarkistaa onko järjestelmässä valintaikkunaa käytettävissä."""
+    if sys.platform == "darwin":
+        return bool(shutil.which("osascript"))
+    if sys.platform == "win32":
+        return bool(shutil.which("powershell")) or _has_tk()
+    if sys.platform.startswith("linux"):
+        return bool(shutil.which("zenity") or shutil.which("kdialog")) or _has_tk()
+    return _has_tk()
+
+
+def native(directory: str = "", force: bool = False) -> str | None:
+    """Järjestelmän natiivi tiedostonvalintaikkuna. ``None`` jos peruttiin tai ei saatavilla.
+
+    ``force`` on ``--pick`` tai palvelinkutsu: silloin ikkuna avataan vaikka pääte puuttuisi,
+    koska käyttäjä nimenomaan pyysi sitä.
+    """
+    if not force and not interactive():
+        return None
+    if sys.platform == "darwin":
+        path = _pick_macos("file", directory)
+    elif sys.platform == "win32":
+        path = _pick_windows("file", directory)
+    elif sys.platform.startswith("linux"):
+        path = _pick_linux("file", directory)
+    else:
+        path = _pick_tk("file", directory)
+    if path:
+        return resolve(path.rstrip("/\\"))
     return None
 
 
 def native_folder(directory: str = "", force: bool = False) -> str | None:
-    """Finderin hakemiston valintaikkuna."""
-    if sys.platform != "darwin":
-        return None
+    """Järjestelmän natiivi hakemiston valintaikkuna."""
     if not force and not interactive():
         return None
-    prompt = '"Valitse mediatiedostojen kansio"'
-    start = f'default location POSIX file "{directory}"' if directory else ""
-    _ensure_foreground()
-    result = _osascript(_CHOOSE_FOLDER.format(prompt=prompt, start=start))
-    if result:
-        return os.path.abspath(result.rstrip("/"))
+    if sys.platform == "darwin":
+        path = _pick_macos("folder", directory)
+    elif sys.platform == "win32":
+        path = _pick_windows("folder", directory)
+    elif sys.platform.startswith("linux"):
+        path = _pick_linux("folder", directory)
+    else:
+        path = _pick_tk("folder", directory)
+    if path:
+        cleaned = path.rstrip("/\\")
+        if re.match(r"^[a-zA-Z]:[\\/]", cleaned):
+            return cleaned
+        return os.path.abspath(cleaned)
     return None
 
 
