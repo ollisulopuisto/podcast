@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from textual.widgets import Button, Input
+from textual.widgets import Button, Input, Select
 
 from colabtranscribe.tui import TranscribeApp
 
@@ -73,6 +73,30 @@ def test_run_button_plans_and_logs(tmp_path: Path):
     plan = fake.calls[0]
     heads = [c[:2] for c in plan]
     assert ["colab", "new"] in heads and ["colab", "stop"] in heads
+    assert any(c[:2] == ["colab", "upload"] and "puhe.wav" in c[4] for c in plan)
+
+
+def test_run_button_with_drive_transfer(tmp_path: Path):
+    (tmp_path / "puhe.wav").write_bytes(b"")
+    fake = FakeRunner()
+
+    async def scenario():
+        app = TranscribeApp(runner=fake)
+        async with app.run_test() as pilot:
+            app.query_one("#input").value = str(tmp_path)
+            app.query_one("#output").value = str(tmp_path / "out")
+            app.query_one("#transfer", Select).value = "drive"
+            await pilot.press("r")
+            deadline = asyncio.get_event_loop().time() + 5
+            while not fake.calls and asyncio.get_event_loop().time() < deadline:
+                await pilot.pause()
+                await asyncio.sleep(0.02)
+            await pilot.pause()
+
+    run_scenario(scenario)
+
+    assert fake.calls, "ajoa ei käynnistynyt"
+    plan = fake.calls[0]
     assert any(c[:2] == ["drive", "upload"] for c in plan)
 
 

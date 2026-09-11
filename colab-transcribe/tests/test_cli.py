@@ -37,6 +37,26 @@ def test_dry_run_prints_commands_and_runs_nothing(tmp_path, capsys):
     assert code == 0
     out = capsys.readouterr().out
     assert "colab new" in out
+    assert "colab upload" in out and "puhe.wav" in out
+    assert "python3 /content/pipeline.py" in out
+    assert "--preset intra-mic" in out
+    assert "colab stop" in out
+
+
+def test_dry_run_drive_transfer(tmp_path, capsys):
+    (tmp_path / "puhe.wav").write_bytes(b"")
+    code = cli.main(
+        [
+            "--input", str(tmp_path),
+            "--output", str(tmp_path / "out"),
+            "--preset", "intra-mic",
+            "--transfer", "drive",
+            "--dry-run",
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "colab new" in out
     assert "colab drivemount" in out
     assert "drive upload" in out
     assert "tar -xzf" in out

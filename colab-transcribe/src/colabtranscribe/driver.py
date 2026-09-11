@@ -302,6 +302,10 @@ def run(commands: list[list[str]], log: Callable[[str], None], timeout: float | 
                     upload_input_to_drive(input_dir, session, log)
                 except Exception as err:
                     log(f"Google Drive -lataus epäonnistui: {err}")
+                    err_msg = str(err).lower()
+                    if "403" in err_msg or "forbidden" in err_msg:
+                        log("Huom: Google Drive API vaatii aktiivisen GCP-projektin (quota project).")
+                        log("Suosittelemme suoraa siirtoa ilman Drivea: valitse siirtotavaksi 'direct' (tai COLAB_TRANSFER=direct).")
                     return 1
                 continue
 

@@ -287,6 +287,20 @@ def test_run_handles_drive_upload(monkeypatch, tmp_path):
     assert uploaded[0] == (str(in_dir), "vst-pipeline")
 
 
+def test_run_reports_actionable_hint_on_drive_403(monkeypatch, tmp_path: Path):
+    def failing_upload(input_dir, session, log):
+        raise RuntimeError("HTTP Error 403: Forbidden")
+
+    monkeypatch.setattr(driver, "upload_input_to_drive", failing_upload)
+    logs: list[str] = []
+    cmd = ["drive", "upload", str(tmp_path), "ColabTranscribe/vst-pipeline/input.tar.gz"]
+    code = driver.run([cmd], logs.append)
+    assert code == 1
+    assert any("Google Drive -lataus epäonnistui: HTTP Error 403: Forbidden" in line for line in logs)
+    assert any("quota project" in line for line in logs)
+    assert any("direct" in line for line in logs)
+
+
 def test_plan_sequence_reuse_session_skips_colab_new(tmp_path: Path):
     options = RunOptions(input_dir=str(tmp_path), transfer="drive")
     commands = driver.plan_commands(options, [], reuse_session=True)

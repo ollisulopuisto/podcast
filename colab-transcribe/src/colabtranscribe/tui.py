@@ -274,7 +274,10 @@ class TranscribeApp(App):
                 )
                 yield Label("Siirtotapa")
                 yield Select(
-                    [("Google Drive (nopea)", "drive"), ("Suora Colab-lataus (hidas)", "direct")],
+                    [
+                        ("Suora Colab-lataus (suositus: ei vaadi Drivea)", "direct"),
+                        ("Google Drive (vaatii GCP-projektin)", "drive"),
+                    ],
                     value=self._initial.transfer,
                     id="transfer",
                     allow_blank=False,

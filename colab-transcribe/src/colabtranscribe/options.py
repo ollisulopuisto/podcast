@@ -18,9 +18,9 @@ GPUS = ("T4", "L4", "A100")
 #: skriptissa, ei täällä — täällä on vain valinta.
 PRESETS = ("remote", "intra-mic")
 
-#: Tuetut siirtotavat. "drive" käyttää Google Drivea ja liitosta,
-#: "direct" käyttää Colabin hidasta suoraa upload-tunnelia tiedosto kerrallaan.
-TRANSFERS = ("drive", "direct")
+#: Tuetut siirtotavat. "direct" käyttää Colabin suoraa upload-tunnelia tiedosto kerrallaan,
+#: "drive" käyttää Google Drivea ja liitosta.
+TRANSFERS = ("direct", "drive")
 
 #: Täytesanat Whispereille. Oletus on sama kuin skriptissa itsessään; jos
 #: se muuttuu sinne, se muuttuu tänne samaan hengessä.
@@ -36,7 +36,7 @@ class RunOptions:
     input_dir: str = ""
     output_dir: str = "output"
     preset: str = "remote"
-    transfer: str = "drive"
+    transfer: str = "direct"
     rms: bool = False
     thr: int = -35
     tail: float = 1.0
@@ -67,7 +67,7 @@ class RunOptions:
         input_dir = os.environ.get("COLAB_INPUT_DIR") or os.environ.get("COLAB_INPUT", "")
         output_dir = os.environ.get("COLAB_OUTPUT_DIR") or os.environ.get("COLAB_OUTPUT", "output")
         preset = os.environ.get("COLAB_PRESET", "remote")
-        transfer = os.environ.get("COLAB_TRANSFER", "drive")
+        transfer = os.environ.get("COLAB_TRANSFER", "direct")
         rms = os.environ.get("COLAB_RMS", "").lower() in ("1", "true", "yes")
         thr = int(os.environ.get("COLAB_THR", "-35"))
         tail = float(os.environ.get("COLAB_TAIL", "1.0"))

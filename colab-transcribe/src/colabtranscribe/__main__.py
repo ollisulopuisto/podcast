@@ -30,8 +30,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--transfer",
         choices=TRANSFERS,
-        default="drive",
-        help="siirtotapa: drive (nopea Google Drive) tai direct (hidas Colab-lataus)",
+        default=None,
+        help="siirtotapa: direct (suora Colab-lataus, oletus) tai drive (Google Drive)",
     )
     parser.add_argument(
         "--no-drive",
@@ -79,7 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
 def options_from_args(args: argparse.Namespace) -> RunOptions:
     env_opts = RunOptions.from_env()
     transfer = "direct" if args.no_drive else (
-        args.transfer if args.transfer != "drive" else env_opts.transfer
+        args.transfer if args.transfer is not None else env_opts.transfer
     )
     return RunOptions(
         session=args.session if args.session != "vst-pipeline" else env_opts.session,
