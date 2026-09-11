@@ -36,7 +36,7 @@ tämä ei näe muutosta automaattisesti.
 ## Nopea siirto Google Driven kautta
 
 Oletussiirtotapa (`transfer="drive"`) pakkaa syötetiedostot paikallisesti
-`input.tar.gz`-paketiksi ja lataa sen suoraan Google Driveen (`gdrive.py`)
+`input.tar`-paketiksi (ilman raskasta gzip-pakkausta) ja lataa sen suoraan Google Driveen (`gdrive.py`)
 resumable upload -protokollalla käyttäen olemassa olevia Colab CLI -tunnisteita
 (`token.json`). Colab-koneessa Google Drive liitetään (`colab drivemount`), jolloin
 tiedostot puretaan Google-sisäverkon nopeudella sekunneissa virtuaalikoneelle.

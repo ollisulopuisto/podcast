@@ -64,11 +64,11 @@ def test_plan_sequence_drive(tmp_path: Path):
     assert heads[3] == ["colab", "upload"]
     assert heads[4] == ["drive", "upload"]
     assert commands[4][2] == str(tmp_path)
-    assert f"ColabTranscribe/{options.session}/input.tar.gz" in commands[4][3]
+    assert f"ColabTranscribe/{options.session}/input.tar" in commands[4][3]
     # purkaminen Colabissa
     assert heads[5] == ["colab", "exec"]
-    assert "tar -xzf" in commands[5][-1]
-    assert f"ColabTranscribe/{options.session}/input.tar.gz" in commands[5][-1]
+    assert "tar -xf" in commands[5][-1]
+    assert f"ColabTranscribe/{options.session}/input.tar" in commands[5][-1]
     # suoritus
     assert any("pipeline.py" in c[-1] for c in commands if c[1] == "exec")
     # lataus alas
@@ -280,7 +280,7 @@ def test_run_handles_drive_upload(monkeypatch, tmp_path):
 
     monkeypatch.setattr(driver, "upload_input_to_drive", fake_upload)
     logs = []
-    cmd = ["drive", "upload", str(in_dir), "ColabTranscribe/vst-pipeline/input.tar.gz"]
+    cmd = ["drive", "upload", str(in_dir), "ColabTranscribe/vst-pipeline/input.tar"]
     code = driver.run([cmd], logs.append)
     assert code == 0
     assert len(uploaded) == 1
@@ -293,7 +293,7 @@ def test_run_reports_actionable_hint_on_drive_403(monkeypatch, tmp_path: Path):
 
     monkeypatch.setattr(driver, "upload_input_to_drive", failing_upload)
     logs: list[str] = []
-    cmd = ["drive", "upload", str(tmp_path), "ColabTranscribe/vst-pipeline/input.tar.gz"]
+    cmd = ["drive", "upload", str(tmp_path), "ColabTranscribe/vst-pipeline/input.tar"]
     code = driver.run([cmd], logs.append)
     assert code == 1
     assert any("Google Drive -lataus epäonnistui: HTTP Error 403: Forbidden" in line for line in logs)

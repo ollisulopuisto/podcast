@@ -63,11 +63,11 @@ def test_create_input_archive_excludes_hidden(tmp_path: Path):
     (in_dir / "sub").mkdir()
     (in_dir / "sub" / "track.wav").write_bytes(b"RIFFtrack")
 
-    archive_path = tmp_path / "input.tar.gz"
+    archive_path = tmp_path / "input.tar"
     gdrive.create_input_archive(in_dir, archive_path)
 
     assert archive_path.is_file()
-    with tarfile.open(archive_path, "r:gz") as tar:
+    with tarfile.open(archive_path, "r") as tar:
         names = sorted(tar.getnames())
         assert "audio.wav" in names
         assert "project.nhsx" in names
@@ -269,7 +269,7 @@ def test_copy_drive_file():
         new_id = gdrive.copy_drive_file(
             "orig-file-id",
             target_folder_id="target-folder-123",
-            new_name="input.tar.gz",
+            new_name="input.tar",
             token=token,
         )
         assert new_id == "copied-file-id"
@@ -294,7 +294,7 @@ def test_upload_archive_with_cache_skips_when_cached(tmp_path: Path):
     ):
         # Simuloidaan että arkiston tiiviste löytyy jo välimuistista
         def fake_list(cache_id, token=""):
-            return [{"id": "cached-tar-id", "name": "input.tar.gz", "md5Checksum": "DUMMY"}]
+            return [{"id": "cached-tar-id", "name": "input.tar", "md5Checksum": "DUMMY"}]
 
         mock_list.side_effect = fake_list
 
@@ -307,7 +307,7 @@ def test_upload_archive_with_cache_skips_when_cached(tmp_path: Path):
             mock_copy.assert_called_once_with(
                 "cached-tar-id",
                 target_folder_id="sess-id",
-                new_name="input.tar.gz",
+                new_name="input.tar",
                 token=token,
             )
             # Uutta latausta EI saa tapahtua!

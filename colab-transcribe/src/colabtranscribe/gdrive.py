@@ -100,14 +100,14 @@ def get_drive_token() -> str:
 
 
 def create_input_archive(input_dir: Path, archive_path: Path) -> Path:
-    """Pakkaa syötekansion tiedostot yhteen .tar.gz-pakettiin.
+    """Pakkaa syötekansion tiedostot yhteen .tar-pakettiin (pakkaamaton, nopea).
 
     Jättää pois piilotiedostot (.DS_Store ym.) ja tallentaa suhteelliset polut.
     """
     root = input_dir.resolve()
     archive_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with tarfile.open(archive_path, "w:gz") as tar:
+    with tarfile.open(archive_path, "w") as tar:
         for dirpath, dirnames, filenames in root.walk(follow_symlinks=False):
             dirnames[:] = [d for d in dirnames if not d.startswith(".")]
             for name in filenames:
@@ -258,7 +258,7 @@ def upload_resumable(
         token=token,
         headers={
             "Content-Type": "application/json; charset=UTF-8",
-            "X-Upload-Content-Type": "application/gzip",
+            "X-Upload-Content-Type": "application/x-tar",
             "X-Upload-Content-Length": str(total_size),
         },
     )
@@ -468,7 +468,7 @@ def upload_archive_with_cache(
 ) -> str:
     """Pakkaa syötteen, hyödyntää Google Driven 24 h välimuistia ja valmistelee istunnon tiedoston.
 
-    1. Pakkaa syötteen tilapäiseksi .tar.gz-paketiksi.
+    1. Pakkaa syötteen tilapäiseksi .tar-paketiksi (pakkaamaton, nopea).
     2. Laskee paketin MD5-tarkistussumman.
     3. Siivoaa Drivesta vanhentuneet (> 24 h) välimuistitiedostot.
     4. Jos sama paketti löytyy jo Drive-välimuistista, ohittaa lähetyksen kokonaan ja
@@ -483,7 +483,7 @@ def upload_archive_with_cache(
         log(f"Pakataan syötetiedostot ({source.name})...")
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        archive_path = Path(tmp_dir) / "input.tar.gz"
+        archive_path = Path(tmp_dir) / "input.tar"
         create_input_archive(source, archive_path)
         archive_size_mb = archive_path.stat().st_size / (1024 * 1024)
         archive_hash = compute_file_hash(archive_path)
@@ -502,7 +502,7 @@ def upload_archive_with_cache(
 
         # 2. Tarkistetaan löytyykö sama paketti jo välimuistista
         cached_files = list_cache_files(cache_folder_id, token=token)
-        cache_file_name = f"{archive_hash}.tar.gz"
+        cache_file_name = f"{archive_hash}.tar"
 
         matching_cached = None
         for f in cached_files:
@@ -516,7 +516,7 @@ def upload_archive_with_cache(
             return copy_drive_file(
                 matching_cached["id"],
                 target_folder_id=session_folder_id,
-                new_name="input.tar.gz",
+                new_name="input.tar",
                 token=token,
             )
 
@@ -552,7 +552,7 @@ def upload_archive_with_cache(
         return copy_drive_file(
             cached_id,
             target_folder_id=session_folder_id,
-            new_name="input.tar.gz",
+            new_name="input.tar",
             token=token,
         )
 

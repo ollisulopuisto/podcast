@@ -39,7 +39,8 @@ def test_dry_run_prints_commands_and_runs_nothing(tmp_path, capsys):
     assert "colab new" in out
     assert "colab drivemount" in out
     assert "drive upload" in out
-    assert "tar -xzf" in out
+    assert "input.tar" in out
+    assert "tar -xf" in out
     assert "python3 /content/pipeline.py" in out
     assert "--preset intra-mic" in out
     assert "colab stop" in out

@@ -76,7 +76,7 @@ def plan_commands(
     """
     clean_and_mkdir = f"rm -rf {REMOTE_INPUT}/* {REMOTE_OUTPUT}/* && mkdir -p {REMOTE_INPUT} {REMOTE_OUTPUT}"
     if options.transfer == "drive":
-        drive_rel = f"ColabTranscribe/{options.session}/input.tar.gz"
+        drive_rel = f"ColabTranscribe/{options.session}/input.tar"
         input_source = options.input_dir or "."
         remote_call = " ".join(["python3", "/content/pipeline.py", *map(shlex.quote, pipeline_args(options))])
         cmds: list[list[str]] = []
@@ -92,7 +92,7 @@ def plan_commands(
                 "exec",
                 "-s",
                 options.session,
-                f"tar -xzf /content/drive/MyDrive/{drive_rel} -C {REMOTE_INPUT}",
+                f"tar -xf /content/drive/MyDrive/{drive_rel} -C {REMOTE_INPUT}",
             ],
             ["colab", "exec", "-s", options.session, remote_call],
             ["colab", "download", "-s", options.session, f"{REMOTE_OUTPUT}/", options.output_dir],
@@ -271,7 +271,7 @@ def _execute_single(
 
 
 def upload_input_to_drive(input_dir: Path | str, session: str, log: Callable[[str], None]) -> str:
-    """Pakkaa syötekansion, hyödyntää Google Driven 24 h välimuistia ja lataa sen ColabTranscribe/<session>/input.tar.gz."""
+    """Pakkaa syötekansion, hyödyntää Google Driven 24 h välimuistia ja lataa sen ColabTranscribe/<session>/input.tar."""
     from . import gdrive
 
     return gdrive.upload_archive_with_cache(input_dir, session, log=log)
