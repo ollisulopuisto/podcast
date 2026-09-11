@@ -233,6 +233,7 @@ class TranscribeApp(App):
             self._auto_onboard = auto_onboard
         else:
             self._auto_onboard = (runner is None or onboarding_checker is not None)
+        self._is_running = False
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -370,6 +371,9 @@ class TranscribeApp(App):
 
     def start_job(self) -> None:
         """Asetukset kentistä, suunnitelma komennoiksi, ajo taustalle."""
+        if self._is_running:
+            self.notify("Ajo on jo käynnissä!", severity="warning")
+            return
         try:
             options = self.collect_options()
         except ValueError as error:
@@ -383,33 +387,49 @@ class TranscribeApp(App):
             self.notify("Apuohjelmat tai tunnistetiedot puuttuvat!", severity="error")
             self.push_screen(OnboardingModal(checker=self._onboarding_checker))
             return
+        self._is_running = True
+        run_btn = self.query_one("#run", Button)
+        run_btn.disabled = True
+        run_btn.label = "Ajetaan..."
         self.run_worker(partial(self._job, options), thread=True, exclusive=True)
 
     def _job(self, options: RunOptions) -> None:
-        files = driver.list_input_files(Path(options.input_dir))
-        reuse_session = False
-        if session.is_session_alive(options.session):
-            if options.reset_session:
-                self.call_from_thread(
-                    self._write_log,
-                    f"Suljetaan olemassa oleva Colab-istunto '{options.session}'...",
-                )
-                session.stop_session(options.session)
-            else:
-                reuse_session = True
-                self.call_from_thread(
-                    self._write_log,
-                    f"Käytetään olemassa olevaa Colab-istuntoa '{options.session}'.",
-                )
+        try:
+            files = driver.list_input_files(Path(options.input_dir))
+            reuse_session = False
+            if session.is_session_alive(options.session):
+                if options.reset_session:
+                    self.call_from_thread(
+                        self._write_log,
+                        f"Suljetaan olemassa oleva Colab-istunto '{options.session}'...",
+                    )
+                    session.stop_session(options.session)
+                else:
+                    reuse_session = True
+                    self.call_from_thread(
+                        self._write_log,
+                        f"Käytetään olemassa olevaa Colab-istuntoa '{options.session}'.",
+                    )
 
-        plan = driver.plan_commands(options, files, reuse_session=reuse_session)
+            plan = driver.plan_commands(options, files, reuse_session=reuse_session)
 
-        def log(line: str) -> None:
-            self.call_from_thread(self._write_log, line)
+            def log(line: str) -> None:
+                self.call_from_thread(self._write_log, line)
 
-        code = self._runner(plan, log, timeout=driver.COMMAND_TIMEOUT)
-        summary = "ajo valmis" if code == 0 else f"ajo pysähtyi koodiin {code}"
-        self.call_from_thread(self._write_log, summary)
+            code = self._runner(plan, log, timeout=driver.COMMAND_TIMEOUT)
+            summary = "ajo valmis" if code == 0 else f"ajo pysähtyi koodiin {code}"
+            self.call_from_thread(self._write_log, summary)
+        finally:
+            def _reset_btn() -> None:
+                self._is_running = False
+                try:
+                    btn = self.query_one("#run", Button)
+                    btn.disabled = False
+                    btn.label = "Aja"
+                except Exception:
+                    pass
+
+            self.call_from_thread(_reset_btn)
 
     def _write_log(self, line: str) -> None:
         self.query_one("#log", RichLog).write(line)

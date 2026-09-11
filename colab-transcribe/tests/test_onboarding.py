@@ -112,3 +112,55 @@ def test_run_options_reads_environment_variables(monkeypatch):
     assert options.input_dir == "/tmp/syote"
     assert options.output_dir == "/tmp/tulos"
     assert options.preset == "intra-mic"
+
+
+def test_patch_colab_cli_automation(tmp_path: Path, monkeypatch):
+    from colabtranscribe.onboarding import patch_colab_cli_automation
+
+    # Setup fake colab executable and fake automation.py
+    fake_py = tmp_path / "python3"
+    fake_py.write_text("#!/bin/sh\nexit 0\n")
+    fake_py.chmod(0o755)
+
+    fake_colab = tmp_path / "colab"
+    fake_colab.write_text(f"#!{fake_py}\n# fake colab\n")
+    fake_colab.chmod(0o755)
+
+    fake_automation = tmp_path / "automation.py"
+    unpatched_content = (
+        "def drivefs_hook():\n"
+        "    if not data.get('success'):\n"
+        "        try:\n"
+        "            webbrowser.open(uri)\n"
+        '            typer.echo("[colab] Opening authorization URL automatically in your default browser...")\n'
+        "        except Exception:\n"
+        "            pass\n"
+        '        sys.stdout.write("Press Enter after you have granted access... ")\n'
+        "        sys.stdout.flush()\n"
+        '        with open("/dev/tty") as tty:\n'
+        "            tty.readline()\n"
+        "    return True\n"
+    )
+    fake_automation.write_text(unpatched_content, encoding="utf-8")
+
+    import subprocess
+    orig_run = subprocess.run
+
+    def fake_subprocess_run(cmd, *args, **kwargs):
+        if len(cmd) >= 3 and "colab_cli.commands.automation" in cmd[2]:
+            class FakeResult:
+                returncode = 0
+                stdout = str(fake_automation)
+                stderr = ""
+            return FakeResult()
+        return orig_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fake_subprocess_run)
+
+    res = patch_colab_cli_automation(str(fake_colab))
+    assert res is True
+
+    patched_content = fake_automation.read_text(encoding="utf-8")
+    assert 'with open("/dev/tty")' not in patched_content
+    assert "Waiting for authorization in browser" in patched_content
+    assert "COLAB_CLI_NO_BROWSER" in patched_content

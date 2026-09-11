@@ -9,6 +9,7 @@ ajettavan skriptin tuloste on ainoa tieto siitä mitä siellä tapahtui.
 from __future__ import annotations
 
 import contextlib
+import os
 import shlex
 import subprocess
 import tarfile
@@ -155,6 +156,7 @@ def _execute_single(
     command: list[str],
     log: Callable[[str], None],
     timeout: float | None = None,
+    opened_auth_urls: set[str] | None = None,
 ) -> int:
     log(shlex.join(command))
     cmd_to_run = list(command)
@@ -175,6 +177,9 @@ def _execute_single(
         cmd_timeout = timeout if timeout is not None else COMMAND_TIMEOUT
         cmd_to_run = ["colab", "exec", "-s", session, "--timeout", str(cmd_timeout)]
 
+    env = dict(os.environ)
+    env["COLAB_CLI_NO_BROWSER"] = "1"
+
     try:
         process = subprocess.Popen(
             cmd_to_run,
@@ -182,6 +187,7 @@ def _execute_single(
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            env=env,
         )
     except FileNotFoundError:
         log(f"Komentoa ei löydy: {cmd_to_run[0]}")
@@ -224,8 +230,11 @@ def _execute_single(
             if "accounts.google.com/o/oauth2" in stripped:
                 for token in stripped.split():
                     if "accounts.google.com/o/oauth2" in token:
-                        webbrowser.open(token)
-                        log("[colab] Avattu Google Drive -valtuutuslinkki automaattisesti selaimeen.")
+                        if opened_auth_urls is None or token not in opened_auth_urls:
+                            if opened_auth_urls is not None:
+                                opened_auth_urls.add(token)
+                            webbrowser.open(token)
+                            log("[colab] Avattu Google Drive -valtuutuslinkki automaattisesti selaimeen.")
                         break
             log(stripped)
         code = process.wait()
@@ -281,6 +290,7 @@ def run(commands: list[list[str]], log: Callable[[str], None], timeout: float | 
         log: Funktio joka saa jokaisen tulosterivin.
         timeout: Yksittäisen komennon aikaraja sekunteina. None = ei rajaa.
     """
+    opened_auth_urls: set[str] = set()
     try:
         for command in commands:
             if len(command) >= 3 and command[0] == "drive" and command[1] == "upload":
@@ -315,6 +325,7 @@ def run(commands: list[list[str]], log: Callable[[str], None], timeout: float | 
                         ["colab", "exec", "-s", session, f"tar -czf {remote_tar} -C {remote_dir} ."],
                         log,
                         timeout=timeout,
+                        opened_auth_urls=opened_auth_urls,
                     )
                     if code != 0:
                         return code
@@ -323,6 +334,7 @@ def run(commands: list[list[str]], log: Callable[[str], None], timeout: float | 
                         ["colab", "download", "-s", session, remote_tar, str(local_tar)],
                         log,
                         timeout=timeout,
+                        opened_auth_urls=opened_auth_urls,
                     )
                     if code != 0:
                         return code
@@ -338,10 +350,11 @@ def run(commands: list[list[str]], log: Callable[[str], None], timeout: float | 
                         ["colab", "exec", "-s", session, f"rm -f {remote_tar}"],
                         log,
                         timeout=timeout,
+                        opened_auth_urls=opened_auth_urls,
                     )
                 continue
 
-            code = _execute_single(command, log, timeout=timeout)
+            code = _execute_single(command, log, timeout=timeout, opened_auth_urls=opened_auth_urls)
             if code != 0:
                 return code
         return 0

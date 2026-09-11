@@ -8,9 +8,99 @@ ajoa. Jos jokin puuttuu, antaa selkeät ja välittömästi ajettavat ohjeet.
 from __future__ import annotations
 
 import os
+import re
 import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+
+def patch_colab_cli_automation(colab_path: str | None = None) -> bool:
+    """Tarkistaa ja korjaa google-colab-cli:n Drive-valtuutusbugin.
+
+    Upstream google-colab-cli 0.6.0 jää odottamaan Enteriä /dev/tty:stä, mikä
+    jumiuttaa tausta-ajot ja TUI-sovellukset selaintunnistuksen jälkeen.
+    Korvaamme odotuksen automaattisella selaintunnistuksen kyselyllä (polling).
+    """
+    if not colab_path:
+        colab_path = shutil.which("colab")
+    if not colab_path:
+        return False
+    try:
+        colab_file = Path(colab_path)
+        if not colab_file.is_file():
+            return False
+        shebang = colab_file.read_text(encoding="utf-8", errors="ignore").splitlines()[0]
+        if not shebang.startswith("#!"):
+            return False
+        py_bin = shebang[2:].strip()
+        if not Path(py_bin).is_file():
+            return False
+
+        res = subprocess.run(
+            [py_bin, "-c", "import colab_cli.commands.automation as a; print(a.__file__)"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if res.returncode != 0 or not res.stdout.strip():
+            return False
+        automation_path = Path(res.stdout.strip())
+        if not automation_path.is_file():
+            return False
+
+        content = automation_path.read_text(encoding="utf-8")
+        if 'with open("/dev/tty")' in content:
+            pattern = re.compile(
+                r'([ \t]*)try:\s*\n'
+                r'[ \t]*webbrowser\.open\(uri\)\s*\n'
+                r'[ \t]*typer\.echo\("[^"]*"\)\s*\n'
+                r'[ \t]*except Exception:\s*\n'
+                r'[ \t]*pass\s*\n'
+                r'[ \t]*sys\.stdout\.write\("Press Enter after you have granted access\.\.\. "\)\s*\n'
+                r'[ \t]*sys\.stdout\.flush\(\)\s*\n'
+                r'[ \t]*with open\("/dev/tty"\) as tty:\s*\n'
+                r'[ \t]*tty\.readline\(\)',
+                re.MULTILINE,
+            )
+
+            def _repl(m: re.Match[str]) -> str:
+                indent = m.group(1)
+                return (
+                    f'{indent}if not os.environ.get("COLAB_CLI_NO_BROWSER"):\n'
+                    f'{indent}    try:\n'
+                    f'{indent}        webbrowser.open(uri)\n'
+                    f'{indent}        typer.echo("[colab] Opening authorization URL automatically in your default browser...")\n'
+                    f'{indent}    except Exception:\n'
+                    f'{indent}        pass\n'
+                    f'{indent}typer.echo("[colab] Waiting for authorization in browser...")\n'
+                    f'{indent}import time\n'
+                    f'{indent}deadline = time.time() + 300\n'
+                    f'{indent}while time.time() < deadline:\n'
+                    f'{indent}    time.sleep(2)\n'
+                    f'{indent}    try:\n'
+                    f'{indent}        check_resp = creds.request(\n'
+                    f'{indent}            "POST",\n'
+                    f'{indent}            url,\n'
+                    f'{indent}            params=params,\n'
+                    f'{indent}            headers=headers,\n'
+                    f'{indent}            files={{"file_id": (None, "empty.ipynb")}},\n'
+                    f'{indent}        )\n'
+                    f'{indent}        check_data = json.loads(check_resp.text.split("\\n", 1)[-1])\n'
+                    f'{indent}        if check_data.get("success"):\n'
+                    f'{indent}            typer.echo("[colab] Authorization granted in browser.")\n'
+                    f'{indent}            break\n'
+                    f'{indent}    except Exception:\n'
+                    f'{indent}        pass'
+                )
+
+            new_content = pattern.sub(_repl, content)
+            if new_content != content:
+                automation_path.write_text(new_content, encoding="utf-8")
+                return True
+        return True
+    except Exception:
+        return False
 
 
 @dataclass(frozen=True)
@@ -55,6 +145,7 @@ def check_helper_apps() -> list[OnboardingItem]:
 
     colab_path = shutil.which("colab")
     if colab_path:
+        patch_colab_cli_automation(colab_path)
         items.append(
             OnboardingItem(
                 key="colab",

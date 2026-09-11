@@ -365,4 +365,59 @@ def test_run_auto_opens_auth_url(monkeypatch):
     assert any("Avattu" in line or "valtuutus" in line.lower() for line in logs)
 
 
+def test_execute_single_passes_colab_cli_no_browser_env(monkeypatch):
+    import io
 
+    captured_env = {}
+
+    class FakeProcess:
+        def __init__(self, cmd, **kwargs):
+            nonlocal captured_env
+            captured_env = kwargs.get("env", {})
+            self.stdin = io.StringIO()
+            self.stdout = []
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", FakeProcess)
+    code = driver.run([["colab", "drivemount", "-s", "vst-pipeline"]], lambda _: None)
+    assert code == 0
+    assert captured_env.get("COLAB_CLI_NO_BROWSER") == "1"
+
+
+def test_run_deduplicates_auth_urls(monkeypatch):
+    import io
+    import webbrowser
+
+    opened_urls = []
+    monkeypatch.setattr(webbrowser, "open", lambda url: opened_urls.append(url) or True)
+
+    auth_url = (
+        "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline"
+        "&client_id=123.apps.googleusercontent.com&response_type=code"
+    )
+
+    class FakeProcess:
+        def __init__(self, cmd, **kwargs):
+            self.stdin = io.StringIO()
+            self.stdout = [
+                f"Line 1: {auth_url}\n",
+                f"Line 2: {auth_url}\n",
+            ]
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", FakeProcess)
+    logs = []
+    code = driver.run(
+        [
+            ["colab", "drivemount", "-s", "vst-pipeline"],
+            ["colab", "drivemount", "-s", "vst-pipeline"],
+        ],
+        logs.append,
+    )
+    assert code == 0
+    # Must only be opened ONCE across the entire run despite duplicate lines and multiple commands
+    assert opened_urls == [auth_url]

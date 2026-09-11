@@ -189,3 +189,62 @@ def test_tui_log_has_wrap_enabled():
 
     run_scenario(scenario)
 
+
+def test_tui_disables_run_button_and_prevents_duplicate_runs(tmp_path: Path):
+    import threading
+
+    (tmp_path / "audio.wav").write_bytes(b"")
+
+    run_started = threading.Event()
+    finish_run = threading.Event()
+    call_count = 0
+
+    def slow_runner(commands, log, timeout=None):
+        nonlocal call_count
+        call_count += 1
+        run_started.set()
+        # Wait until allowed to finish
+        import time
+        while not finish_run.is_set():
+            time.sleep(0.01)
+        return 0
+
+    async def scenario():
+        app = TranscribeApp(runner=slow_runner)
+        try:
+            async with app.run_test() as pilot:
+                app.query_one("#input").value = str(tmp_path)
+                app.query_one("#output").value = str(tmp_path / "out")
+
+                run_btn = app.query_one("#run", Button)
+                assert not run_btn.disabled
+
+                # Start run
+                await pilot.press("r")
+                await asyncio.sleep(0.05)
+                await pilot.pause()
+
+                # Should be disabled and in progress
+                assert run_btn.disabled
+                assert app._is_running is True
+
+                # Attempt a second run while first is active
+                await pilot.press("r")
+                await pilot.pause()
+
+                # Runner should still only have been invoked ONCE
+                assert call_count == 1
+
+                # Let the first job finish
+                finish_run.set()
+                await asyncio.sleep(0.05)
+                await pilot.pause()
+
+                # Button should be re-enabled
+                assert not run_btn.disabled
+                assert app._is_running is False
+        finally:
+            finish_run.set()
+
+    run_scenario(scenario)
+
