@@ -1134,3 +1134,43 @@ def test_the_delivery_target_still_works_when_nothing_is_stale(fixture_dir):
                 pathlib.Path(mix.sibling(item.path, mix.MIX_SUFFIX)).unlink(
                     missing_ok=True
                 )
+
+
+@needs_ffmpeg
+def test_preview_audio_computes_trim_and_debleed_preview(fixture_dir):
+    """preview_audio arvioi ohjelmatrimmin ja debleedin taustalle ilman VST:tä."""
+    from autoraffkat.analysis import analyze, build_grid, resolve_roles
+    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.model import ROLE_MIC, TrackConfig
+
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    tracks = {
+        t.key: TrackConfig(role=ROLE_MIC, speaker=t.key.split()[0].capitalize())
+        for t in tl.tracks
+        if not t.has_video
+    }
+    roles = resolve_roles(tl, tracks)
+    settings = AudioSettings(enabled=True, program_target=True, debleed=True)
+    grid, start, _ = build_grid(analyze(tl), tracks, roles)
+
+    preview = mix.preview_audio(
+        tl, roles, settings, grid=grid, program_start=float(start)
+    )
+    assert preview["ready"] is True
+    assert isinstance(preview.get("program_trim"), float)
+    assert isinstance(preview.get("debleed"), list)
+    assert not preview.get("error")
+
+
+def test_start_audio_preview_is_atomic(monkeypatch):
+    """start_audio_preview estää samanaikaiset tausta-ajot."""
+    from autoraffkat.server.app import AppState
+    state = AppState("test.fcpxml")
+    state.timeline = object()
+    state.analysis = object()
+    state.settings.audio.enabled = True
+    monkeypatch.setattr(state, "measure_audio_preview", lambda: None)
+    assert state.start_audio_preview() is True
+    assert state.audio_preview_running is True
+    assert state.start_audio_preview() is False
+

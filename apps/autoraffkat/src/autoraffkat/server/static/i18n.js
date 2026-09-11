@@ -240,6 +240,12 @@ const STRINGS = {
       + 'päällekkäisessä puheessa — ei herkkyyteen, koska pohja nousee mukana.',
     'why.room_db': 'Ennustettava taso riippumatta siitä miten kuuma kameran '
       + 'mikki sattui olemaan.',
+    'audio.debleed_too_little': 'liian vähän soolopuhetta (<20 s)',
+    'audio.debleed_no_path': 'vuotopolkua ei saatu ratkaistua',
+    'audio.debleed_ate_speech': 'suodin söisi omaa puhetta',
+    'audio.debleed_no_gain': 'ei vähennettävää vuotoa',
+    'audio.debleedKeptSpeech': 'oma puhe',
+    'audio.programTrimPreview': 'Arvioitu ohjelmatrimmi: {trim} dB (päällekkäisyydestä)',
     /* Reaktiokuvat. Portin luku on ainoa säädin: mitattuna järjestys ei
        ratkaise, kynnys ratkaisee. */
     'reactions.title': 'Reaktiokuvat',
@@ -589,6 +595,12 @@ const STRINGS = {
       + 'overlapping speech — not sensitivity, since the floor moves with it.',
     'why.room_db': 'A predictable level regardless of how hot the camera '
       + 'microphone happened to be.',
+    'audio.debleed_too_little': 'too little solo speech (<20 s)',
+    'audio.debleed_no_path': 'leakage path could not be solved',
+    'audio.debleed_ate_speech': 'filter would eat own speech',
+    'audio.debleed_no_gain': 'no bleed to remove',
+    'audio.debleedKeptSpeech': 'own speech',
+    'audio.programTrimPreview': 'Estimated program trim: {trim} dB (from overlap)',
     'reactions.title': 'Reaction shots',
     'reactions.hint': "The listener's close-up during the other person's speech, on its own lane.",
     'reactions.measure': 'Measure the close-ups',
