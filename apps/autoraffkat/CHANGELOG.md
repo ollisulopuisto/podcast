@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [autoraffkat-v2026.9.11.4] - 2026-09-11
+
+### Added
+- **Audio Processing Progress Bar & Video Analysis Optimization** (`server/app.py`, `video/measure.py`): added progress reporting for audio processing tasks in the web interface and optimized the video analysis pipeline.
+
+## [autoraffkat-v2026.9.11.3] - 2026-09-11
+
+### Fixed
+- **Video-Only Spine Cuts Written as `<video>`** (`fcpxml/write.py`): in spine cuts where the camera has no attached audio role, write cuts directly as `<video>` tags instead of `<asset-clip>` to prevent Final Cut Pro from activating embedded camera audio.
+
 ## [autoraffkat-v2026.9.11.2] - 2026-09-11
 
 ### Fixed
