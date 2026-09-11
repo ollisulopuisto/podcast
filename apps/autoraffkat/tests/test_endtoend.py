@@ -151,7 +151,7 @@ def test_server_round_trip(scratch_xml):
     shown = written.find(".//project").get("name")
     assert shown.startswith("Testi")
     assert shown != "Testi", "vientiä ei voi erottaa muista Final Cutissa"
-    assert len(written.findall(".//spine/asset-clip")) == exported["cuts"]
+    assert len(written.find(".//spine")) == exported["cuts"]
 
     # Asetukset jäivät XML:n viereen seuraavaa jaksoa varten.
     assert source.with_suffix(".autoraffkat.json").exists()

@@ -545,7 +545,8 @@ def build_fcpxml(
         src_frames = to_frames(src_start, frame_duration)
         if index == 0:
             first_clip_start_frames = src_frames
-        src_enable = "video" if item.has_video else None
+        is_video_only = item.has_video and seg.angle not in mic_keys
+        tag = "video" if is_video_only else "asset-clip"
 
         attrs = [
             f'ref="{res_ids[seg.angle]}"',
@@ -553,12 +554,15 @@ def build_fcpxml(
             f"name={quoteattr(f'{seg.label} {index + 1:02d}')}",
             f'start="{frames_str(src_frames, frame_duration)}"',
             f'duration="{frames_str(b - a, frame_duration)}"',
-            f'format="{seq_format}"',
-            'tcFormat="NDF"',
         ]
-        if src_enable:
-            attrs.append(f'srcEnable="{src_enable}"')
-        clip = "            <asset-clip " + " ".join(attrs)
+        if not is_video_only:
+            attrs += [
+                f'format="{seq_format}"',
+                'tcFormat="NDF"',
+            ]
+            if item.has_video:
+                attrs.append('srcEnable="video"')
+        clip = f"            <{tag} " + " ".join(attrs)
         # Kehystys ja liike menevät suoraan kuvalle, ennen kiinnitettyjä
         # mikkejä: DTD asettaa intrinsic-params-sisällön ennen ankkuroituja
         # klippejä.
@@ -593,11 +597,11 @@ def build_fcpxml(
                 program_end,
                 first_clip_start_frames,
             )
-            body.append("            </asset-clip>")
+            body.append(f"            </{tag}>")
         elif transform:
             body.append(clip + ">")
             body += transform
-            body.append("            </asset-clip>")
+            body.append(f"            </{tag}>")
         else:
             body.append(clip + "/>")
 

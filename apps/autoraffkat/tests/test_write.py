@@ -52,7 +52,7 @@ def test_spine_has_no_gaps(fixture_dir):
 
 
 def test_cameras_lose_their_own_audio(fixture_dir):
-    """Kameralla jolla on ääntä pitää olla srcEnable="video" eikä hasAudio-attribuuttia."""
+    """Kamerat saavat spinelle puhtaan <video>-elementin ilman hasAudio-attribuuttia."""
     tl = read_fcpxml(str(fixture_dir / "sync.fcpxml"))
     by_key = {m.key: m for m in tl.media}
     by_key["WIDE.mp4"].has_audio = True
@@ -67,15 +67,15 @@ def test_cameras_lose_their_own_audio(fixture_dir):
         "Testi",
     )
     root = ET.fromstring(xml)
-    clip = root.find(".//spine/asset-clip")
-    assert clip.get("srcEnable") == "video"
+    clip = root.find(".//spine/video")
+    assert clip is not None
     wide_asset = root.find(".//resources/asset[@name='WIDE.mp4']")
     assert wide_asset.get("hasAudio") is None
 
 
 def test_mics_are_connected_with_roles(fixture_dir):
     _, xml = _cut(fixture_dir)
-    first = ET.fromstring(xml).find(".//spine/asset-clip")
+    first = ET.fromstring(xml).find(".//spine/*")
     mics = first.findall("asset-clip")
     assert [m.get("lane") for m in mics] == ["-1", "-2"]
     assert [m.get("audioRole") for m in mics] == ["dialogue.Host", "dialogue.Guest"]
@@ -601,7 +601,7 @@ def test_flat_export_keeps_the_raw_audio_on_a_disabled_lane(
         replacements={"MIC_A.wav": "/mix/MIC_A [mix].wav"},
     )
     root = ET.fromstring(xml)
-    attached = root.findall(".//spine/asset-clip/asset-clip")
+    attached = root.findall(".//spine/*/asset-clip")
     lanes = {c.get("audioRole"): c.get("lane") for c in attached}
     # Kaksonen on viimeisenä: lomitettuna se olisi lanella −2 ja työntäisi
     # Guestin alas pelkästään siksi että Hostin ääni käsiteltiin.
@@ -1163,7 +1163,7 @@ def test_flat_merges_adjacent_clips_from_same_video_source(fixture_dir):
         Fraction(10),
         "MergeTestFlat",
     )
-    clips = ET.fromstring(xml).findall(".//spine/asset-clip")
+    clips = list(ET.fromstring(xml).find(".//spine"))
     assert len(clips) == 2  # WIDE (0-3 s), CLOSE_A (yhdistetty 3-10 s)
     assert parse_time(clips[1].get("offset")) == 3
     assert parse_time(clips[1].get("duration")) == 7
@@ -1372,7 +1372,7 @@ def test_flat_export_moves_the_clip_itself(fixture_dir):
     """Tasaviedossa kuva on ``asset-clip`` ja muunnos menee suoraan siihen —
     ennen kiinnitettyjä mikkejä, koska DTD vaatii järjestyksen."""
     tl, xml = _cut(fixture_dir, settings=_moved_settings())
-    clips = ET.fromstring(xml).findall(".//spine/asset-clip")
+    clips = list(ET.fromstring(xml).find(".//spine"))
     assert clips
     for clip in clips:
         kids = [c.tag for c in clip]
