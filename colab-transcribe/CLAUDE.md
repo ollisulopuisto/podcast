@@ -57,9 +57,16 @@ sekä tunnistetiedot (`onboarding.py`): jos ne puuttuvat, TUI avaa opastusikkuna
 ja komentorivi antaa selkeät asennus- ja kirjautumiskomennot ennen ajoa.
 TUI:ssa syöte- ja tulostekansiot valitaan interaktiivisilla valintaikkunoilla
 (`picker.py`), joten polkuja ei tarvitse kirjoittaa käsin.
-Istunto jää auki keskeytyneen ajon jälkeen — sulku on aina suunnitelman
-viimeinen komento, ja keskeytyneen ajon jälkeen Colabin oma käyttöliittymä
-on se joka sen saa kiinni.
+
+## Istunnon elinkaari ja uudelleenkäyttö
+
+Colab-istunnon tila tarkistetaan ennen komentosuunnitelman luomista (`session.py`).
+Jos istunto on jo käynnissä:
+* Oletuksena istunto **uudelleenkäytetään**: `colab new` ohitetaan ja etäkansiot tyhjennetään uutta ajoa varten. Tämä säästää virtuaalikoneen käynnistysajan ja estää Colabin samanaikaisuusrajan virheet (`412 Precondition Failed`).
+* Valitsimella `--reset-session` olemassa oleva istunto suljetaan ensin ja luodaan puhdas virtuaalikone.
+* Valitsimella `--keep-session` istunto jätetään käyntiin ajon jälkeen nopeita peräkkäisiä ajoja varten.
+* Komennolla `colab-transcribe --stop` (tai TUI:n "Pysäytä istunto" -painikkeella) istunto voidaan vapauttaa suoraan.
+* Ajuri nappaa `KeyboardInterrupt`in (Ctrl+C) ja ilmoittaa tilasta, jos käyttäjä keskeyttää ajon kesken suorituksen.
 
 ## Versio
 

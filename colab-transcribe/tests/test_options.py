@@ -87,3 +87,17 @@ def test_unknown_transfer_is_rejected():
     with pytest.raises(ValueError, match="transfer"):
         RunOptions(transfer="magic")
 
+
+def test_session_lifecycle_options_defaults():
+    options = RunOptions()
+    assert options.reset_session is False
+    assert options.keep_session is False
+
+
+def test_session_lifecycle_options_from_env(monkeypatch):
+    monkeypatch.setenv("COLAB_RESET_SESSION", "1")
+    monkeypatch.setenv("COLAB_KEEP_SESSION", "true")
+    options = RunOptions.from_env()
+    assert options.reset_session is True
+    assert options.keep_session is True
+

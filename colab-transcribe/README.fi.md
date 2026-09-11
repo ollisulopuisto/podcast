@@ -28,6 +28,10 @@ uv run colab-transcribe --input ~/jakso/ --output ~/valmis/ --preset intra-mic
 uv run colab-transcribe --input ~/jakso/ --dry-run     # tulosta suunnitelma, älä aja
 uv run colab-transcribe --input ~/jakso/ --gpu A100 --rms --thr -40
 uv run colab-transcribe --input ~/jakso/ --no-drive    # käytä vanhaa hidasta suoraa Colab-latausta
+uv run colab-transcribe --session-status               # tarkista aktiivisen Colab-istunnon tila
+uv run colab-transcribe --stop                         # sulje aktiivinen Colab-istunto
+uv run colab-transcribe --input ~/jakso/ --reset-session # pakota vanhan istunnon sulkeminen ja uusi VM
+uv run colab-transcribe --input ~/jakso/ --keep-session  # jätä Colab-istunto käyntiin ajon jälkeen
 ```
 
 Tiedostot siirretään oletuksena Google Driven kautta (`--transfer drive`), jolloin

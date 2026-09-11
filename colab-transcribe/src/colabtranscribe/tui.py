@@ -29,7 +29,7 @@ from textual.widgets import (
     Switch,
 )
 
-from . import driver, picker
+from . import driver, picker, session
 from .onboarding import OnboardingReport, check_environment
 from .options import GPUS, PRESETS, RunOptions
 
@@ -239,7 +239,9 @@ class TranscribeApp(App):
         with Vertical(id="form"):
             with Vertical(id="fields"):
                 yield Label("Istunto")
-                yield Input(value=self._initial.session, id="session")
+                with Horizontal(classes="path-row"):
+                    yield Input(value=self._initial.session, id="session")
+                    yield Button("Pysäytä istunto", id="stop_session_btn", variant="error")
 
                 yield Label("Syötekansio")
                 with Horizontal(classes="path-row"):
@@ -327,6 +329,20 @@ class TranscribeApp(App):
             self.browse_folder("#input", "Valitse syötekansio (.nhsx ja äänitiedostot)")
         elif event.button.id == "browse_output":
             self.browse_folder("#output", "Valitse tulostekansio")
+        elif event.button.id == "stop_session_btn":
+            sess_name = self.query_one("#session", Input).value.strip() or self._initial.session
+
+            def _stop_worker() -> None:
+                self.call_from_thread(self._write_log, f"Pysäytetään istunto '{sess_name}'...")
+                res = session.stop_session(sess_name)
+                msg = (
+                    f"Istunto '{sess_name}' pysäytetty."
+                    if res == 0
+                    else f"Pysäytys palautti koodin {res}."
+                )
+                self.call_from_thread(self._write_log, msg)
+
+            self.run_worker(_stop_worker, thread=True, exclusive=False)
         elif event.button.id == "onboarding_btn":
             self.push_screen(OnboardingModal(checker=self._onboarding_checker))
 
@@ -371,7 +387,22 @@ class TranscribeApp(App):
 
     def _job(self, options: RunOptions) -> None:
         files = driver.list_input_files(Path(options.input_dir))
-        plan = driver.plan_commands(options, files)
+        reuse_session = False
+        if session.is_session_alive(options.session):
+            if options.reset_session:
+                self.call_from_thread(
+                    self._write_log,
+                    f"Suljetaan olemassa oleva Colab-istunto '{options.session}'...",
+                )
+                session.stop_session(options.session)
+            else:
+                reuse_session = True
+                self.call_from_thread(
+                    self._write_log,
+                    f"Käytetään olemassa olevaa Colab-istuntoa '{options.session}'.",
+                )
+
+        plan = driver.plan_commands(options, files, reuse_session=reuse_session)
 
         def log(line: str) -> None:
             self.call_from_thread(self._write_log, line)

@@ -42,6 +42,8 @@ class RunOptions:
     tail: float = 1.0
     gap: float = 1.0
     prompt: str = field(default=DEFAULT_PROMPT)
+    reset_session: bool = False
+    keep_session: bool = False
 
     def __post_init__(self):
         if self.gpu not in GPUS:
@@ -71,6 +73,8 @@ class RunOptions:
         tail = float(os.environ.get("COLAB_TAIL", "1.0"))
         gap = float(os.environ.get("COLAB_GAP", "1.0"))
         prompt = os.environ.get("COLAB_PROMPT", DEFAULT_PROMPT)
+        reset_session = os.environ.get("COLAB_RESET_SESSION", "").lower() in ("1", "true", "yes")
+        keep_session = os.environ.get("COLAB_KEEP_SESSION", "").lower() in ("1", "true", "yes")
 
         return cls(
             session=session,
@@ -84,6 +88,8 @@ class RunOptions:
             tail=tail,
             gap=gap,
             prompt=prompt,
+            reset_session=reset_session,
+            keep_session=keep_session,
         )
 
 

@@ -141,3 +141,78 @@ def test_check_flag_outputs_environment_status(capsys, monkeypatch):
     assert "Järjestelmän valmius" in out
     assert "[✓] Google Colab CLI" in out
 
+
+def test_cli_stop_flag_invokes_stop_session(capsys, monkeypatch):
+    stopped = []
+
+    def fake_stop(name):
+        stopped.append(name)
+        return 0
+
+    monkeypatch.setattr(cli.session, "stop_session", fake_stop)
+    code = cli.main(["--stop", "--session", "my-sess"])
+    assert code == 0
+    assert stopped == ["my-sess"]
+    assert "my-sess" in capsys.readouterr().out
+
+
+def test_cli_session_status_flag(capsys, monkeypatch):
+    monkeypatch.setattr(cli.session, "is_session_alive", lambda name: True)
+    monkeypatch.setattr(
+        cli.session,
+        "get_session",
+        lambda name: {"name": "my-sess", "accelerator": "T4", "variant": "GPU"},
+    )
+    code = cli.main(["--session-status", "--session", "my-sess"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "my-sess" in out
+    assert "aktiivinen" in out
+
+
+def test_headless_run_reuses_alive_session(tmp_path, capsys, monkeypatch):
+    from colabtranscribe.onboarding import OnboardingReport
+
+    (tmp_path / "puhe.wav").write_bytes(b"")
+    calls = []
+
+    def fake_run(commands, log, timeout=None):
+        calls.append(commands)
+        return 0
+
+    monkeypatch.setattr(cli, "check_environment", lambda: OnboardingReport(items=[]))
+    monkeypatch.setattr(cli.driver, "run", fake_run)
+    monkeypatch.setattr(cli.session, "is_session_alive", lambda name: True)
+
+    code = cli.main(["--input", str(tmp_path), "--output", str(tmp_path / "out")])
+    assert code == 0
+    assert len(calls) == 1
+    # Uutta istuntoa ei luotu koska istunto oli jo käynnissä
+    assert not any(c[:2] == ["colab", "new"] for c in calls[0])
+
+
+def test_headless_run_resets_session_when_requested(tmp_path, capsys, monkeypatch):
+    from colabtranscribe.onboarding import OnboardingReport
+
+    (tmp_path / "puhe.wav").write_bytes(b"")
+    stopped = []
+    calls = []
+
+    def fake_stop(name):
+        stopped.append(name)
+        return 0
+
+    def fake_run(commands, log, timeout=None):
+        calls.append(commands)
+        return 0
+
+    monkeypatch.setattr(cli, "check_environment", lambda: OnboardingReport(items=[]))
+    monkeypatch.setattr(cli.driver, "run", fake_run)
+    monkeypatch.setattr(cli.session, "is_session_alive", lambda name: True)
+    monkeypatch.setattr(cli.session, "stop_session", fake_stop)
+
+    code = cli.main(["--input", str(tmp_path), "--output", str(tmp_path / "out"), "--reset-session"])
+    assert code == 0
+    assert stopped == ["vst-pipeline"]
+    assert any(c[:2] == ["colab", "new"] for c in calls[0])
+

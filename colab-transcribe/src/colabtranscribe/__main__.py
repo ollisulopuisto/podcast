@@ -12,7 +12,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from . import __version__, driver
+from . import __version__, driver, session
 from .onboarding import check_environment
 from .options import DEFAULT_PROMPT, GPUS, PRESETS, TRANSFERS, RunOptions
 
@@ -37,6 +37,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-drive",
         action="store_true",
         help="älä käytä Google Drivea vaan suoraa Colab-latausta",
+    )
+    parser.add_argument(
+        "--reset-session",
+        action="store_true",
+        help="sulje olemassa oleva istunto ennen uuden luomista",
+    )
+    parser.add_argument(
+        "--keep-session",
+        action="store_true",
+        help="jätä Colab-istunto käyntiin ajon jälkeen",
+    )
+    parser.add_argument(
+        "--stop",
+        action="store_true",
+        help="sulje aktiivinen Colab-istunto ja lopeta",
+    )
+    parser.add_argument(
+        "--session-status",
+        action="store_true",
+        help="näytä Colab-istunnon tila",
     )
     parser.add_argument("--rms", action="store_true", help="RMS-tarkistus Auto-Silencelle")
     parser.add_argument("--thr", type=int, default=-35, help="RMS-kynnys desibeleinä (oletus: -35)")
@@ -73,6 +93,8 @@ def options_from_args(args: argparse.Namespace) -> RunOptions:
         tail=args.tail if args.tail != 1.0 else env_opts.tail,
         gap=args.gap if args.gap != 1.0 else env_opts.gap,
         prompt=args.prompt if args.prompt != DEFAULT_PROMPT else env_opts.prompt,
+        reset_session=args.reset_session or env_opts.reset_session,
+        keep_session=args.keep_session or env_opts.keep_session,
     )
 
 
@@ -84,7 +106,19 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
         return 1
 
     files = driver.list_input_files(input_dir)
-    commands = driver.plan_commands(options, files)
+
+    reuse_session = False
+    if session.is_session_alive(options.session):
+        if options.reset_session:
+            if not dry_run:
+                print(f"Suljetaan olemassa oleva Colab-istunto '{options.session}'...")
+                session.stop_session(options.session)
+        else:
+            reuse_session = True
+            if not dry_run:
+                print(f"Käytetään olemassa olevaa Colab-istuntoa '{options.session}'.")
+
+    commands = driver.plan_commands(options, files, reuse_session=reuse_session)
 
     if dry_run:
         for command in commands:
@@ -115,6 +149,25 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.stop:
+        print(f"Suljetaan Colab-istunto '{args.session}'...")
+        code = session.stop_session(args.session)
+        print(f"Istunto '{args.session}' suljettu.")
+        return code
+
+    if args.session_status:
+        alive = session.is_session_alive(args.session)
+        info = session.get_session(args.session)
+        if alive and info:
+            hw = info.get("accelerator") or "CPU"
+            var = info.get("variant") or ""
+            print(f"Istunto '{args.session}': aktiivinen (Hardware: {hw}, Variant: {var})")
+        elif alive:
+            print(f"Istunto '{args.session}': aktiivinen")
+        else:
+            print(f"Istunto '{args.session}': ei käynnissä")
+        return 0
 
     if args.check:
         report = check_environment()

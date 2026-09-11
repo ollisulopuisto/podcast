@@ -12,6 +12,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from textual.widgets import Button, Input
+
 from colabtranscribe.tui import TranscribeApp
 
 
@@ -135,4 +137,44 @@ def test_onboarding_modal_opens_when_not_ready():
             assert any(isinstance(s, OnboardingModal) for s in app.screen_stack)
 
     run_scenario(scenario)
+
+
+def test_tui_reuses_active_session(tmp_path: Path, monkeypatch):
+    (tmp_path / "puhe.wav").write_bytes(b"")
+    fake = FakeRunner()
+
+    from colabtranscribe import session
+    monkeypatch.setattr(session, "is_session_alive", lambda name: True)
+
+    async def scenario():
+        app = TranscribeApp(runner=fake)
+        async with app.run_test() as pilot:
+            app.query_one("#input", Input).value = str(tmp_path)
+            app.query_one("#output", Input).value = str(tmp_path / "out")
+            app.query_one("#run").press()
+            await pilot.pause()
+            await asyncio.sleep(0.1)
+
+    run_scenario(scenario)
+    assert fake.calls, "ajoa ei käynnistynyt"
+    plan = fake.calls[0]
+    # Koska istunto oli aktiivinen, colab new -komentoa ei ajeta
+    assert not any(c[:2] == ["colab", "new"] for c in plan)
+
+
+def test_tui_stop_session_button(monkeypatch):
+    stopped = []
+    from colabtranscribe import session
+    monkeypatch.setattr(session, "stop_session", lambda name: stopped.append(name) or 0)
+
+    async def scenario():
+        app = TranscribeApp()
+        async with app.run_test() as pilot:
+            app.query_one("#session", Input).value = "custom-sess"
+            app.query_one("#stop_session_btn", Button).press()
+            await pilot.pause()
+            await asyncio.sleep(0.05)
+
+    run_scenario(scenario)
+    assert stopped == ["custom-sess"]
 

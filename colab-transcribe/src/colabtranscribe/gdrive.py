@@ -7,13 +7,17 @@ Driveen, josta Colab-virtuaalikone noutaa ne sisäverkon nopeudella
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import shutil
 import tarfile
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 
 COLAB_TOKEN_PATH = Path.home() / ".config" / "colab-cli" / "token.json"
@@ -235,3 +239,244 @@ def delete_file_or_folder(file_id: str, token: str = "") -> None:
     except urllib.error.HTTPError as err:
         if err.code != 404:
             raise
+
+
+def compute_file_hash(file_path: Path) -> str:
+    """Laskee tiedostolle MD5-tarkistussumman 1 MB paloissa."""
+    hasher = hashlib.md5()
+    with open(file_path, "rb") as f:
+        while True:
+            chunk = f.read(1024 * 1024)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def list_cache_files(cache_folder_id: str, token: str = "") -> list[dict]:
+    """Listaa kaikki Google Driven välimuistikansiossa olevat tiedostot."""
+    if not token:
+        token = get_drive_token()
+    query = f"'{cache_folder_id}' in parents and trashed = false"
+    fields = "files(id,name,createdTime,md5Checksum)"
+    url = f"{DRIVE_FILES_URL}?q={urllib.parse.quote(query)}&spaces=drive&fields={urllib.parse.quote(fields)}&pageSize=1000"
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(req) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+        return data.get("files", [])
+
+
+def prune_expired_cache(
+    cache_folder_id: str,
+    max_age_seconds: float = 24 * 3600,
+    token: str = "",
+    current_time: float | None = None,
+) -> list[str]:
+    """Poistaa välimuistikansiosta tiedostot jotka ovat vanhempia kuin max_age_seconds (oletus 24 h)."""
+    if not token:
+        token = get_drive_token()
+    now_ts = current_time if current_time is not None else datetime.now(timezone.utc).timestamp()
+    files = list_cache_files(cache_folder_id, token=token)
+    deleted: list[str] = []
+    for f in files:
+        created_str = f.get("createdTime", "")
+        if not created_str:
+            continue
+        try:
+            created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+            age = now_ts - created_dt.timestamp()
+            if age > max_age_seconds:
+                delete_file_or_folder(f["id"], token=token)
+                deleted.append(f["id"])
+        except Exception:
+            continue
+    return deleted
+
+
+def sync_input_to_cache(
+    input_dir: Path,
+    cache_folder_id: str,
+    token: str = "",
+    log: Callable[[str], None] | None = None,
+) -> dict[str, str]:
+    """Synkronoi syötekansion tiedostot Google Driven 24 h välimuistiin.
+
+    Tiedostot tallennetaan nimellä `<hash>_<nimi>`. Jos tiedosto samalla
+    sisällöllä löytyy jo Drivesta, sen lähetys ohitetaan kokonaan (0 sekuntia).
+    Palauttaa manifestin suhteellisista poluista välimuistinimiin.
+    """
+    if not token:
+        token = get_drive_token()
+
+    # Siivotaan ensin vanhentuneet (> 24 h) pois
+    pruned = prune_expired_cache(cache_folder_id, token=token)
+    if pruned and log:
+        log(f"  Siivottiin vanhentuneita tiedostoja välimuistista: {len(pruned)} kpl")
+
+    # Haetaan nykyiset välimuistitiedostot
+    cached_files = list_cache_files(cache_folder_id, token=token)
+    cached_names = {f["name"]: f["id"] for f in cached_files if "name" in f}
+    cached_md5s = {f["md5Checksum"]: f["name"] for f in cached_files if "md5Checksum" in f and f.get("md5Checksum")}
+
+    root = input_dir.resolve()
+    manifest: dict[str, str] = {}
+
+    for dirpath, dirnames, filenames in root.walk(follow_symlinks=False):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        for name in filenames:
+            if name.startswith("."):
+                continue
+            file_path = dirpath / name
+            try:
+                resolved = file_path.resolve()
+            except OSError:
+                continue
+            if not resolved.is_file() or not resolved.is_relative_to(root):
+                continue
+
+            rel_path = file_path.relative_to(root).as_posix()
+            file_hash = compute_file_hash(file_path)
+            cache_name = f"{file_hash}_{name}"
+
+            manifest[rel_path] = cache_name
+
+            # Tarkistetaan onko jo Drivessa
+            if cache_name in cached_names or file_hash in cached_md5s:
+                if log:
+                    log(f"  Välimuistissa: {rel_path} (ohitetaan siirto)")
+                continue
+
+            file_size_mb = file_path.stat().st_size / (1024 * 1024)
+            if log:
+                log(f"  Ladataan välimuistiin: {rel_path} ({file_size_mb:.1f} MB)...")
+
+            upload_resumable(
+                file_path,
+                folder_id=cache_folder_id,
+                token=token,
+            )
+
+    return manifest
+
+
+def copy_drive_file(
+    file_id: str,
+    target_folder_id: str,
+    new_name: str,
+    token: str = "",
+) -> str:
+    """Kopioi tiedoston Google Driven sisällä uuteen kansioon uudella nimellä (0 tavua verkkoa)."""
+    if not token:
+        token = get_drive_token()
+    url = f"{DRIVE_FILES_URL}/{file_id}/copy"
+    meta = {
+        "name": new_name,
+        "parents": [target_folder_id],
+    }
+    body = json.dumps(meta).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST")
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Content-Type", "application/json; charset=UTF-8")
+    with urllib.request.urlopen(req) as resp:
+        res = json.loads(resp.read().decode("utf-8"))
+        return res.get("id", "")
+
+
+def upload_archive_with_cache(
+    input_dir: Path | str,
+    session: str,
+    token: str = "",
+    log: Callable[[str], None] | None = None,
+) -> str:
+    """Pakkaa syötteen, hyödyntää Google Driven 24 h välimuistia ja valmistelee istunnon tiedoston.
+
+    1. Pakkaa syötteen tilapäiseksi .tar.gz-paketiksi.
+    2. Laskee paketin MD5-tarkistussumman.
+    3. Siivoaa Drivesta vanhentuneet (> 24 h) välimuistitiedostot.
+    4. Jos sama paketti löytyy jo Drive-välimuistista, ohittaa lähetyksen kokonaan ja
+       tekee suoran palvelinpuolen kopion istuntokansioon (0 s verkkosiirtoa).
+    5. Jos ei löydy, lataa paketin välimuistiin ja kopioi sen istuntokansioon.
+    """
+    if not token:
+        token = get_drive_token()
+
+    source = Path(input_dir)
+    if log:
+        log(f"Pakataan syötetiedostot ({source.name})...")
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        archive_path = Path(tmp_dir) / "input.tar.gz"
+        create_input_archive(source, archive_path)
+        archive_size_mb = archive_path.stat().st_size / (1024 * 1024)
+        archive_hash = compute_file_hash(archive_path)
+
+        if log:
+            log(f"Valmistellaan Google Drive -välimuistia ({archive_size_mb:.1f} MB)...")
+
+        root_folder_id = ensure_folder("ColabTranscribe", token=token)
+        cache_folder_id = ensure_folder("cache", parent_id=root_folder_id, token=token)
+        session_folder_id = ensure_folder(session, parent_id=root_folder_id, token=token)
+
+        # 1. 24 h vanhentuneiden siivous
+        pruned = prune_expired_cache(cache_folder_id, max_age_seconds=24 * 3600, token=token)
+        if pruned and log:
+            log(f"  Siivottiin vanhentuneita paketteja välimuistista ({len(pruned)} kpl).")
+
+        # 2. Tarkistetaan löytyykö sama paketti jo välimuistista
+        cached_files = list_cache_files(cache_folder_id, token=token)
+        cache_file_name = f"{archive_hash}.tar.gz"
+
+        matching_cached = None
+        for f in cached_files:
+            if f.get("name") == cache_file_name or f.get("md5Checksum") == archive_hash:
+                matching_cached = f
+                break
+
+        if matching_cached:
+            if log:
+                log(f"  Välimuistissa: paketti löytyi Google Drivesta ({archive_size_mb:.1f} MB, ohitetaan lähetys).")
+            return copy_drive_file(
+                matching_cached["id"],
+                target_folder_id=session_folder_id,
+                new_name="input.tar.gz",
+                token=token,
+            )
+
+        # 3. Ei löytynyt: ladataan välimuistiin
+        last_logged_mb = 0.0
+
+        def on_progress(uploaded: int, total: int) -> None:
+            nonlocal last_logged_mb
+            up_mb = uploaded / (1024 * 1024)
+            tot_mb = total / (1024 * 1024)
+            if up_mb - last_logged_mb >= 10.0 or uploaded == total:
+                pct = int(uploaded / total * 100) if total else 100
+                if log:
+                    log(f"  Google Drive -lataus: {up_mb:.1f} / {tot_mb:.1f} MB ({pct}%)")
+                last_logged_mb = up_mb
+
+        if log:
+            log(f"Ladataan paketti Google Driveen (ColabTranscribe/cache/{cache_file_name})...")
+
+        cached_archive_path = Path(tmp_dir) / cache_file_name
+        shutil.copyfile(archive_path, cached_archive_path)
+
+        cached_id = upload_resumable(
+            cached_archive_path,
+            folder_id=cache_folder_id,
+            token=token,
+            progress_callback=on_progress,
+        )
+
+        if log:
+            log("Google Drive -siirto valmis.")
+
+        return copy_drive_file(
+            cached_id,
+            target_folder_id=session_folder_id,
+            new_name="input.tar.gz",
+            token=token,
+        )
+
+

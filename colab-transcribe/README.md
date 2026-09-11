@@ -28,6 +28,10 @@ uv run colab-transcribe --input ~/jakso/ --output ~/valmis/ --preset intra-mic
 uv run colab-transcribe --input ~/jakso/ --dry-run     # print the plan, run nothing
 uv run colab-transcribe --input ~/jakso/ --gpu A100 --rms --thr -40
 uv run colab-transcribe --input ~/jakso/ --no-drive    # fallback to direct colab upload
+uv run colab-transcribe --session-status               # check active Colab session status
+uv run colab-transcribe --stop                         # stop active Colab session
+uv run colab-transcribe --input ~/jakso/ --reset-session # force stop and recreate Colab VM
+uv run colab-transcribe --input ~/jakso/ --keep-session  # keep Colab VM alive after completion
 ```
 
 Files are transferred via Google Drive (`--transfer drive`, default) using fast

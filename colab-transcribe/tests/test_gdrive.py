@@ -173,3 +173,146 @@ def test_delete_file_or_folder():
         assert req.get_method() == "DELETE"
         assert req.full_url == f"{gdrive.DRIVE_FILES_URL}/file-123"
 
+
+def test_compute_file_hash(tmp_path: Path):
+    sample = tmp_path / "sample.wav"
+    sample.write_bytes(b"HELLO-PODCAST-AUDIO-BYTES")
+    digest = gdrive.compute_file_hash(sample)
+    assert isinstance(digest, str)
+    assert len(digest) == 32  # MD5 hex length
+
+
+def test_prune_expired_cache():
+    token = "test-token"
+    # Kaksi tiedostoa välimuistissa: toinen vanha (48 h), toinen tuore (2 h)
+    fake_files = [
+        {
+            "id": "old-file-1",
+            "name": "hash1_old.wav",
+            "createdTime": "2026-09-09T10:00:00.000Z",  # yli 24 h sitten
+        },
+        {
+            "id": "new-file-2",
+            "name": "hash2_new.wav",
+            "createdTime": "2026-09-11T15:00:00.000Z",  # tuore
+        },
+    ]
+
+    mock_urlopen = MagicMock()
+    list_resp = io.BytesIO(json.dumps({"files": fake_files}).encode("utf-8"))
+    delete_resp = MagicMock()
+    delete_resp.status = 204
+
+    mock_urlopen.return_value.__enter__.side_effect = [list_resp, delete_resp]
+
+    # Kiinnitetään nykyhetki: 2026-09-11T16:00:00+00:00
+    now_ts = 1789142400.0  # Kiinteä timestamp
+    with patch("urllib.request.urlopen", mock_urlopen):
+        deleted = gdrive.prune_expired_cache(
+            "cache-folder-id",
+            max_age_seconds=24 * 3600,
+            token=token,
+            current_time=now_ts,
+        )
+    # Vain vanha tiedosto pitää poistaa
+    assert deleted == ["old-file-1"]
+
+
+def test_sync_input_to_cache_skips_existing(tmp_path: Path):
+    in_dir = tmp_path / "input"
+    in_dir.mkdir()
+    f1 = in_dir / "audio.wav"
+    f1.write_bytes(b"cached-content")
+    f1_hash = gdrive.compute_file_hash(f1)
+
+    token = "test-token"
+    # Google Drivessa on jo tiedosto samalla hashilla
+    existing_cache = [
+        {
+            "id": "drive-file-100",
+            "name": f"{f1_hash}_audio.wav",
+            "md5Checksum": f1_hash,
+            "createdTime": "2026-09-11T15:00:00.000Z",
+        }
+    ]
+
+    def fake_urlopen(req):
+        resp = MagicMock()
+        resp.read.return_value = json.dumps({"files": existing_cache}).encode("utf-8")
+        resp.__enter__.return_value = resp
+        return resp
+
+    mock_urlopen = MagicMock(side_effect=fake_urlopen)
+    logs = []
+    with patch("urllib.request.urlopen", mock_urlopen):
+        manifest = gdrive.sync_input_to_cache(
+            in_dir,
+            cache_folder_id="cache-folder-id",
+            token=token,
+            log=logs.append,
+        )
+
+    assert "audio.wav" in manifest
+    assert manifest["audio.wav"] == f"{f1_hash}_audio.wav"
+    assert any("Välimuistissa" in line for line in logs)
+
+
+def test_copy_drive_file():
+    token = "test-token"
+    mock_urlopen = MagicMock()
+    copy_resp = MagicMock()
+    copy_resp.read.return_value = json.dumps({"id": "copied-file-id"}).encode("utf-8")
+    copy_resp.status = 200
+    mock_urlopen.return_value.__enter__.return_value = copy_resp
+
+    with patch("urllib.request.urlopen", mock_urlopen):
+        new_id = gdrive.copy_drive_file(
+            "orig-file-id",
+            target_folder_id="target-folder-123",
+            new_name="input.tar.gz",
+            token=token,
+        )
+        assert new_id == "copied-file-id"
+        req = mock_urlopen.call_args[0][0]
+        assert req.get_method() == "POST"
+        assert req.full_url == f"{gdrive.DRIVE_FILES_URL}/orig-file-id/copy"
+
+
+def test_upload_archive_with_cache_skips_when_cached(tmp_path: Path):
+    in_dir = tmp_path / "input"
+    in_dir.mkdir()
+    (in_dir / "a.wav").write_bytes(b"content")
+
+    token = "test-token"
+    with (
+        patch("colabtranscribe.gdrive.get_drive_token", return_value=token),
+        patch("colabtranscribe.gdrive.ensure_folder", side_effect=["root-id", "cache-id", "sess-id"]),
+        patch("colabtranscribe.gdrive.prune_expired_cache") as mock_prune,
+        patch("colabtranscribe.gdrive.list_cache_files") as mock_list,
+        patch("colabtranscribe.gdrive.upload_resumable") as mock_upload,
+        patch("colabtranscribe.gdrive.copy_drive_file", return_value="sess-tar-id") as mock_copy,
+    ):
+        # Simuloidaan että arkiston tiiviste löytyy jo välimuistista
+        def fake_list(cache_id, token=""):
+            return [{"id": "cached-tar-id", "name": "input.tar.gz", "md5Checksum": "DUMMY"}]
+
+        mock_list.side_effect = fake_list
+
+        # Pakotetaan sama hash listaan
+        with patch("colabtranscribe.gdrive.compute_file_hash", return_value="DUMMY"):
+            logs = []
+            file_id = gdrive.upload_archive_with_cache(in_dir, "vst-sess", log=logs.append)
+            assert file_id == "sess-tar-id"
+            mock_prune.assert_called_once()
+            mock_copy.assert_called_once_with(
+                "cached-tar-id",
+                target_folder_id="sess-id",
+                new_name="input.tar.gz",
+                token=token,
+            )
+            # Uutta latausta EI saa tapahtua!
+            mock_upload.assert_not_called()
+            assert any("Välimuistissa" in line for line in logs)
+
+
+

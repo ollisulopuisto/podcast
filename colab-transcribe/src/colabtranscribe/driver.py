@@ -8,6 +8,7 @@ ajettavan skriptin tuloste on ainoa tieto siitä mitä siellä tapahtui.
 
 from __future__ import annotations
 
+import contextlib
 import shlex
 import subprocess
 import tarfile
@@ -59,22 +60,29 @@ def list_input_files(input_dir: Path) -> list[str]:
     return sorted(found)
 
 
-def plan_commands(options: RunOptions, input_files: list[str]) -> list[list[str]]:
+def plan_commands(
+    options: RunOptions, input_files: list[str], reuse_session: bool = False
+) -> list[list[str]]:
     """Koko ajo komennoiksi, ensimmäisestä viimeiseen.
 
     Järjestys on sama kuin alkuperäisessä `run_pipeline.sh`:issa — uusi
     istunto, hakemistot, skripti ylös, syötteet ylös, ajo, tulokset alas,
-    istunto kiinni. Istunto suljetaan aina viimeisenä; keskeytynyt ajo jää
-    auki ja se on silloin Colabin omalla käytössä suljettava.
+    istunto kiinni. Istunto suljetaan aina viimeisenä (ellei keep_session);
+    keskeytynyt ajo jää auki ja se on silloin Colabin omalla käytössä suljettava.
+    Jos reuse_session on True, olemassa olevaa istuntoa ei luoda uudelleen vaan
+    sen tilapäiskansiot puhdistetaan.
     """
+    clean_and_mkdir = f"rm -rf {REMOTE_INPUT}/* {REMOTE_OUTPUT}/* && mkdir -p {REMOTE_INPUT} {REMOTE_OUTPUT}"
     if options.transfer == "drive":
         drive_rel = f"ColabTranscribe/{options.session}/input.tar.gz"
         input_source = options.input_dir or "."
         remote_call = " ".join(["python3", "/content/pipeline.py", *map(shlex.quote, pipeline_args(options))])
-        return [
-            ["colab", "new", "-s", options.session, "--gpu", options.gpu],
+        cmds: list[list[str]] = []
+        if not reuse_session:
+            cmds.append(["colab", "new", "-s", options.session, "--gpu", options.gpu])
+        cmds.extend([
             ["colab", "drivemount", "-s", options.session],
-            ["colab", "exec", "-s", options.session, f"mkdir -p {REMOTE_INPUT} {REMOTE_OUTPUT}"],
+            ["colab", "exec", "-s", options.session, clean_and_mkdir],
             ["colab", "upload", "-s", options.session, str(PIPELINE_SCRIPT), "/content/pipeline.py"],
             ["drive", "upload", str(input_source), drive_rel],
             [
@@ -93,14 +101,18 @@ def plan_commands(options: RunOptions, input_files: list[str]) -> list[list[str]
                 options.session,
                 f"rm -rf /content/drive/MyDrive/ColabTranscribe/{options.session}",
             ],
-            ["colab", "stop", "-s", options.session],
-        ]
+        ])
+        if not options.keep_session:
+            cmds.append(["colab", "stop", "-s", options.session])
+        return cmds
 
-    commands = [
-        ["colab", "new", "-s", options.session, "--gpu", options.gpu],
-        ["colab", "exec", "-s", options.session, f"mkdir -p {REMOTE_INPUT} {REMOTE_OUTPUT}"],
+    commands: list[list[str]] = []
+    if not reuse_session:
+        commands.append(["colab", "new", "-s", options.session, "--gpu", options.gpu])
+    commands.extend([
+        ["colab", "exec", "-s", options.session, clean_and_mkdir],
         ["colab", "upload", "-s", options.session, str(PIPELINE_SCRIPT), "/content/pipeline.py"],
-    ]
+    ])
 
     # Alipolut on oltava olemassa ennen kuin mitään niihin ladataan.
     for sub in sorted({Path(f).parent for f in input_files if Path(f).parent != Path(".")}):
@@ -122,7 +134,8 @@ def plan_commands(options: RunOptions, input_files: list[str]) -> list[list[str]
     remote_call = " ".join(["python3", "/content/pipeline.py", *map(shlex.quote, pipeline_args(options))])
     commands.append(["colab", "exec", "-s", options.session, remote_call])
     commands.append(["colab", "download", "-s", options.session, f"{REMOTE_OUTPUT}/", options.output_dir])
-    commands.append(["colab", "stop", "-s", options.session])
+    if not options.keep_session:
+        commands.append(["colab", "stop", "-s", options.session])
     return commands
 
 
@@ -193,6 +206,7 @@ def _execute_single(
         timer.start()
 
     has_kernel_error = False
+    has_precondition_error = False
     try:
         for line in process.stdout:
             stripped = line.rstrip("\n")
@@ -204,8 +218,14 @@ def _execute_single(
                 )
             ):
                 has_kernel_error = True
+            if "Precondition Failed" in stripped or "TooManyAssignmentsError" in stripped:
+                has_precondition_error = True
             log(stripped)
         code = process.wait()
+    except KeyboardInterrupt:
+        with contextlib.suppress(OSError):
+            process.kill()
+        raise
     finally:
         if timer is not None:
             timer.cancel()
@@ -218,6 +238,15 @@ def _execute_single(
         log(f"Etäkomento epäonnistui (virhe Colabin ytimessä): {shlex.join(command)}")
         return 1
 
+    if has_precondition_error:
+        sess_name = "vst-pipeline"
+        if "-s" in command:
+            idx = command.index("-s")
+            if idx + 1 < len(command):
+                sess_name = command[idx + 1]
+        log("Virhe: Colab palautti 'Precondition Failed' (liikaa aktiivisia GPU-istuntoja).")
+        log(f"Tunnuksellasi on jo aktiivinen Colab-istunto. Voit vapauttaa sen ajamalla: colab stop -s {sess_name}")
+
     if code != 0:
         log(f"Komento palautti {code}, lopetetaan: {shlex.join(command)}")
         return code
@@ -226,41 +255,11 @@ def _execute_single(
 
 
 def upload_input_to_drive(input_dir: Path | str, session: str, log: Callable[[str], None]) -> str:
-    """Pakkaa syötekansion ja lataa sen Google Driveen ColabTranscribe/<session>/input.tar.gz."""
+    """Pakkaa syötekansion, hyödyntää Google Driven 24 h välimuistia ja lataa sen ColabTranscribe/<session>/input.tar.gz."""
     from . import gdrive
 
-    source = Path(input_dir)
-    log(f"Pakataan syötetiedostot ({source.name})...")
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        archive_path = Path(tmp_dir) / "input.tar.gz"
-        gdrive.create_input_archive(source, archive_path)
-        archive_size_mb = archive_path.stat().st_size / (1024 * 1024)
+    return gdrive.upload_archive_with_cache(input_dir, session, log=log)
 
-        log(f"Valmistellaan Google Drive -kansioita ({archive_size_mb:.1f} MB)...")
-        token = gdrive.get_drive_token()
-        root_folder_id = gdrive.ensure_folder("ColabTranscribe", token=token)
-        session_folder_id = gdrive.ensure_folder(session, parent_id=root_folder_id, token=token)
-
-        last_logged_mb = 0.0
-
-        def on_progress(uploaded: int, total: int) -> None:
-            nonlocal last_logged_mb
-            up_mb = uploaded / (1024 * 1024)
-            tot_mb = total / (1024 * 1024)
-            if up_mb - last_logged_mb >= 10.0 or uploaded == total:
-                pct = int(uploaded / total * 100) if total else 100
-                log(f"  Google Drive -lataus: {up_mb:.1f} / {tot_mb:.1f} MB ({pct}%)")
-                last_logged_mb = up_mb
-
-        log(f"Ladataan paketti Google Driveen (ColabTranscribe/{session}/input.tar.gz)...")
-        file_id = gdrive.upload_resumable(
-            archive_path,
-            folder_id=session_folder_id,
-            token=token,
-            progress_callback=on_progress,
-        )
-        log("Google Drive -siirto valmis.")
-        return file_id
 
 
 def run(commands: list[list[str]], log: Callable[[str], None], timeout: float | None = None) -> int:
@@ -275,67 +274,71 @@ def run(commands: list[list[str]], log: Callable[[str], None], timeout: float | 
         log: Funktio joka saa jokaisen tulosterivin.
         timeout: Yksittäisen komennon aikaraja sekunteina. None = ei rajaa.
     """
-    for command in commands:
-        if len(command) >= 3 and command[0] == "drive" and command[1] == "upload":
-            log(shlex.join(command))
-            input_dir = command[2]
-            parts = command[3].split("/")
-            session = parts[1] if len(parts) >= 2 else "session"
-            try:
-                upload_input_to_drive(input_dir, session, log)
-            except Exception as err:
-                log(f"Google Drive -lataus epäonnistui: {err}")
-                return 1
-            continue
+    try:
+        for command in commands:
+            if len(command) >= 3 and command[0] == "drive" and command[1] == "upload":
+                log(shlex.join(command))
+                input_dir = command[2]
+                parts = command[3].split("/")
+                session = parts[1] if len(parts) >= 2 else "session"
+                try:
+                    upload_input_to_drive(input_dir, session, log)
+                except Exception as err:
+                    log(f"Google Drive -lataus epäonnistui: {err}")
+                    return 1
+                continue
 
-        if (
-            len(command) >= 6
-            and command[0] == "colab"
-            and command[1] == "download"
-            and command[2] == "-s"
-            and command[4].endswith("/")
-        ):
-            session = command[3]
-            remote_dir = command[4].rstrip("/")
-            local_dir = Path(command[5])
-            log(shlex.join(command))
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                tar_name = "_transfer_output.tar.gz"
-                remote_tar = f"/content/{tar_name}"
-                local_tar = Path(tmp_dir) / tar_name
+            if (
+                len(command) >= 6
+                and command[0] == "colab"
+                and command[1] == "download"
+                and command[2] == "-s"
+                and command[4].endswith("/")
+            ):
+                session = command[3]
+                remote_dir = command[4].rstrip("/")
+                local_dir = Path(command[5])
+                log(shlex.join(command))
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    tar_name = "_transfer_output.tar.gz"
+                    remote_tar = f"/content/{tar_name}"
+                    local_tar = Path(tmp_dir) / tar_name
 
-                code = _execute_single(
-                    ["colab", "exec", "-s", session, f"tar -czf {remote_tar} -C {remote_dir} ."],
-                    log,
-                    timeout=timeout,
-                )
-                if code != 0:
-                    return code
+                    code = _execute_single(
+                        ["colab", "exec", "-s", session, f"tar -czf {remote_tar} -C {remote_dir} ."],
+                        log,
+                        timeout=timeout,
+                    )
+                    if code != 0:
+                        return code
 
-                code = _execute_single(
-                    ["colab", "download", "-s", session, remote_tar, str(local_tar)],
-                    log,
-                    timeout=timeout,
-                )
-                if code != 0:
-                    return code
+                    code = _execute_single(
+                        ["colab", "download", "-s", session, remote_tar, str(local_tar)],
+                        log,
+                        timeout=timeout,
+                    )
+                    if code != 0:
+                        return code
 
-                local_dir.mkdir(parents=True, exist_ok=True)
-                with tarfile.open(local_tar, "r:gz") as tar:
-                    if hasattr(tarfile, "data_filter"):
-                        tar.extractall(local_dir, filter="data")
-                    else:
-                        tar.extractall(local_dir)
+                    local_dir.mkdir(parents=True, exist_ok=True)
+                    with tarfile.open(local_tar, "r:gz") as tar:
+                        if hasattr(tarfile, "data_filter"):
+                            tar.extractall(local_dir, filter="data")
+                        else:
+                            tar.extractall(local_dir)
 
-                _execute_single(
-                    ["colab", "exec", "-s", session, f"rm -f {remote_tar}"],
-                    log,
-                    timeout=timeout,
-                )
-            continue
+                    _execute_single(
+                        ["colab", "exec", "-s", session, f"rm -f {remote_tar}"],
+                        log,
+                        timeout=timeout,
+                    )
+                continue
 
-        code = _execute_single(command, log, timeout=timeout)
-        if code != 0:
-            return code
-    return 0
+            code = _execute_single(command, log, timeout=timeout)
+            if code != 0:
+                return code
+        return 0
+    except KeyboardInterrupt:
+        log("Ajo keskeytetty käyttäjän toimesta (Ctrl+C).")
+        return 130
 

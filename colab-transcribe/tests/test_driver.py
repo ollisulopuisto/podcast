@@ -287,4 +287,50 @@ def test_run_handles_drive_upload(monkeypatch, tmp_path):
     assert uploaded[0] == (str(in_dir), "vst-pipeline")
 
 
+def test_plan_sequence_reuse_session_skips_colab_new(tmp_path: Path):
+    options = RunOptions(input_dir=str(tmp_path), transfer="drive")
+    commands = driver.plan_commands(options, [], reuse_session=True)
+    assert not any(c[:2] == ["colab", "new"] for c in commands)
+    # Varmistetaan että tyhjennyskomento on mukana
+    assert any("rm -rf" in c[-1] and "/content/input" in c[-1] for c in commands if c[1] == "exec")
+
+
+def test_plan_sequence_keep_session_skips_colab_stop(tmp_path: Path):
+    options = RunOptions(input_dir=str(tmp_path), keep_session=True)
+    commands = driver.plan_commands(options, [])
+    assert not any(c[:2] == ["colab", "stop"] for c in commands)
+
+
+def test_run_handles_keyboard_interrupt(monkeypatch):
+    def fake_popen(*args, **kwargs):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    logs = []
+    code = driver.run([["colab", "new", "-s", "vst-pipeline", "--gpu", "T4"]], logs.append)
+    assert code == 130
+    assert any("Ajo keskeytetty" in line for line in logs)
+
+
+def test_run_detects_precondition_failed_on_colab_new(monkeypatch):
+    import io
+
+    class FakeProcess:
+        def __init__(self, cmd, **kwargs):
+            self.stdin = io.StringIO()
+            self.stdout = [
+                "TooManyAssignmentsError: Failed to issue request POST https://colab.research.google.com/tun/m/assign: Precondition Failed\n"
+            ]
+
+        def wait(self):
+            return 1
+
+    monkeypatch.setattr(subprocess, "Popen", FakeProcess)
+    logs = []
+    code = driver.run([["colab", "new", "-s", "vst-pipeline", "--gpu", "T4"]], logs.append)
+    assert code != 0
+    assert any("Precondition Failed" in line for line in logs)
+    assert any("colab stop" in line for line in logs)
+
+
 
