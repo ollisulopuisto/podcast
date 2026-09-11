@@ -126,6 +126,72 @@ def create_input_archive(input_dir: Path, archive_path: Path) -> Path:
     return archive_path
 
 
+def get_quota_project(token: str = "") -> str | None:
+    """Etsii aktiivisen GCP-kiintiöprojektin (quota project) Google Drive API -kutsuja varten."""
+    proj = os.environ.get("COLAB_QUOTA_PROJECT") or os.environ.get("GOOGLE_CLOUD_QUOTA_PROJECT")
+    if proj:
+        return proj
+
+    if ADC_PATH.is_file():
+        try:
+            data = json.loads(ADC_PATH.read_text(encoding="utf-8"))
+            quota_id = data.get("quota_project_id")
+            if quota_id and quota_id != "suosittelemme":
+                return quota_id
+        except Exception:
+            pass
+
+    if COLAB_TOKEN_PATH.is_file():
+        try:
+            data = json.loads(COLAB_TOKEN_PATH.read_text(encoding="utf-8"))
+            quota_id = data.get("quota_project_id")
+            if quota_id and quota_id != "suosittelemme":
+                return quota_id
+        except Exception:
+            pass
+
+    if token:
+        try:
+            url = "https://cloudresourcemanager.googleapis.com/v1/projects"
+            req = urllib.request.Request(url)
+            req.add_header("Authorization", f"Bearer {token}")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                for p in data.get("projects", []):
+                    if p.get("lifecycleState") == "ACTIVE":
+                        pid = p.get("projectId", "")
+                        if "drive" in pid:
+                            return pid
+                for p in data.get("projects", []):
+                    if p.get("lifecycleState") == "ACTIVE":
+                        return p.get("projectId")
+        except Exception:
+            pass
+
+    return "g-drive-move-all-files"
+
+
+def drive_request(
+    url: str,
+    data: bytes | None = None,
+    method: str | None = None,
+    token: str = "",
+    headers: dict[str, str] | None = None,
+) -> urllib.request.Request:
+    """Luo HTTP-pyynnön Google Driven API:lle valtuutettuna ja kiintiöprojektilla varustettuna."""
+    if not token:
+        token = get_drive_token()
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Authorization", f"Bearer {token}")
+    quota_project = get_quota_project(token)
+    if quota_project:
+        req.add_header("X-Goog-User-Project", quota_project)
+    if headers:
+        for k, v in headers.items():
+            req.add_header(k, v)
+    return req
+
+
 def ensure_folder(folder_name: str, parent_id: str | None = None, token: str = "") -> str:
     """Tarkistaa onko kansio olemassa Google Drivessa tai luo uuden."""
     if not token:
@@ -136,8 +202,7 @@ def ensure_folder(folder_name: str, parent_id: str | None = None, token: str = "
         query += f" and '{parent_id}' in parents"
 
     url = f"{DRIVE_FILES_URL}?q={urllib.parse.quote(query)}&spaces=drive&fields=files(id,name)"
-    req = urllib.request.Request(url, method="GET")
-    req.add_header("Authorization", f"Bearer {token}")
+    req = drive_request(url, method="GET", token=token)
 
     with urllib.request.urlopen(req) as resp:
         data = json.loads(resp.read().decode("utf-8"))
@@ -154,9 +219,13 @@ def ensure_folder(folder_name: str, parent_id: str | None = None, token: str = "
         meta["parents"] = [parent_id]
 
     body = json.dumps(meta).encode("utf-8")
-    create_req = urllib.request.Request(DRIVE_FILES_URL, data=body, method="POST")
-    create_req.add_header("Authorization", f"Bearer {token}")
-    create_req.add_header("Content-Type", "application/json; charset=UTF-8")
+    create_req = drive_request(
+        DRIVE_FILES_URL,
+        data=body,
+        method="POST",
+        token=token,
+        headers={"Content-Type": "application/json; charset=UTF-8"},
+    )
 
     with urllib.request.urlopen(create_req) as resp:
         res = json.loads(resp.read().decode("utf-8"))
@@ -182,11 +251,17 @@ def upload_resumable(
         "name": filename,
         "parents": [folder_id],
     }
-    init_req = urllib.request.Request(DRIVE_UPLOAD_URL, data=json.dumps(meta).encode("utf-8"), method="POST")
-    init_req.add_header("Authorization", f"Bearer {token}")
-    init_req.add_header("Content-Type", "application/json; charset=UTF-8")
-    init_req.add_header("X-Upload-Content-Type", "application/gzip")
-    init_req.add_header("X-Upload-Content-Length", str(total_size))
+    init_req = drive_request(
+        DRIVE_UPLOAD_URL,
+        data=json.dumps(meta).encode("utf-8"),
+        method="POST",
+        token=token,
+        headers={
+            "Content-Type": "application/json; charset=UTF-8",
+            "X-Upload-Content-Type": "application/gzip",
+            "X-Upload-Content-Length": str(total_size),
+        },
+    )
 
     with urllib.request.urlopen(init_req) as resp:
         upload_url = resp.headers.get("Location")
@@ -231,8 +306,7 @@ def delete_file_or_folder(file_id: str, token: str = "") -> None:
     if not token:
         token = get_drive_token()
     url = f"{DRIVE_FILES_URL}/{file_id}"
-    req = urllib.request.Request(url, method="DELETE")
-    req.add_header("Authorization", f"Bearer {token}")
+    req = drive_request(url, method="DELETE", token=token)
     try:
         with urllib.request.urlopen(req):
             pass
@@ -260,8 +334,7 @@ def list_cache_files(cache_folder_id: str, token: str = "") -> list[dict]:
     query = f"'{cache_folder_id}' in parents and trashed = false"
     fields = "files(id,name,createdTime,md5Checksum)"
     url = f"{DRIVE_FILES_URL}?q={urllib.parse.quote(query)}&spaces=drive&fields={urllib.parse.quote(fields)}&pageSize=1000"
-    req = urllib.request.Request(url, method="GET")
-    req.add_header("Authorization", f"Bearer {token}")
+    req = drive_request(url, method="GET", token=token)
     with urllib.request.urlopen(req) as resp:
         data = json.loads(resp.read().decode("utf-8"))
         return data.get("files", [])
@@ -375,9 +448,13 @@ def copy_drive_file(
         "parents": [target_folder_id],
     }
     body = json.dumps(meta).encode("utf-8")
-    req = urllib.request.Request(url, data=body, method="POST")
-    req.add_header("Authorization", f"Bearer {token}")
-    req.add_header("Content-Type", "application/json; charset=UTF-8")
+    req = drive_request(
+        url,
+        data=body,
+        method="POST",
+        token=token,
+        headers={"Content-Type": "application/json; charset=UTF-8"},
+    )
     with urllib.request.urlopen(req) as resp:
         res = json.loads(resp.read().decode("utf-8"))
         return res.get("id", "")

@@ -315,4 +315,16 @@ def test_upload_archive_with_cache_skips_when_cached(tmp_path: Path):
             assert any("Välimuistissa" in line for line in logs)
 
 
+def test_drive_requests_include_quota_project_header(monkeypatch):
+    monkeypatch.setenv("COLAB_QUOTA_PROJECT", "my-custom-quota-proj")
+    mock_urlopen = MagicMock()
+    mock_urlopen.return_value.__enter__.return_value = io.BytesIO(b'{"files": []}')
+
+    with patch("urllib.request.urlopen", mock_urlopen):
+        gdrive.list_cache_files("folder123", token="tok123")
+        req = mock_urlopen.call_args[0][0]
+        assert req.get_header("X-goog-user-project") == "my-custom-quota-proj"
+
+
+
 

@@ -72,9 +72,9 @@ def test_tail_and_gap_must_be_positive():
         RunOptions(gap=0.0)
 
 
-def test_transfer_default_is_direct():
+def test_transfer_default_is_drive():
     options = RunOptions()
-    assert options.transfer == "direct"
+    assert options.transfer == "drive"
 
 
 def test_transfer_choices():
