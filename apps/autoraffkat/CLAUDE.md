@@ -41,6 +41,13 @@ In a multicam, additionally: the angle's content must be clipped to the
 `mc-clip`'s duration (`_walk`'s `bounds`), because an angle spans the whole
 multicam and the same multicam can appear on the spine twice.
 
+In a sync-clip, Final Cut represents detached and deactivated audio components
+using `<sync-source><audio-role-source role="…" active="0"/></sync-source>`.
+The reader collects these muted roles and ignores matching `<audio>` and
+`<asset-clip>` elements. Role matching is downward: muting `dialogue` mutes
+`dialogue.dialogue-1`, but muting a specific sub-role leaves other sub-roles
+and the parent active.
+
 ## A track is not a media file
 
 The unit of roling is `Timeline.tracks`, not `Timeline.media`. In a multicam

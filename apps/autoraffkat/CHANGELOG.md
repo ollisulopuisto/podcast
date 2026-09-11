@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [autoraffkat-v2026.9.11.1] - 2026-09-11
+
+### Fixed
+- **Detached and Muted Camera Audio in `<sync-clip>` is Ignored** (`fcpxml/read.py`): when camera audio is detached in Final Cut Pro and deactivated, FCP retains the original embedded audio component inside the clip or gap but marks it inactive with `<sync-source><audio-role-source role="…" active="0"/></sync-source>`. The reader previously ignored `sync-source` elements, collecting the deactivated camera audio as an active timeline track and displacing dedicated mic tracks. Deactivated roles are now collected during tree traversal, role matching applies downward in the role hierarchy (e.g. muting `dialogue` mutes `dialogue.dialogue-1`, but muting a specific sub-role does not mute sibling or parent roles), and muted leaves are skipped.
+
 ## [autoraffkat-v2026.8.31.1] - 2026-08-31
 
 ### Fixed
