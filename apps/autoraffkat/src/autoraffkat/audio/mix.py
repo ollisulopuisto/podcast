@@ -232,6 +232,7 @@ def frame_count(path: str) -> int | None:
             ],
             capture_output=True,
             text=True,
+            stdin=subprocess.DEVNULL,
             timeout=60,
         )
         streams = json.loads(done.stdout or "{}").get("streams") or []
@@ -286,6 +287,7 @@ def ensure_readable(path: str) -> str:
         done = subprocess.run(
             [
                 ffmpeg_bin,
+                "-nostdin",
                 "-y",
                 "-v",
                 "error",
@@ -300,6 +302,7 @@ def ensure_readable(path: str) -> str:
             ],
             capture_output=True,
             text=True,
+            stdin=subprocess.DEVNULL,
             timeout=TIMEOUT,
         )
     except (OSError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
@@ -1043,6 +1046,135 @@ def _debleed(job, audio, rate, program_start, solos, partners, result):
                 f"oma puhe {info['kept']:.4f}"
             )
     audio[0] = target.astype(audio.dtype, copy=False)
+
+
+def preview_audio(
+    timeline,
+    roles,
+    settings: AudioSettings,
+    grid=None,
+    program_start: float = 0.0,
+) -> dict:
+    """Arvioi äänenkäsittelyn taustalla ennen varsinaista ajoa.
+
+    Laskee nopeasti ilman raskasta VST3-liitännäistä:
+    1. Ohjelmatrimmin (program_trim) tavoitetasoon
+    2. Ristivuodon poiston (debleed) toteutettavuuden ja vaimennusarvion
+    3. Tilaäänen (room_track) purun välimuistiin, jos se on videoraita
+    """
+    from pedalboard.io import AudioFile
+
+    from speechmix import debleed as db
+
+    out = {
+        "program_trim": 0.0,
+        "debleed": [],
+        "room_ready": False,
+        "ready": False,
+        "error": "",
+    }
+    if timeline is None or not settings.enabled:
+        out["ready"] = True
+        return out
+
+    jobs = _jobs(timeline, roles, settings)
+    if not jobs:
+        out["ready"] = True
+        return out
+
+    # 1. Tilaäänen purku välimuistiin etukäteen
+    if settings.room_track:
+        for job in jobs:
+            if not job.get("speech") and os.path.exists(job.get("source", "")):
+                try:
+                    ensure_readable(job["source"])
+                    out["room_ready"] = True
+                except Exception as exc:
+                    _log(f"tilaäänen esipurku epäonnistui: {exc}")
+
+    # 2. Ohjelmatrimmi
+    if settings.program_target:
+        try:
+            out["program_trim"] = float(program_trim(jobs, settings))
+        except Exception as exc:
+            _log(f"ohjelmatrimmin arviointi epäonnistui: {exc}")
+
+    # 3. Ristivuoto (debleed)
+    if settings.debleed and grid is not None:
+        solos = solo_masks(grid)
+        mics = [
+            j
+            for j in jobs
+            if j.get("speech")
+            and j.get("speaker")
+            and j.get("item") is not None
+            and os.path.exists(j.get("source", ""))
+        ]
+        seen_pairs = set()
+        for job in mics:
+            mine = (solos or {}).get(job.get("speaker"))
+            if mine is None:
+                continue
+            partners = [
+                other
+                for other in mics
+                if other.get("speaker") != job.get("speaker")
+                and overlaps(job["item"], other["item"])
+            ]
+            for partner in partners:
+                theirs = (solos or {}).get(partner.get("speaker"))
+                if theirs is None:
+                    continue
+                pair_key = (job["speaker"], partner["speaker"])
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+                try:
+                    with AudioFile(ensure_readable(job["source"])) as h_target:
+                        target_rate = int(h_target.samplerate)
+                        target_frames = h_target.frames
+                        target_audio = h_target.read(target_frames)
+                    with AudioFile(ensure_readable(partner["source"])) as h_source:
+                        if int(h_source.samplerate) != target_rate:
+                            continue
+                        source_audio = h_source.read(h_source.frames)
+
+                    frames = target_audio.shape[1]
+                    solo_target = _mask_samples(
+                        job["item"], mine, program_start, target_rate, frames
+                    )
+                    source_aligned = _aligned(
+                        job["item"],
+                        partner["item"],
+                        np.asarray(source_audio).mean(axis=0),
+                        target_rate,
+                        frames,
+                    )
+                    solo_source = _mask_samples(
+                        partner["item"], theirs, program_start, target_rate, frames
+                    )
+                    _, info = db.remove(
+                        target_audio[0].astype(np.float64),
+                        source_aligned,
+                        target_rate,
+                        solo_source,
+                        solo_target,
+                    )
+                    item_info = {
+                        "target": job["speaker"],
+                        "source": partner["speaker"],
+                        "reduction_db": round(float(info.get("reduction_db", 0.0)), 2),
+                        "kept": round(float(info.get("kept", 1.0)), 4),
+                        "reason": info.get("reason", ""),
+                    }
+                    out["debleed"].append(item_info)
+                except Exception as exc:
+                    _log(
+                        f"debleed-arvio epäonnistui välillä {job['speaker']} <- {partner['speaker']}: {exc}"
+                    )
+
+    out["ready"] = True
+    return out
 
 
 def _run_one(
