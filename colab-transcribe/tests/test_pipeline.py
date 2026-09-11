@@ -294,3 +294,100 @@ def test_install_dependencies_does_not_require_libcublas11(monkeypatch):
     for cmd in apt_installs:
         assert "libcublas11" not in cmd
         assert "ffmpeg" in cmd
+
+
+def test_run_auto_silence_processes_all_tracks(tmp_path):
+    """Auto-Silence käsittelee kaikki istunnon raidat, ei vain ensimmäistä.
+
+    lxml:n puun muokkaaminen silmukan aikana rikkoi aiemmin iteraattorin,
+    jolloin vain raita 1 pilkottiin ja loput raidat jäivät koskemattomiksi.
+    """
+    from lxml import etree
+
+    from colabtranscribe.colab.pipeline import run_auto_silence
+
+    nhsx_path = tmp_path / "multi.nhsx"
+    nhsx_path.write_text(
+        """<Session>
+  <AudioPool Path="">
+    <File Id="1" Name="a.wav" Path="a.wav">
+      <Transcription><p><w s="1.0" l="1.0" sp="UU">eka</w></p></Transcription>
+    </File>
+    <File Id="2" Name="b.wav" Path="b.wav">
+      <Transcription><p><w s="2.0" l="1.0" sp="UU">toka</w></p></Transcription>
+    </File>
+    <File Id="3" Name="c.wav" Path="c.wav">
+      <Transcription><p><w s="3.0" l="1.0" sp="UU">kolmas</w></p></Transcription>
+    </File>
+  </AudioPool>
+  <Tracks>
+    <Track Name="Raita1">
+      <Region Ref="1" Start="0.000" Length="10.000" Offset="0.000"/>
+    </Track>
+    <Track Name="Raita2">
+      <Region Ref="2" Start="0.000" Length="10.000" Offset="0.000"/>
+    </Track>
+    <Track Name="Raita3">
+      <Region Ref="3" Start="0.000" Length="10.000" Offset="0.000"/>
+    </Track>
+  </Tracks>
+</Session>""",
+        encoding="utf-8",
+    )
+
+    run_auto_silence(str(nhsx_path), str(tmp_path), rms_enabled=False, threshold=-35, tail=0.5, gap=0.5)
+
+    processed_path = tmp_path / "multi_processed.nhsx"
+    assert processed_path.is_file()
+
+    tree = etree.parse(str(processed_path))
+    tracks = tree.findall(".//Track")
+    assert len(tracks) == 3
+
+    for track in tracks:
+        regions = track.findall("Region")
+        # Jokaisessa raidassa pitäisi olla vähintään 2 aluetta (ääni + vaimennettu),
+        # koska 1s puhetta 10s leikkeessä tail=0.5 jakaa leikkeen osiin.
+        assert len(regions) > 1, f"Raita {track.get('Name')} jäi leikkaamatta (vain {len(regions)} aluetta)"
+
+
+def test_auto_silence_rms_finds_audio_with_name_and_pool_path(tmp_path, monkeypatch):
+    """RMS-tarkistus löytää äänitiedoston Name-attribuutilla ja AudioPool-polusta."""
+    import sys
+    from unittest.mock import MagicMock
+
+    from lxml import etree
+
+    from colabtranscribe.colab.pipeline import get_speech_intervals_for_track
+
+    mock_pydub = MagicMock()
+    mock_audio = MagicMock()
+    mock_chunk = MagicMock()
+    mock_chunk.dBFS = -20
+    mock_audio.__getitem__.return_value = mock_chunk
+    mock_pydub.AudioSegment.from_file.return_value = mock_audio
+    monkeypatch.setitem(sys.modules, "pydub", mock_pydub)
+
+    subfolder = tmp_path / "SubFiles"
+    subfolder.mkdir()
+    audio_file = subfolder / "test_audio.wav"
+    audio_file.write_bytes(b"dummy")
+
+    tree = etree.fromstring(
+        """<Session>
+      <AudioPool Path="SubFiles">
+        <File Id="1" Name="test_audio.wav">
+          <Transcription><p><w s="1.0" l="0.5" sp="UU">hei</w></p></Transcription>
+        </File>
+      </AudioPool>
+      <Tracks>
+        <Track Name="A">
+          <Region Ref="1" Start="0.000" Length="10.000"/>
+        </Track>
+      </Tracks>
+    </Session>"""
+    )
+    track = tree.find(".//Track")
+    intervals = get_speech_intervals_for_track(tree, track, str(tmp_path), rms_enabled=True, threshold=-35)
+    assert intervals == [(1.0, 1.5)]
+    mock_pydub.AudioSegment.from_file.assert_called_once_with(str(audio_file))

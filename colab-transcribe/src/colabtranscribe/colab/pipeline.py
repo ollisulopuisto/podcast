@@ -55,7 +55,7 @@ def _local(tag):
 
 def _iter_named(root, name):
     elem = root.getroot() if hasattr(root, "getroot") else root
-    for node in elem.iter():
+    for node in list(elem.iter()):
         if _local(node.tag) == name:
             yield node
 
@@ -255,13 +255,23 @@ def get_speech_intervals_for_track(tree, track_elem, audio_folder, rms_enabled, 
                     timeline_e = timeline_s + wl
 
                     if rms_enabled:
-                        file_path = file_elem.get("Path", "")
-                        abs_path = os.path.join(audio_folder, os.path.basename(file_path))
-                        if abs_path not in loaded_audio and os.path.exists(abs_path):
+                        file_name = file_elem.get("Name") or file_elem.get("Path", "")
+                        pool_path = audio_pool.get("Path", "")
+                        candidate_paths = [
+                            os.path.join(audio_folder, pool_path, os.path.basename(file_name)),
+                            os.path.join(audio_folder, os.path.basename(file_name)),
+                        ]
+                        abs_path = None
+                        for cand in candidate_paths:
+                            if os.path.isfile(cand):
+                                abs_path = cand
+                                break
+
+                        if abs_path and abs_path not in loaded_audio:
                             print(f"      Analysoidaan audiota: {os.path.basename(abs_path)}...")
                             loaded_audio[abs_path] = AudioSegment.from_file(abs_path)
 
-                        audio = loaded_audio.get(abs_path)
+                        audio = loaded_audio.get(abs_path) if abs_path else None
                         if audio is not None:
                             chunk = audio[int(ws * 1000): int((ws + wl) * 1000)]
                             if chunk.dBFS < threshold:
@@ -309,7 +319,7 @@ def run_auto_silence(nhsx_path, audio_folder, rms_enabled, threshold, tail, gap)
     print(f"\nSuoritetaan Auto-Silence: {os.path.basename(nhsx_path)}")
     print(f"RMS-tarkistus: {rms_enabled} (Kynnys: {threshold} dB) | Häntä: {tail}s | Tauko: {gap}s")
 
-    for track in _iter_named(tree, "Track"):
+    for track in list(_iter_named(tree, "Track")):
         track_name = track.get("Name", "Nimetön")
         print(f"  Raita: {track_name}...")
         intervals = get_speech_intervals_for_track(tree, track, audio_folder, rms_enabled, threshold)
