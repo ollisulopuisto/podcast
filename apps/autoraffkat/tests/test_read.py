@@ -234,3 +234,150 @@ def test_rate_undefined_sequence_format_falls_back_to_video_asset_frame_duration
     assert tl.frame_duration == Fraction(1, 60)
 
 
+def test_sync_source_active_0_skips_muted_camera_audio(tmp_path):
+    """Sync-clip deactivates the storyline's embedded camera audio.
+
+    When the user detaches audio in FCP and removes the camera audio, a
+    ``<sync-source><audio-role-source active="0"/></sync-source>`` marks
+    the camera's embedded audio as inactive. The reader must skip it and
+    only pick up the separate mic wav.
+
+    Reproduces the pp54 bug: project → ref-clip → media → sequence →
+    spine → clip with sync-clip whose inner camera audio is deactivated.
+    """
+    xml = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<fcpxml version="1.14">
+  <resources>
+    <format id="r1" name="FFVideoFormat1080p25" frameDuration="100/2500s"
+            width="1920" height="1080"/>
+    <media id="r2" name="Clip" uid="clip01">
+      <sequence format="r1" duration="100s" tcStart="0s" tcFormat="NDF"
+                audioLayout="stereo" audioRate="48k">
+        <spine>
+          <clip offset="0s" name="CAM 2" start="0s" duration="100s">
+            <video ref="r3" offset="0s" start="0s" duration="100s"/>
+            <sync-clip lane="-1" offset="0s" name="CAM 3 - Sync"
+                       start="0s" duration="100s">
+              <clip offset="0s" name="CAM 3" start="0s" duration="100s">
+                <gap name="Gap" offset="0s" start="0s" duration="100s">
+                  <audio ref="r4" lane="-1" offset="0s" start="0s"
+                         duration="100s" role="dialogue.dialogue-1"
+                         srcCh="1, 2"/>
+                </gap>
+                <asset-clip ref="r5" lane="-1" offset="0s"
+                            name="mic guest" duration="100s"
+                            format="r6" audioRole="dialogue"/>
+              </clip>
+              <sync-source sourceID="storyline">
+                <audio-role-source role="dialogue.dialogue-1" active="0"/>
+              </sync-source>
+            </sync-clip>
+          </clip>
+        </spine>
+      </sequence>
+    </media>
+    <asset id="r3" name="CAM 2" start="0s" duration="100s"
+           hasVideo="1" format="r1" hasAudio="1"
+           videoSources="1" audioSources="1" audioChannels="2"
+           audioRate="48000"/>
+    <asset id="r4" name="CAM 3" start="0s" duration="100s"
+           hasVideo="1" format="r1" hasAudio="1"
+           videoSources="1" audioSources="1" audioChannels="2"
+           audioRate="48000"/>
+    <asset id="r5" name="mic guest" start="0s" duration="100s"
+           hasAudio="1" audioSources="1" audioChannels="1"
+           audioRate="48000"/>
+    <format id="r6" name="FFVideoFormatRateUndefined"/>
+  </resources>
+  <library>
+    <event name="Episode" uid="EVT-1">
+      <project name="Episode" uid="PRJ-1">
+        <sequence format="r1" duration="100s" tcStart="0s">
+          <spine>
+            <ref-clip ref="r2" offset="0s" name="Clip" duration="100s"/>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>"""
+    path = tmp_path / "sync_muted.fcpxml"
+    path.write_text(xml, encoding="utf-8")
+    tl = read_fcpxml(str(path))
+    names = [m.name for m in tl.media]
+    # CAM 3's embedded audio (r4) should NOT appear — it is muted.
+    assert "CAM 3" not in names, f"Muted camera audio should be skipped, got {names}"
+    # The mic wav (r5) and the video (r3) should appear.
+    assert "CAM 2" in names
+    assert "mic guest" in names
+
+
+def test_sync_source_muted_role_hierarchy(tmp_path):
+    """Muted role matches hierarchically: ``dialogue`` mutes ``dialogue.dialogue-1``."""
+    from xml.etree.ElementTree import Element
+
+    from autoraffkat.fcpxml.read import _is_muted
+
+    # Exact match
+    e = Element("audio", role="dialogue.dialogue-1")
+    assert _is_muted(e, frozenset({"dialogue.dialogue-1"}))
+
+    # Parent mutes sub-role
+    e2 = Element("audio", role="dialogue.dialogue-1")
+    assert _is_muted(e2, frozenset({"dialogue"}))
+
+    # Sub-role does NOT mute parent
+    e3 = Element("asset-clip", audioRole="dialogue")
+    assert not _is_muted(e3, frozenset({"dialogue.dialogue-1"}))
+
+    # No match
+    e4 = Element("audio", role="music.music-1")
+    assert not _is_muted(e4, frozenset({"dialogue.dialogue-1"}))
+
+    # Empty muted set
+    assert not _is_muted(e, frozenset())
+
+
+def test_sync_source_unmuted_audio_passes_through(tmp_path):
+    """Audio asset-clips NOT covered by active='0' are kept normally."""
+    xml = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<fcpxml version="1.14">
+  <resources>
+    <format id="r1" name="FFVideoFormat1080p25" frameDuration="100/2500s"
+            width="1920" height="1080"/>
+    <asset id="r2" name="CAM" start="0s" duration="50s"
+           hasVideo="1" format="r1" hasAudio="1"
+           videoSources="1" audioSources="1" audioChannels="2"
+           audioRate="48000"/>
+    <asset id="r3" name="MIC" start="0s" duration="50s"
+           hasAudio="1" audioSources="1" audioChannels="1"
+           audioRate="48000"/>
+  </resources>
+  <library>
+    <event name="E">
+      <project name="P">
+        <sequence format="r1" duration="50s" tcStart="0s">
+          <spine>
+            <sync-clip offset="0s" name="Sync" start="0s" duration="50s">
+              <clip offset="0s" name="CAM" start="0s" duration="50s">
+                <video ref="r2" offset="0s" start="0s" duration="50s"/>
+              </clip>
+              <asset-clip ref="r3" lane="-1" offset="0s" name="MIC"
+                          duration="50s" audioRole="dialogue"/>
+              <!-- No sync-source with active="0": both should appear -->
+            </sync-clip>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>"""
+    path = tmp_path / "sync_unmuted.fcpxml"
+    path.write_text(xml, encoding="utf-8")
+    tl = read_fcpxml(str(path))
+    names = [m.name for m in tl.media]
+    assert "CAM" in names
+    assert "MIC" in names
+

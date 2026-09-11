@@ -305,6 +305,49 @@ def _intersect(outer: Bounds, inner: Bounds) -> Bounds:
     return (max(outer[0], inner[0]), min(outer[1], inner[1]))
 
 
+def _muted_roles(elem) -> frozenset[str]:
+    """``<sync-clip>``in vaiennetut ääniroolit.
+
+    Final Cut merkitsee irrotetun tai sammutetun äänen
+    ``<sync-source><audio-role-source role="…" active="0"/></sync-source>``
+    -rakenteella. Palautetaan ne roolit jotka ovat nimenomaan pois päältä.
+    """
+    roles: set[str] = set()
+    for source in elem.findall("sync-source"):
+        for ars in source.findall("audio-role-source"):
+            if ars.get("active") == "0" and ars.get("role"):
+                roles.add(ars.get("role", ""))
+    return frozenset(roles)
+
+
+def _is_muted(elem, muted: frozenset[str]) -> bool:
+    """Onko lehtielementin ääni vaiennettu?
+
+    Vertaa elementin ``role``- tai ``audioRole``-attribuuttia vaiennettujen
+    joukkoon. FCPXML:n roolit ovat hierarkkisia: ``dialogue.dialogue-1`` on
+    ``dialogue``-pääroolin alirooli. Vaimennus toimii **alaspäin**:
+    ``dialogue``-roolin vaientaminen vaientaa myös ``dialogue.dialogue-1``:n,
+    mutta ``dialogue.dialogue-1``-aliroolin vaientaminen ei vainna
+    pääroolia ``dialogue`` eikä sisarusta ``dialogue.dialogue-2``.
+
+    ``<audio>``-elementeissä rooli on täydellinen (``dialogue.dialogue-1``),
+    ``<asset-clip>``in ``audioRole`` on yleensä pelkkä ``dialogue``.
+    """
+    if not muted:
+        return False
+    role = elem.get("role", "") or elem.get("audioRole", "")
+    if not role:
+        return False
+    for m in muted:
+        if m == role:
+            return True
+        # Vaiennettu isäntärooli vaientaa lapsen:
+        # m="dialogue" vaientaa role="dialogue.dialogue-1"
+        if role.startswith(m + "."):
+            return True
+    return False
+
+
 def _walk(
     elem,
     abs_offset: Fraction,
@@ -313,11 +356,16 @@ def _walk(
     depth: int = 0,
     bounds: Bounds = None,
     angle_id: str = "",
+    muted: frozenset[str] = frozenset(),
 ) -> None:
     """Kerää ``elem``:n lapsista media-esiintymät absoluuttisin aikajana-ajoin.
 
     ``bounds`` rajaa löydöt isännän kestoon. Sitä tarvitaan multicamissa ja
     yhdistetyssä klipissä, joiden sisältö on pidempi kuin käytetty pala.
+
+    ``muted`` sisältää isännän ``sync-source``ista kerätyt vaiennetut
+    ääniroolit. Niitä vastaavat ``<audio>``- ja ``<asset-clip>``-lehdet
+    ohitetaan, koska Final Cut on merkinnyt ne pois päältä.
     """
     if depth > 12:
         return
@@ -336,27 +384,34 @@ def _walk(
             # Vain aktiivinen vaihtoehto, joka on ensimmäinen lapsi.
             first = next(iter(child), None)
             if first is not None:
-                _walk(child, abs_offset, local_start, ctx, depth + 1, bounds, angle_id)
+                _walk(child, abs_offset, local_start, ctx, depth + 1, bounds, angle_id,
+                      muted)
             continue
 
         if tag == "gap":
-            _walk(child, child_abs, child_start, ctx, depth + 1, bounds, angle_id)
+            _walk(child, child_abs, child_start, ctx, depth + 1, bounds, angle_id,
+                  muted)
             continue
 
         if tag == "spine":
             # Toissijainen tarina: lasten offsetit ovat spinen omasta nollasta.
-            _walk(child, child_abs, ZERO, ctx, depth + 1, bounds, angle_id)
+            _walk(child, child_abs, ZERO, ctx, depth + 1, bounds, angle_id, muted)
             continue
 
         ref = child.get("ref", "")
         if tag in LEAF_TAGS and ref in ctx.assets:
             if child_dur <= 0:
                 child_dur = ctx.assets[ref].duration
+            # Vaiennettu ääni ohitetaan: Final Cut on merkinnyt roolin
+            # pois päältä sync-sourcessa.
+            if _is_muted(child, muted):
+                continue
             placement = _clip(child_abs, child_start, child_dur, lane, bounds)
             if placement is not None:
                 ctx.hits.append(_Hit(ref, placement, tag, angle_id))
             # Liitetyt klipit asset-clipin sisällä.
-            _walk(child, child_abs, child_start, ctx, depth + 1, bounds, angle_id)
+            _walk(child, child_abs, child_start, ctx, depth + 1, bounds, angle_id,
+                  muted)
             continue
 
         if tag == "mc-clip" and ref in ctx.medias:
@@ -382,13 +437,18 @@ def _walk(
                         depth + 1,
                         span,
                         angle_id,
+                        muted,
                     )
             ctx.seen.discard(id(media_elem))
-            _walk(child, child_abs, child_start, ctx, depth + 1, bounds, angle_id)
+            _walk(child, child_abs, child_start, ctx, depth + 1, bounds, angle_id,
+                  muted)
             continue
 
-        # clip / sync-clip ja tuntemattomat viittaukset
-        _walk(child, child_abs, child_start, ctx, depth + 1, bounds, angle_id)
+        # clip / sync-clip ja tuntemattomat viittaukset.
+        # sync-clip voi vaientaa äänirooleja: kerätään ne lapsille.
+        child_muted = muted | _muted_roles(child) if tag == "sync-clip" else muted
+        _walk(child, child_abs, child_start, ctx, depth + 1, bounds, angle_id,
+              child_muted)
 
 
 def _span(offset: Fraction, duration: Fraction) -> Bounds:
@@ -669,7 +729,9 @@ def read_fcpxml(path: str) -> Timeline:
             else seq_format.get("frame_duration")
         )
     else:
-        _walk(container, ZERO, parse_time(container.get("start"), ZERO), ctx)
+        muted = _muted_roles(container) if kind == "sync-clip" else frozenset()
+        _walk(container, ZERO, parse_time(container.get("start"), ZERO), ctx,
+              muted=muted)
         fmt = formats.get(container.get("format", ""), {})
         declared = (
             None
