@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [autoraffkat-v2026.9.11.5] - 2026-09-11
+
+### Added
+- **Proactive Audio De-bleed and Program Trim Preview** (`audio/mix.py`, `server/app.py`, `server/static/app.js`):
+  - Fast background estimation of cross-mic bleed without running the heavy VST3 restoration plug-in. Evaluates the leakage FIR filter path across solo speech segments and reports expected dB reduction and speech preservation (`kept`) directly in the audio panel.
+  - Displays instant warning if solo speech is insufficient (`< 20 s`) or if subtraction would eat own speech, before the user initiates mixing.
+  - Background calculation of overall program loudness trim (`program_trim`) across overlapping speech passages.
+  - Background pre-extraction of room track audio (`ensure_readable`) when assigned to a video container (MP4/MOV).
+  - Subprocess calls to `ffmpeg` and `ffprobe` in `mix.py` include `-nostdin` and `stdin=subprocess.DEVNULL` to prevent terminal background signal suspension (`SIGTTIN`).
+- **Automatic Background Reaction Measurement** (`server/app.py`):
+  - When reaction shots are enabled (`reactions: true`), video face measurement automatically starts in the background once seating detection completes.
+
+## [autoraffkat-v2026.9.11.4] - 2026-09-11
+
+### Added
+- **Audio Processing Progress Bar in Web UI** (`server/static/app.js`, `style.css`):
+  - Displays real-time percentage progress bar and stage tooltip (`debleed`, `plugin`, `cleanup`, `duck`, `write`, `ceiling`) with time remaining (ETA) during audio processing.
+  - Initial envelope and turn computation also displays real-time progress bar.
+
+### Changed
+- **Single-Pass Video Keyframe Extraction** (`video/measure.py`):
+  - Combined keyframe timestamp probing and image extraction into a single `ffmpeg ... -vf showinfo` pass, cutting disk I/O and processing time by ~50% for large video files.
+  - Hardened all subprocess calls with `stdin=subprocess.DEVNULL` and `-nostdin`.
+  - Upgraded `AppState.lock` to reentrant `threading.RLock` and made video measurement initiation atomic.
+
 ## [autoraffkat-v2026.9.11.2] - 2026-09-11
 
 ### Fixed
