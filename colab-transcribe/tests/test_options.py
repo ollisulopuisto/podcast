@@ -101,3 +101,25 @@ def test_session_lifecycle_options_from_env(monkeypatch):
     assert options.reset_session is True
     assert options.keep_session is True
 
+
+def test_resolved_output_dir_relative_to_input():
+    from pathlib import Path
+
+    options = RunOptions(input_dir="/foo/bar", output_dir="output")
+    assert options.resolved_output_dir() == Path("/foo/bar/output")
+
+
+def test_resolved_output_dir_absolute():
+    from pathlib import Path
+
+    options = RunOptions(input_dir="/foo/bar", output_dir="/custom/out")
+    assert options.resolved_output_dir() == Path("/custom/out")
+
+
+def test_resolved_output_dir_no_input():
+    from pathlib import Path
+
+    options = RunOptions(input_dir="", output_dir="output")
+    assert options.resolved_output_dir() == Path("output")
+
+

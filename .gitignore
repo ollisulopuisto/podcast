@@ -18,6 +18,7 @@ build/
 dist/
 wheels/
 bin/
+output/
 
 # Työkalujen välimuistit
 .pytest_cache/

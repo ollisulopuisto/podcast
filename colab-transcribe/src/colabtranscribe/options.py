@@ -10,6 +10,7 @@ sen, ilman että mikään kaatuu.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 #: GPU:t joita Colab tarjoaa. `--gpu` menee suoraan `colab new`ille.
 GPUS = ("T4", "L4", "A100")
@@ -56,6 +57,13 @@ class RunOptions:
             raise ValueError(f"tail on oltava positiivinen, ei {self.tail}")
         if self.gap <= 0:
             raise ValueError(f"gap on oltava positiivinen, ei {self.gap}")
+
+    def resolved_output_dir(self) -> Path:
+        """Palauttaa tulostehakemiston polun. Jos polku on suhteellinen, se ratkaistaan suhteessa input_diriin."""
+        out = Path(self.output_dir) if self.output_dir else Path("output")
+        if self.input_dir and not out.is_absolute():
+            return Path(self.input_dir) / out
+        return out
 
     @classmethod
     def from_env(cls) -> RunOptions:

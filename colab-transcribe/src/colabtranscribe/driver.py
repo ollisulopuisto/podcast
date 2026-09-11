@@ -95,7 +95,7 @@ def plan_commands(
                 f"tar -xf /content/drive/MyDrive/{drive_rel} -C {REMOTE_INPUT}",
             ],
             ["colab", "exec", "-s", options.session, remote_call],
-            ["colab", "download", "-s", options.session, f"{REMOTE_OUTPUT}/", options.output_dir],
+            ["colab", "download", "-s", options.session, f"{REMOTE_OUTPUT}/", str(options.resolved_output_dir())],
             [
                 "colab",
                 "exec",
@@ -135,7 +135,7 @@ def plan_commands(
 
     remote_call = " ".join(["python3", "/content/pipeline.py", *map(shlex.quote, pipeline_args(options))])
     commands.append(["colab", "exec", "-s", options.session, remote_call])
-    commands.append(["colab", "download", "-s", options.session, f"{REMOTE_OUTPUT}/", options.output_dir])
+    commands.append(["colab", "download", "-s", options.session, f"{REMOTE_OUTPUT}/", str(options.resolved_output_dir())])
     if not options.keep_session:
         commands.append(["colab", "stop", "-s", options.session])
     return commands

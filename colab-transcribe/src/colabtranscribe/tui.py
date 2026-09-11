@@ -369,8 +369,20 @@ class TranscribeApp(App):
 
             self.push_screen(DirectoryPickerModal(start_dir=initial, prompt=prompt), on_dismiss)
 
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "input" and event.value.strip():
+            out_input = self.query_one("#output", Input)
+            cur_out = out_input.value.strip()
+            if not cur_out or cur_out == "output" or cur_out.endswith("/output"):
+                out_input.value = str(Path(event.value.strip()) / "output")
+
     def _set_input_value(self, target_input_id: str, value: str) -> None:
         self.query_one(target_input_id, Input).value = value
+        if target_input_id == "#input" and value:
+            out_input = self.query_one("#output", Input)
+            cur_out = out_input.value.strip()
+            if not cur_out or cur_out == "output" or cur_out.endswith("/output"):
+                out_input.value = str(Path(value) / "output")
 
     def start_job(self) -> None:
         """Asetukset kentistä, suunnitelma komennoiksi, ajo taustalle."""

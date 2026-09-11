@@ -435,3 +435,11 @@ def test_run_deduplicates_auth_urls(monkeypatch):
     assert code == 0
     # Must only be opened ONCE across the entire run despite duplicate lines and multiple commands
     assert opened_urls == [auth_url]
+
+
+def test_plan_commands_resolves_relative_output_dir(tmp_path: Path):
+    options = RunOptions(input_dir=str(tmp_path), output_dir="output")
+    cmds = driver.plan_commands(options, [])
+    download_cmd = next(c for c in cmds if c[1] == "download")
+    assert download_cmd[-1] == str(tmp_path / "output")
+

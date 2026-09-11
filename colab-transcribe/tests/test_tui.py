@@ -115,6 +115,7 @@ def test_browse_button_updates_input_path(tmp_path: Path):
             await pilot.pause()
             await asyncio.sleep(0.05)
             assert app.query_one("#input").value == str(target_dir)
+            assert app.query_one("#output").value == str(target_dir / "output")
 
     run_scenario(scenario)
 
