@@ -1591,9 +1591,18 @@ function mixButton(info) {
   const run = document.createElement('button');
   run.className = 'ghost';
   if (busy) {
+    const p = info.progress || {};
+    const percent = Math.round((p.fraction || 0) * 100);
+    const label = `${T('audio.running')} ${percent} %`;
     run.textContent = T('audio.run');
-    setBusy(run, true, T('audio.running'));
+    setBusy(run, true, label);
+    const stageName = p.stage ? ` · ${T(`audio.stage.${p.stage}`)}` : '';
+    run.title = `${p.done}/${p.total}${p.current ? ' · ' + p.current : ''}${stageName}${p.eta ? ' · ' + T('audio.left', { time: fmtLeft(p.eta) }) : ''}`;
     wrap.append(run);
+
+    const bar = progressBar(p.fraction);
+    bar.title = run.title;
+    wrap.append(bar);
     return wrap;
   }
   if (done && !mixConfirm) {
@@ -2479,9 +2488,13 @@ function watchProgress() {
       $('status').textContent = '';
       send();
     } else {
-      $('status').textContent = T('app.envelopes', {
+      $('status').textContent = '';
+      const text = document.createElement('span');
+      text.textContent = T('app.envelopes', {
         done: state.progress.done, total: state.progress.total,
       });
+      const frac = state.progress.total > 0 ? state.progress.done / state.progress.total : 0;
+      $('status').append(text, progressBar(frac));
     }
   }, 300);
 }

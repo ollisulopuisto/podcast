@@ -22,9 +22,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -116,7 +118,8 @@ def duration(path: str) -> float:
     done = subprocess.run(
         [probe, "-v", "error", "-show_entries", "format=duration",
          "-of", "csv=p=0", path],
-        capture_output=True, text=True, timeout=TIMEOUT)
+        capture_output=True, text=True, timeout=TIMEOUT,
+        stdin=subprocess.DEVNULL)
     try:
         return float(done.stdout.strip().rstrip(","))
     except ValueError:
@@ -129,7 +132,8 @@ def keyframe_times(path: str) -> list[float]:
     done = subprocess.run(
         [probe, "-v", "error", "-skip_frame", "nokey", "-select_streams", "v",
          "-show_entries", "frame=pts_time", "-of", "csv=p=0", path],
-        capture_output=True, text=True, timeout=TIMEOUT)
+        capture_output=True, text=True, timeout=TIMEOUT,
+        stdin=subprocess.DEVNULL)
     times = []
     for token in done.stdout.split():
         # csv=p=0 jättää silti pilkun perään, ja aikaleimattomasta ruudusta
@@ -142,24 +146,73 @@ def keyframe_times(path: str) -> list[float]:
     return times
 
 
-def _extract(path: str, into: Path) -> list[Path]:
-    """Purkaa avainruudut JPEGeiksi järjestyksessä."""
+def _extract_with_times(
+    path: str,
+    into: Path,
+    span: float = 0.0,
+    progress: Callable[[float], None] | None = None,
+) -> tuple[list[Path], list[float]]:
+    """Purkaa avainruudut JPEGeiksi ja palauttaa niiden aikaleimat.
+
+    Tekee purun ja aikaleimojen poiminnan yhdellä ffmpeg-ajolla `showinfo`-
+    suodattimen avulla. Tämä puolittaa I/O- ja lukuajan, takaa että ruudut ja
+    aikaleimat täsmäävät täsmälleen 1:1, ja mahdollistaa edistymisen
+    raportoinnin jo purkuvaiheessa.
+    """
     ffmpeg = get_binary_path("ffmpeg")
-    done = subprocess.run(
-        [ffmpeg, "-v", "error", "-skip_frame", "nokey", "-i", path,
-         # `-fps_mode passthrough`, ei `-vsync 0`: uusi ffmpeg ei tunne
-         # jälkimmäistä lainkaan, ja ilman kumpaakaan avainruudut
-         # venytettäisiin takaisin täyteen ruutunopeuteen — sama kuva
-         # kymmeninä kopioina, ja aikaleimat ristiin ruutujen kanssa.
-         "-fps_mode", "passthrough", "-vf", f"scale={WIDTH}:-2", "-q:v", "4",
-         str(into / "%06d.jpg")],
-        capture_output=True, text=True, timeout=TIMEOUT)
+    cmd = [
+        ffmpeg, "-nostdin", "-v", "info",
+        "-skip_frame", "nokey", "-i", path,
+        "-fps_mode", "passthrough",
+        "-vf", f"scale={WIDTH}:-2,showinfo",
+        "-q:v", "4",
+        str(into / "%06d.jpg"),
+    ]
+    proc = subprocess.Popen(
+        cmd,
+        stderr=subprocess.PIPE,
+        text=True,
+        stdin=subprocess.DEVNULL,
+    )
+    times: list[float] = []
+    tail: list[str] = []
+    last_report = 0.0
+    for line in proc.stderr or []:
+        tail.append(line.strip())
+        if len(tail) > 10:
+            tail.pop(0)
+        m = re.search(r"pts_time:\s*([-\d\.]+)", line)
+        if m:
+            try:
+                t = float(m.group(1))
+                times.append(t)
+                if progress is not None and span > 0:
+                    frac = min(1.0, max(0.0, t / span))
+                    if frac - last_report >= 0.01:
+                        last_report = frac
+                        progress(frac)
+            except ValueError:
+                continue
+
+    proc.wait(timeout=TIMEOUT)
     frames = sorted(into.glob("*.jpg"))
-    if done.returncode != 0 or not frames:
-        tail = (done.stderr or "").strip().splitlines()
+    if proc.returncode != 0 or not frames:
+        last_line = tail[-1] if tail else ""
         raise MeasureError(
             f"{os.path.basename(path)}: purku epäonnistui"
-            + (f" — {tail[-1]}" if tail else ""))
+            + (f" — {last_line}" if last_line else ""))
+    if len(frames) != len(times):
+        raise MeasureError(
+            f"{os.path.basename(path)}: {len(frames)} ruutua mutta "
+            f"{len(times)} aikaleimaa")
+    if progress is not None:
+        progress(1.0)
+    return frames, times
+
+
+def _extract(path: str, into: Path) -> list[Path]:
+    """Purkaa avainruudut JPEGeiksi järjestyksessä."""
+    frames, _ = _extract_with_times(path, into)
     return frames
 
 
@@ -208,10 +261,11 @@ def sample_file(path: str, detector: detect.Detector,
         for index, pick in enumerate(picks):
             frame = work / f"{index:03d}.jpg"
             done = subprocess.run(
-                [ffmpeg, "-v", "error", "-ss", f"{times[pick]:.3f}",
+                [ffmpeg, "-nostdin", "-v", "error", "-ss", f"{times[pick]:.3f}",
                  "-i", path, "-frames:v", "1",
                  "-vf", f"scale={WIDTH}:-2", "-q:v", "4", str(frame)],
-                capture_output=True, text=True, timeout=TIMEOUT)
+                capture_output=True, text=True, timeout=TIMEOUT,
+                stdin=subprocess.DEVNULL)
             if done.returncode != 0 or not frame.exists():
                 continue          # yksi ruutu vähemmän ei kaada otosta
             row = detector.measure(str(frame))
@@ -234,17 +288,20 @@ def measure_file(path: str, detector: detect.Detector, progress=None) -> dict:
     löytynyt ovat mukana nollina — poistaminen siirtäisi indeksit eikä
     aikaleimoja voisi enää pariuttaa.
     """
-    times = keyframe_times(path)
-    if not times:
-        raise MeasureError(f"{os.path.basename(path)}: ei avainruutuja")
-
+    span = duration(path)
     work = Path(tempfile.mkdtemp(prefix="autoraffkat-video-"))
     try:
-        frames = _extract(path, work)
-        if len(frames) != len(times):
-            raise MeasureError(
-                f"{os.path.basename(path)}: {len(frames)} ruutua mutta "
-                f"{len(times)} aikaleimaa")
+        def on_extract_progress(frac: float) -> None:
+            if progress is not None:
+                progress(0.5 * frac)
+
+        frames, times = _extract_with_times(
+            path, work, span=span,
+            progress=on_extract_progress if progress else None,
+        )
+        if not times:
+            raise MeasureError(f"{os.path.basename(path)}: ei avainruutuja")
+
         columns = {name: np.zeros(len(frames), dtype=np.float32)
                    for name in detector.fields}
         found = np.zeros(len(frames), dtype=bool)
@@ -255,10 +312,13 @@ def measure_file(path: str, detector: detect.Detector, progress=None) -> dict:
             found[index] = True
             for name in detector.fields:
                 columns[name][index] = float(row.get(name, 0.0))
-            if progress is not None and index % 200 == 0:
-                progress(index / len(frames))
+            if progress is not None and (index % 50 == 0 or index == len(frames) - 1):
+                progress(0.5 + 0.5 * ((index + 1) / len(frames)))
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+    if progress is not None:
+        progress(1.0)
 
     return {"times": np.asarray(times, dtype=np.float32), "found": found,
             **columns}

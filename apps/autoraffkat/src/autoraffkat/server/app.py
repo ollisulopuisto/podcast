@@ -137,7 +137,7 @@ class AppState:
             "running": False,
         }
     )
-    lock: threading.Lock = field(default_factory=threading.Lock)
+    lock: threading.RLock = field(default_factory=threading.RLock)
 
     # ---------------------------------------------------------- lataus
 
@@ -293,6 +293,17 @@ class AppState:
         finally:
             self.seating_running = False
 
+    def start_measure_video(self) -> bool:
+        """Käynnistää lähikuvien mittauksen taustalle, jos se ei ole jo menossa."""
+        with self.lock:
+            if self.video_progress.get("running"):
+                return False
+            if self.timeline is None or self.analysis is None:
+                return False
+            self.video_progress.update({"running": True, "fraction": 0.0, "done": 0, "current": ""})
+        threading.Thread(target=self.measure_video, daemon=True).start()
+        return True
+
     def measure_video(self) -> None:
         """Taustasäie: mittaa lähikuvien avainruudut reaktiokuvia varten.
 
@@ -310,20 +321,22 @@ class AppState:
         try:
             roles = resolve_roles(self.timeline, self.settings.tracks)
             grid, _, _ = build_grid(self.analysis, self.settings.tracks, roles)
+            files = video_analyse.close_up_files(grid, roles, self.timeline)
+            with self.lock:
+                self.video_progress.update({"total": len(files), "done": 0,
+                                            "fraction": 0.0, "running": True})
         except (AnalysisError, ValueError) as exc:
-            self.video_errors = {"grid": str(exc)}
-            self.video_progress["running"] = False
+            with self.lock:
+                self.video_errors = {"grid": str(exc)}
+                self.video_progress["running"] = False
             return
 
-        files = video_analyse.close_up_files(grid, roles, self.timeline)
-        self.video_progress.update({"total": len(files), "done": 0,
-                                    "fraction": 0.0, "running": True})
-
         def report(fraction: float) -> None:
-            self.video_progress.update({
-                "fraction": round(float(fraction), 4),
-                "done": int(fraction * max(1, len(files))),
-            })
+            with self.lock:
+                self.video_progress.update({
+                    "fraction": round(float(fraction), 4),
+                    "done": int(fraction * max(1, len(files))),
+                })
 
         try:
             tables, errors = video_analyse.tables(
@@ -333,11 +346,13 @@ class AppState:
                 self.video_errors = errors
                 self._marks_key = None
         except Exception as exc:  # taustasäie ei saa kaatua hiljaa
-            self.video_errors = {"video": str(exc)}
+            with self.lock:
+                self.video_errors = {"video": str(exc)}
             traceback.print_exc()
         finally:
-            self.video_progress.update({"running": False, "fraction": 1.0,
-                                        "done": len(files)})
+            with self.lock:
+                self.video_progress.update({"running": False, "fraction": 1.0,
+                                            "done": len(files)})
 
     def reaction_marks(self, grid, roles, program_start):
         """Mitatut reaktiohetket taulukkona, välimuistitettuna.
@@ -503,9 +518,8 @@ class AppState:
             # Sama sääntö: kytkin käynnistää mittauksen. Nappi jää, koska
             # ajo on minuutteja ja sen saa haluta uudestaan, mutta
             # ensimmäistä kertaa ei pidä joutua pyytämään erikseen.
-            if (g.reactions and not was and not self.video_tables
-                    and not self.video_progress.get("running")):
-                threading.Thread(target=self.measure_video, daemon=True).start()
+            if g.reactions and not was and not self.video_tables:
+                self.start_measure_video()
         if "panning" in raw:
             was = g.panning
             g.panning = bool(raw["panning"])
@@ -523,9 +537,8 @@ class AppState:
             # mittauksensa. Ominaisuus joka vaatii toisen ominaisuuden
             # mittausnapin painamista ensin, on ominaisuus joka näyttää
             # rikkuneelta.
-            if g.vertical and not was and not self.video_tables \
-                    and not self.video_progress.get("running"):
-                threading.Thread(target=self.measure_video, daemon=True).start()
+            if g.vertical and not was and not self.video_tables:
+                self.start_measure_video()
         if raw.get("overlap_rule") in OVERLAP_RULES:
             g.overlap_rule = raw["overlap_rule"]
         if raw.get("long_take_rule") in LONGTAKE_RULES:
@@ -1176,10 +1189,7 @@ def create_app(state: AppState) -> FastAPI:
         # `state`:en, jolloin juuri liikutettu säädin hyppäsi takaisin
         # siihen mitä palvelimelle oli ehditty tallentaa. Mittauksella ei
         # ole mitään sanottavaa asetuksista, joten se ei niitä palauta.
-        if state.video_progress.get("running"):
-            return {"video": _video_json(state)}
-        state.video_progress.update({"running": True, "fraction": 0.0, "done": 0})
-        threading.Thread(target=state.measure_video, daemon=True).start()
+        state.start_measure_video()
         return {"video": _video_json(state)}
 
     @app.get("/api/state")

@@ -120,6 +120,29 @@ def test_a_broken_cache_file_is_recomputed(clip, monkeypatch, tmp_path):
     assert len(again["times"]) > 0
 
 
+def test_measure_file_reports_progress(clip):
+    """Mittaamisen edistyminen raportoidaan sekä purusta että kasvojenhausta."""
+    stub = Stub()
+    reports = []
+    table = measure.measure_file(str(clip), stub, progress=reports.append)
+    assert len(table["times"]) > 0
+    assert len(reports) >= 2, f"vain {reports} raportoitiin"
+    assert reports[-1] == 1.0
+    # Ainakin yksi raportti purusta (<= 0.5) ja yksi kasvoista (> 0.5)
+    assert any(r <= 0.5 for r in reports)
+    assert any(r > 0.5 for r in reports)
+
+
+def test_extract_with_times(clip, tmp_path):
+    """Purkaa ruudut ja lukee aikaleimat yhdellä ffmpeg-ajolla."""
+    frames, times = measure._extract_with_times(str(clip), tmp_path)
+    assert len(frames) == len(times)
+    assert 5 <= len(frames) <= 8
+    assert all(f.exists() for f in frames)
+    assert times[0] == 0.0
+    assert np.all(np.diff(times) > 0.5)
+
+
 class _Lane:
     def __init__(self, name, on):
         self.name, self.on = name, np.asarray(on, dtype=bool)
@@ -284,3 +307,15 @@ def test_a_measured_file_stays_measured_when_the_drive_is_gone(tmp_path, monkeyp
     media.unlink()                      # levy irti
     assert measure.is_cached(str(media), detector), "mittaus katosi levyn mukana"
     assert list(measure.table(str(media), detector)) == ["side"]
+
+
+def test_start_measure_video_is_atomic(monkeypatch):
+    """start_measure_video estää samanaikaiset mittausajot."""
+    from autoraffkat.server.app import AppState
+    state = AppState("test.fcpxml")
+    state.timeline = object()
+    state.analysis = object()
+    monkeypatch.setattr(state, "measure_video", lambda: None)
+    assert state.start_measure_video() is True
+    assert state.video_progress["running"] is True
+    assert state.start_measure_video() is False
