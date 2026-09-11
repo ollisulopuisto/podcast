@@ -746,11 +746,26 @@ def read_fcpxml(path: str) -> Timeline:
     items: dict[str, MediaItem] = {}
     order: list[str] = []
     angles_of: dict[str, list[str]] = {}
+    hits_by_ref: dict[str, list[_Hit]] = {}
+    for hit in ctx.hits:
+        hits_by_ref.setdefault(hit.ref, []).append(hit)
+
     for hit in ctx.hits:
         asset = assets[hit.ref]
         item = items.get(hit.ref)
         if item is None:
             fmt = formats.get(asset.format_id, {})
+            # Jos asset esiintyy aikajanalla vain <video>-tageina, se on
+            # pelkkää kuvaa (käyttäjä on irrottanut ja poistanut äänen).
+            # Vastaavasti pelkkä <audio> on pelkkää ääntä.
+            ref_hits = hits_by_ref[hit.ref]
+            tags = {h.tag for h in ref_hits}
+            if tags == {"video"}:
+                has_video, has_audio = True, False
+            elif tags == {"audio"}:
+                has_video, has_audio = False, True
+            else:
+                has_video, has_audio = asset.has_video, asset.has_audio
             item = MediaItem(
                 key="",
                 name=asset.name,
@@ -758,8 +773,8 @@ def read_fcpxml(path: str) -> Timeline:
                 src=asset.src,
                 asset_start=asset.start,
                 asset_duration=asset.duration,
-                has_video=asset.has_video,
-                has_audio=asset.has_audio,
+                has_video=has_video,
+                has_audio=has_audio,
                 width=fmt.get("width", 0),
                 height=fmt.get("height", 0),
                 frame_duration=fmt.get("frame_duration"),

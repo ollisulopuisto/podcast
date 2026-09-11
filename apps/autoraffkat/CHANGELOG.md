@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [autoraffkat-v2026.9.11.2] - 2026-09-11
+
+### Fixed
+- **Camera Video Assets on the Spine No Longer Carry Embedded Audio** (`fcpxml/write.py`, `fcpxml/read.py`): Final Cut Pro's `<asset-clip>` does not honor `srcEnable="video"` to suppress audio if the underlying `<asset>` specifies `hasAudio="1"`. FCP imports the embedded audio components and plays them under the picture. In flat exports, video assets on the spine that are not microphone tracks are now written as video-only assets (`_video_only`, omitting `hasAudio="1"`). In `read.py`, media items that appear on the timeline only as `<video>` elements (such as detached camera video clips) are now accurately inferred as `has_audio=False`.
+
 ## [autoraffkat-v2026.9.11.1] - 2026-09-11
 
 ### Fixed

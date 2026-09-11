@@ -479,6 +479,7 @@ def build_fcpxml(
     res_ids: dict[str, str] = {}
     fmt_ids: dict[str, str | None] = {}
     asset_lines: list[str] = []
+    mic_keys = {k for k, _ in mic_tracks}
     for key in needed:
         item = media_by_key.get(key)
         if item is None:
@@ -491,8 +492,11 @@ def build_fcpxml(
             )
         fmt_ids[key] = fmt_id
         res_ids[key] = next_id()
+        asset_item = (
+            _video_only(item) if (key not in mic_keys and item.has_video) else item
+        )
         asset_lines += _asset_lines(
-            item, res_ids[key], fmt_id, replacements.get(key, "")
+            asset_item, res_ids[key], fmt_id, replacements.get(key, "")
         )
 
     # Käsitellyn mikin raaka kaksonen: sama media, oma assettinsa, joka
@@ -541,7 +545,7 @@ def build_fcpxml(
         src_frames = to_frames(src_start, frame_duration)
         if index == 0:
             first_clip_start_frames = src_frames
-        src_enable = "video" if item.has_audio and item.has_video else None
+        src_enable = "video" if item.has_video else None
 
         attrs = [
             f'ref="{res_ids[seg.angle]}"',
@@ -643,6 +647,25 @@ def _audio_only(item: MediaItem) -> MediaItem:
         frame_duration=None,
         audio_channels=max(1, item.audio_channels),
         placements=item.placements,
+    )
+
+
+def _video_only(item: MediaItem) -> MediaItem:
+    """Kopio mediasta pelkkänä kuvana ilman ääntä.
+
+    Spinen kuvaleikkaukset eivät saa soittaa kameran upotettua ääntä.
+    Final Cutin asset-clip luo ja soittaa äänikomponentit, jos assetissa
+    on hasAudio="1", vaikka leikkauksella olisi srcEnable="video".
+    Riisumalla hasAudio kameran assetista Final Cut kohtelee sitä
+    puhtaasti kuvalähteenä, ja ainoat soivat äänet tulevat liitetyiltä
+    mikkiraidoilta.
+    """
+    return replace(
+        item,
+        has_audio=False,
+        audio_sources=0,
+        audio_channels=0,
+        audio_rate=0,
     )
 
 

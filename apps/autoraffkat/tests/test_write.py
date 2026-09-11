@@ -52,7 +52,7 @@ def test_spine_has_no_gaps(fixture_dir):
 
 
 def test_cameras_lose_their_own_audio(fixture_dir):
-    """Kameralla jolla on ääntä pitää olla srcEnable="video"."""
+    """Kameralla jolla on ääntä pitää olla srcEnable="video" eikä hasAudio-attribuuttia."""
     tl = read_fcpxml(str(fixture_dir / "sync.fcpxml"))
     by_key = {m.key: m for m in tl.media}
     by_key["WIDE.mp4"].has_audio = True
@@ -66,8 +66,11 @@ def test_cameras_lose_their_own_audio(fixture_dir):
         Fraction(10),
         "Testi",
     )
-    clip = ET.fromstring(xml).find(".//spine/asset-clip")
+    root = ET.fromstring(xml)
+    clip = root.find(".//spine/asset-clip")
     assert clip.get("srcEnable") == "video"
+    wide_asset = root.find(".//resources/asset[@name='WIDE.mp4']")
+    assert wide_asset.get("hasAudio") is None
 
 
 def test_mics_are_connected_with_roles(fixture_dir):

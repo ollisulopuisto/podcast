@@ -381,3 +381,49 @@ def test_sync_source_unmuted_audio_passes_through(tmp_path):
     assert "CAM" in names
     assert "MIC" in names
 
+
+def test_video_only_timeline_element_strips_has_audio(tmp_path):
+    """When an asset on the timeline only appears as <video>, has_audio is False.
+
+    When user detaches and deletes audio in FCP, FCP writes <video ref="...">.
+    The asset container may still declare hasAudio="1" because the MP4 has an
+    audio track, but on this timeline it is purely picture.
+    """
+    xml = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<fcpxml version="1.14">
+  <resources>
+    <format id="r1" name="FFVideoFormat1080p25" frameDuration="100/2500s"
+            width="1920" height="1080"/>
+    <asset id="r2" name="CAM" start="0s" duration="50s"
+           hasVideo="1" format="r1" hasAudio="1"
+           videoSources="1" audioSources="1" audioChannels="2"
+           audioRate="48000"/>
+    <asset id="r3" name="MIC" start="0s" duration="50s"
+           hasAudio="1" audioSources="1" audioChannels="1"
+           audioRate="48000"/>
+  </resources>
+  <library>
+    <event name="E">
+      <project name="P">
+        <sequence format="r1" duration="50s" tcStart="0s">
+          <spine>
+            <clip offset="0s" name="CAM" start="0s" duration="50s">
+              <video ref="r2" offset="0s" start="0s" duration="50s"/>
+              <asset-clip ref="r3" lane="-1" offset="0s" name="MIC"
+                          duration="50s" audioRole="dialogue"/>
+            </clip>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>"""
+    path = tmp_path / "detached.fcpxml"
+    path.write_text(xml, encoding="utf-8")
+    tl = read_fcpxml(str(path))
+    by_name = {m.name: m for m in tl.media}
+    assert by_name["CAM"].has_video is True
+    assert by_name["CAM"].has_audio is False
+    assert by_name["MIC"].has_video is False
+    assert by_name["MIC"].has_audio is True
