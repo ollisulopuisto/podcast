@@ -30,6 +30,11 @@ and this project adheres to Calendar Versioning (CalVer).
   - Hardened all subprocess calls with `stdin=subprocess.DEVNULL` and `-nostdin`.
   - Upgraded `AppState.lock` to reentrant `threading.RLock` and made video measurement initiation atomic.
 
+## [autoraffkat-v2026.9.11.3] - 2026-09-11
+
+### Fixed
+- **Video-Only Spine Cuts Written as `<video>`** (`fcpxml/write.py`): in spine cuts where the camera has no attached audio role, write cuts directly as `<video>` tags instead of `<asset-clip>` to prevent Final Cut Pro from activating embedded camera audio.
+
 ## [autoraffkat-v2026.9.11.2] - 2026-09-11
 
 ### Fixed
