@@ -137,6 +137,8 @@ class AppState:
             "running": False,
         }
     )
+    audio_preview: dict = field(default_factory=dict)
+    audio_preview_running: bool = False
     lock: threading.RLock = field(default_factory=threading.RLock)
 
     # ---------------------------------------------------------- lataus
@@ -150,6 +152,8 @@ class AppState:
         self.load_error = ""
         self.inherited_from = ""
         self.mix_result = mix.MixResult()
+        self.audio_preview = {}
+        self.audio_preview_running = False
         self.video_tables = {}
         self.video_errors = {}
         self._marks_key = None
@@ -256,6 +260,10 @@ class AppState:
         # ruudukon, siksi vasta analyysin jälkeen.
         if self.settings.globals.panning and not self.seating:
             self.start_seating()
+        elif self.settings.globals.reactions and not self.video_tables:
+            self.start_measure_video()
+        if self.settings.audio.enabled:
+            self.start_audio_preview()
 
     def start_seating(self) -> None:
         """Kevyt otos taustalle, jos sitä ei ole jo menossa."""
@@ -287,11 +295,59 @@ class AppState:
             self.seating = video_analyse.seating(
                 grid, roles, self.timeline, detector, self.video_tables
             )
-        except (AnalysisError, ValueError, KeyError, OSError) as exc:
+        except (AnalysisError, ValueError, KeyError, OSError, Exception) as exc:
             self.video_errors = dict(self.video_errors)
             self.video_errors["seating"] = str(exc)
         finally:
             self.seating_running = False
+            if self.settings.globals.reactions and not self.video_tables:
+                self.start_measure_video()
+
+    def start_audio_preview(self) -> bool:
+        """Käynnistää äänen esianalyysin taustalle, jos se ei ole jo menossa."""
+        with self.lock:
+            if self.audio_preview_running or self.timeline is None or self.analysis is None:
+                return False
+            if not self.settings.audio.enabled:
+                return False
+            self.audio_preview_running = True
+            self.audio_preview["running"] = True
+        threading.Thread(target=self.measure_audio_preview, daemon=True).start()
+        return True
+
+    def measure_audio_preview(self) -> None:
+        """Taustasäie: arvioi debleedin, ohjelmatrimmin ja purkaa tilaäänen."""
+        if self.timeline is None or self.analysis is None:
+            with self.lock:
+                self.audio_preview_running = False
+            return
+        try:
+            roles = resolve_roles(self.timeline, self.settings.tracks)
+            grid = self.analysis.grid if self.analysis else None
+            program_start = float(self.timeline.start) if self.timeline else 0.0
+            data = mix.preview_audio(
+                self.timeline,
+                roles,
+                self.settings.audio,
+                grid=grid,
+                program_start=program_start,
+            )
+            with self.lock:
+                self.audio_preview = data
+                self.audio_preview["ready"] = True
+                self.audio_preview["running"] = False
+        except Exception as exc:
+            with self.lock:
+                self.audio_preview = {
+                    "ready": True,
+                    "running": False,
+                    "error": str(exc),
+                    "debleed": [],
+                    "program_trim": 0.0,
+                }
+        finally:
+            with self.lock:
+                self.audio_preview_running = False
 
     def start_measure_video(self) -> bool:
         """Käynnistää lähikuvien mittauksen taustalle, jos se ei ole jo menossa."""
@@ -548,6 +604,12 @@ class AppState:
         if "name_tags" in raw:
             g.name_tags = bool(raw["name_tags"])
         self._apply_audio(payload.get("audio") or {})
+        if (
+            ("audio" in payload or "tracks" in payload)
+            and self.settings.audio.enabled
+            and self.analysis is not None
+        ):
+            self.start_audio_preview()
         if "project_name" in raw:
             g.project_name = str(raw["project_name"])[:120] or DEFAULT_PROJECT_NAME
 
@@ -556,6 +618,8 @@ class AppState:
         a = self.settings.audio
         if "enabled" in raw:
             a.enabled = bool(raw["enabled"])
+        if "debleed" in raw:
+            a.debleed = bool(raw["debleed"])
         if "declick" in raw:
             a.declick = bool(raw["declick"])
         if "duck" in raw:
@@ -1027,6 +1091,7 @@ def _state_json(state: AppState) -> dict:
             "gains": state.mix_result.gains,
             "errors": list(state.mix_result.errors.values()),
         },
+        "audio_preview": state.audio_preview,
         "error": state.load_error,
     }
 

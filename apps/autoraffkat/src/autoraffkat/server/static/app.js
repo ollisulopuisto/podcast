@@ -1368,11 +1368,20 @@ function renderAudio() {
   /* Ristivuodon vähennys. Ei säätimiä eikä pidä olla: suodin estimoidaan
      aineistosta ja tulos mitataan, ja kelpaamaton hylätään syyn kanssa.
      Säädin olisi tässä pelkkä tapa rikkoa se. */
+  const preview = state.audio_preview || {};
+  let debleedValue = audio.debleed ? T('audio.on') : T('audio.off');
+  if (audio.debleed && preview.debleed && preview.debleed.length) {
+    const okItems = preview.debleed.filter((d) => !d.reason && d.reduction_db > 0);
+    if (okItems.length) {
+      const avg = okItems.reduce((s, d) => s + d.reduction_db, 0) / okItems.length;
+      debleedValue = `-${avg.toFixed(1)}${T('unit.db')}`;
+    }
+  }
   host.append(settingRow({
     key: 'debleed',
     label: T('audio.debleedRow'),
     hint: T('audio.debleedRowHint'),
-    value: audio.debleed ? T('audio.on') : T('audio.off'),
+    value: debleedValue,
     toggle: {
       checked: audio.debleed,
       onChange: (on) => { audio.debleed = on; renderAudio(); schedule(0); },
@@ -1380,6 +1389,22 @@ function renderAudio() {
     body: (body) => {
       body.append(Object.assign(document.createElement('p'),
         { className: 'why', textContent: T('audio.debleedHelp') }));
+      if (audio.debleed && preview.debleed && preview.debleed.length) {
+        const previewWrap = document.createElement('div');
+        previewWrap.className = 'small';
+        preview.debleed.forEach((d) => {
+          const item = document.createElement('p');
+          if (d.reason) {
+            item.className = 'warn';
+            item.textContent = `${d.target} ← ${d.source}: ` + T(`audio.debleed_${d.reason}`);
+          } else {
+            item.className = 'muted';
+            item.textContent = `${d.target} ← ${d.source}: -${d.reduction_db.toFixed(1)} dB (${T('audio.debleedKeptSpeech')} ${(d.kept * 100).toFixed(1)} %)`;
+          }
+          previewWrap.append(item);
+        });
+        body.append(previewWrap);
+      }
     },
   }).row);
 
@@ -1484,7 +1509,16 @@ function renderAudio() {
       });
       program.append(programBox, Object.assign(document.createElement('span'),
         { textContent: T('audio.programTarget') }));
-      body.append(program, reset.button);
+      body.append(program);
+      if (audio.program_target && preview.program_trim) {
+        const trimNote = document.createElement('p');
+        trimNote.className = 'why muted small';
+        trimNote.textContent = T('audio.programTrimPreview', {
+          trim: `${preview.program_trim > 0 ? '+' : ''}${preview.program_trim.toFixed(1)}`,
+        });
+        body.append(trimNote);
+      }
+      body.append(reset.button);
     },
   }).row);
 

@@ -319,3 +319,24 @@ def test_start_measure_video_is_atomic(monkeypatch):
     assert state.start_measure_video() is True
     assert state.video_progress["running"] is True
     assert state.start_measure_video() is False
+
+
+def test_seating_chains_to_measure_video_when_reactions_enabled(monkeypatch):
+    """Istumajärjestysmittauksen jälkeen käynnistetään automaattisesti reaktiomittaus."""
+    from autoraffkat.server.app import AppState
+    state = AppState("test.fcpxml")
+    state.timeline = object()
+    state.analysis = object()
+    state.settings.globals.reactions = True
+    state.video_tables = {}
+
+    measured = []
+    monkeypatch.setattr(state, "measure_video", lambda: measured.append("video"))
+    # measure_seating simulointi: video_analyse.seating heittää poikkeuksen koska timeline on dummy,
+    # mutta finally-lohko suoritetaan silti.
+    state.seating_running = True
+    state.measure_seating()
+
+    assert state.seating_running is False
+    assert state.video_progress["running"] is True
+
