@@ -7,6 +7,7 @@ Driveen, josta Colab-virtuaalikone noutaa ne sisäverkon nopeudella
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import os
@@ -76,15 +77,19 @@ def get_drive_token() -> str:
     if not refresh_token or not client_id:
         if access_token:
             return access_token
-        raise RuntimeError("Puutteellinen Google-token (refresh_token tai client_id puuttuu).")
+        raise RuntimeError(
+            "Puutteellinen Google-token (refresh_token tai client_id puuttuu)."
+        )
 
     # Päivitetään access_token refresh_tokenilla
-    req_data = urllib.parse.urlencode({
-        "client_id": client_id,
-        "client_secret": client_secret or "",
-        "refresh_token": refresh_token,
-        "grant_type": "refresh_token",
-    }).encode("utf-8")
+    req_data = urllib.parse.urlencode(
+        {
+            "client_id": client_id,
+            "client_secret": client_secret or "",
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        }
+    ).encode("utf-8")
 
     req = urllib.request.Request(TOKEN_URL, data=req_data, method="POST")
     req.add_header("Content-Type", "application/x-www-form-urlencoded")
@@ -126,9 +131,32 @@ def create_input_archive(input_dir: Path, archive_path: Path) -> Path:
     return archive_path
 
 
+@functools.lru_cache(maxsize=32)
+def _fetch_quota_project_from_api(token: str) -> str | None:
+    try:
+        url = "https://cloudresourcemanager.googleapis.com/v1/projects"
+        req = urllib.request.Request(url)
+        req.add_header("Authorization", f"Bearer {token}")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            for p in data.get("projects", []):
+                if p.get("lifecycleState") == "ACTIVE":
+                    pid = p.get("projectId", "")
+                    if "drive" in pid:
+                        return pid
+            for p in data.get("projects", []):
+                if p.get("lifecycleState") == "ACTIVE":
+                    return p.get("projectId")
+    except Exception:
+        pass
+    return None
+
+
 def get_quota_project(token: str = "") -> str | None:
     """Etsii aktiivisen GCP-kiintiöprojektin (quota project) Google Drive API -kutsuja varten."""
-    proj = os.environ.get("COLAB_QUOTA_PROJECT") or os.environ.get("GOOGLE_CLOUD_QUOTA_PROJECT")
+    proj = os.environ.get("COLAB_QUOTA_PROJECT") or os.environ.get(
+        "GOOGLE_CLOUD_QUOTA_PROJECT"
+    )
     if proj:
         return proj
 
@@ -151,22 +179,9 @@ def get_quota_project(token: str = "") -> str | None:
             pass
 
     if token:
-        try:
-            url = "https://cloudresourcemanager.googleapis.com/v1/projects"
-            req = urllib.request.Request(url)
-            req.add_header("Authorization", f"Bearer {token}")
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                for p in data.get("projects", []):
-                    if p.get("lifecycleState") == "ACTIVE":
-                        pid = p.get("projectId", "")
-                        if "drive" in pid:
-                            return pid
-                for p in data.get("projects", []):
-                    if p.get("lifecycleState") == "ACTIVE":
-                        return p.get("projectId")
-        except Exception:
-            pass
+        api_proj = _fetch_quota_project_from_api(token)
+        if api_proj:
+            return api_proj
 
     return "g-drive-move-all-files"
 
@@ -266,7 +281,9 @@ def upload_resumable(
     with urllib.request.urlopen(init_req) as resp:
         upload_url = resp.headers.get("Location")
         if not upload_url:
-            raise RuntimeError("Google Drive ei palauttanut latausosoitetta (Location-otsaketta).")
+            raise RuntimeError(
+                "Google Drive ei palauttanut latausosoitetta (Location-otsaketta)."
+            )
 
     # 2. Lähetä data lohkoina
     with open(file_path, "rb") as f:
@@ -279,7 +296,9 @@ def upload_resumable(
             range_end = bytes_sent + chunk_len - 1
 
             chunk_req = urllib.request.Request(upload_url, data=chunk, method="PUT")
-            chunk_req.add_header("Content-Range", f"bytes {bytes_sent}-{range_end}/{total_size}")
+            chunk_req.add_header(
+                "Content-Range", f"bytes {bytes_sent}-{range_end}/{total_size}"
+            )
             chunk_req.add_header("Content-Length", str(chunk_len))
 
             try:
@@ -296,7 +315,9 @@ def upload_resumable(
                     if progress_callback:
                         progress_callback(bytes_sent, total_size)
                     continue
-                raise RuntimeError(f"Virhe Google Drive -latauksessa (HTTP {err.code}): {err.reason}") from err
+                raise RuntimeError(
+                    f"Virhe Google Drive -latauksessa (HTTP {err.code}): {err.reason}"
+                ) from err
 
     return ""
 
@@ -349,7 +370,11 @@ def prune_expired_cache(
     """Poistaa välimuistikansiosta tiedostot jotka ovat vanhempia kuin max_age_seconds (oletus 24 h)."""
     if not token:
         token = get_drive_token()
-    now_ts = current_time if current_time is not None else datetime.now(timezone.utc).timestamp()
+    now_ts = (
+        current_time
+        if current_time is not None
+        else datetime.now(timezone.utc).timestamp()
+    )
     files = list_cache_files(cache_folder_id, token=token)
     deleted: list[str] = []
     for f in files:
@@ -390,7 +415,11 @@ def sync_input_to_cache(
     # Haetaan nykyiset välimuistitiedostot
     cached_files = list_cache_files(cache_folder_id, token=token)
     cached_names = {f["name"]: f["id"] for f in cached_files if "name" in f}
-    cached_md5s = {f["md5Checksum"]: f["name"] for f in cached_files if "md5Checksum" in f and f.get("md5Checksum")}
+    cached_md5s = {
+        f["md5Checksum"]: f["name"]
+        for f in cached_files
+        if "md5Checksum" in f and f.get("md5Checksum")
+    }
 
     root = input_dir.resolve()
     manifest: dict[str, str] = {}
@@ -496,9 +525,13 @@ def upload_archive_with_cache(
         session_folder_id = ensure_folder(session, parent_id=root_folder_id, token=token)
 
         # 1. 24 h vanhentuneiden siivous
-        pruned = prune_expired_cache(cache_folder_id, max_age_seconds=24 * 3600, token=token)
+        pruned = prune_expired_cache(
+            cache_folder_id, max_age_seconds=24 * 3600, token=token
+        )
         if pruned and log:
-            log(f"  Siivottiin vanhentuneita paketteja välimuistista ({len(pruned)} kpl).")
+            log(
+                f"  Siivottiin vanhentuneita paketteja välimuistista ({len(pruned)} kpl)."
+            )
 
         # 2. Tarkistetaan löytyykö sama paketti jo välimuistista
         cached_files = list_cache_files(cache_folder_id, token=token)
@@ -512,7 +545,9 @@ def upload_archive_with_cache(
 
         if matching_cached:
             if log:
-                log(f"  Välimuistissa: paketti löytyi Google Drivesta ({archive_size_mb:.1f} MB, ohitetaan lähetys).")
+                log(
+                    f"  Välimuistissa: paketti löytyi Google Drivesta ({archive_size_mb:.1f} MB, ohitetaan lähetys)."
+                )
             return copy_drive_file(
                 matching_cached["id"],
                 target_folder_id=session_folder_id,
@@ -534,7 +569,9 @@ def upload_archive_with_cache(
                 last_logged_mb = up_mb
 
         if log:
-            log(f"Ladataan paketti Google Driveen (ColabTranscribe/cache/{cache_file_name})...")
+            log(
+                f"Ladataan paketti Google Driveen (ColabTranscribe/cache/{cache_file_name})..."
+            )
 
         cached_archive_path = Path(tmp_dir) / cache_file_name
         shutil.copyfile(archive_path, cached_archive_path)
@@ -555,5 +592,3 @@ def upload_archive_with_cache(
             new_name="input.tar",
             token=token,
         )
-
-

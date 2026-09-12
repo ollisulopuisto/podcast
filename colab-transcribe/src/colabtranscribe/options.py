@@ -50,9 +50,13 @@ class RunOptions:
         if self.gpu not in GPUS:
             raise ValueError(f"Tuntematon GPU: {self.gpu} (sallitut: {', '.join(GPUS)})")
         if self.preset not in PRESETS:
-            raise ValueError(f"Tuntematon preset: {self.preset} (sallitut: {', '.join(PRESETS)})")
+            raise ValueError(
+                f"Tuntematon preset: {self.preset} (sallitut: {', '.join(PRESETS)})"
+            )
         if self.transfer not in TRANSFERS:
-            raise ValueError(f"Tuntematon transfer: {self.transfer} (sallitut: {', '.join(TRANSFERS)})")
+            raise ValueError(
+                f"Tuntematon transfer: {self.transfer} (sallitut: {', '.join(TRANSFERS)})"
+            )
         if self.tail <= 0:
             raise ValueError(f"tail on oltava positiivinen, ei {self.tail}")
         if self.gap <= 0:
@@ -73,7 +77,9 @@ class RunOptions:
         session = os.environ.get("COLAB_SESSION", "vst-pipeline")
         gpu = os.environ.get("COLAB_GPU", "T4")
         input_dir = os.environ.get("COLAB_INPUT_DIR") or os.environ.get("COLAB_INPUT", "")
-        output_dir = os.environ.get("COLAB_OUTPUT_DIR") or os.environ.get("COLAB_OUTPUT", "output")
+        output_dir = os.environ.get("COLAB_OUTPUT_DIR") or os.environ.get(
+            "COLAB_OUTPUT", "output"
+        )
         preset = os.environ.get("COLAB_PRESET", "remote")
         transfer = os.environ.get("COLAB_TRANSFER", "drive")
         rms = os.environ.get("COLAB_RMS", "").lower() in ("1", "true", "yes")
@@ -81,8 +87,16 @@ class RunOptions:
         tail = float(os.environ.get("COLAB_TAIL", "1.0"))
         gap = float(os.environ.get("COLAB_GAP", "1.0"))
         prompt = os.environ.get("COLAB_PROMPT", DEFAULT_PROMPT)
-        reset_session = os.environ.get("COLAB_RESET_SESSION", "").lower() in ("1", "true", "yes")
-        keep_session = os.environ.get("COLAB_KEEP_SESSION", "").lower() in ("1", "true", "yes")
+        reset_session = os.environ.get("COLAB_RESET_SESSION", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        keep_session = os.environ.get("COLAB_KEEP_SESSION", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
 
         return cls(
             session=session,
@@ -108,11 +122,16 @@ def pipeline_args(options: RunOptions) -> list[str]:
     toistettava ja se mitä ajettiin on nähtävä valmiissa komennossa.
     """
     args = [
-        "--preset", options.preset,
-        "--thr", str(options.thr),
-        "--tail", str(options.tail),
-        "--gap", str(options.gap),
-        "--prompt", options.prompt,
+        "--preset",
+        options.preset,
+        "--thr",
+        str(options.thr),
+        "--tail",
+        str(options.tail),
+        "--gap",
+        str(options.gap),
+        "--prompt",
+        options.prompt,
     ]
     if options.rms:
         args.append("--rms")

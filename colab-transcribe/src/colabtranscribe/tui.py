@@ -67,7 +67,9 @@ class DirectoryPickerModal(ModalScreen[str | None]):
 
     def __init__(self, start_dir: str = "", prompt: str = "") -> None:
         super().__init__()
-        self._start_dir = start_dir if start_dir and Path(start_dir).is_dir() else str(Path.home())
+        self._start_dir = (
+            start_dir if start_dir and Path(start_dir).is_dir() else str(Path.home())
+        )
         self._prompt = prompt or "Valitse kansio"
         self._selected: str | None = None
 
@@ -80,9 +82,13 @@ class DirectoryPickerModal(ModalScreen[str | None]):
                 yield Button("Valitse", id="picker-select", variant="primary")
                 yield Button("Peruuta", id="picker-cancel")
 
-    def on_directory_tree_directory_selected(self, event: DirectoryTree.DirectorySelected) -> None:
+    def on_directory_tree_directory_selected(
+        self, event: DirectoryTree.DirectorySelected
+    ) -> None:
         self._selected = str(event.path)
-        self.query_one("#picker-selected-label", Label).update(f"Valittu: {self._selected}")
+        self.query_one("#picker-selected-label", Label).update(
+            f"Valittu: {self._selected}"
+        )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "picker-select":
@@ -137,11 +143,15 @@ class OnboardingModal(ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="onboarding-dialog"):
-            yield Label("colab-transcribe: Alkuasetukset ja vaatimukset", id="onboarding-title")
+            yield Label(
+                "colab-transcribe: Alkuasetukset ja vaatimukset", id="onboarding-title"
+            )
             with VerticalScroll(id="onboarding-scroll"):
                 yield from self._build_items()
             with Horizontal(id="onboarding-buttons"):
-                yield Button("Tarkista uudelleen", id="recheck_onboarding", variant="primary")
+                yield Button(
+                    "Tarkista uudelleen", id="recheck_onboarding", variant="primary"
+                )
                 yield Button("Sulje", id="close_onboarding")
 
     def _build_items(self) -> ComposeResult:
@@ -232,7 +242,7 @@ class TranscribeApp(App):
         if auto_onboard is not None:
             self._auto_onboard = auto_onboard
         else:
-            self._auto_onboard = (runner is None or onboarding_checker is not None)
+            self._auto_onboard = runner is None or onboarding_checker is not None
         self._is_running = False
 
     def compose(self) -> ComposeResult:
@@ -242,7 +252,9 @@ class TranscribeApp(App):
                 yield Label("Istunto")
                 with Horizontal(classes="path-row"):
                     yield Input(value=self._initial.session, id="session")
-                    yield Button("Pysäytä istunto", id="stop_session_btn", variant="error")
+                    yield Button(
+                        "Pysäytä istunto", id="stop_session_btn", variant="error"
+                    )
 
                 yield Label("Syötekansio")
                 with Horizontal(classes="path-row"):
@@ -264,7 +276,12 @@ class TranscribeApp(App):
                 yield Input(value=self._initial.prompt, id="prompt")
 
                 yield Label("GPU")
-                yield Select([(g, g) for g in GPUS], value=self._initial.gpu, id="gpu", allow_blank=False)
+                yield Select(
+                    [(g, g) for g in GPUS],
+                    value=self._initial.gpu,
+                    id="gpu",
+                    allow_blank=False,
+                )
                 yield Label("Esiasetus")
                 yield Select(
                     [(p, p) for p in PRESETS],
@@ -334,10 +351,14 @@ class TranscribeApp(App):
         elif event.button.id == "browse_output":
             self.browse_folder("#output", "Valitse tulostekansio")
         elif event.button.id == "stop_session_btn":
-            sess_name = self.query_one("#session", Input).value.strip() or self._initial.session
+            sess_name = (
+                self.query_one("#session", Input).value.strip() or self._initial.session
+            )
 
             def _stop_worker() -> None:
-                self.call_from_thread(self._write_log, f"Pysäytetään istunto '{sess_name}'...")
+                self.call_from_thread(
+                    self._write_log, f"Pysäytetään istunto '{sess_name}'..."
+                )
                 res = session.stop_session(sess_name)
                 msg = (
                     f"Istunto '{sess_name}' pysäytetty."
@@ -363,11 +384,14 @@ class TranscribeApp(App):
 
             self.run_worker(_worker, thread=True, exclusive=False)
         else:
+
             def on_dismiss(chosen: str | None) -> None:
                 if chosen:
                     self._set_input_value(target_input_id, chosen)
 
-            self.push_screen(DirectoryPickerModal(start_dir=initial, prompt=prompt), on_dismiss)
+            self.push_screen(
+                DirectoryPickerModal(start_dir=initial, prompt=prompt), on_dismiss
+            )
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "input" and event.value.strip():
@@ -435,6 +459,7 @@ class TranscribeApp(App):
             summary = "ajo valmis" if code == 0 else f"ajo pysähtyi koodiin {code}"
             self.call_from_thread(self._write_log, summary)
         finally:
+
             def _reset_btn() -> None:
                 self._is_running = False
                 try:

@@ -382,7 +382,7 @@ wheels = [
 
 [[package]]
 name = "colab-transcribe"
-version = "2026.9.2.1"
+version = "2026.9.12.1"
 source = { editable = "colab-transcribe" }
 dependencies = [
     { name = "textual" },

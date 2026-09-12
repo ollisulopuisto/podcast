@@ -73,7 +73,11 @@ def _osascript(script: str) -> str | None:
 
 def _pick_macos(directory: str = "", prompt: str = "") -> str | None:
     prompt_text = f'"{prompt}"' if prompt else '"Valitse kansio"'
-    start = f'default location POSIX file "{directory}"' if directory and os.path.exists(directory) else ""
+    start = (
+        f'default location POSIX file "{directory}"'
+        if directory and os.path.exists(directory)
+        else ""
+    )
     _ensure_foreground()
     result = _osascript(_CHOOSE_FOLDER.format(prompt=prompt_text, start=start))
     if result:
@@ -111,7 +115,9 @@ def _pick_tk(directory: str = "", prompt: str = "") -> str | None:
 
 
 def _pick_windows(directory: str = "", prompt: str = "") -> str | None:
-    escaped_dir = directory.replace("'", "''") if directory and os.path.exists(directory) else ""
+    escaped_dir = (
+        directory.replace("'", "''") if directory and os.path.exists(directory) else ""
+    )
     init_part = f"$f.SelectedPath = '{escaped_dir}';" if escaped_dir else ""
     title = prompt or "Valitse kansio"
     script = (

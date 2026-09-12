@@ -38,7 +38,11 @@ def patch_colab_cli_automation(colab_path: str | None = None) -> bool:
             return False
 
         res = subprocess.run(
-            [py_bin, "-c", "import colab_cli.commands.automation as a; print(a.__file__)"],
+            [
+                py_bin,
+                "-c",
+                "import colab_cli.commands.automation as a; print(a.__file__)",
+            ],
             capture_output=True,
             text=True,
             timeout=5,
@@ -54,15 +58,15 @@ def patch_colab_cli_automation(colab_path: str | None = None) -> bool:
             return True
 
         pattern = re.compile(
-            r'([ \t]*)try:\s*\n'
-            r'[ \t]*webbrowser\.open\(uri\)\s*\n'
+            r"([ \t]*)try:\s*\n"
+            r"[ \t]*webbrowser\.open\(uri\)\s*\n"
             r'[ \t]*typer\.echo\("[^"]*"\)\s*\n'
-            r'[ \t]*except Exception:\s*\n'
-            r'[ \t]*pass\s*\n'
+            r"[ \t]*except Exception:\s*\n"
+            r"[ \t]*pass\s*\n"
             r'[ \t]*sys\.stdout\.write\("Press Enter after you have granted access\.\.\. "\)\s*\n'
-            r'[ \t]*sys\.stdout\.flush\(\)\s*\n'
+            r"[ \t]*sys\.stdout\.flush\(\)\s*\n"
             r'[ \t]*with open\("/dev/tty"\) as tty:\s*\n'
-            r'[ \t]*tty\.readline\(\)',
+            r"[ \t]*tty\.readline\(\)",
             re.MULTILINE,
         )
 
@@ -70,42 +74,42 @@ def patch_colab_cli_automation(colab_path: str | None = None) -> bool:
             indent = m.group(1)
             return (
                 f'{indent}if not os.environ.get("COLAB_CLI_NO_BROWSER"):\n'
-                f'{indent}    try:\n'
-                f'{indent}        webbrowser.open(uri)\n'
+                f"{indent}    try:\n"
+                f"{indent}        webbrowser.open(uri)\n"
                 f'{indent}        typer.echo("[colab] Opening authorization URL automatically in your default browser...")\n'
-                f'{indent}    except Exception:\n'
-                f'{indent}        pass\n'
+                f"{indent}    except Exception:\n"
+                f"{indent}        pass\n"
                 f'{indent}typer.echo("[colab] Waiting for authorization in browser...")\n'
-                f'{indent}import time\n'
-                f'{indent}deadline = time.time() + 300\n'
-                f'{indent}poll_params = dict(params)\n'
+                f"{indent}import time\n"
+                f"{indent}deadline = time.time() + 300\n"
+                f"{indent}poll_params = dict(params)\n"
                 f'{indent}poll_params["dryrun"] = "false"\n'
-                f'{indent}while time.time() < deadline:\n'
-                f'{indent}    time.sleep(2)\n'
-                f'{indent}    try:\n'
-                f'{indent}        resp = creds.request(\n'
+                f"{indent}while time.time() < deadline:\n"
+                f"{indent}    time.sleep(2)\n"
+                f"{indent}    try:\n"
+                f"{indent}        resp = creds.request(\n"
                 f'{indent}            "POST",\n'
-                f'{indent}            url,\n'
-                f'{indent}            params=poll_params,\n'
-                f'{indent}            headers=headers,\n'
+                f"{indent}            url,\n"
+                f"{indent}            params=poll_params,\n"
+                f"{indent}            headers=headers,\n"
                 f'{indent}            files={{"file_id": (None, "empty.ipynb")}},\n'
-                f'{indent}        )\n'
+                f"{indent}        )\n"
                 f'{indent}        data = json.loads(resp.text.split("\\n", 1)[-1])\n'
                 f'{indent}        if data.get("success"):\n'
                 f'{indent}            typer.echo("[colab] Authorization granted in browser.")\n'
-                f'{indent}            break\n'
-                f'{indent}    except Exception:\n'
-                f'{indent}        pass\n'
+                f"{indent}            break\n"
+                f"{indent}    except Exception:\n"
+                f"{indent}        pass\n"
                 f'{indent}if not data.get("success"):\n'
                 f'{indent}    typer.echo("[colab] Authorizing VM...")\n'
                 f'{indent}    params["dryrun"] = "false"\n'
-                f'{indent}    resp = creds.request(\n'
+                f"{indent}    resp = creds.request(\n"
                 f'{indent}        "POST",\n'
-                f'{indent}        url,\n'
-                f'{indent}        params=params,\n'
-                f'{indent}        headers=headers,\n'
+                f"{indent}        url,\n"
+                f"{indent}        params=params,\n"
+                f"{indent}        headers=headers,\n"
                 f'{indent}        files={{"file_id": (None, "empty.ipynb")}},\n'
-                f'{indent}    )'
+                f"{indent}    )"
             )
 
         if 'with open("/dev/tty")' in content:
@@ -149,7 +153,9 @@ class OnboardingReport:
             req = " (pakollinen)" if item.required else ""
             lines.append(f"  [{icon}] {item.title}{req}: {item.current_value}")
             if not item.ok and item.instructions:
-                indented = "\n".join(f"      {line}" for line in item.instructions.splitlines())
+                indented = "\n".join(
+                    f"      {line}" for line in item.instructions.splitlines()
+                )
                 lines.append(f"{indented}")
         return "\n".join(lines)
 

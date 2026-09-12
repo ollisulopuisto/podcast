@@ -53,7 +53,9 @@ def test_credentials_ok_when_adc_file_exists(monkeypatch, tmp_path):
     fake_home = tmp_path / "home"
     gcloud_dir = fake_home / ".config" / "gcloud"
     gcloud_dir.mkdir(parents=True)
-    (gcloud_dir / "application_default_credentials.json").write_text("{}", encoding="utf-8")
+    (gcloud_dir / "application_default_credentials.json").write_text(
+        "{}", encoding="utf-8"
+    )
     monkeypatch.setattr(Path, "home", lambda: fake_home)
 
     items = check_credentials()
@@ -86,7 +88,9 @@ def test_credentials_ok_when_colab_token_exists(monkeypatch, tmp_path):
 
 
 def test_check_environment_is_ready_only_when_all_required_ok(monkeypatch, tmp_path):
-    monkeypatch.setattr("shutil.which", lambda cmd: "/bin/colab" if cmd == "colab" else None)
+    monkeypatch.setattr(
+        "shutil.which", lambda cmd: "/bin/colab" if cmd == "colab" else None
+    )
     cred_file = tmp_path / "creds.json"
     cred_file.write_text("{}", encoding="utf-8")
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(cred_file))
@@ -144,14 +148,17 @@ def test_patch_colab_cli_automation(tmp_path: Path, monkeypatch):
     fake_automation.write_text(unpatched_content, encoding="utf-8")
 
     import subprocess
+
     orig_run = subprocess.run
 
     def fake_subprocess_run(cmd, *args, **kwargs):
         if len(cmd) >= 3 and "colab_cli.commands.automation" in cmd[2]:
+
             class FakeResult:
                 returncode = 0
                 stdout = str(fake_automation)
                 stderr = ""
+
             return FakeResult()
         return orig_run(cmd, *args, **kwargs)
 

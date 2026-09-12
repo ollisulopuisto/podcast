@@ -28,9 +28,12 @@ def test_dry_run_prints_commands_and_runs_nothing(tmp_path, capsys):
     (tmp_path / "puhe.wav").write_bytes(b"")
     code = cli.main(
         [
-            "--input", str(tmp_path),
-            "--output", str(tmp_path / "out"),
-            "--preset", "intra-mic",
+            "--input",
+            str(tmp_path),
+            "--output",
+            str(tmp_path / "out"),
+            "--preset",
+            "intra-mic",
             "--dry-run",
         ]
     )
@@ -50,10 +53,14 @@ def test_dry_run_direct_transfer(tmp_path, capsys):
     (tmp_path / "puhe.wav").write_bytes(b"")
     code = cli.main(
         [
-            "--input", str(tmp_path),
-            "--output", str(tmp_path / "out"),
-            "--preset", "intra-mic",
-            "--transfer", "direct",
+            "--input",
+            str(tmp_path),
+            "--output",
+            str(tmp_path / "out"),
+            "--preset",
+            "intra-mic",
+            "--transfer",
+            "direct",
             "--dry-run",
         ]
     )
@@ -63,7 +70,6 @@ def test_dry_run_direct_transfer(tmp_path, capsys):
     assert "colab upload" in out and "puhe.wav" in out
     assert "python3 /content/pipeline.py" in out
     assert "colab stop" in out
-
 
 
 def test_real_run_streams_output_and_reports_results(tmp_path, capsys, monkeypatch):
@@ -212,8 +218,9 @@ def test_headless_run_resets_session_when_requested(tmp_path, capsys, monkeypatc
     monkeypatch.setattr(cli.session, "is_session_alive", lambda name: True)
     monkeypatch.setattr(cli.session, "stop_session", fake_stop)
 
-    code = cli.main(["--input", str(tmp_path), "--output", str(tmp_path / "out"), "--reset-session"])
+    code = cli.main(
+        ["--input", str(tmp_path), "--output", str(tmp_path / "out"), "--reset-session"]
+    )
     assert code == 0
     assert stopped == ["vst-pipeline"]
     assert any(c[:2] == ["colab", "new"] for c in calls[0])
-

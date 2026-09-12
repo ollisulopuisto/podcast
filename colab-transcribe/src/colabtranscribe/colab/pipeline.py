@@ -87,8 +87,13 @@ def _swap_suffix(path, old, new):
 def install_dependencies():
     packages = ["CTranslate2", "whisper-ctranslate2", "lxml", "pydub"]
     subprocess.run(["apt-get", "update", "-qq"], check=True, timeout=APT_TIMEOUT)
-    subprocess.run(["apt-get", "install", "-y", "-qq", "ffmpeg"], check=True, timeout=APT_TIMEOUT)
-    subprocess.run(["pip", "install", "-q", "-U", *packages], check=True, timeout=PIP_TIMEOUT)
+    subprocess.run(
+        ["apt-get", "install", "-y", "-qq", "ffmpeg"], check=True, timeout=APT_TIMEOUT
+    )
+    subprocess.run(
+        ["pip", "install", "-q", "-U", *packages], check=True, timeout=PIP_TIMEOUT
+    )
+
 
 # 2. Aikaleimojen apufunktiot
 def time_to_seconds(time_str):
@@ -107,8 +112,10 @@ def time_to_seconds(time_str):
     except Exception as e:
         raise ValueError(f"virheellinen aikaleima: {time_str}") from e
 
+
 def seconds_to_time(s):
     return f"{s:.3f}"
+
 
 def merge_intervals_with_gap(intervals, max_gap=0.0):
     if not intervals:
@@ -122,6 +129,7 @@ def merge_intervals_with_gap(intervals, max_gap=0.0):
         else:
             merged.append(list(curr))
     return [tuple(i) for i in merged]
+
 
 # 3. Litterointi Faster-Whisperillä
 def run_transcription(input_dir, output_dir, initial_prompt):
@@ -138,24 +146,39 @@ def run_transcription(input_dir, output_dir, initial_prompt):
                 if not os.path.isfile(output_path):
                     print(f"Litteroidaan tiedostoa: {full_path}")
                     cmd = [
-                        "whisper-ctranslate2", full_path,
-                        "--batched", "True",
-                        "--compute_type", "auto",
-                        "--word_timestamps", "True",
-                        "--max_line_width", "33",
-                        "--max_line_count", "2",
-                        "--vad_filter", "True",
-                        "--model", "turbo",
-                        "--language", "fi",
-                        "--initial_prompt", initial_prompt,
-                        "--output_dir", transcripts_dir,
-                        "--suppress_tokens", "",
-                        "--suppress_blank", "False",
-                        "--condition_on_previous_text", "False"
+                        "whisper-ctranslate2",
+                        full_path,
+                        "--batched",
+                        "True",
+                        "--compute_type",
+                        "auto",
+                        "--word_timestamps",
+                        "True",
+                        "--max_line_width",
+                        "33",
+                        "--max_line_count",
+                        "2",
+                        "--vad_filter",
+                        "True",
+                        "--model",
+                        "turbo",
+                        "--language",
+                        "fi",
+                        "--initial_prompt",
+                        initial_prompt,
+                        "--output_dir",
+                        transcripts_dir,
+                        "--suppress_tokens",
+                        "",
+                        "--suppress_blank",
+                        "False",
+                        "--condition_on_previous_text",
+                        "False",
                     ]
                     subprocess.run(cmd, check=True, timeout=WHISPER_TIMEOUT)
                 else:
                     print(f"Ohitetaan '{output_path}', se on jo litteroitu.")
+
 
 # 4. Injektoidaan litteroinnit .nhsx-rakenteeseen
 def inject_transcriptions_to_nhsx(input_dir, output_dir):
@@ -180,7 +203,9 @@ def inject_transcriptions_to_nhsx(input_dir, output_dir):
             json_name = _swap_audio_ext(os.path.basename(file_elem_name), ".json")
             srt_path = os.path.realpath(os.path.join(transcripts_dir, json_name))
             try:
-                inside = os.path.commonpath([transcripts_root, srt_path]) == transcripts_root
+                inside = (
+                    os.path.commonpath([transcripts_root, srt_path]) == transcripts_root
+                )
             except ValueError:
                 inside = False
             if not inside or not os.path.isfile(srt_path):
@@ -216,14 +241,19 @@ def inject_transcriptions_to_nhsx(input_dir, output_dir):
 
         out_name = _swap_suffix(filename, ".nhsx", " litteroitu.nhsx")
         out_file_path = os.path.join(output_dir, out_name)
-        etree.ElementTree(xml_elems).write(out_file_path, encoding="UTF-8", xml_declaration=True)
+        etree.ElementTree(xml_elems).write(
+            out_file_path, encoding="UTF-8", xml_declaration=True
+        )
         print(f"Litteroitu .nhsx luotu: {out_file_path}")
         generated_nhsx.append(out_file_path)
 
     return generated_nhsx
 
+
 # 5. Auto-Silence -käsittely
-def get_speech_intervals_for_track(tree, track_elem, audio_folder, rms_enabled, threshold):
+def get_speech_intervals_for_track(
+    tree, track_elem, audio_folder, rms_enabled, threshold
+):
     speech_on_timeline = []
     audio_pool = _first_named(tree, "AudioPool")
     if audio_pool is None:
@@ -232,7 +262,9 @@ def get_speech_intervals_for_track(tree, track_elem, audio_folder, rms_enabled, 
     loaded_audio = {}
     if rms_enabled:
         from pydub import AudioSegment
-    files_by_id = {fe.get("Id"): fe for fe in _iter_named(audio_pool, "File") if fe.get("Id")}
+    files_by_id = {
+        fe.get("Id"): fe for fe in _iter_named(audio_pool, "File") if fe.get("Id")
+    }
     for region in _children_named(track_elem, "Region"):
         file_elem = files_by_id.get(region.get("Ref"))
         if file_elem is None:
@@ -258,7 +290,9 @@ def get_speech_intervals_for_track(tree, track_elem, audio_folder, rms_enabled, 
                         file_name = file_elem.get("Name") or file_elem.get("Path", "")
                         pool_path = audio_pool.get("Path", "")
                         candidate_paths = [
-                            os.path.join(audio_folder, pool_path, os.path.basename(file_name)),
+                            os.path.join(
+                                audio_folder, pool_path, os.path.basename(file_name)
+                            ),
                             os.path.join(audio_folder, os.path.basename(file_name)),
                         ]
                         abs_path = None
@@ -268,18 +302,21 @@ def get_speech_intervals_for_track(tree, track_elem, audio_folder, rms_enabled, 
                                 break
 
                         if abs_path and abs_path not in loaded_audio:
-                            print(f"      Analysoidaan audiota: {os.path.basename(abs_path)}...")
+                            print(
+                                f"      Analysoidaan audiota: {os.path.basename(abs_path)}..."
+                            )
                             loaded_audio[abs_path] = AudioSegment.from_file(abs_path)
 
                         audio = loaded_audio.get(abs_path) if abs_path else None
                         if audio is not None:
-                            chunk = audio[int(ws * 1000): int((ws + wl) * 1000)]
+                            chunk = audio[int(ws * 1000) : int((ws + wl) * 1000)]
                             if chunk.dBFS < threshold:
                                 continue
 
                     speech_on_timeline.append((timeline_s, timeline_e))
 
     return sorted(speech_on_timeline)
+
 
 def process_track(track_elem, intervals, tail, gap):
     if not intervals:
@@ -295,7 +332,11 @@ def process_track(track_elem, intervals, tail, gap):
         rl = time_to_seconds(r.get("Length"))
         re = rs + rl
         ro = time_to_seconds(r.get("Offset", "0"))
-        cuts = sorted({rs, re} | {z[0] for z in audible_zones if rs < z[0] < re} | {z[1] for z in audible_zones if rs < z[1] < re})
+        cuts = sorted(
+            {rs, re}
+            | {z[0] for z in audible_zones if rs < z[0] < re}
+            | {z[1] for z in audible_zones if rs < z[1] < re}
+        )
 
         for i in range(len(cuts) - 1):
             mid = (cuts[i] + cuts[i + 1]) / 2
@@ -310,6 +351,7 @@ def process_track(track_elem, intervals, tail, gap):
                 del el.attrib["Muted"]
         parent.remove(r)
 
+
 def run_auto_silence(nhsx_path, audio_folder, rms_enabled, threshold, tail, gap):
     output_path = _swap_suffix(nhsx_path, ".nhsx", "_processed.nhsx")
     with open(nhsx_path, "r", encoding="utf-8") as f:
@@ -317,26 +359,51 @@ def run_auto_silence(nhsx_path, audio_folder, rms_enabled, threshold, tail, gap)
     _reject_doctype(raw, os.path.basename(nhsx_path))
     tree = etree.ElementTree(etree.fromstring(raw.encode("utf-8"), _SAFE_PARSER))
     print(f"\nSuoritetaan Auto-Silence: {os.path.basename(nhsx_path)}")
-    print(f"RMS-tarkistus: {rms_enabled} (Kynnys: {threshold} dB) | Häntä: {tail}s | Tauko: {gap}s")
+    print(
+        f"RMS-tarkistus: {rms_enabled} (Kynnys: {threshold} dB) | Häntä: {tail}s | Tauko: {gap}s"
+    )
 
     for track in list(_iter_named(tree, "Track")):
         track_name = track.get("Name", "Nimetön")
         print(f"  Raita: {track_name}...")
-        intervals = get_speech_intervals_for_track(tree, track, audio_folder, rms_enabled, threshold)
+        intervals = get_speech_intervals_for_track(
+            tree, track, audio_folder, rms_enabled, threshold
+        )
         print(f"    Säilytetty {len(intervals)} puhejaksoa.")
         process_track(track, intervals, tail, gap)
 
     tree.write(output_path, encoding="UTF-8", xml_declaration=True)
     print(f"Valmis käsitelty projekti: {output_path}")
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Hindenburg Litterointi ja Auto-Silence CLI")
-    parser.add_argument("--preset", choices=["remote", "intra-mic"], default="remote", help="Valmis esiasetus leikkaukselle")
-    parser.add_argument("--rms", action="store_true", help="Käytä äänenvoimakkuuden RMS-tarkistusta")
-    parser.add_argument("--thr", type=int, default=-35, help="RMS-kynnysarvo desibeleinä (oletus: -35)")
-    parser.add_argument("--tail", type=float, default=1.0, help="Häntäaika sekunteina (oletus: 1.0)")
-    parser.add_argument("--gap", type=float, default=1.0, help="Minimitauko sekunteina (oletus: 1.0)")
-    parser.add_argument("--prompt", type=str, default="öö, tota, niinku, mhm, joo, silleen, vähän, niinkun, ööh, ömm.", help="Whisper initial prompt täytesanoille")
+    parser = argparse.ArgumentParser(
+        description="Hindenburg Litterointi ja Auto-Silence CLI"
+    )
+    parser.add_argument(
+        "--preset",
+        choices=["remote", "intra-mic"],
+        default="remote",
+        help="Valmis esiasetus leikkaukselle",
+    )
+    parser.add_argument(
+        "--rms", action="store_true", help="Käytä äänenvoimakkuuden RMS-tarkistusta"
+    )
+    parser.add_argument(
+        "--thr", type=int, default=-35, help="RMS-kynnysarvo desibeleinä (oletus: -35)"
+    )
+    parser.add_argument(
+        "--tail", type=float, default=1.0, help="Häntäaika sekunteina (oletus: 1.0)"
+    )
+    parser.add_argument(
+        "--gap", type=float, default=1.0, help="Minimitauko sekunteina (oletus: 1.0)"
+    )
+    parser.add_argument(
+        "--prompt",
+        type=str,
+        default="öö, tota, niinku, mhm, joo, silleen, vähän, niinkun, ööh, ömm.",
+        help="Whisper initial prompt täytesanoille",
+    )
     args = parser.parse_args()
 
     # Esiasetusten logiikka
@@ -364,6 +431,7 @@ def main():
         run_auto_silence(nhsx_file, input_dir, rms_enabled, thr, tail, gap)
 
     print("\nKoko putki suoritettu onnistuneesti.")
+
 
 if __name__ == "__main__":
     main()

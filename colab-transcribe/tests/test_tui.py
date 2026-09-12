@@ -159,6 +159,7 @@ def test_onboarding_modal_opens_when_not_ready():
             await pilot.pause()
             # OnboardingModal on ruudulla
             from colabtranscribe.tui import OnboardingModal
+
             assert any(isinstance(s, OnboardingModal) for s in app.screen_stack)
 
     run_scenario(scenario)
@@ -169,6 +170,7 @@ def test_tui_reuses_active_session(tmp_path: Path, monkeypatch):
     fake = FakeRunner()
 
     from colabtranscribe import session
+
     monkeypatch.setattr(session, "is_session_alive", lambda name: True)
 
     async def scenario():
@@ -190,6 +192,7 @@ def test_tui_reuses_active_session(tmp_path: Path, monkeypatch):
 def test_tui_stop_session_button(monkeypatch):
     stopped = []
     from colabtranscribe import session
+
     monkeypatch.setattr(session, "stop_session", lambda name: stopped.append(name) or 0)
 
     async def scenario():
@@ -230,6 +233,7 @@ def test_tui_disables_run_button_and_prevents_duplicate_runs(tmp_path: Path):
         run_started.set()
         # Wait until allowed to finish
         import time
+
         while not finish_run.is_set():
             time.sleep(0.01)
         return 0
@@ -272,4 +276,3 @@ def test_tui_disables_run_button_and_prevents_duplicate_runs(tmp_path: Path):
             finish_run.set()
 
     run_scenario(scenario)
-

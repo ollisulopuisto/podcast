@@ -74,16 +74,17 @@ def test_plan_sequence_drive(tmp_path: Path):
     # lataus alas
     assert any(c[1] == "download" for c in commands)
     # väliaikaistiedostojen poisto Drivesta
-    assert any("rm -rf" in c[-1] and "ColabTranscribe" in c[-1] for c in commands if c[1] == "exec")
+    assert any(
+        "rm -rf" in c[-1] and "ColabTranscribe" in c[-1]
+        for c in commands
+        if c[1] == "exec"
+    )
     # lopetus
     assert heads[-1] == ["colab", "stop"]
 
 
-
 def test_pipeline_args_land_in_the_exec_call(tmp_path: Path):
-    options = RunOptions(
-        input_dir=str(tmp_path), preset="intra-mic", thr=-42, tail=0.4
-    )
+    options = RunOptions(input_dir=str(tmp_path), preset="intra-mic", thr=-42, tail=0.4)
     commands = driver.plan_commands(options, [])
     exec_cmd = next(c for c in commands if c[1] == "exec" and "pipeline.py" in c[-1])
     remote = exec_cmd[-1]
@@ -121,7 +122,10 @@ def test_list_input_files_lists_everything_relative(tmp_path: Path):
 
 
 def test_parse_generated_reads_the_script_output():
-    out = "Litteroidaan tiedostoa: /content/input/a.wav\n" "Litteroitu .nhsx luotu: /content/output/jakso litteroitu.nhsx\n"
+    out = (
+        "Litteroidaan tiedostoa: /content/input/a.wav\n"
+        "Litteroitu .nhsx luotu: /content/output/jakso litteroitu.nhsx\n"
+    )
     assert driver.parse_generated(out) == ["/content/output/jakso litteroitu.nhsx"]
 
 
@@ -160,7 +164,11 @@ def test_plan_commands_quotes_subdirectory_names_for_remote_shell(tmp_path: Path
         input_dir=str(tmp_path), output_dir=str(tmp_path / "out"), transfer="direct"
     )
     commands = driver.plan_commands(options, ["x;touch pwned/a.wav"])
-    mkdir = [c[-1] for c in commands if c[1] == "exec" and "mkdir" in c[-1] and "pwned" in c[-1]]
+    mkdir = [
+        c[-1]
+        for c in commands
+        if c[1] == "exec" and "mkdir" in c[-1] and "pwned" in c[-1]
+    ]
     assert mkdir
     tokens = shlex.split(mkdir[0])
     assert tokens[:2] == ["mkdir", "-p"]
@@ -202,11 +210,20 @@ def test_run_translates_colab_exec_to_stdin(monkeypatch):
 
     monkeypatch.setattr(subprocess, "Popen", FakeProcess)
     logs = []
-    code = driver.run([["colab", "exec", "-s", "sess", "mkdir -p /content/input"]], logs.append)
+    code = driver.run(
+        [["colab", "exec", "-s", "sess", "mkdir -p /content/input"]], logs.append
+    )
     assert code == 0
     assert len(recorded_calls) == 1
     cmd, _ = recorded_calls[0]
-    assert cmd == ["colab", "exec", "-s", "sess", "--timeout", str(driver.COMMAND_TIMEOUT)]
+    assert cmd == [
+        "colab",
+        "exec",
+        "-s",
+        "sess",
+        "--timeout",
+        str(driver.COMMAND_TIMEOUT),
+    ]
 
 
 def test_run_detects_colab_exec_traceback(monkeypatch):
@@ -226,7 +243,9 @@ def test_run_detects_colab_exec_traceback(monkeypatch):
 
     monkeypatch.setattr(subprocess, "Popen", FakeProcess)
     logs = []
-    code = driver.run([["colab", "exec", "-s", "sess", "python3 /content/pipeline.py"]], logs.append)
+    code = driver.run(
+        [["colab", "exec", "-s", "sess", "python3 /content/pipeline.py"]], logs.append
+    )
     assert code != 0
     assert any("Etäkomento epäonnistui" in line for line in logs)
 
@@ -296,7 +315,10 @@ def test_run_reports_actionable_hint_on_drive_403(monkeypatch, tmp_path: Path):
     cmd = ["drive", "upload", str(tmp_path), "ColabTranscribe/vst-pipeline/input.tar"]
     code = driver.run([cmd], logs.append)
     assert code == 1
-    assert any("Google Drive -lataus epäonnistui: HTTP Error 403: Forbidden" in line for line in logs)
+    assert any(
+        "Google Drive -lataus epäonnistui: HTTP Error 403: Forbidden" in line
+        for line in logs
+    )
     assert any("quota project" in line for line in logs)
     assert any("direct" in line for line in logs)
 
@@ -306,7 +328,11 @@ def test_plan_sequence_reuse_session_skips_colab_new(tmp_path: Path):
     commands = driver.plan_commands(options, [], reuse_session=True)
     assert not any(c[:2] == ["colab", "new"] for c in commands)
     # Varmistetaan että tyhjennyskomento on mukana
-    assert any("rm -rf" in c[-1] and "/content/input" in c[-1] for c in commands if c[1] == "exec")
+    assert any(
+        "rm -rf" in c[-1] and "/content/input" in c[-1]
+        for c in commands
+        if c[1] == "exec"
+    )
 
 
 def test_plan_sequence_keep_session_skips_colab_stop(tmp_path: Path):
@@ -321,7 +347,9 @@ def test_run_handles_keyboard_interrupt(monkeypatch):
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
     logs = []
-    code = driver.run([["colab", "new", "-s", "vst-pipeline", "--gpu", "T4"]], logs.append)
+    code = driver.run(
+        [["colab", "new", "-s", "vst-pipeline", "--gpu", "T4"]], logs.append
+    )
     assert code == 130
     assert any("Ajo keskeytetty" in line for line in logs)
 
@@ -341,7 +369,9 @@ def test_run_detects_precondition_failed_on_colab_new(monkeypatch):
 
     monkeypatch.setattr(subprocess, "Popen", FakeProcess)
     logs = []
-    code = driver.run([["colab", "new", "-s", "vst-pipeline", "--gpu", "T4"]], logs.append)
+    code = driver.run(
+        [["colab", "new", "-s", "vst-pipeline", "--gpu", "T4"]], logs.append
+    )
     assert code != 0
     assert any("Precondition Failed" in line for line in logs)
     assert any("colab stop" in line for line in logs)
@@ -442,4 +472,3 @@ def test_plan_commands_resolves_relative_output_dir(tmp_path: Path):
     cmds = driver.plan_commands(options, [])
     download_cmd = next(c for c in cmds if c[1] == "download")
     assert download_cmd[-1] == str(tmp_path / "output")
-

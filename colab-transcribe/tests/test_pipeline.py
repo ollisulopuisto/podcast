@@ -335,7 +335,9 @@ def test_run_auto_silence_processes_all_tracks(tmp_path):
         encoding="utf-8",
     )
 
-    run_auto_silence(str(nhsx_path), str(tmp_path), rms_enabled=False, threshold=-35, tail=0.5, gap=0.5)
+    run_auto_silence(
+        str(nhsx_path), str(tmp_path), rms_enabled=False, threshold=-35, tail=0.5, gap=0.5
+    )
 
     processed_path = tmp_path / "multi_processed.nhsx"
     assert processed_path.is_file()
@@ -348,7 +350,9 @@ def test_run_auto_silence_processes_all_tracks(tmp_path):
         regions = track.findall("Region")
         # Jokaisessa raidassa pitäisi olla vähintään 2 aluetta (ääni + vaimennettu),
         # koska 1s puhetta 10s leikkeessä tail=0.5 jakaa leikkeen osiin.
-        assert len(regions) > 1, f"Raita {track.get('Name')} jäi leikkaamatta (vain {len(regions)} aluetta)"
+        assert len(regions) > 1, (
+            f"Raita {track.get('Name')} jäi leikkaamatta (vain {len(regions)} aluetta)"
+        )
 
 
 def test_auto_silence_rms_finds_audio_with_name_and_pool_path(tmp_path, monkeypatch):
@@ -388,6 +392,8 @@ def test_auto_silence_rms_finds_audio_with_name_and_pool_path(tmp_path, monkeypa
     </Session>"""
     )
     track = tree.find(".//Track")
-    intervals = get_speech_intervals_for_track(tree, track, str(tmp_path), rms_enabled=True, threshold=-35)
+    intervals = get_speech_intervals_for_track(
+        tree, track, str(tmp_path), rms_enabled=True, threshold=-35
+    )
     assert intervals == [(1.0, 1.5)]
     mock_pydub.AudioSegment.from_file.assert_called_once_with(str(audio_file))

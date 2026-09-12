@@ -81,9 +81,9 @@ def test_ensure_folder_finds_existing():
 
     # Google Drive v3 list response: kansio löytyy
     list_response = io.BytesIO(
-        json.dumps({
-            "files": [{"id": "folder-123", "name": "ColabTranscribe"}]
-        }).encode("utf-8")
+        json.dumps({"files": [{"id": "folder-123", "name": "ColabTranscribe"}]}).encode(
+            "utf-8"
+        )
     )
     mock_urlopen.return_value.__enter__.return_value = list_response
 
@@ -120,7 +120,9 @@ def test_resumable_upload_file(tmp_path: Path):
     # 1. Aloitus: palauttaa Location-otsakkeen
     init_resp = MagicMock()
     init_resp.__enter__.return_value = init_resp
-    init_resp.headers = {"Location": "https://www.googleapis.com/upload/drive/v3/files?upload_id=abc"}
+    init_resp.headers = {
+        "Location": "https://www.googleapis.com/upload/drive/v3/files?upload_id=abc"
+    }
     init_resp.status = 200
 
     # 2. Ensimmäinen chunk (512 B): palauttaa 308 Resume Incomplete
@@ -286,11 +288,16 @@ def test_upload_archive_with_cache_skips_when_cached(tmp_path: Path):
     token = "test-token"
     with (
         patch("colabtranscribe.gdrive.get_drive_token", return_value=token),
-        patch("colabtranscribe.gdrive.ensure_folder", side_effect=["root-id", "cache-id", "sess-id"]),
+        patch(
+            "colabtranscribe.gdrive.ensure_folder",
+            side_effect=["root-id", "cache-id", "sess-id"],
+        ),
         patch("colabtranscribe.gdrive.prune_expired_cache") as mock_prune,
         patch("colabtranscribe.gdrive.list_cache_files") as mock_list,
         patch("colabtranscribe.gdrive.upload_resumable") as mock_upload,
-        patch("colabtranscribe.gdrive.copy_drive_file", return_value="sess-tar-id") as mock_copy,
+        patch(
+            "colabtranscribe.gdrive.copy_drive_file", return_value="sess-tar-id"
+        ) as mock_copy,
     ):
         # Simuloidaan että arkiston tiiviste löytyy jo välimuistista
         def fake_list(cache_id, token=""):
@@ -301,7 +308,9 @@ def test_upload_archive_with_cache_skips_when_cached(tmp_path: Path):
         # Pakotetaan sama hash listaan
         with patch("colabtranscribe.gdrive.compute_file_hash", return_value="DUMMY"):
             logs = []
-            file_id = gdrive.upload_archive_with_cache(in_dir, "vst-sess", log=logs.append)
+            file_id = gdrive.upload_archive_with_cache(
+                in_dir, "vst-sess", log=logs.append
+            )
             assert file_id == "sess-tar-id"
             mock_prune.assert_called_once()
             mock_copy.assert_called_once_with(
@@ -326,5 +335,60 @@ def test_drive_requests_include_quota_project_header(monkeypatch):
         assert req.get_header("X-goog-user-project") == "my-custom-quota-proj"
 
 
+def test_get_quota_project_from_adc(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("COLAB_QUOTA_PROJECT", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_QUOTA_PROJECT", raising=False)
+    adc_file = tmp_path / "adc.json"
+    adc_file.write_text(json.dumps({"quota_project_id": "adc-project"}), encoding="utf-8")
+    monkeypatch.setattr(gdrive, "ADC_PATH", adc_file)
+
+    assert gdrive.get_quota_project() == "adc-project"
 
 
+def test_get_quota_project_from_colab_token(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("COLAB_QUOTA_PROJECT", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_QUOTA_PROJECT", raising=False)
+    token_file = tmp_path / "token.json"
+    token_file.write_text(
+        json.dumps({"quota_project_id": "token-project"}), encoding="utf-8"
+    )
+    monkeypatch.setattr(gdrive, "COLAB_TOKEN_PATH", token_file)
+
+    assert gdrive.get_quota_project() == "token-project"
+
+
+def test_get_quota_project_from_cloud_resource_manager_api(monkeypatch):
+    monkeypatch.delenv("COLAB_QUOTA_PROJECT", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_QUOTA_PROJECT", raising=False)
+    gdrive._fetch_quota_project_from_api.cache_clear()
+
+    mock_resp = io.BytesIO(
+        json.dumps(
+            {
+                "projects": [
+                    {"projectId": "other-proj", "lifecycleState": "DELETE_REQUESTED"},
+                    {"projectId": "my-drive-proj-123", "lifecycleState": "ACTIVE"},
+                ]
+            }
+        ).encode("utf-8")
+    )
+    mock_urlopen = MagicMock()
+    mock_urlopen.return_value.__enter__.return_value = mock_resp
+
+    with patch("urllib.request.urlopen", mock_urlopen):
+        assert gdrive.get_quota_project(token="test-tok") == "my-drive-proj-123"
+        assert mock_urlopen.call_count == 1
+
+        # Toinen kutsu hyödyntää välimuistia (lru_cache) eikä tee uutta HTTP-pyyntöä
+        assert gdrive.get_quota_project(token="test-tok") == "my-drive-proj-123"
+        assert mock_urlopen.call_count == 1
+
+
+def test_get_quota_project_fallback(monkeypatch):
+    monkeypatch.delenv("COLAB_QUOTA_PROJECT", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_QUOTA_PROJECT", raising=False)
+    gdrive._fetch_quota_project_from_api.cache_clear()
+
+    mock_urlopen = MagicMock(side_effect=Exception("Network error"))
+    with patch("urllib.request.urlopen", mock_urlopen):
+        assert gdrive.get_quota_project(token="bad-tok") == "g-drive-move-all-files"

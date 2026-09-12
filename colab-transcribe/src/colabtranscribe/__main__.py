@@ -22,11 +22,19 @@ def build_parser() -> argparse.ArgumentParser:
         prog="colab-transcribe",
         description="Litterointi ja Auto-Silence Colabin näytönohjaimella.",
     )
-    parser.add_argument("--input", help="syötekansio (.nhsx + äänet). Ilman tätä avataan TUI.")
-    parser.add_argument("--output", default="output", help="tulostekansio (oletus: output)")
+    parser.add_argument(
+        "--input", help="syötekansio (.nhsx + äänet). Ilman tätä avataan TUI."
+    )
+    parser.add_argument(
+        "--output", default="output", help="tulostekansio (oletus: output)"
+    )
     parser.add_argument("--session", default="vst-pipeline", help="Colab-istunnon nimi")
-    parser.add_argument("--gpu", choices=GPUS, default="T4", help="Colabin GPU (oletus: T4)")
-    parser.add_argument("--preset", choices=PRESETS, default="remote", help="leikkauksen esiasetus")
+    parser.add_argument(
+        "--gpu", choices=GPUS, default="T4", help="Colabin GPU (oletus: T4)"
+    )
+    parser.add_argument(
+        "--preset", choices=PRESETS, default="remote", help="leikkauksen esiasetus"
+    )
     parser.add_argument(
         "--transfer",
         choices=TRANSFERS,
@@ -58,18 +66,30 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="näytä Colab-istunnon tila",
     )
-    parser.add_argument("--rms", action="store_true", help="RMS-tarkistus Auto-Silencelle")
-    parser.add_argument("--thr", type=int, default=-35, help="RMS-kynnys desibeleinä (oletus: -35)")
-    parser.add_argument("--tail", type=float, default=1.0, help="häntä sekunteina (oletus: 1.0)")
-    parser.add_argument("--gap", type=float, default=1.0, help="minimitauko sekunteina (oletus: 1.0)")
-    parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="Whisperin täytesanat")
-    parser.add_argument("--tui", action="store_true", help="avaa TUI myös valitsimien kanssa")
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--rms", action="store_true", help="RMS-tarkistus Auto-Silencelle"
+    )
+    parser.add_argument(
+        "--thr", type=int, default=-35, help="RMS-kynnys desibeleinä (oletus: -35)"
+    )
+    parser.add_argument(
+        "--tail", type=float, default=1.0, help="häntä sekunteina (oletus: 1.0)"
+    )
+    parser.add_argument(
+        "--gap", type=float, default=1.0, help="minimitauko sekunteina (oletus: 1.0)"
+    )
+    parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="Whisperin täytesanat")
+    parser.add_argument(
+        "--tui", action="store_true", help="avaa TUI myös valitsimien kanssa"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
         help="tulosta ajettavat komennot äläkä aja mitään",
     )
     parser.add_argument(
-        "--check", action="store_true",
+        "--check",
+        action="store_true",
         help="tarkista apuohjelmat ja ympäristömuuttujat",
     )
     parser.add_argument("--version", action="version", version=__version__)
@@ -78,8 +98,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def options_from_args(args: argparse.Namespace) -> RunOptions:
     env_opts = RunOptions.from_env()
-    transfer = "direct" if args.no_drive else (
-        args.transfer if args.transfer is not None else env_opts.transfer
+    transfer = (
+        "direct"
+        if args.no_drive
+        else (args.transfer if args.transfer is not None else env_opts.transfer)
     )
     return RunOptions(
         session=args.session if args.session != "vst-pipeline" else env_opts.session,
@@ -162,7 +184,9 @@ def main(argv: list[str] | None = None) -> int:
         if alive and info:
             hw = info.get("accelerator") or "CPU"
             var = info.get("variant") or ""
-            print(f"Istunto '{args.session}': aktiivinen (Hardware: {hw}, Variant: {var})")
+            print(
+                f"Istunto '{args.session}': aktiivinen (Hardware: {hw}, Variant: {var})"
+            )
         elif alive:
             print(f"Istunto '{args.session}': aktiivinen")
         else:

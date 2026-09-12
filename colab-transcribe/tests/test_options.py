@@ -121,5 +121,3 @@ def test_resolved_output_dir_no_input():
 
     options = RunOptions(input_dir="", output_dir="output")
     assert options.resolved_output_dir() == Path("output")
-
-

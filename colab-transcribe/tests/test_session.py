@@ -35,11 +35,13 @@ def test_load_sessions_returns_dict(tmp_path: Path, monkeypatch):
 def test_is_session_alive_checks_process(tmp_path: Path, monkeypatch):
     cfg = tmp_path / "sessions.json"
     cfg.write_text(
-        json.dumps({
-            "alive-sess": {"name": "alive-sess", "keep_alive_pid": 99999},
-            "dead-sess": {"name": "dead-sess", "keep_alive_pid": 88888},
-            "no-pid-sess": {"name": "no-pid-sess"},
-        }),
+        json.dumps(
+            {
+                "alive-sess": {"name": "alive-sess", "keep_alive_pid": 99999},
+                "dead-sess": {"name": "dead-sess", "keep_alive_pid": 88888},
+                "no-pid-sess": {"name": "no-pid-sess"},
+            }
+        ),
         encoding="utf-8",
     )
     monkeypatch.setattr(session, "get_sessions_config_path", lambda: cfg)
@@ -58,6 +60,7 @@ def test_is_session_alive_checks_process(tmp_path: Path, monkeypatch):
 
 def test_stop_session_runs_colab_stop(monkeypatch):
     import subprocess
+
     calls = []
 
     def fake_run(cmd, check=True):

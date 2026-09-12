@@ -14,7 +14,9 @@ from colabtranscribe import picker
 
 def test_has_native_picker_on_darwin(monkeypatch):
     monkeypatch.setattr("sys.platform", "darwin")
-    monkeypatch.setattr("shutil.which", lambda cmd: "/usr/bin/osascript" if cmd == "osascript" else None)
+    monkeypatch.setattr(
+        "shutil.which", lambda cmd: "/usr/bin/osascript" if cmd == "osascript" else None
+    )
     assert picker.has_native_picker() is True
 
 
@@ -33,6 +35,7 @@ def test_pick_folder_macos_success(monkeypatch, tmp_path):
             returncode = 0
             stdout = f"{tmp_path}\n"
             stderr = ""
+
         return Result()
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -49,6 +52,7 @@ def test_pick_folder_macos_user_cancel(monkeypatch):
             returncode = 0
             stdout = ""  # -128 error catches and returns empty string
             stderr = ""
+
         return Result()
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -66,6 +70,7 @@ def test_pick_folder_resolves_symlinks_or_spaces(monkeypatch, tmp_path):
             returncode = 0
             stdout = f"{target}/\n"
             stderr = ""
+
         return Result()
 
     monkeypatch.setattr(subprocess, "run", fake_run)
