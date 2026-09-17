@@ -1,3 +1,13 @@
 .venv/
 __pycache__/
 *.wav
+*.srt
+*.ssa
+
+# Varmuuskopio- ja väliaikaistiedostot
+*~
+*.bak
+*.backup
+*.swp
+*.swo
+*.tmp

@@ -1,9 +1,10 @@
 # Working in this repo
 
-Four apps. Three of them share one pipeline; the fourth drives the same job
+Five apps. Three of them share one pipeline; the fourth drives the same job
 on a Colab GPU, where the workspace cannot be imported — so its script is a
 snapshot that does not follow changes to `packages/speechmix` automatically,
-and `colab-transcribe/CLAUDE.md` is the place that risk is written down.
+and `colab-transcribe/CLAUDE.md` is the place that risk is written down; the
+fifth (`fcp-subs-whisper`) generates Final Cut Pro subtitles using Whisper.
 `README.md` says what each one is; this file says how work is done in all of
 them, and it is the only place that says it. `CONTRIBUTING.md` covers the
 commands and the migration story.

@@ -66,7 +66,7 @@ def root() -> dict:
     return toml(ROOT / "pyproject.toml")
 
 
-def test_the_members_are_the_six_we_think_they_are():
+def test_the_members_are_the_seven_we_think_they_are():
     """Sattumalta tyhjä luettelo tekisi jokaisesta alla olevasta testin joka ei testaa mitään.
 
     colab-transcribe on jäsen vaikka ei ole `apps/`issa — se on juuressa
@@ -74,15 +74,18 @@ def test_the_members_are_the_six_we_think_they_are():
     juuren `[tool.uv.workspace]`iin.
 
     nhsx on uusi jaettu paketti Hindenburg-parserille, se on `packages/`issa.
+    fcp-subs-whisper on FCP-tekstityssovellus `apps/`issa.
     """
     assert [name(m) for m in MEMBERS] == [
         "automixer",
         "autoraffkat",
         "colab-transcribe",
+        "fcp-subs-whisper",
         "nhsx",
         "podcast-magic",
         "speechmix",
     ]
+
 
 
 # --------------------------------------------------------------------------

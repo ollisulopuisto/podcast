@@ -11,11 +11,13 @@ Whether you need to automatically cut multicam video to the speaker, transcribe 
 | If you want to... | Use | Interface | What it works with |
 |---|---|---|---|
 | **Cut multicam video** automatically to whoever is talking | [autoraffkat](#autoraffkat) | **Web GUI / Desktop GUI** | Final Cut Pro (`.fcpxml` / `.fcpxmld`) |
+| **Generate subtitles & captions** using Whisper | [fcp-subs-whisper](#fcp-subs-whisper) | **CLI** | Video / Audio → Final Cut Pro (`.srt` / `.ssa`) |
 | **Transcribe & silence bleed** locally on your Mac | [podcast-magic](#podcast-magic) | **Web GUI / Desktop GUI** | Hindenburg (`.nhsx`) |
 | **Mix & master** multi-track speech and music to -16 LUFS | [automixer](#automixer) | **Interactive TUI / CLI** | WAV / AIFF audio files |
 | **Transcribe & silence bleed** using a cloud GPU | [colab-transcribe](#colab-transcribe) | **Interactive TUI / CLI** | Hindenburg (`.nhsx`) + Google Colab |
 | **Render or inspect** a session without Hindenburg | [nhsx-render](#nhsx-render) | **CLI (headless)** | Hindenburg (`.nhsx`) → WAV |
 | **Quick Look preview** sessions in macOS Finder | [NHSX Viewer](#nhsx-viewer--quick-look) | **macOS GUI / Quick Look** | Hindenburg (`.nhsx`) |
+
 
 ---
 
@@ -53,6 +55,25 @@ Then run whichever tool you need with `uv run <tool>`.
   ```
 
 📖 Details: [apps/autoraffkat/README.md](apps/autoraffkat/README.md) · [Suomeksi](apps/autoraffkat/README.fi.md)
+
+---
+
+### fcp-subs-whisper
+
+> **High-performance subtitle and caption generator for Final Cut Pro.**  
+> *Interface: CLI.*
+
+* **The Problem:** Manually writing or timing subtitles in Final Cut Pro is tedious, and cloud transcription workflows require exporting and uploading sensitive video or audio.
+* **The Solution:** Transcribes video or audio locally using OpenAI's Whisper model (accelerated via Apple Silicon MLX or CPU via faster-whisper) or connects to a Wyoming Whisper server. Generates `.srt` and `.ssa` caption files ready to import directly into Final Cut Pro. Optional speaker diarization labels each speaker.
+* **How to run:**
+  ```bash
+  uv run fcp-subs-whisper "video.mp4" --method mlx        # native Apple Silicon (recommended)
+  uv run fcp-subs-whisper "video.mp4" --method faster     # CPU-optimized
+  uv run fcp-subs-whisper "video.mp4" --diarize           # with speaker diarization
+  ```
+* **Import to FCP:** In Final Cut Pro, choose `File > Import > Captions...` and select the generated `.srt` file.
+
+📖 Details: [apps/fcp-subs-whisper/README.md](apps/fcp-subs-whisper/README.md)
 
 ---
 

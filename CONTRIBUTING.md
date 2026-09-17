@@ -22,6 +22,7 @@ uv run pytest tests -q                              # j√§senet ovat samaa mielt√
 uv run --directory packages/speechmix pytest -q
 uv run --directory apps/autoraffkat   pytest -q
 uv run --directory apps/automixer     pytest -q
+uv run --directory apps/fcp-subs-whisper pytest -q
 uv run --directory apps/podcast-magic pytest -q
 uv run --directory colab-transcribe   pytest -q
 ```

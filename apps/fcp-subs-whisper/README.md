@@ -28,15 +28,16 @@ Clone the repository and you are ready to go. `uv` will handle the Python enviro
 This uses the MLX framework to leverage your Mac's hardware and provides precise timestamps for subtitles.
 
 ```bash
-uv run python main.py "video.mp4" --method mlx
+uv run fcp-subs-whisper "video.mp4" --method mlx
 ```
 
 ### CPU Optimized
 Uses `faster-whisper` for efficient CPU transcription.
 
 ```bash
-uv run python main.py "video.mp4" --method faster
+uv run fcp-subs-whisper "video.mp4" --method faster
 ```
+
 
 ### Import to Final Cut Pro
 
