@@ -42,7 +42,7 @@ Presets are the Colab script's: `remote` (tail 1.0 s, gap 1.0 s) and
 
 ## Requirements
 
-* The `colab` command-line tool (`uv tool install google-colab-cli`), and a Colab account with GPU access.
+* The `colab` command-line tool (`uv tool install --reinstall git+https://github.com/googlecolab/google-colab-cli`), and a Colab account with GPU access. Installing the PyPI release can resolve an incompatible `jupyter-kernel-client` package; the source install carries Colab's compatible dependency pin.
 * Google Cloud ADC credentials (`gcloud auth application-default login`) or `GOOGLE_APPLICATION_CREDENTIALS`.
 * `colab-transcribe` onboards you automatically in the TUI or via `--check` if any tool or credential is missing.
 * That is all locally: the heavy work runs in the cloud, and the pipeline

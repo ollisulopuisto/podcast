@@ -44,7 +44,7 @@ esiasetuksen lukua.
 
 ## Vaatimukset
 
-* `colab`-komentorivityökalu (`uv tool install google-colab-cli`) ja Colab-tili jolla on GPU-käyttö.
+* `colab`-komentorivityökalu (`uv tool install --reinstall git+https://github.com/googlecolab/google-colab-cli`) ja Colab-tili jolla on GPU-käyttö. PyPI-julkaisu voi ratkaista yhteensopimattoman `jupyter-kernel-client`-paketin; lähdeasennus tuo Colabin yhteensopivan riippuvuuslukituksen mukanaan.
 * Google Cloud ADC -tunnistetiedot (`gcloud auth application-default login`) tai `GOOGLE_APPLICATION_CREDENTIALS`.
 * `colab-transcribe` opastaa käyttäjää (onboarding) automaattisesti TUI:ssa tai `--check`-valitsimella, jos työkaluja tai tunnisteita puuttuu.
 * Paikallisesti ei muuta: raskas työ ajaa pilvessä, ja ajettava skripti

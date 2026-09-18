@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from colabtranscribe.onboarding import (
+    COLAB_CLI_INSTALL,
     check_credentials,
     check_environment,
     check_helper_apps,
@@ -22,17 +23,35 @@ def test_missing_colab_is_reported_with_install_instructions(monkeypatch):
     items = check_helper_apps()
     colab_item = next(i for i in items if i.key == "colab")
     assert not colab_item.ok
-    assert "uv tool install google-colab-cli" in colab_item.instructions
+    assert COLAB_CLI_INSTALL in colab_item.instructions
 
 
 def test_found_colab_is_reported_as_ok(monkeypatch):
     monkeypatch.setattr(
         "shutil.which", lambda cmd: "/opt/homebrew/bin/colab" if cmd == "colab" else None
     )
+    monkeypatch.setattr(
+        "colabtranscribe.onboarding.colab_cli_has_kernel_client", lambda _: True
+    )
     items = check_helper_apps()
     colab_item = next(i for i in items if i.key == "colab")
     assert colab_item.ok
     assert colab_item.current_value == "/opt/homebrew/bin/colab"
+
+
+def test_incompatible_colab_kernel_client_has_repair_instructions(monkeypatch):
+    monkeypatch.setattr(
+        "shutil.which", lambda cmd: "/opt/homebrew/bin/colab" if cmd == "colab" else None
+    )
+    monkeypatch.setattr(
+        "colabtranscribe.onboarding.colab_cli_has_kernel_client", lambda _: False
+    )
+
+    colab_item = next(i for i in check_helper_apps() if i.key == "colab")
+
+    assert not colab_item.ok
+    assert "KernelClient" in colab_item.current_value
+    assert COLAB_CLI_INSTALL in colab_item.instructions
 
 
 def test_missing_credentials_reported_with_login_instructions(monkeypatch, tmp_path):
@@ -90,6 +109,9 @@ def test_credentials_ok_when_colab_token_exists(monkeypatch, tmp_path):
 def test_check_environment_is_ready_only_when_all_required_ok(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "shutil.which", lambda cmd: "/bin/colab" if cmd == "colab" else None
+    )
+    monkeypatch.setattr(
+        "colabtranscribe.onboarding.colab_cli_has_kernel_client", lambda _: True
     )
     cred_file = tmp_path / "creds.json"
     cred_file.write_text("{}", encoding="utf-8")

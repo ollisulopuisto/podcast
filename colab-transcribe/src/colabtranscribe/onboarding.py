@@ -122,6 +122,44 @@ def patch_colab_cli_automation(colab_path: str | None = None) -> bool:
         return False
 
 
+def colab_cli_has_kernel_client(colab_path: str) -> bool:
+    """Tarkistaa Colab CLI:n tarvitsemän jupyter-kernel-client-rajapinnan.
+
+    PyPI:n ``jupyter-kernel-client`` 1.x ei ole sama paketti kuin Colab CLI:n
+    käyttämä Google-fork, vaikka jakelun nimi on sama.  Julkisen PyPI-version
+    asentuminen tekee ``drivemount``-komennosta käyttökelvottoman vasta
+    yhteyttä avattaessa, joten tarkistus tehdään jo onboardingissa.
+    """
+    try:
+        colab_file = Path(colab_path)
+        shebang = colab_file.read_text(encoding="utf-8", errors="ignore").splitlines()[0]
+        if not shebang.startswith("#!"):
+            return False
+        py_bin = shebang[2:].strip()
+        if not Path(py_bin).is_file():
+            return False
+        res = subprocess.run(
+            [
+                py_bin,
+                "-c",
+                "import jupyter_kernel_client as j; "
+                "raise SystemExit(not hasattr(j, 'KernelClient'))",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return res.returncode == 0
+    except (IndexError, OSError, subprocess.SubprocessError):
+        return False
+
+
+COLAB_CLI_INSTALL = (
+    "uv tool install --reinstall "
+    "git+https://github.com/googlecolab/google-colab-cli"
+)
+
+
 @dataclass(frozen=True)
 class OnboardingItem:
     """Yhden vaatimuksen tila ja korjausohje."""
@@ -167,6 +205,24 @@ def check_helper_apps() -> list[OnboardingItem]:
     colab_path = shutil.which("colab")
     if colab_path:
         patch_colab_cli_automation(colab_path)
+        if not colab_cli_has_kernel_client(colab_path):
+            items.append(
+                OnboardingItem(
+                    key="colab",
+                    title="Google Colab CLI (colab)",
+                    ok=False,
+                    current_value=(
+                        f"{colab_path} (jupyter-kernel-client ei tarjoa KernelClient-rajapintaa)"
+                    ),
+                    instructions=(
+                        "Asenna Colab CLI sen lähteestä, jotta Google-forkin "
+                        "jupyter-kernel-client tulee mukana:\n"
+                        f"  {COLAB_CLI_INSTALL}"
+                    ),
+                    required=True,
+                )
+            )
+            return items
         items.append(
             OnboardingItem(
                 key="colab",
@@ -180,8 +236,7 @@ def check_helper_apps() -> list[OnboardingItem]:
     else:
         instructions = (
             "Asenna Google Colab CLI komennolla:\n"
-            "  uv tool install google-colab-cli\n"
-            "(tai vaihtoehtoisesti: pip install google-colab-cli)\n"
+            f"  {COLAB_CLI_INSTALL}\n"
             "Varmista myös, että asennushakemisto (~/.local/bin) on PATH-muuttujassasi."
         )
         items.append(
