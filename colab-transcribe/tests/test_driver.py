@@ -377,6 +377,60 @@ def test_run_detects_precondition_failed_on_colab_new(monkeypatch):
     assert any("colab stop" in line for line in logs)
 
 
+def test_run_retries_on_connection_lost_and_succeeds(monkeypatch):
+    import io
+
+    attempts = 0
+
+    class FlakyProcess:
+        def __init__(self, cmd, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            self.stdin = io.StringIO()
+            if attempts == 1:
+                self.stdout = ["RuntimeError: Connection was lost.\n"]
+                self._code = 1
+            else:
+                self.stdout = ["Success\n"]
+                self._code = 0
+
+        def wait(self):
+            return self._code
+
+    monkeypatch.setattr(subprocess, "Popen", FlakyProcess)
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    logs = []
+    code = driver.run(
+        [["colab", "exec", "-s", "vst-pipeline", "ls /content"]], logs.append
+    )
+    assert code == 0
+    assert attempts == 2
+    assert any("Connection was lost" in line or "Yhteys katkesi" in line for line in logs)
+    assert any("yritetään uudelleen" in line for line in logs)
+
+
+def test_run_reports_actionable_hint_on_persistent_connection_lost(monkeypatch):
+    import io
+
+    class BrokenProcess:
+        def __init__(self, cmd, **kwargs):
+            self.stdin = io.StringIO()
+            self.stdout = ["RuntimeError: Connection was lost.\n"]
+
+        def wait(self):
+            return 1
+
+    monkeypatch.setattr(subprocess, "Popen", BrokenProcess)
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    logs = []
+    code = driver.run(
+        [["colab", "exec", "-s", "vst-pipeline", "ls /content"]], logs.append
+    )
+    assert code != 0
+    assert any("Connection was lost" in line for line in logs)
+    assert any("uv run colab-transcribe" in line for line in logs)
+
+
 def test_run_auto_opens_auth_url(monkeypatch):
     import io
     import webbrowser

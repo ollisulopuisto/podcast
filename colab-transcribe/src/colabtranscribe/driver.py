@@ -15,6 +15,7 @@ import subprocess
 import tarfile
 import tempfile
 import threading
+import time
 import webbrowser
 from collections.abc import Callable
 from pathlib import Path
@@ -206,6 +207,7 @@ def _execute_single(
     log: Callable[[str], None],
     timeout: float | None = None,
     opened_auth_urls: set[str] | None = None,
+    max_retries: int = 2,
 ) -> int:
     log(shlex.join(command))
     cmd_to_run = list(command)
@@ -229,101 +231,125 @@ def _execute_single(
     env = dict(os.environ)
     env["COLAB_CLI_NO_BROWSER"] = "1"
 
-    try:
-        process = subprocess.Popen(
-            cmd_to_run,
-            stdin=subprocess.PIPE if stdin_data is not None else None,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            env=env,
-        )
-    except FileNotFoundError:
-        log(f"Komentoa ei löydy: {cmd_to_run[0]}")
-        return 127
+    for attempt in range(max_retries + 1):
+        if attempt > 0:
+            log(f"Yhteys katkesi, yritetään uudelleen ({attempt}/{max_retries})...")
+            time.sleep(2)
 
-    if stdin_data is not None and process.stdin is not None:
         try:
-            process.stdin.write(stdin_data)
-            process.stdin.close()
-        except (BrokenPipeError, OSError):
-            pass
+            process = subprocess.Popen(
+                cmd_to_run,
+                stdin=subprocess.PIPE if stdin_data is not None else None,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+            )
+        except FileNotFoundError:
+            log(f"Komentoa ei löydy: {cmd_to_run[0]}")
+            return 127
 
-    assert process.stdout is not None
-    timed_out = False
-    timer: threading.Timer | None = None
-    if timeout is not None:
+        if stdin_data is not None and process.stdin is not None:
+            try:
+                process.stdin.write(stdin_data)
+                process.stdin.close()
+            except (BrokenPipeError, OSError):
+                pass
 
-        def _kill() -> None:
-            nonlocal timed_out
-            timed_out = True
-            process.kill()
+        assert process.stdout is not None
+        timed_out = False
+        timer: threading.Timer | None = None
+        if timeout is not None:
 
-        timer = threading.Timer(timeout, _kill)
-        timer.start()
+            def _kill() -> None:
+                nonlocal timed_out
+                timed_out = True
+                process.kill()
 
-    has_kernel_error = False
-    has_precondition_error = False
-    try:
-        for line in process.stdout:
-            stripped = line.rstrip("\n")
-            if is_colab_exec and stripped.startswith(
-                (
-                    "---------------------------------------------------------------------------",
-                    "AssertionError",
-                    "Traceback (most recent call last)",
-                )
-            ):
-                has_kernel_error = True
-            if "Precondition Failed" in stripped or "TooManyAssignmentsError" in stripped:
-                has_precondition_error = True
-            if "accounts.google.com/o/oauth2" in stripped:
-                for token in stripped.split():
-                    if "accounts.google.com/o/oauth2" in token:
-                        if opened_auth_urls is None or token not in opened_auth_urls:
-                            if opened_auth_urls is not None:
-                                opened_auth_urls.add(token)
-                            webbrowser.open(token)
-                            log(
-                                "[colab] Avattu Google Drive -valtuutuslinkki automaattisesti selaimeen."
-                            )
-                        break
-            log(stripped)
-        code = process.wait()
-    except KeyboardInterrupt:
-        with contextlib.suppress(OSError):
-            process.kill()
-        raise
-    finally:
-        if timer is not None:
-            timer.cancel()
+            timer = threading.Timer(timeout, _kill)
+            timer.start()
 
-    if timed_out:
-        log(f"Komento ylitti aikarajan ({timeout}s), lopetetaan: {shlex.join(command)}")
-        return 124
+        has_kernel_error = False
+        has_precondition_error = False
+        has_connection_lost_error = False
+        try:
+            for line in process.stdout:
+                stripped = line.rstrip("\n")
+                if is_colab_exec and stripped.startswith(
+                    (
+                        "---------------------------------------------------------------------------",
+                        "AssertionError",
+                        "Traceback (most recent call last)",
+                    )
+                ):
+                    has_kernel_error = True
+                if "Precondition Failed" in stripped or "TooManyAssignmentsError" in stripped:
+                    has_precondition_error = True
+                if "Connection was lost" in stripped or "ConnectionResetError" in stripped:
+                    has_connection_lost_error = True
+                if "accounts.google.com/o/oauth2" in stripped:
+                    for token in stripped.split():
+                        if "accounts.google.com/o/oauth2" in token:
+                            if opened_auth_urls is None or token not in opened_auth_urls:
+                                if opened_auth_urls is not None:
+                                    opened_auth_urls.add(token)
+                                webbrowser.open(token)
+                                log(
+                                    "[colab] Avattu Google Drive -valtuutuslinkki automaattisesti selaimeen."
+                                )
+                            break
+                log(stripped)
+            code = process.wait()
+        except KeyboardInterrupt:
+            with contextlib.suppress(OSError):
+                process.kill()
+            raise
+        finally:
+            if timer is not None:
+                timer.cancel()
 
-    if is_colab_exec and has_kernel_error and code == 0:
-        log(f"Etäkomento epäonnistui (virhe Colabin ytimessä): {shlex.join(command)}")
-        return 1
+        if timed_out:
+            log(f"Komento ylitti aikarajan ({timeout}s), lopetetaan: {shlex.join(command)}")
+            return 124
 
-    if has_precondition_error:
-        sess_name = "vst-pipeline"
-        if "-s" in command:
-            idx = command.index("-s")
-            if idx + 1 < len(command):
-                sess_name = command[idx + 1]
-        log(
-            "Virhe: Colab palautti 'Precondition Failed' (liikaa aktiivisia GPU-istuntoja)."
-        )
-        log(
-            f"Tunnuksellasi on jo aktiivinen Colab-istunto. Voit vapauttaa sen ajamalla: colab stop -s {sess_name}"
-        )
+        if is_colab_exec and has_kernel_error and code == 0:
+            log(f"Etäkomento epäonnistui (virhe Colabin ytimessä): {shlex.join(command)}")
+            return 1
 
-    if code != 0:
-        log(f"Komento palautti {code}, lopetetaan: {shlex.join(command)}")
-        return code
+        if has_precondition_error:
+            sess_name = "vst-pipeline"
+            if "-s" in command:
+                idx = command.index("-s")
+                if idx + 1 < len(command):
+                    sess_name = command[idx + 1]
+            log(
+                "Virhe: Colab palautti 'Precondition Failed' (liikaa aktiivisia GPU-istuntoja)."
+            )
+            log(
+                f"Tunnuksellasi on jo aktiivinen Colab-istunto. Voit vapauttaa sen ajamalla: colab stop -s {sess_name}"
+            )
 
-    return 0
+        if has_connection_lost_error:
+            if attempt < max_retries:
+                continue
+            log(
+                "Virhe: Yhteys Colab-virtuaalikoneeseen katkesi (Connection was lost)."
+            )
+            log(
+                "Tämä johtuu yleensä verkkokatkoksesta tai välityspalvelimen aikakatkaisusta."
+            )
+            log(
+                "Colab-istunto on todennäköisesti edelleen käynnissä pilvessä. Voit jatkaa ajoa suoraan komennolla:"
+            )
+            log("  uv run colab-transcribe")
+
+        if code != 0:
+            log(f"Komento palautti {code}, lopetetaan: {shlex.join(command)}")
+            return code
+
+        return 0
+
+    return code
 
 
 def upload_input_to_drive(

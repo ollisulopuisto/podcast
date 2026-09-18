@@ -193,3 +193,48 @@ def test_patch_colab_cli_automation(tmp_path: Path, monkeypatch):
     assert 'with open("/dev/tty")' not in patched_content
     assert "Waiting for authorization in browser" in patched_content
     assert "COLAB_CLI_NO_BROWSER" in patched_content
+
+
+def test_patch_colab_cli_runtime(tmp_path: Path, monkeypatch):
+    from colabtranscribe.onboarding import patch_colab_cli_runtime
+
+    fake_py = tmp_path / "python3"
+    fake_py.write_text("#!/bin/sh\nexit 0\n")
+    fake_py.chmod(0o755)
+
+    fake_colab = tmp_path / "colab"
+    fake_colab.write_text(f"#!{fake_py}\n# fake colab\n")
+    fake_colab.chmod(0o755)
+
+    fake_runtime = tmp_path / "runtime.py"
+    unpatched_content = (
+        'client_kwargs = {\n'
+        '    "subprotocol": jupyter_kernel_client.JupyterSubprotocol.DEFAULT,\n'
+        '    "extra_params": {"colab-runtime-proxy-token": self.token},\n'
+        '}\n'
+    )
+    fake_runtime.write_text(unpatched_content, encoding="utf-8")
+
+    import subprocess
+
+    orig_run = subprocess.run
+
+    def fake_subprocess_run(cmd, *args, **kwargs):
+        if len(cmd) >= 3 and "colab_cli.runtime" in cmd[2]:
+
+            class FakeResult:
+                returncode = 0
+                stdout = str(fake_runtime)
+                stderr = ""
+
+            return FakeResult()
+        return orig_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fake_subprocess_run)
+
+    res = patch_colab_cli_runtime(str(fake_colab))
+    assert res is True
+
+    patched_content = fake_runtime.read_text(encoding="utf-8")
+    assert '"timeout": 60.0' in patched_content
+

@@ -122,6 +122,62 @@ def patch_colab_cli_automation(colab_path: str | None = None) -> bool:
         return False
 
 
+def patch_colab_cli_runtime(colab_path: str | None = None) -> bool:
+    """Korjaa Colab CLI:n lyhyen 10s WebSocket-kättelyaikakatkaisun.
+
+    Colab CLI:n oletusarvoinen 10 sekunnin REQUEST_TIMEOUT aiheuttaa
+    'RuntimeError: Connection was lost' -virheen, jos WebSocket-yhteyden
+    avaaminen Colabin välityspalvelimeen kestää hieman yli 10 sekuntia.
+    Tämä korjaus kasvattaa aikakatkaisun 60 sekuntiin.
+    """
+    if not colab_path:
+        colab_path = shutil.which("colab")
+    if not colab_path:
+        return False
+
+    try:
+        colab_file = Path(colab_path)
+        shebang = colab_file.read_text(encoding="utf-8", errors="ignore").splitlines()[0]
+        if not shebang.startswith("#!"):
+            return False
+        py_bin = shebang[2:].strip()
+        if not Path(py_bin).is_file():
+            return False
+
+        res = subprocess.run(
+            [
+                py_bin,
+                "-c",
+                "import colab_cli.runtime as m; print(m.__file__)",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if res.returncode != 0 or not res.stdout.strip():
+            return False
+        runtime_path = Path(res.stdout.strip())
+        if not runtime_path.is_file():
+            return False
+
+        content = runtime_path.read_text(encoding="utf-8")
+        if '"timeout": 60.0' in content:
+            return True
+
+        target = '"extra_params": {"colab-runtime-proxy-token": self.token},'
+        if target in content:
+            new_content = content.replace(
+                target,
+                f'{target}\n                        "timeout": 60.0,',
+            )
+            if new_content != content:
+                runtime_path.write_text(new_content, encoding="utf-8")
+                return True
+        return True
+    except Exception:
+        return False
+
+
 def colab_cli_has_kernel_client(colab_path: str) -> bool:
     """Tarkistaa Colab CLI:n tarvitsemän jupyter-kernel-client-rajapinnan.
 
@@ -205,6 +261,7 @@ def check_helper_apps() -> list[OnboardingItem]:
     colab_path = shutil.which("colab")
     if colab_path:
         patch_colab_cli_automation(colab_path)
+        patch_colab_cli_runtime(colab_path)
         if not colab_cli_has_kernel_client(colab_path):
             items.append(
                 OnboardingItem(
