@@ -414,6 +414,7 @@ def build_fcpxml(
     settings: "ProjectSettings | None" = None,
     source: str = "",
     reframer=None,
+    tc_start: Fraction = ZERO,
 ) -> str:
     """Rakentaa FCPXML-merkkijonon.
 
@@ -426,6 +427,10 @@ def build_fcpxml(
 
     ``settings`` ja ``source`` kirjoitetaan sekvenssin muistiinpanoon ja
     metatietoon, jotta leikkauksen säätimet kulkevat tiedoston mukana.
+
+    ``tc_start`` on lähdeprojektin ``tcStart`` (``Timeline.tc_start``).
+    Spinen suorat lapset ovat sen aikapohjassa, joten se lisätään takaisin
+    niiden ``offset``iin — sama sääntö kuin ``build_multicam_fcpxml``issa.
     """
     replacements = replacements or {}
     room = room or []
@@ -435,6 +440,7 @@ def build_fcpxml(
     program_frames = to_frames(program_end - program_start, frame_duration)
     if program_frames <= 0:
         raise WriteError(t("write.zero_duration"))
+    tc_frames = to_frames(tc_start, frame_duration)
 
     spans = _quantize(segments, program_start, program_frames, frame_duration)
     spans = _merge_spans(spans)
@@ -550,7 +556,7 @@ def build_fcpxml(
 
         attrs = [
             f'ref="{res_ids[seg.angle]}"',
-            f'offset="{frames_str(a, frame_duration)}"',
+            f'offset="{frames_str(a + tc_frames, frame_duration)}"',
             f"name={quoteattr(f'{seg.label} {index + 1:02d}')}",
             f'start="{frames_str(src_frames, frame_duration)}"',
             f'duration="{frames_str(b - a, frame_duration)}"',
@@ -619,7 +625,8 @@ def build_fcpxml(
         f"      <project name={quoteattr(project_name)}>",
         f'        <sequence format="{seq_format}" '
         f'duration="{frames_str(program_frames, frame_duration)}" '
-        'tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">',
+        f'tcStart="{format_time(tc_start)}" tcFormat="NDF" '
+        'audioLayout="stereo" audioRate="48k">',
         *note,
         "          <spine>",
         *body,
@@ -1535,6 +1542,11 @@ def build_multicam_fcpxml(
     program_frames = to_frames(program_end - program_start, frame_duration)
     if program_frames <= 0:
         raise WriteError(t("write.zero_duration"))
+    # Spinen suorat lapset ovat sekvenssin omassa aikapohjassa, jonka
+    # nollakohta on ``tcStart`` — sama sääntö kuin kaikkialla muualla, ks.
+    # CLAUDE.md. Lukija vähensi tämän jo kerran; vienti lisää sen takaisin,
+    # tai tuonti Final Cutiin näyttää eri aloitus-timecodea kuin lähde.
+    tc_frames = to_frames(timeline.tc_start, frame_duration)
 
     spans = _quantize(segments, program_start, program_frames, frame_duration)
     spans = _split_spans(
@@ -1597,7 +1609,7 @@ def build_multicam_fcpxml(
             # Osien välinen aukko: sisältöä ei ole, mutta spine ei saa katketa.
             body.append(
                 f'            <gap name="Gap" '
-                f'offset="{frames_str(a, frame_duration)}" start="0s" '
+                f'offset="{frames_str(a + tc_frames, frame_duration)}" start="0s" '
                 f'duration="{frames_str(b - a, frame_duration)}"/>'
             )
             continue
@@ -1626,7 +1638,7 @@ def build_multicam_fcpxml(
         start_frames = to_frames(mc.source_at(at), frame_duration)
         attrs = [
             f"ref={quoteattr(mc.media_id)}",
-            f'offset="{frames_str(a, frame_duration)}"',
+            f'offset="{frames_str(a + tc_frames, frame_duration)}"',
             f"name={quoteattr(f'{seg.label} {index + 1:02d}')}",
             f'start="{frames_str(start_frames, frame_duration)}"',
             f'duration="{frames_str(b - a, frame_duration)}"',
@@ -1702,7 +1714,8 @@ def build_multicam_fcpxml(
         f"      <project name={quoteattr(project_name)}>",
         f'        <sequence format="{seq_format}" '
         f'duration="{frames_str(program_frames, frame_duration)}" '
-        'tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">',
+        f'tcStart="{format_time(timeline.tc_start)}" tcFormat="NDF" '
+        'audioLayout="stereo" audioRate="48k">',
         *note,
         "          <spine>",
         *body,

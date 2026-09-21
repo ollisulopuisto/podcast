@@ -227,6 +227,20 @@ it is the entire idea behind `read.py`'s `_walk`. The same rule in reverse
 explains why `write.py` gives the microphones' connected clips an offset equal
 to the first spine clip's `start` rather than zero.
 
+The rule applies to the **project's own sequence** too: its `start` is
+`tcStart`, and `read_fcpxml` subtracts it once (`_walk(spine, -tc_start,
+ZERO, ctx)`) so the internal `Timeline` is always zero-based regardless of
+the source project's Starting Timecode — Final Cut's own default is
+`01:00:00:00` (`tcStart="3600s"`), not zero. `write.py` used to hardcode
+`tcStart="0s"` on export no matter what the source said, which silently
+discarded the original Starting Timecode: content and cuts were unaffected
+(everything downstream is relative), but a re-import showed a different
+ruler than the project the user started from. `Timeline.tc_start` now
+carries the source value through, and both writers add it back onto the
+spine's direct children's `offset` (only the direct children — anything
+nested inside a clip is already relative to *that clip's* own `start`, per
+the rule above, and must not be shifted again).
+
 ### Multicam
 
 `<mc-clip>` is the host, the content lives in the angles of

@@ -223,6 +223,95 @@ def test_multicam_output_reads_back(fixture_dir, tmp_path):
     assert [t.key for t in again.tracks] == [t.key for t in tl.tracks]
 
 
+# --------------------------------------------------------- projektin tcStart
+
+
+_TC_START_XML = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<fcpxml version="1.10">
+  <resources>
+    <format id="r1" name="FFVideoFormat1080p25" frameDuration="1/25s"
+            width="1920" height="1080"/>
+    <asset id="r2" name="WIDE" start="0s" duration="40s"
+           hasVideo="1" format="r1" videoSources="1"/>
+    <media id="m1" name="A-osa">
+      <multicam format="r1" tcStart="0s" tcFormat="NDF">
+        <mc-angle name="Wide" angleID="a1">
+          <asset-clip ref="r2" offset="0s" name="WIDE" start="0s"
+                      duration="40s"/>
+        </mc-angle>
+      </multicam>
+    </media>
+  </resources>
+  <library>
+    <event name="Testi">
+      <project name="Monikamera">
+        <sequence format="r1" duration="40s" tcStart="3600s" tcFormat="NDF"
+                   audioLayout="stereo" audioRate="48k">
+          <spine>
+            <mc-clip ref="m1" offset="3600s" name="A-osa" start="0s"
+                     duration="40s">
+              <mc-source angleID="a1" srcEnable="video">
+                <audio-role-source role="dialogue.dialogue-1" active="0"/>
+              </mc-source>
+            </mc-clip>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>"""
+
+
+def _tc_start_timeline(tmp_path):
+    path = tmp_path / "tc_start.fcpxml"
+    path.write_text(_TC_START_XML, encoding="utf-8")
+    return read_fcpxml(str(path))
+
+
+def test_reader_captures_the_projects_tc_start(tmp_path):
+    """Lähdeprojektin ``tcStart`` on luettava talteen, ei vain käytettävä
+
+    kerran offsettien nollaamiseen. Vienti tarvitsee sen, jotta tuloksen
+    aikaviiva alkaa samasta aloitus-timecodesta kuin lähde.
+    """
+    tl = _tc_start_timeline(tmp_path)
+    assert tl.tc_start == Fraction(3600)
+    # Sisäinen aikajana on silti nollapohjainen: tcStart on jo vähennetty.
+    assert tl.media[0].placements[0].offset == 0
+
+
+def test_multicam_export_respects_the_source_tc_start(tmp_path):
+    """Vienti ei saa nollata alkuperäisen projektin aloitus-timecodea.
+
+    Ennen korjausta ``build_multicam_fcpxml`` kirjoitti aina
+    ``tcStart="0s"`` riippumatta lähteestä, jolloin tuonti Final Cutiin
+    näytti eri aloitusaikakoodin kuin alkuperäinen projekti.
+    """
+    tl = _tc_start_timeline(tmp_path)
+    xml = build_multicam_fcpxml(
+        tl,
+        [Segment("WIDE", "Laaja", 0.0, 40.0)],
+        [],
+        Fraction(0),
+        Fraction(40),
+        "Aikakoodi",
+        source="tc_start.fcpxml",
+    )
+    root = ET.fromstring(xml)
+    sequence = root.find(".//sequence")
+    assert parse_time(sequence.get("tcStart")) == Fraction(3600)
+    clip = root.find(".//spine/mc-clip")
+    assert parse_time(clip.get("offset")) == Fraction(3600)
+
+    # Ja tuloksen on luettava takaisin samaksi sisäiseksi aikajanaksi.
+    out_path = tmp_path / "out.fcpxml"
+    out_path.write_text(xml, encoding="utf-8")
+    again = read_fcpxml(str(out_path))
+    assert again.tc_start == Fraction(3600)
+    assert again.media[0].placements[0].offset == 0
+
+
 def test_multicam_refuses_a_plain_timeline(fixture_dir):
     tl = read_fcpxml(str(fixture_dir / "sync.fcpxml"))
     with pytest.raises(WriteError):

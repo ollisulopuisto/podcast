@@ -150,6 +150,37 @@ consulted only when the media cannot be read, and 25 fps is the last resort.
 A format resource that disagrees with the media loses — a 60 fps recording
 exported from a 25 fps project stays 60 fps.
 
+Only a **multicam clip** source lets autoraffkat write a multicam clip
+back — pick a camera angle later in Final Cut without re-exporting. A
+**synchronised clip** or a hand-laid **project timeline** still cuts
+correctly, but the export is flat: one track, one asset per shot, no angle
+to switch afterwards. If that happens on export, the panel says so and
+names the fix; see below.
+
+### Building the multicam clip, from cameras and mics
+
+For three cameras and two separate microphones, in Final Cut Pro:
+
+1. Import all five files into an event.
+2. Select all five in the browser.
+3. Right-click → **New Multicam Clip…** (or *File* → *New* → *Multicam
+   Clip…). **Not** *Clip* → *Synchronize Clips…* — that command only
+   builds a compound clip with the extra sources on attached lanes, which
+   looks similar in the browser but carries no `mc-clip`/angle data at
+   all, so autoraffkat (and Final Cut's own angle switching) has nothing
+   to work with.
+4. In the dialog, set **Synchronization** to *Audio* (or *Timecode* if
+   every device was jam-synced) so the two mic tracks line up with the
+   cameras' embedded audio, and confirm.
+5. Final Cut analyzes and builds the multicam clip in the browser, one
+   angle per camera and per mic. Open it (double-click, or the angle
+   viewer) to check the sync and rename angles to match speakers if you
+   want that to show up later.
+6. Drag the multicam clip onto a new sequence — that sequence, exported
+   as FCPXML, is what autoraffkat reads. A `sync-clip`/attached-lane
+   sequence never becomes a multicam later; the clip has to be built as
+   one from the start.
+
 ### Multicam and parts
 
 A long recording is usually several multicam clips on the spine — part A,

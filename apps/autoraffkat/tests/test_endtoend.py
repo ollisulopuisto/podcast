@@ -677,6 +677,32 @@ def test_export_is_quiet_when_audio_is_off(scratch_xml):
     assert result["ok"] and result["warnings"] == []
 
 
+def test_export_warns_when_the_source_has_no_multicam_clip(scratch_xml):
+    """Littana vienti ei saa jäädä sanomatta.
+
+    Lähde tehty «Synkronoi klipit»-komennolla (liitetyt lanet, ei
+    monikameraa) tuottaa aina littanan viennin, mutta se ei saanut mitään
+    varoitusta: käyttäjä huomasi vasta Final Cutissa, ettei kuvakulmaa voi
+    vaihtaa, eikä syy näkynyt sinä.
+    """
+    from autoraffkat.i18n import t
+
+    state = AppState(xml_path=str(scratch_xml("sync.fcpxml")))
+    state.load()
+    for _ in range(200):
+        if state.progress.get("ready"):
+            break
+        time.sleep(0.05)
+    assert not state.timeline.multicams
+    client = TestClient(create_app(state))
+    result = client.post(
+        "/api/export",
+        json={"tracks": {k: v.to_json() for k, v in _tracks().items()}, "globals": {}},
+    ).json()
+    assert result["ok"], result.get("problems")
+    assert t("export.flat_no_multicam") in result["warnings"]
+
+
 def test_defaults_are_available_for_resetting(scratch_xml):
     """Säätimiä on kolmisenkymmentä ja ne periytyvät seuraavaan jaksoon.
 

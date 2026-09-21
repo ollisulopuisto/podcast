@@ -333,6 +333,17 @@ CATALOG: dict[str, dict[str, str]] = {
         "en": "Panning is on but the seating has not been measured — "
               "the export goes out without it.",
     },
+    "export.flat_no_multicam": {
+        "fi": "Lähteessä ei ole monikameraklippiä, joten vienti on littana "
+              "eikä kuvakulmaa voi vaihtaa Final Cutissa jälkikäteen. Final "
+              "Cutissa: valitse kamerat ja mikit, «Uusi monikameraklippi» — "
+              "ei «Synkronoi klipit», joka tekee vain liitetyt raidat.",
+        "en": "The source has no multicam clip, so the export is flat and "
+              "the camera angle can't be switched afterwards in Final Cut. "
+              "In Final Cut: select the cameras and mics, «New Multicam "
+              "Clip» — not «Synchronize Clips», which only makes attached "
+              "lanes.",
+    },
     "audio.program_short": {
         "fi": "Jakelutaso jäi: tavoite {target} LUFS, tulos {got}.",
         "en": "Delivery level fell short: target {target} LUFS, got {got}.",

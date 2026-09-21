@@ -231,6 +231,20 @@ Tämä koskee sekä liitettyjä klippejä että `sync-clip`in sisältöä, ja se
 miksi `write.py` antaa mikkien liitetyille klipeille offsetiksi ensimmäisen
 spine-klipin `start`-arvon eikä nollaa.
 
+Sääntö koskee myös **projektin omaa sekvenssiä**: sen `start` on `tcStart`,
+ja `read_fcpxml` vähentää sen kerran (`_walk(spine, -tc_start, ZERO, ctx)`),
+jotta sisäinen `Timeline` on aina nollapohjainen riippumatta lähdeprojektin
+aloitus-timecodesta — Final Cutin oma oletus on `01:00:00:00`
+(`tcStart="3600s"`), ei nolla. `write.py` kirjoitti ennen aina
+`tcStart="0s"` viedessä, mikä hukkasi alkuperäisen aloitus-timecoden
+huomaamatta: leikkaus ja sisältö eivät kärsineet (kaikki alavirtaan on
+suhteellista), mutta uudelleentuonti näytti eri aikaviivan kuin projekti
+josta käyttäjä lähti. `Timeline.tc_start` kantaa nyt lähdearvon mukana, ja
+molemmat kirjoittajat lisäävät sen takaisin spinen suorien lasten
+`offset`iin — vain suorien lasten, sillä klipin sisään sijoitettu sisältö on
+jo suhteessa *sen klipin* omaan `start`-arvoon yllä olevan säännön mukaan,
+eikä sitä saa siirtää toiseen kertaan.
+
 ### Monikamera
 
 `<mc-clip>` on isäntä, sisältö on `<media><multicam>`:in kulmissa, ja kulmien

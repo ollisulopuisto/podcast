@@ -73,3 +73,4 @@ Tagi käynnistää `build-<sovellus>.yml`in. Paketoitavia sovelluksia on kaksi
 
 Looking for a high-impact feature to contribute?
 - **`autoraffkat`**: Adding multi-NLE support (DaVinci Resolve and Adobe Premiere Pro) — see [`apps/autoraffkat/ROADMAP.md`](apps/autoraffkat/ROADMAP.md).
+- **New app idea**: LLM-suggested transcript cuts, written back as paired begin/end `<Marker>`s in a new Hindenburg XML — rules for what's removable still TBD, see [`docs/plans/2026-09-21-transcript-cut-suggester.md`](docs/plans/2026-09-21-transcript-cut-suggester.md).
