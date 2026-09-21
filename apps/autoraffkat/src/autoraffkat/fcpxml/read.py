@@ -118,6 +118,11 @@ class Timeline:
     source_path: str = ""
     tracks: list[Track] = field(default_factory=list)
     multicams: list[MulticamRef] = field(default_factory=list)
+    # Lähdeprojektin ``tcStart``. Sisäinen aikajana on aina nollapohjainen
+    # (``_walk`` vähentää tämän jo lukiessa), mutta vienti tarvitsee
+    # alkuperäisen arvon kirjoittaakseen saman aloitus-timecoden takaisin —
+    # muuten tuonti Final Cutiin näyttää eri aikaa kuin lähdeprojekti.
+    tc_start: Fraction = ZERO
 
     @property
     def start(self) -> Fraction:
@@ -729,6 +734,7 @@ def read_fcpxml(path: str) -> Timeline:
             else seq_format.get("frame_duration")
         )
     else:
+        tc_start = ZERO
         muted = _muted_roles(container) if kind == "sync-clip" else frozenset()
         _walk(container, ZERO, parse_time(container.get("start"), ZERO), ctx,
               muted=muted)
@@ -839,6 +845,7 @@ def read_fcpxml(path: str) -> Timeline:
         source_path=os.path.abspath(path),
         tracks=tracks,
         multicams=ctx.multicams,
+        tc_start=tc_start,
     )
     if any(not m.path or not os.path.exists(m.path) for m in media):
         from ..relink import relink_timeline

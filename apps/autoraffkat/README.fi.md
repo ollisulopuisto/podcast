@@ -153,6 +153,37 @@ vain, jos mediaa ei voi lukea, ja viimesenä on 25 fps:n oletus. Formaatti,
 joka kiistaa median, häviää — 60 fps -materiaali 25 fps -projektista vietynä
 pysyy 60 fps:nä.
 
+Vain **monikameraklippi**-lähteestä autoraffkat osaa kirjoittaa
+monikameraklipin takaisin — kuvakulman voi vaihtaa Final Cutissa
+jälkikäteen viemättä uudelleen. **Synkronoitu klippi** tai käsin aseteltu
+**projektin aikajana** leikkautuu yhtä lailla oikein, mutta vienti on
+littana: yksi raita, yksi assetti per kuva, ei kulmaa jota vaihtaa. Jos
+näin käy viedessä, paneeli sanoo sen ja nimeää korjauksen — ks. alla.
+
+### Monikameraklipin rakentaminen kameroista ja mikeistä
+
+Kolmella kameralla ja kahdella erillisellä mikillä, Final Cut Prossa:
+
+1. Tuo kaikki viisi tiedostoa tapahtumaan.
+2. Valitse kaikki viisi selaimessa.
+3. Hiiren oikea painike → **Uusi monikameraklippi…** (tai *Tiedosto* →
+   *Uusi* → *Monikameraklippi…*). **Ei** *Klippi* → *Synkronoi klipit…* —
+   se komento tekee vain yhdistelmäklipin, jossa muut lähteet ovat
+   liitettyinä laneina. Se näyttää selaimessa samanlaiselta, mutta siinä
+   ei ole lainkaan `mc-clip`/kulmatietoa, joten autoraffkatilla (eikä Final
+   Cutin omalla kulmanvaihdolla) ei ole mitään työstettävää.
+4. Valitse valintaikkunassa **Synkronointi**-asetukseksi *Ääni* (tai
+   *Aikakoodi*, jos kaikki laitteet oli jam-synkattu), jotta molemmat mikit
+   linjautuvat kameroiden upotettuun ääneen, ja vahvista.
+5. Final Cut analysoi ja rakentaa monikameraklipin selaimeen, yhden kulman
+   per kamera ja per mikki. Avaa se (kaksoisklikkaus, tai kulmanäkymä)
+   tarkistaaksesi synkan ja nimeä kulmat puhujien mukaan, jos haluat sen
+   näkyvän myöhemmin.
+6. Vedä monikameraklippi uudelle sekvenssille — se sekvenssi, FCPXML:ksi
+   vietynä, on se jonka autoraffkat lukee. `sync-clip`/liitetty-lane
+   -sekvenssistä ei tule monikameraa jälkikäteen; klipin on synnyttävä
+   sellaisena alusta asti.
+
 ### Monikamera ja osat
 
 Pitkä nauhoitus on tavallisesti spinellä useampana monikameraklippinä — osa A,

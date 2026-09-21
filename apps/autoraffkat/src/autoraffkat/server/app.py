@@ -1488,6 +1488,11 @@ def create_app(state: AppState) -> FastAPI:
                         reframer=reframer,
                     )
                 else:
+                    # Hiljainen pudotus littanaan vientiin ei saa jäädä
+                    # sanomatta: käyttäjä huomaa vasta Final Cutissa, ettei
+                    # kuvakulmaa voi vaihtaa, ja syy (lähde on
+                    # «Synkronoi klipit», ei monikameraklippi) ei näy siellä.
+                    warnings.append(t("export.flat_no_multicam"))
                     xml = build_fcpxml(
                         {m.key: m for m in state.timeline.media},
                         decision.segments,
@@ -1501,6 +1506,7 @@ def create_app(state: AppState) -> FastAPI:
                         settings=state.settings,
                         source=state.xml_path,
                         reframer=reframer,
+                        tc_start=state.timeline.tc_start,
                     )
                 write_fcpxml(out_path, xml)
             except (WriteError, OSError) as exc:
