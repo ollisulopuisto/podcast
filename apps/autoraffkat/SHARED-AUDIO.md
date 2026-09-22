@@ -455,10 +455,21 @@ a 0.85 parallel mix and an oversampled soft clipper (limiter work −9.6 →
 0.0 — written, and switched off. The file lands 3 dB below target and says so
 (`reached_target`).
 
-Still open:
+The high-pass stays at 80 Hz. Ours is +4…+7 dB above Live below 60 Hz,
+where Live cuts at 100 Hz and steeper, but that is rumble and not speech:
+decided by ear, not worth a stage.
 
-- The high-pass: 80 Hz, or 100 Hz and steeper — below 60 Hz ours is still
-  +4…+7 dB.
+**The plug-in slot, listened to at the same loudness.** dxRevive Studio 2 at
+25 % beat 50 %: at 50 % it lifts above 16 kHz by +4…+7 dB and takes 0.3–0.6 dB
+of crest. Its position made little audible difference, which the numbers
+support — first against last is the smallest difference measured here (the
+null between them sits 19.1 LU below the signal, against 15.6 LU for 25 % vs
+50 %). It stays first in the chain, where it belongs for a different reason:
+de-bleeding needs the linear relation between microphones, and nothing can
+recover it afterwards (§3.2). Running it last also bypasses the limiter — the
+render measured +0.43 and +0.99 dBTP against a −1.5 ceiling.
+
+Still open:
 - De-reverb and Breath Control have no counterpart here. On this material
   they change neither tone nor dynamics, so the gap is smaller than assumed —
   one excerpt, one room.
