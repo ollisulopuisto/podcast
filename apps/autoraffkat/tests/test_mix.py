@@ -130,9 +130,9 @@ def test_progress_reports_stages_and_a_rising_fraction(fixture_dir, monkeypatch)
         result = mix.process(
             tl,
             resolve_roles(tl, tracks),
-            # Ristivuoto pois: tässä mitataan palkkia, ja ilman ruudukkoa
-            # vähennys olisi oikeutetusti virhe.
-            AudioSettings(enabled=True, plugin_path="", debleed=False),
+            # Ristivuoto ja tasonkuljettaja pois: tässä mitataan palkkia,
+            # ja ilman ruudukkoa kumpikin olisi oikeutetusti virhe.
+            AudioSettings(enabled=True, plugin_path="", debleed=False, rider=False),
             progress=seen.append,
         )
     finally:
@@ -416,6 +416,40 @@ def test_debleed_without_a_grid_is_an_error_not_a_silence(fixture_dir, monkeypat
     assert "debleed" in result.errors
 
 
+def test_rider_without_a_grid_is_an_error_not_a_silence(fixture_dir, monkeypatch):
+    """Sama vika kolmatta kertaa, tällä kertaa tasonkuljettajalla.
+
+    ``rider`` on oletuksena päällä (``AudioSettings.rider = True``), ja
+    ``speechmix.chain.apply`` ohittaa sen hiljaa kun ``speaking is None`` —
+    ts. aina kun ruudukkoa ei annettu. Ilman tätä tarkistusta se osuisi
+    jokaiseen projektiin jossa vaimennus on pois eikä ristivuodon
+    vähennystä ole sammutettu käsin, sanomatta mitään.
+    """
+    from autoraffkat.analysis import resolve_roles
+    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.model import ROLE_MIC, TrackConfig
+
+    monkeypatch.setattr(mix.chain, "load_pool", lambda *a, **k: None)
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    tracks = {
+        t.key: TrackConfig(role=ROLE_MIC, speaker=t.key.split()[0].capitalize())
+        for t in tl.tracks
+        if not t.has_video
+    }
+    try:
+        result = mix.process(
+            tl,
+            resolve_roles(tl, tracks),
+            AudioSettings(enabled=True, plugin_path="", debleed=False, duck=False),
+        )
+    finally:
+        for item in tl.media:
+            target = pathlib.Path(mix.sibling(item.path, mix.MIX_SUFFIX))
+            if target.exists():
+                target.unlink()
+    assert "rider" in result.errors
+
+
 def test_force_processes_what_is_already_current(fixture_dir, monkeypatch, tmp_path):
     """Uudelleenkäsittely on käyttäjän tahallinen valinta, ei oletus."""
     from autoraffkat.analysis import resolve_roles
@@ -431,7 +465,11 @@ def test_force_processes_what_is_already_current(fixture_dir, monkeypatch, tmp_p
         if not t.has_video
     }
     roles = resolve_roles(tl, tracks)
-    settings = AudioSettings(enabled=True, program_target=False, debleed=False)
+    # Ristivuoto ja tasonkuljettaja pois: tässä mitataan uudelleenkäsittelyn
+    # pakotusta, ja ilman ruudukkoa kumpikin olisi oikeutetusti virhe.
+    settings = AudioSettings(
+        enabled=True, program_target=False, debleed=False, rider=False
+    )
     jobs = mix._jobs(tl, roles, settings)
     stubs = [pathlib.Path(job["target"]) for job in jobs]
     try:

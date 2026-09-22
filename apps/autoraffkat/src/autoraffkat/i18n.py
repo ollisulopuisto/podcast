@@ -200,6 +200,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "en": "Bleed removal was skipped: there was no speaker grid. "
         "It needs at least two microphones and a finished analysis.",
     },
+    "audio.rider_no_grid": {
+        "fi": "Tasonkuljettaja jäi pois: puhujaruudukkoa ei ollut.",
+        "en": "The level rider was skipped: there was no speaker grid.",
+    },
     "audio.debleed_too_little": {
         "fi": "{name}in vuotoa ei vähennetty: liian vähän jaksoja joissa "
         "vain hän puhuu.",

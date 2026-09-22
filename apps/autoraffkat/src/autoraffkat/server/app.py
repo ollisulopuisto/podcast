@@ -257,10 +257,13 @@ class AppState:
         # käynnistää otoksen vain päälle vaihtaessa, joten ilman tätä
         # asetuksista peritty «panorointi päällä» ei mittaisi koskaan
         # mitään ja vienti kirjoittaisi nolla panorointia hiljaa. Vaatii
-        # ruudukon, siksi vasta analyysin jälkeen.
+        # ruudukon, siksi vasta analyysin jälkeen. Sama koskee reaktioita
+        # ja pystyvientiä: kummankin peritty «päällä» vaatisi muuten
+        # käsin painetun mittausnapin ennen kuin vienti oikeasti käyttää
+        # sitä, ks. ``_wants_video_measurement``.
         if self.settings.globals.panning and not self.seating:
             self.start_seating()
-        elif self.settings.globals.reactions and not self.video_tables:
+        elif self._wants_video_measurement() and not self.video_tables:
             self.start_measure_video()
         if self.settings.audio.enabled:
             self.start_audio_preview()
@@ -300,7 +303,7 @@ class AppState:
             self.video_errors["seating"] = str(exc)
         finally:
             self.seating_running = False
-            if self.settings.globals.reactions and not self.video_tables:
+            if self._wants_video_measurement() and not self.video_tables:
                 self.start_measure_video()
 
     def start_audio_preview(self) -> bool:
@@ -348,6 +351,17 @@ class AppState:
         finally:
             with self.lock:
                 self.audio_preview_running = False
+
+    def _wants_video_measurement(self) -> bool:
+        """Onko jokin ominaisuus päällä joka tarvitsee ``video_tables``.
+
+        Reaktiokuvat ja pystyvienti molemmat lukevat samaa taulukkoa, ja
+        molemmat jäivät kerran erikseen tarkistamatta perinnän jälkeen —
+        katso ``_analyze`` ja ``measure_seating``. Yksi paikka jonka
+        molemmat kutsuvat pitää ne samassa tahdissa, sen sijaan että
+        kolmas ominaisuus unohtuisi samalla tavalla vielä kerran.
+        """
+        return self.settings.globals.reactions or self.settings.globals.vertical
 
     def start_measure_video(self) -> bool:
         """Käynnistää lähikuvien mittauksen taustalle, jos se ei ole jo menossa."""

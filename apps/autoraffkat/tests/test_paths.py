@@ -158,3 +158,42 @@ def test_panning_inherited_from_settings_still_measures():
     source = inspect.getsource(server_app.AppState._analyze)
     assert "start_seating" in source, "lataus ei käynnistä otosta"
     assert "panning" in source
+
+
+def test_wants_video_measurement_covers_reactions_and_vertical():
+    """Reaktiot ja pystyvienti lukevat samaa ``video_tables``-taulukkoa.
+
+    ``_analyze`` ja ``measure_seating`` tarkistivat ennen kumpikin pelkkää
+    ``reactions``-lippua päättäessään tarvitaanko video_tables perinnän
+    jälkeen. Pystyvienti jäi tarkistamatta kummastakin paikasta erikseen:
+    asetuksista peritty «pystyvienti päällä» ei siis mitannut mitään
+    latauksessa, ja vienti pyysi painamaan «Mittaa kuva» käsin vaikka
+    kytkin oli jo päällä — sama vikaluokka kuin panoroinnilla yllä.
+    """
+    from autoraffkat.model import Globals
+    from autoraffkat.project import ProjectSettings
+    from autoraffkat.server.app import AppState
+
+    state = AppState(xml_path="")
+    for reactions, vertical, expected in (
+        (False, False, False),
+        (True, False, True),
+        (False, True, True),
+        (True, True, True),
+    ):
+        state.settings = ProjectSettings(
+            globals=Globals(reactions=reactions, vertical=vertical)
+        )
+        assert state._wants_video_measurement() is expected, (reactions, vertical)
+
+
+def test_analyze_and_seating_check_video_need_through_one_place():
+    """Kolmas video_tables-kuluttaja ei saa unohtua taas kahdesta paikasta
+    erikseen: molempien on kutsuttava samaa ``_wants_video_measurement``ia."""
+    import inspect
+
+    from autoraffkat.server import app as server_app
+
+    for name in ("_analyze", "measure_seating"):
+        source = inspect.getsource(getattr(server_app.AppState, name))
+        assert "_wants_video_measurement" in source, name
