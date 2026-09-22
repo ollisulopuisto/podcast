@@ -260,3 +260,27 @@ def test_the_master_is_the_shared_mastering(session, monkeypatch):
     mix = render(session)
     assert seen == [-16.0]
     assert true_peak_db(mix) <= programme.PROGRAM_PEAK_DB + 0.1
+
+
+def test_microphone_ducking_is_off_unless_asked(turn_taking, monkeypatch, tmp_path):
+    """Vuodonpoisto vie vuodon lineaarisesti, joten portilla ei ole tässä
+    enää työtä — ja kuunneltuna se pumppasi. Oletus on siksi pois, sekä
+    asetuksissa että komentorivillä; ``--mic-duck`` kytkee sen."""
+    from automixer import cli_mix
+
+    turn_taking["buses"]["speech"] = {}
+    default = render(turn_taking)
+    turn_taking["output_path"] = turn_taking["output_path"].replace(".wav", "-2.wav")
+    turn_taking["buses"]["speech"] = {"mic_duck_enabled": False}
+    np.testing.assert_array_equal(default, render(turn_taking))
+
+    seen = []
+    monkeypatch.setattr(cli_mix, "Mixer", lambda config: type(
+        "M", (), {"run": lambda self: seen.append(config)})())
+    wav = tmp_path / "a.wav"
+    sf.write(wav, np.zeros(RATE, dtype=np.float32), RATE)
+    monkeypatch.setattr("sys.argv", ["automixer", str(wav)])
+    cli_mix.main()
+    monkeypatch.setattr("sys.argv", ["automixer", "--mic-duck", str(wav)])
+    cli_mix.main()
+    assert [c["buses"]["speech"]["mic_duck_enabled"] for c in seen] == [False, True]

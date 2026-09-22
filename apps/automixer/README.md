@@ -95,11 +95,11 @@ automixer --speech mic1.wav mic2.wav --music theme_THEME.wav -o episode1.wav --t
 - `--ad-spot`: Ad spot time in seconds.
 - `--ad-duration`: Ad duration in seconds (default: `30.0`).
 
-Stages that read the speech grid, all on by default and all off under
-`--minimal`:
+Stages that read the speech grid, all off under `--minimal`:
 - `--no-debleed`: keep the cross-bleed between microphones.
 - `--no-rider`: skip the slow level ride ahead of the compressors.
-- `--no-mic-duck`: leave a microphone open while its owner is silent.
+- `--mic-duck`: close a microphone while its owner is silent. Off by
+  default: de-bleeding removes the leakage, and by ear the gate pumped.
 - `--mic-duck-db`: how far a closed microphone drops (default: the measured
   -9 dB, which is deliberately shallow — the benefit is in the timing).
 
