@@ -382,7 +382,14 @@ class AudioSettings:
     # sinne missä huiput osuvat yhteen. Stemin oma `target_lufs` on tason
     # lähtökohta ja pysyy ennallaan; niiden sekoittaminen on koko
     # tiivistysongelman juuri.
-    program_lufs: float = 0.0
+    #
+    # Oletus -16, podcastien jakelutaso, oli nolla. Ketjun vartija
+    # (``chain.PSR_GUARD_LU``) laski pp 55:n summan -19,4:ään crest 18,3;
+    # tämä nosti sen -15,75:een crest 14,05, hinta 1,3 LU budjetin 3 sisällä.
+    # Kuunneltuna (2026-09-22) nostettu voitti nostamattoman, dxRevive 25:n
+    # kanssa ja ilman. -14 ei ole saatavissa: PSR 15 ja katto -1 dBTP
+    # jättävät tasoksi enintään -16.
+    program_lufs: float = -16.0
     # Jakelun huippukatto, dBTP. Ketjun oma `CEILING_DB` on stemin katto ja
     # jättää varaa summalle; tämä on se luku johon **ohjelma** rajataan.
     program_peak_db: float = -1.0
