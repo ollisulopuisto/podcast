@@ -143,9 +143,9 @@ def test_no_backoff_means_no_change():
 
 
 def test_the_boost_to_a_delivery_target_is_limited_on_the_sum():
-    """Jakelutaso otetaan summasta, ja huiput maksetaan kerran.
+    """Masterointitaso otetaan summasta, ja huiput maksetaan kerran.
 
-    Stemin tavoite ja jakelun tavoite ovat eri asia. Stemikohtaisesti
+    Stemin tavoite ja masteroinnin tavoite ovat eri asia. Stemikohtaisesti
     nostettuna jokainen mikki maksaa crestiä siitä mitä *toinen* tiedosto
     sattuu tekemään — mitattuna ketjun oma rajoitin vei 32,1 -> 16,7 dB.
     Summasta nostettuna rajoitusta tarvitaan vain siellä missä huiput osuvat

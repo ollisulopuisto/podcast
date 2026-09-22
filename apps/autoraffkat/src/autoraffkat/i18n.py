@@ -349,8 +349,8 @@ CATALOG: dict[str, dict[str, str]] = {
               "lanes.",
     },
     "audio.program_short": {
-        "fi": "Jakelutaso jäi: tavoite {target} LUFS, tulos {got}.",
-        "en": "Delivery level fell short: target {target} LUFS, got {got}.",
+        "fi": "Masterointi jäi tavoitteesta: tavoite {target} LUFS, tulos {got}.",
+        "en": "Mastering fell short: target {target} LUFS, got {got}.",
     },
     "audio.plugin_skipped": {
         "fi": "Liitännäinen ohitettu, muu käsittely tehtiin: {error}",

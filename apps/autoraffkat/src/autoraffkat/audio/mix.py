@@ -342,9 +342,9 @@ class MixResult:
     # Tasapaino korjataan näistä yhtenä jaettuna päätöksenä, ks.
     # `programme.shared_backoff`.
     backoffs: dict[str, float] = field(default_factory=dict)
-    # Jakelutason nosto, joka tehtiin summaan katon yhteydessä.
+    # Masterointitason nosto, joka tehtiin summaan katon yhteydessä.
     program_boost: float = 0.0
-    # Mitattu ohjelman äänekkyys jakelun jälkeen, LUFS. Nolla = ei mitattu.
+    # Mitattu ohjelman äänekkyys masteroinnin jälkeen, LUFS. Nolla = ei mitattu.
     program_lufs: float = 0.0
     program_range: float = 0.0            # LRA, LU
     program_short_term_max: float = 0.0   # LUFS
@@ -413,7 +413,7 @@ def _geometry(item, frames: int) -> tuple:
     return envelopes.geometry(track_of(item), frames)
 
 
-#: Kuinka monta kierrosta jakelutasoa haetaan. Rajoitin vie osan noston
+#: Kuinka monta kierrosta masterointitasoa haetaan. Rajoitin vie osan noston
 #: tuomasta äänekkyydestä, joten yksi kierros jää aina alle — mutta ero
 #: pienenee kertaluokan kierrosta kohden, joten kolme riittää.
 DELIVER_ROUNDS = 3
@@ -444,7 +444,7 @@ def _anyone_speaking(grid, program_start: float):
 
 
 def delivery_lufs(settings) -> float:
-    """Ohjelman jakelutaso, LUFS. Nolla = ei jakelua.
+    """Ohjelman masterointitaso, LUFS. Nolla = ei masterointia.
 
     Oma luku voittaa; muuten sama kuin käyttöliittymän tavoite, koska se
     **on** ohjelman taso (YouTube -14, suoratoisto -16). Ilman tätä vartijan
@@ -461,7 +461,7 @@ def delivery_lufs(settings) -> float:
 def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
                     extra: dict, settings: AudioSettings,
                     speech=None) -> None:
-    """Ohjelma jakelutasoon: mittaa, nosta, rajoita, mittaa uudestaan.
+    """Ohjelma masterointitasoon: mittaa, nosta, rajoita, mittaa uudestaan.
 
     Tämä on se työ jonka moni tekee erillisellä työkalulla viennin jälkeen —
     rajoitin ja äänekkyyskorjaus valmiin miksauksen päälle. Se kuuluu tänne,
@@ -573,7 +573,7 @@ def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
             _log(f"rajoitinbudjetti täynnä: nosto {boost:+.2f} dB, "
                  f"hinta {cost:.2f} LU -> {measured:.2f} LUFS")
             break
-        _log(f"jakelutaso kierros {round_number + 1}: nosto {boost:+.2f} dB"
+        _log(f"masterointi kierros {round_number + 1}: nosto {boost:+.2f} dB"
              + (f", veto {ride.min():.2f} dB" if ride is not None else "")
              + f" -> {measured:.2f} LUFS (rajoitin {cost:.2f} LU)")
 
@@ -585,7 +585,7 @@ def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
     result.program_range = meter.range()
     result.program_short_term_max = meter.short_term_max()
     result.program_momentary_max = meter.momentary_max()
-    _log(f"jakelu: {result.program_lufs:.1f} LUFS · LRA {result.program_range:.1f} "
+    _log(f"masterointi: {result.program_lufs:.1f} LUFS · LRA {result.program_range:.1f} "
          f"· rajoitin {result.program_limit_cost:.2f} LU "
          f"· lyhyt max {result.program_short_term_max:.1f} "
          f"· hetkellinen max {result.program_momentary_max:.1f}")
@@ -733,11 +733,11 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                 blocks = []
                 for job, handle in zip(members, handles, strict=True):
                     handle.seek(low)
-                    # Jakelutason nosto on jokaiselle sama, ja se tehdään
+                    # Masterointitason nosto on jokaiselle sama, ja se tehdään
                     # **ennen** jaettua käyrää: silloin rajoitus osuu vain
                     # sinne missä huiput osuvat yhteen, eikä yksikään stemi
                     # maksa crestiä toisen puolesta.
-                    # Jaettu peruutus samaan ajoon: tämä pass lukee ja
+                    # Tasapainon korjaus samaan ajoon: tämä pass lukee ja
                     # kirjoittaa stemin joka tapauksessa.
                     blocks.append(
                         handle.read(high - low)
@@ -1431,7 +1431,7 @@ def process(
         # palkkia, ei uusia tiedostoja — eikä mitään mikä kertoisi että ajo
         # todella tapahtui ja oli valmis ennen kuin se alkoi.
         _log(f"ei mitään tehtävää: {len(jobs)} tiedostoa on jo ajan tasalla")
-        # Jakelutaso on silti tehtävä. Se ei ole tiedostojen käsittelyä vaan
+        # Masterointitaso on silti tehtävä. Se ei ole tiedostojen käsittelyä vaan
         # katon yhteydessä tehtävä nosto, ja tästä palaaminen tarkoittaisi
         # että tason muuttaminen ei tee **mitään** kun stemit ovat ajan
         # tasalla: säädin liikkuu, lokiin ei tule mitään, ääni ei muutu.
@@ -1533,10 +1533,14 @@ def process(
     # siirtäisivät puhujien tasapainoa, mitattuna 1,1 dB:n erosta 5,9 dB:iin.
     extra = programme.shared_backoff(result.backoffs)
     if any(extra.values()):
-        _log(f"jaettu peruutus: {extra}")
-    # Jakelutaso mitataan **vaimennetusta summasta**, koska se on ohjelma
+        # Luettavana: kuka laskettiin ja miksi, ei sanakirjaa.
+        lowered = ", ".join(f"{os.path.splitext(k)[0]} {v:+.2f} dB"
+                            for k, v in extra.items() if v)
+        _log(f"puhujien tasapaino: {lowered} (toinen mikki joutui "
+             f"laskemaan tasoaan rajoittimen takia, sama lasku muille)")
+    # Masterointitaso mitataan **vaimennetusta summasta**, koska se on ohjelma
     # jonka isäntä soittaa. Stemin oma tavoite jää siksi ennalleen: se on
-    # tason lähtökohta, tämä on jakelun luku, eivätkä ne ole sama asia.
+    # tason lähtökohta, tämä on masteroinnin luku, eivätkä ne ole sama asia.
     # Puheportti: RX arvioi puheen sijainnin itse, meillä se on tiedossa.
     # Ruudukko on sama jonka päälle koko leikkaus on rakennettu, joten
     # portti on tarkempi kuin arvaus eikä maksa mitään.

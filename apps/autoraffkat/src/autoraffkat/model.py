@@ -67,7 +67,7 @@ LONGTAKE_RULES = (LONGTAKE_RETURN, LONGTAKE_STAY, LONGTAKE_REACTION,
 
 # Jakelualustojen äänekkyyslukemat. Nämä eivät ole makuasioita vaan
 # alustojen normalisointitasoja: kovempi vienti vain vaimennetaan toistossa,
-# hiljaisempi jää muiden alle. Vapaa säädin jää silti, koska kaikki jakelu ei
+# hiljaisempi jää muiden alle. Vapaa säädin jää silti, koska kaikki julkaisu ei
 # ole näitä kahta.
 LOUDNESS_TARGETS: dict[str, float] = {
     "youtube": -14.0,
@@ -308,7 +308,7 @@ class AudioSettings:
     #
     # (Vertailun vuoksi: Applen podcast-standardi on -16, mutta se koskee
     # ääntä ilman kuvaa. Tämä menee YouTubeen.) Nimetyt vaihtoehdot
-    # ovat ``LOUDNESS_TARGETS``; säädin jää silti vapaaksi, koska jakelu ei
+    # ovat ``LOUDNESS_TARGETS``; säädin jää silti vapaaksi, koska julkaisu ei
     # ole aina jompikumpi näistä.
     target_lufs: float = -14.0
     # Oletukset tulevat ketjulta, ks. `chain.PEAK_THRESHOLD_DB`: ne on
@@ -377,21 +377,21 @@ class AudioSettings:
     # ja stemit jäävät sen verran hiljemmalle; pois päältä jokainen tiedosto
     # osuu tavoitteeseen yksinään. Ks. ``mix.program_trim``.
     program_target: bool = True
-    # Jakelutaso: mihin **ohjelman** pitää osua, ei stemin. Nolla = sama kuin
+    # Masterointitaso: mihin **ohjelman** pitää osua, ei stemin. Nolla = sama kuin
     # ``target_lufs``, kun ``program_target`` on päällä; muu luku ohittaa sen.
     # Nosto tehdään summaan katon yhteydessä, jolloin rajoitus osuu vain
     # sinne missä huiput osuvat yhteen. Stemin oma tavoite on tason
     # lähtökohta ja pysyy ennallaan; niiden sekoittaminen on koko
     # tiivistysongelman juuri. Ks. ``mix.delivery_lufs``.
     #
-    # Jakelu oli oletuksena pois. Ketjun vartija (``chain.PSR_GUARD_LU``)
+    # Masterointi oli oletuksena pois. Ketjun vartija (``chain.PSR_GUARD_LU``)
     # laski pp 55:n summan -19,4:ään crest 18,3, eli käyttöliittymän
-    # tavoite jäi saavuttamatta hiljaa. Jakelu nosti sen -15,75:een crest
+    # tavoite jäi saavuttamatta hiljaa. Masterointi nosti sen -15,75:een crest
     # 14,05 ja kuunneltuna (2026-09-22) nostettu voitti nostamattoman.
     # -14 vaatii huippuvaiheen (``chain.PEAK_STAGE_MS``): hinta 2,9 LU,
     # budjetin 3 sisällä.
     program_lufs: float = 0.0
-    # Jakelun huippukatto, dBTP. Ketjun oma `CEILING_DB` on stemin katto ja
+    # Masteroinnin huippukatto, dBTP. Ketjun oma `CEILING_DB` on stemin katto ja
     # jättää varaa summalle; tämä on se luku johon **ohjelma** rajataan.
     program_peak_db: float = -1.0
     # Lyhytaikaisen äänekkyyden katto, LUFS. Nolla = pois. Tämä on **raja**
@@ -399,7 +399,7 @@ class AudioSettings:
     # hitaalla vedolla eikä rajoittimella, koska kolmen sekunnin ikkuna on
     # kolme kertaluokkaa rajoittimen muistia pidempi.
     program_short_term_db: float = 0.0
-    # Kuinka lähelle jakelutasoa on päästävä, LU.
+    # Kuinka lähelle masterointitasoa on päästävä, LU.
     program_tolerance: float = 0.5
     # Kuinka paljon äänekkyyttä ohjelman rajoitin saa syödä, LU. Nolla = ei
     # rajaa. Ala on mitattu muualla eikä täällä: masteroinnissa yhdestä
