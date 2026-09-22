@@ -186,3 +186,44 @@ def test_the_lags_cover_the_tail_when_the_signal_runs_out():
         float(np.dot(a[k:k + n - k], b[: n - k])) for k in range(taps)
     ])
     assert np.abs(out - suora).max() / max(np.abs(suora).max(), 1e-12) < 1e-12
+
+
+def _late_room(seconds=150.0, seed=3):
+    """Sama kuin ``_room``, mutta heijastus tulee vasta 100 ms:n päässä.
+
+    Mitoitus on tarkoituksellinen: nykyinen suodin on 43 ms, joten tämä
+    heijastus on sen ulottumattomissa. Oikealla aineistolla ero on samaa
+    luokkaa — koko jaksosta (68,7 min) mitattuna vuotoa lähti 2048 tapilla
+    3,92 dB ja 8192 tapilla 5,14 dB.
+    """
+    from scipy import signal as sig
+
+    rng = np.random.default_rng(seed)
+    n = int(RATE * seconds)
+    t = np.arange(n) / RATE
+    source = rng.normal(size=n) * (np.sin(2 * np.pi * 0.11 * t) > 0.0)
+    own = rng.normal(size=n) * (np.sin(2 * np.pi * 0.11 * t) < -0.3)
+    leak = np.zeros(int(0.2 * RATE))
+    leak[int(0.0052 * RATE)] = 0.30
+    leak[int(0.100 * RATE)] = 0.22
+    target = own + sig.fftconvolve(source, leak)[:n]
+    return target, source, (source != 0) & (own == 0), (own != 0) & (source == 0)
+
+
+def test_the_filter_reaches_past_the_early_reflections():
+    """Suottimen on yllettävä myöhäiseen heijastukseen, ei vain varhaisiin.
+
+    Vuoto ei lopu 43 ms:iin. Mitattuna 100 ms:n heijastuksella vähennys oli
+    2048 tapilla 9,19 dB ja 8192 tapilla 10,20 dB; oikealla jaksolla ero oli
+    3,92 -> 5,14 dB. Hinta mitattiin samasta 68,7 minuutin tiedostosta:
+    ajoaika 33,1 -> 33,5 s ja muisti 10,6 -> 11,3 GB, eli sitä ei ole.
+    Kohteen oma puhe säilyi molemmilla korrelaatiolla 0,9999.
+    """
+    target, source, solo_source, solo_target = _late_room()
+    _out, info = debleed.remove(target, source, RATE, solo_source, solo_target)
+
+    assert info["reason"] == ""
+    assert info["reduction_db"] > 9.8, (
+        f"myöhäinen heijastus jäi: vain {info['reduction_db']:.2f} dB"
+    )
+    assert info["kept"] > 0.999, "kohteen oma puhe muuttui"
