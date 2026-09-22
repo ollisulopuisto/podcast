@@ -421,16 +421,30 @@ step 8:
   against Live's steeper 100 Hz), −2…−3 dB at 160–250 Hz, +1.7 dB at 400 Hz,
   −3.5…−4.6 dB at 3–10 kHz. Everything above 60 Hz of that is the bus EQ.
 
-**Result: no change to `chain.py` from this measurement.** Open decisions,
-not numbers to port:
+**Result: the compressors stay as they are; a tone stage was added** at
+about half the bus EQ's amounts, because that curve is a house sound tuned
+by ear for these speakers and the chain runs blind on everyone
+(`TONE_*` in `chain.py`):
 
-- A shaping EQ. Neutron's curve is set for the whole speech bus, not for one
-  voice, so it is closer to a house sound than a correction — but it is still
-  tuned by ear for these speakers, and the chain runs blind on everyone. A
-  static EQ is linear, so where it sits matters only against the nonlinear
-  stages: a presence lift before the de-esser (4.5 kHz) and the compressors
-  gets partly compressed back out; after them it survives.
-- The high-pass: 80 Hz, or 100 Hz and steeper.
+- 250 Hz +1.5 dB (Q 1) and 400 Hz −2 dB (Q 1.8) in the cleanup stage with
+  the high-pass, speech only, so the compressors see the shaped signal.
+- A 3 kHz high shelf +1.5 dB **after** the dynamics. Placement measured: our
+  de-esser takes 1.8 dB off 5–10 kHz of real speech, and of a +1.5 dB shelf
+  placed before it 0.9 dB survived the chain; placed after, 1.41.
+
+Same comparison after the change (ours minus Live, at Live's level):
+250 Hz −2.8 → −1.7 dB, 400 Hz +1.7 → +0.7 dB, 5–10 kHz −4.3…−4.6 →
+−2.7…−3.1 dB. No sign flipped in the shaped bands; above 12.7 kHz ours is
+now +2.2 dB, where Live's bus EQ rolls off from 14 kHz. Crest 24.5 → 24.6 dB,
+PSR 20.6 → 20.8 LU: the dynamics did not move.
+Listening A/B on the same excerpt, loudness-matched: with the tone stage
+preferred over without, and over the Live render itself (2026-09-22) —
+so the +2.2 dB above 12.7 kHz stays; no roll-off added to match Live.
+
+Still open:
+
+- The high-pass: 80 Hz, or 100 Hz and steeper — below 60 Hz ours is still
+  +4…+7 dB.
 - De-reverb and Breath Control have no counterpart here. On this material
   they change neither tone nor dynamics, so the gap is smaller than assumed —
   one excerpt, one room.
