@@ -441,6 +441,20 @@ Listening A/B on the same excerpt, loudness-matched: with the tone stage
 preferred over without, and over the Live render itself (2026-09-22) —
 so the +2.2 dB above 12.7 kHz stays; no roll-off added to match Live.
 
+**What the same listening test then found about the limiter.** Rendered at
+the production stem target (−15.8 LUFS, from a −14 programme target), the
+chain sounded distorted. The peaks entering the limiter are +8.0 dBFS, so it
+was doing −9.6 dB and taking crest to 15.4 dB. The compressors cannot reach
+those peaks: above 0 dBFS there were 1005 events, median 0.15 ms, 0.19 % of
+samples, and the 40 % dry path preserves them by design. Loudness-matched
+A/B: crest 15.4 dB bad, 18.5 and 19.4 dB good. Smoothing the limiter's
+attack, lowering thresholds 4 dB, raising per-stage reduction to 8 dB,
+a 0.85 parallel mix and an oversampled soft clipper (limiter work −9.6 →
+−1.5 dB at the same loudness) all failed the ear; giving up level won.
+`LIMITER_BUDGET_DB` is therefore **6.0 and on by default**, where it had been
+0.0 — written, and switched off. The file lands 3 dB below target and says so
+(`reached_target`).
+
 Still open:
 
 - The high-pass: 80 Hz, or 100 Hz and steeper — below 60 Hz ours is still

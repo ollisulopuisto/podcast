@@ -47,6 +47,7 @@ FINGERPRINT_FIELDS = (
 # samoilla asetuksilla syntyvää. Sama tarkoitus kuin verhokäyrän
 # ``CACHE_VERSION``:illa.
 #
+# 10: rajoittimen budjetti on oletuksena päällä.
 # 9: puheen sävy (runko, laatikkomaisuus, yläpään hylly).
 # 8: ristivuoto ratkeaa myös pitkissä osissa.
 # 7: tasonkuljettaja ennen kompressoreita.
@@ -57,4 +58,4 @@ FINGERPRINT_FIELDS = (
 # 2: naksunpoiston kynnys. Vanhat tiedostot on tehty detektorilla joka
 #    korjasi 2 % kaikista näytteistä; ne eivät ole ajan tasalla millään
 #    asetuksella, ja ilman tätä painike olisi kertonut päinvastaista.
-FINGERPRINT_VERSION = 9
+FINGERPRINT_VERSION = 10
