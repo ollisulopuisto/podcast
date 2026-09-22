@@ -19,10 +19,11 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from nhsx.read import locate as locate_audio
+
 from .. import audio as audio_io
 from .. import nhsx
 from ..jobs import Progress
-from ..nhsx.read import locate as locate_audio
 from ..nhsx.write import next_free_path, set_transcription
 from .backends import resolve
 from .backends.base import words_from_segments

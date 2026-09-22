@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
+from nhsx.read import NhsxError
+
 from .. import settings as saved
 from ..jobs import RUNNER
-from ..nhsx.read import NhsxError
 from . import core
 
 router = APIRouter()

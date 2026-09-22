@@ -89,7 +89,7 @@ def write_wav(path: Path, seconds: float) -> None:
 
 
 def words_of(session: Path, name: str) -> list[str]:
-    from podcastmagic.nhsx.read import read
+    from nhsx.read import read
 
     parsed = read(session)
     info = parsed.file_by_name(name)

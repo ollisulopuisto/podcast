@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .read import Session, Word, descendants, localname
+from nhsx.read import Session, Word, descendants, localname
 
 # Kuinka monta esimerkkiä kustakin havainnosta kerätään. Tarkoitus on
 # osoittaa kohta tiedostosta, ei tulostaa jokaista tuhannesta.

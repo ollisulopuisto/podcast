@@ -18,8 +18,8 @@ import math
 
 import pytest
 
-from podcastmagic.nhsx.mix import db_to_linear, pan_gains, plan
-from podcastmagic.nhsx.read import read as read_session
+from nhsx.mix import db_to_linear, pan_gains, plan
+from nhsx.read import read as read_session
 
 # Pienimmän neliösumman sovitus renderöidystä raidasta: R = k·L.
 # Ennuste (1-p)/(1+p) antaa 0,23077 ja 3,44444.

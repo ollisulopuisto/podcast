@@ -6,8 +6,9 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
+from nhsx.read import NhsxError
+
 from ..jobs import RUNNER
-from ..nhsx.read import NhsxError
 from ..nhsx.write import next_free_path
 from . import core
 

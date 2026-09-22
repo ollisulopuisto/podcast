@@ -20,7 +20,8 @@ import copy
 import wave
 from pathlib import Path
 
-from ..nhsx.read import NhsxError, localname, locate, read
+from nhsx.read import NhsxError, localname, locate, read
+
 from ..nhsx.write import next_free_path, write
 
 # Kuinka monta sekuntia kahden nauhoitteen keot saavat erota. Sama vienti

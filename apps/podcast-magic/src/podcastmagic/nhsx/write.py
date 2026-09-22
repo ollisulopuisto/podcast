@@ -7,7 +7,7 @@ from pathlib import Path
 
 from lxml import etree
 
-from .read import Word, localname, seconds_to_time
+from nhsx.read import Word, localname, seconds_to_time
 
 # Puhujatunnus sanaelementissä. Hindenburg odottaa kentän olevan olemassa;
 # «UU» on sen oma merkintä tuntemattomalle puhujalle. Diarisaatiota ei tehdä,

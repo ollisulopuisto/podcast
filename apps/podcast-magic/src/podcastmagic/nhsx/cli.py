@@ -27,8 +27,9 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from nhsx.read import NhsxError, read
+
 from . import mix, prospect, render
-from .read import NhsxError, read
 from .write import next_free_path
 
 

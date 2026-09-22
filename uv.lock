@@ -2441,6 +2441,7 @@ source = { editable = "apps/podcast-magic" }
 dependencies = [
     { name = "fastapi" },
     { name = "lxml" },
+    { name = "nhsx" },
     { name = "numpy" },
     { name = "pywebview" },
     { name = "speechmix" },
@@ -2467,6 +2468,7 @@ requires-dist = [
     { name = "faster-whisper", marker = "extra == 'faster'", specifier = ">=1.1.0" },
     { name = "lxml", specifier = ">=5.0" },
     { name = "mlx-whisper", marker = "extra == 'mlx'", specifier = ">=0.4.0" },
+    { name = "nhsx", editable = "packages/nhsx" },
     { name = "numpy", specifier = ">=2.4.2" },
     { name = "pywebview", specifier = ">=5.0" },
     { name = "speechmix", editable = "packages/speechmix" },

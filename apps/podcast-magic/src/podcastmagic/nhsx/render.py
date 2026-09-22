@@ -43,8 +43,9 @@ from pathlib import Path
 
 import numpy as np
 
+from nhsx.mix import Mix, envelope, pan_gains
+
 from ..binaries import get_binary_path
-from .mix import Mix, envelope, pan_gains
 
 # Ohjelman oletustaajuus. 48 kHz eikä 44,1: Hindenburgin lähteet ovat
 # käytännössä 48 kHz, ja renderöinti ilman uudelleennäytteistystä on sekä

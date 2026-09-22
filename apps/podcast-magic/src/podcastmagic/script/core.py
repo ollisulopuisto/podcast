@@ -10,7 +10,7 @@ samat sanat kuuluvat eri kohtaan jaksoa.
 
 from __future__ import annotations
 
-from ..nhsx.read import Session, read
+from nhsx.read import Session, read
 
 __all__ = ["read", "script"]
 
