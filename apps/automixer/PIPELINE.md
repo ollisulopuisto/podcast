@@ -152,6 +152,6 @@ samples out.
 
 Every stage that needs the grid can be turned off from the CLI, and
 `--minimal` turns off all of them together:
-`--no-debleed`, `--no-rider`, `--no-mic-duck` (and `--mic-duck-db` for the
-depth). A stage that is off is off because it was asked to be — none of them
+`--no-debleed`, `--no-rider`; microphone ducking is off unless `--mic-duck`
+asks for it (and `--mic-duck-db` sets the depth). A stage that is off is off because it was asked to be — none of them
 fail into silence, and de-bleeding says why it refused when it refuses.

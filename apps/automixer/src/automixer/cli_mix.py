@@ -250,7 +250,9 @@ class Mixer:
         # päätös, ei yhden raidan ominaisuus, ja siksi sitä ei voi laskea
         # raita kerrallaan.
         mic_ducks = {}
-        if heard is not None and speech_cfg.get("mic_duck_enabled", True):
+        # Oletus pois: vuodonpoisto vie vuodon lineaarisesti, ja kuunneltuna
+        # (autoraffkat, pp 55) portti pumppasi.
+        if heard is not None and speech_cfg.get("mic_duck_enabled", False):
             # Syvyys on säädin, loput mitattuja oletuksia kirjastosta.
             duck = room.DuckSettings()
             if speech_cfg.get("mic_duck_db") is not None:
@@ -546,10 +548,18 @@ def main():
         help="Disable the slow level rider ahead of the compressors",
     )
     parser.add_argument(
+        "--mic-duck",
+        action="store_true",
+        dest="speech_mic_duck",
+        help="Close a microphone while its owner is silent (off by default: "
+        "de-bleeding removes the leakage, and the gate pumped by ear)",
+    )
+    # Vanha lippu kelpaa yhä, koska oletus on nyt sama kuin mitä se pyysi.
+    parser.add_argument(
         "--no-mic-duck",
         action="store_false",
         dest="speech_mic_duck",
-        help="Do not close a microphone while its owner is silent",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--mic-duck-db",
@@ -559,7 +569,7 @@ def main():
     )
     parser.set_defaults(
         speech_hp=True, speech_peak=True, speech_lev=True, speech_desmack=True,
-        speech_debleed=True, speech_rider=True, speech_mic_duck=True,
+        speech_debleed=True, speech_rider=True, speech_mic_duck=False,
     )
 
     # New options: Music Bus
