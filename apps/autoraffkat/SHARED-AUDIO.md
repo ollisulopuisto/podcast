@@ -483,6 +483,16 @@ loudness-matched A/B (2026-09-22): without guard −15.48 LUFS/crest 14.28/PSR
 14.84 — **the last preferred**, 5.4 dB under the −14 target. Crest was
 worth more than loudness again.
 
+The delivery stage (`program_lufs`) buys the level back on the sum, where
+the limiter only acts where peaks coincide. It had been written and left
+at 0 = off; it is now **−16 by default**. Same minute: guard −19.39 LUFS/
+crest 18.29 → delivered −15.75/14.05, limiter cost 1.3 LU inside the 3 LU
+budget. By ear the delivered versions beat the undelivered ones, with
+dxRevive 25 and without, and dxRevive 25 was preferred on the noise lifted
+with them (a 400 ms 10th-percentile level −24.5 → −24.8 dB, so the ear
+heard more than that number shows). −14 is not reachable with this crest:
+PSR 15 LU under a −1 dBTP ceiling leaves −16 at most.
+
 The high-pass stays at 80 Hz. Ours is +4…+7 dB above Live below 60 Hz,
 where Live cuts at 100 Hz and steeper, but that is rumble and not speech:
 decided by ear, not worth a stage.

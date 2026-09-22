@@ -1134,6 +1134,14 @@ def test_the_stamp_says_the_plugin_did_not_run(fixture_dir):
                 )
 
 
+def test_delivery_is_on_by_default_at_podcast_level():
+    """Ketjun vartija luopuu tasosta crestin hyväksi, ja ohjelma jäi
+    mitattuna -19,4 LUFS:iin. Jakelu nostaa sen takaisin summan
+    rajoittimella, joten sen on oltava päällä ilman että kukaan muistaa
+    kytkeä sitä — pois päältä se oli kirjoitettu ja käyttämätön."""
+    assert AudioSettings().program_lufs == -16.0
+
+
 @needs_ffmpeg
 def test_the_delivery_target_still_works_when_nothing_is_stale(fixture_dir):
     """Tason muuttaminen ei saa jäädä hiljaa tekemättä.
