@@ -60,7 +60,11 @@ def shared_gain(blocks, rate: int,
         total = block if total is None else total + block
     if total is None:
         raise ValueError("ohjelmakatto ilman stemejä")
-    return chain.limiter_gain(total, rate, ceiling_db)
+    # Huippuvaihe ensin, rajoitin vasta sen jäännökselle: pelkkä rajoitin
+    # hyppää, ks. ``chain.PEAK_STAGE_MS``. Kumpikin on min(1, ·) katosta,
+    # joten katon alla olevalle summalle tulos on edelleen ykkönen.
+    stage = chain.peak_stage_gain(total, rate, ceiling_db)
+    return stage * chain.limiter_gain(total * stage, rate, ceiling_db)
 
 
 def reduction_db(gain: np.ndarray) -> float:

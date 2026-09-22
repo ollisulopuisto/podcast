@@ -1134,12 +1134,15 @@ def test_the_stamp_says_the_plugin_did_not_run(fixture_dir):
                 )
 
 
-def test_delivery_is_on_by_default_at_podcast_level():
+def test_delivery_follows_the_programme_target():
     """Ketjun vartija luopuu tasosta crestin hyväksi, ja ohjelma jäi
-    mitattuna -19,4 LUFS:iin. Jakelu nostaa sen takaisin summan
-    rajoittimella, joten sen on oltava päällä ilman että kukaan muistaa
-    kytkeä sitä — pois päältä se oli kirjoitettu ja käyttämätön."""
-    assert AudioSettings().program_lufs == -16.0
+    mitattuna -19,4 LUFS:iin tavoitteen -14 sijaan. Jakelu nostaa sen
+    takaisin summan huippuvaiheella, joten sen on seurattava sitä tavoitetta
+    jonka käyttäjä valitsi — ei omaa lukuaan, joka unohtuu."""
+    assert mix.delivery_lufs(AudioSettings()) == AudioSettings().target_lufs
+    assert mix.delivery_lufs(AudioSettings(target_lufs=-16.0)) == -16.0
+    assert mix.delivery_lufs(AudioSettings(program_lufs=-18.0)) == -18.0
+    assert mix.delivery_lufs(AudioSettings(program_target=False)) == 0.0
 
 
 @needs_ffmpeg

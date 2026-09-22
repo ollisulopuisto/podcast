@@ -443,6 +443,21 @@ def _anyone_speaking(grid, program_start: float):
     return (anyone, float(program_start))
 
 
+def delivery_lufs(settings) -> float:
+    """Ohjelman jakelutaso, LUFS. Nolla = ei jakelua.
+
+    Oma luku voittaa; muuten sama kuin käyttöliittymän tavoite, koska se
+    **on** ohjelman taso (YouTube -14, suoratoisto -16). Ilman tätä vartijan
+    peruutus jätti ohjelman -19,4:ään ja tavoite näytti täyttyneen.
+    """
+    own = float(getattr(settings, "program_lufs", 0.0) or 0.0)
+    if own:
+        return own
+    if getattr(settings, "program_target", True):
+        return float(getattr(settings, "target_lufs", 0.0) or 0.0)
+    return 0.0
+
+
 def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
                     extra: dict, settings: AudioSettings,
                     speech=None) -> None:
@@ -462,7 +477,7 @@ def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
     lukeman samasta virrasta jonka katto kirjoittaa, joten koko pituus
     maksaa yhden lisäkierroksen eikä yhtään ylimääräistä lukukertaa.
     """
-    target = float(getattr(settings, "program_lufs", 0.0) or 0.0)
+    target = delivery_lufs(settings)
     if not target:
         program_ceiling(jobs, result, ducks, extra)
         return
@@ -1420,7 +1435,7 @@ def process(
         # katon yhteydessä tehtävä nosto, ja tästä palaaminen tarkoittaisi
         # että tason muuttaminen ei tee **mitään** kun stemit ovat ajan
         # tasalla: säädin liikkuu, lokiin ei tule mitään, ääni ei muutu.
-        if settings.program_lufs and grid is not None:
+        if delivery_lufs(settings) and grid is not None:
             program_deliver(
                 jobs, result, duck_envelopes(grid, settings, program_start),
                 {}, settings, _anyone_speaking(grid, program_start),
