@@ -87,6 +87,28 @@ DEESS_HZ = 4500.0
 DEESS_THRESHOLD_DB = -30.0
 DEESS_RATIO = 3.0
 DEESS_SMOOTH_MS = 3.0
+
+# Puheen sävy. Käsin tehdyn Live-ketjun rinnalla sama tiedosto oli
+# dynamiikaltaan sama mutta sävyltään eri (SHARED-AUDIO.md §3.10): meillä
+# 160–250 Hz −2…−3 dB, 400 Hz +1,7 dB ja 3–10 kHz −3,5…−4,6 dB. Ero tuli
+# puhebusin Neutron-EQ:sta (250 Hz +3, 400 Hz −4 / Q 1,8, 3 kHz:n hylly),
+# joka on koko puheen sointi eikä yhden äänen korjaus. Ketju ajetaan
+# sokkona kaikille, joten määrät ovat noin puolet mitatusta.
+#
+# Runko ja laatikkomaisuus kuuluvat siivoukseen ylipäästön kanssa, jotta
+# kompressorit näkevät muotoillun signaalin. Hylly tulee vasta dynamiikan
+# jälkeen: sihinänpoisto painaa 5–10 kHz:ä oikeasta puheesta mitattuna
+# −1,8 dB, ja sen edellä ajetusta +1,5 dB:n hyllystä jäi jäljelle 0,9 dB,
+# jälkeen ajetusta 1,41.
+TONE_BODY_HZ = 250.0
+TONE_BODY_DB = 1.5
+TONE_BODY_Q = 1.0
+TONE_BOX_HZ = 400.0
+TONE_BOX_DB = -2.0
+TONE_BOX_Q = 1.8
+TONE_PRESENCE_HZ = 3000.0
+TONE_PRESENCE_DB = 1.5
+
 # Huippukatto.
 #
 # Tämä oli pitkään staattinen koko raidan vaimennus, ja se oli ketjun suurin
@@ -131,7 +153,28 @@ DEESS_SMOOTH_MS = 3.0
 #: on korjattavissa yhdellä liu'ulla. Summan katosta huolehtii silti
 #: ``programme.shared_gain``, joten stemin ei tarvitse olla itse kattoa
 #: vasten.
-LIMITER_BUDGET_DB = 0.0
+#: Kuusi desibeliä, ja se on **päällä**. Nolla oli pois päältä, eli ketjun
+#: ainoa rajaton vaihe pysyi rajattomana kaikilla oletusasetuksilla.
+#:
+#: Mitattuna oikealla puheella (87 s, -26,2 LUFS, crest 25,4 dB) YouTuben
+#: -14:stä johdetulla stemin tavoitteella -15,8: signaali osuu rajoittimeen
+#: +8,0 dBFS:n huipuilla, rajoitin tekee -9,6 dB työtä ja crest putoaa
+#: 15,4:ään. Kompressorit eivät voi auttaa, koska huiput ovat yksittäisiä
+#: aallonharjoja: yli 0 dBFS:n meni 1005 tapahtumaa, mediaani 0,15 ms,
+#: pisin 0,6 ms, 0,19 % näytteistä — 15 ms:n hyökkäys ei näe niitä, ja
+#: rinnakkaishaaran kuiva 40 % säilyttää ne tarkoituksella. Rajoittimen
+#: vahvistus liikkui 117 000 dB/s eli yli 2 dB yhden näytteen aikana, ja
+#: 110 Hz:n äänellä jakso on 9 ms — vahvistusta moduloidaan siis jakson
+#: sisällä, mikä on määritelmällisesti säröä.
+#:
+#: Kuunneltuna, äänekkyydeltään täsmätty A/B samasta pätkästä: crest 15,4
+#: kuulostaa säröiseltä, 18,5 ja 19,4 eivät. Kokeiltiin myös rajoittimen
+#: hyökkäyksen pehmennys (nopein muutos 15 800 -> 1 900 dB/s), kynnysten
+#: lasku 4 dB, vaihekohtaisen vaimennuksen nosto 5 -> 8 dB, rinnakkaisosuus
+#: 0,85 ja ylinäytteistetty pehmeä leikkuri rajoittimen edessä (rajoittimen
+#: työ -9,6 -> -1,5 dB samalla äänekkyydellä). **Yksikään ei kuulostanut
+#: paremmalta kuin tason antaminen periksi.** Määrä ratkaisee, ei muoto.
+LIMITER_BUDGET_DB = 6.0
 
 #: Mistä kohtaa jakaumaa «jatkuva työ» luetaan. Käyrän minimi on **yhden
 #: näytteen** vaatimus, ja koko tiedoston vaimentaminen sen mukaan on juuri
@@ -1190,6 +1233,20 @@ def _board(*steps):
     return pedalboard.Pedalboard([s for s in steps if s is not None])
 
 
+def _tone_body() -> tuple:
+    """Rungon ja laatikkomaisuuden suotimet, ks. TONE_BODY_DB."""
+    import pedalboard
+
+    return tuple(
+        pedalboard.PeakFilter(cutoff_frequency_hz=hz, gain_db=db, q=q)
+        for hz, db, q in (
+            (TONE_BODY_HZ, TONE_BODY_DB, TONE_BODY_Q),
+            (TONE_BOX_HZ, TONE_BOX_DB, TONE_BOX_Q),
+        )
+        if db
+    )
+
+
 @dataclass
 class ChainResult:
     """Yhden tiedoston käsittely."""
@@ -1281,7 +1338,8 @@ def process(
     cleanup = _board(
         pedalboard.HighpassFilter(cutoff_frequency_hz=settings.high_pass_hz)
         if settings.high_pass_hz > 0
-        else None
+        else None,
+        *(_tone_body() if speech else ()),
     )
     if len(cleanup):
         audio = cleanup(audio, rate, reset=True)
@@ -1365,6 +1423,14 @@ def process(
             LEVEL_RELEASE_MS * 2,
         )
         audio = audio * (1.0 - PARALLEL_MIX) + compressed * PARALLEL_MIX
+        # Hylly vasta tässä, ks. TONE_PRESENCE_DB. Ennen tasomittausta, jotta
+        # korjaus kattaa myös sen tuoman äänekkyyden.
+        if TONE_PRESENCE_DB:
+            audio = _board(
+                pedalboard.HighShelfFilter(
+                    cutoff_frequency_hz=TONE_PRESENCE_HZ, gain_db=TONE_PRESENCE_DB
+                )
+            )(audio, rate, reset=True)
 
         # 6. Taso mitataan uudestaan, koska kompressointi siirtää sitä.
         #

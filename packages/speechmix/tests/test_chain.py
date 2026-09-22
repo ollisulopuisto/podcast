@@ -686,6 +686,29 @@ def test_a_reachable_target_is_still_reached():
     assert info.reached_target is True
 
 
+def test_the_budget_is_on_by_default():
+    """Rajoittimen raja on oletus, ei valinnainen lisä.
+
+    Se oli vuosi kirjoitettuna ja nollassa, eli pois päältä, ja ketjun ainoa
+    rajaton vaihe pysyi rajattomana. Mitattuna oikealla puheella (crest 25,4
+    dB, -26,2 LUFS) tavoitteella -15,8: rajoitin vei crestin 15,4:ään ja
+    teki -9,6 dB työtä, ja tulos kuulosti säröiseltä. Huiput ovat
+    yksittäisiä aallonharjoja — yli 0 dBFS meni 1005 tapahtumaa, mediaani
+    0,15 ms, 0,19 % näytteistä — joten kompressorit eivät niitä näe ja
+    rajoitin tekee kaiken yksin.
+
+    Kuunneltuna samalla äänekkyydellä: crest 15,4 huono, 18,5 hyvä. Budjetti
+    kuuden desibelin kohdalla antaa 18,5 ja jättää tason 3 dB tavoitteesta,
+    ja se on oikea valinta: taso on korjattavissa yhdellä liu'ulla,
+    tiivistetty puhe ei.
+    """
+    audio = _spiky()
+    out, info = chain.process(audio, RATE, AudioSettings(), 0.0, True, -14.0, None)
+    assert chain.LIMITER_BUDGET_DB > 0.0, "budjetti on pois päältä"
+    assert chain.sustained_reduction_db(out, RATE) <= chain.LIMITER_BUDGET_DB + 0.5
+    assert info.reached_target is False, "tason jäämistä ei kerrottu"
+
+
 def test_the_budget_moves_the_excess_into_level_not_compression():
     """Budjetti pitää crestin ja antaa tason periksi.
 
@@ -697,7 +720,11 @@ def test_the_budget_moves_the_excess_into_level_not_compression():
     audio = _spiky()
     loose = AudioSettings()
     loose.limiter_budget_db = 6.0
-    tight, _ = chain.process(_spiky(), RATE, AudioSettings(), 0.0, True, -14.0, None)
+    # Rajaton haara on nyt se joka on pyydettävä erikseen: budjetti on
+    # oletuksena päällä, ks. test_the_budget_is_on_by_default.
+    unbounded = AudioSettings()
+    unbounded.limiter_budget_db = 0.0
+    tight, _ = chain.process(_spiky(), RATE, unbounded, 0.0, True, -14.0, None)
     kept, info = chain.process(audio, RATE, loose, 0.0, True, -14.0, None)
 
     assert _crest_db(kept) > _crest_db(tight) + 6.0, (
@@ -816,3 +843,80 @@ def test_apply_plugin_checks_the_length_from_a_pool_of_one_too():
 
     with pytest.raises(chain.ChainError, match="changed the length"):
         chain.apply_plugin(pool, speech_like(), RATE)
+
+
+def _band_db(audio, lo, hi, rate=RATE):
+    """Kaistan teho desibeleinä, mono."""
+    from scipy import signal as sp
+
+    mono = np.asarray(audio, dtype=np.float64).mean(axis=0)
+    f, p = sp.welch(mono, rate, nperseg=8192)
+    band = (f >= lo) & (f < hi)
+    return 10.0 * np.log10(float(p[band].sum()) + 1e-30)
+
+
+def _shape(before, after):
+    """Kaistojen muutos suhteessa 1 kHz:iin, dB: tasoero pois."""
+    bands = {"body": (220, 280), "box": (360, 450), "presence": (5000, 10000)}
+    ref = _band_db(after, 900, 1100) - _band_db(before, 900, 1100)
+    return {
+        k: _band_db(after, lo, hi) - _band_db(before, lo, hi) - ref
+        for k, (lo, hi) in bands.items()
+    }
+
+
+def _noise_speech(seconds=12.0, rate=RATE):
+    """Kohinapurskeita eri tasoilla: kompressorit tekevät työtä.
+
+    Kohina on alipäästetty puheen tapaan, −6 dB/okt 500 Hz:stä. Valkoisessa
+    kohinassa yläpäätä on niin paljon, että sihinänpoisto painaa 5–10 kHz:ä
+    mitattuna −5 dB, eikä testi silloin mittaisi sävyä vaan sihinänpoistoa.
+    """
+    from scipy import signal as sp
+
+    rng = np.random.default_rng(11)
+    n = int(seconds * rate)
+    out = rng.standard_normal(n) * 0.0005
+    levels = [0.05, 0.3, 0.1, 0.5, 0.2, 0.4, 0.08, 0.35]
+    for index, start in enumerate(np.arange(0.5, seconds - 1.0, 1.3)):
+        i0, i1 = int(start * rate), int((start + 0.8) * rate)
+        out[i0:i1] += rng.standard_normal(i1 - i0) * levels[index % len(levels)]
+    out = sp.lfilter(*sp.butter(1, 500.0, fs=rate), out)
+    return out.astype(np.float32)[None, :]
+
+
+def test_the_tone_shape_survives_the_whole_chain(monkeypatch):
+    """Sävy on ketjun ominaisuus, ja sen on selvittävä kompressoreista.
+
+    Käsin tehdyn Live-ketjun rinnalla koodin tulos oli dynamiikaltaan sama
+    mutta sävyltään eri (SHARED-AUDIO.md §3.10): 160–250 Hz −2…−3 dB,
+    400 Hz +1,7 dB ja 3–10 kHz −3,5…−4,6 dB. Ero tuli busin EQ:sta.
+
+    Mitataan koko ``process``in läpi eikä suodinta erikseen, koska paikalla
+    on väliä: sihinänpoiston edellä ajetusta +1,5 dB:n hyllystä jäi tällä
+    signaalilla 1,18 dB, sen jälkeen ajetusta 1,43. Raja 0,9 erottaa ne.
+    Vertailukohta on sama ajo sävy nollattuna, joten testi näkee vain sävyn
+    osuuden.
+    """
+    audio = _noise_speech()
+    out, _ = chain.process(audio, RATE, AudioSettings(), 0.0, True, -20.0, None)
+    for name in ("TONE_BODY_DB", "TONE_BOX_DB", "TONE_PRESENCE_DB"):
+        monkeypatch.setattr(chain, name, 0.0)
+    flat, _ = chain.process(audio, RATE, AudioSettings(), 0.0, True, -20.0, None)
+    monkeypatch.undo()
+    shape = _shape(flat, out)
+    assert shape["body"] >= 0.5 * chain.TONE_BODY_DB, shape
+    assert shape["box"] <= 0.5 * chain.TONE_BOX_DB, shape
+    assert shape["presence"] >= 0.9 * chain.TONE_PRESENCE_DB, shape
+
+
+def test_room_tone_gets_no_tone_shaping():
+    """Sävy on puheen asia: tilaääni saa vain ylipäästön.
+
+    Ylipäästö 80 Hz vie 250 Hz:stä mitattuna −0,4 dB, joten raja on 0,5
+    eikä nolla; sävyn nosto olisi +1,5 dB.
+    """
+    audio = _noise_speech()
+    out, _ = chain.process(audio, RATE, AudioSettings(), 0.0, False, -20.0, None)
+    shape = _shape(audio, out)
+    assert all(abs(v) < 0.5 for v in shape.values()), shape

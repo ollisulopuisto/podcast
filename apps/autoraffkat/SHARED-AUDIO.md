@@ -341,6 +341,128 @@ Practical constraints, both measured:
   lives in the plug-in's own state, reachable only through its own interface.
   Save the opaque state blob with the project and put it in the fingerprint.
 
+### 3.10 A hand-made Live chain as reference: the dynamics already agree, the tone does not
+
+Measured 2026-09-22 against the Ableton Live chain used by hand on the same
+podcast. Material: one 87-second speech excerpt (`Valinta.wav`, 48 kHz mono,
+−26.2 LUFS counted once as mono; Hindenburg reads it as about −23 because it
+counts mono as dual-mono). Everything measured with the repo's own functions:
+`chain.loudness`, `chain.lag_samples`, `chain.peak_to_short_term`.
+
+**Method: a staircase, not one device at a time.** Renders from the Live
+chain with the devices switched off from the end backwards, so the
+difference between neighbouring steps is one device's contribution on the
+input it really sees. Devices in isolation would see a different level, and
+compressor thresholds are absolute decibels.
+
+Two traps in the method, both of which produced a confident wrong answer in
+the first round of renders:
+
+- **Live's export Normalize** scales every render to 0 dBFS sample peak. It
+  erases every level difference between steps and makes a compressor look
+  like it *raised* crest by 2.1 dB. Render with Normalize off.
+- **The bus was in every render but not in the dry file.** The track was
+  soloed and exported through its group bus, so the first step (said to be
+  De-reverb alone) carried the whole bus chain too: −6.8 dB of crest and
+  +5.8 dB at 5–10 kHz were attributed to De-reverb and belonged to the bus.
+  Make step 0 — everything off — part of the staircase and check it against
+  the dry file. Here it matched `Valinta.wav` at exactly −2.000 dB (the two
+  −1 dB faders) with the residual at −97 dB.
+
+Lag was 0 samples at every step, measured per file: Live's delay
+compensation changes when a device is switched off, so one check is not
+enough.
+
+The Live chain, track `olli` then group bus `talk`:
+
+| step | device, settings | LUFS | TP dB | crest dB | PSR LU |
+|---|---|---|---|---|---|
+| 0 | everything off | −28.18 | −3.95 | 25.37 | 20.06 |
+| 1 | RX 9 De-reverb: reduction 8, profile 6/6/6/3.3, tail 1.0 s, smoothing 9, enhance dry | −26.37 | −2.08 | 25.46 | 20.19 |
+| 2 | RX 9 Breath Control: gain −10.4 dB, sensitivity 40 | −26.37 | −2.08 | 25.46 | 20.19 |
+| 3 | Vocal Rider mono: target −21 dB, range 0…+3 dB | −26.01 | −1.46 | 25.66 | 20.77 |
+| 4 | Live Compressor: RMS, −25.5 dB, 2:1, 1 ms / 30 ms auto, knee 6, SC HPF 80 Hz | −29.27 | −6.76 | 23.42 | 20.60 |
+| 5 | EQ Eight: low cut 100 Hz, Q 0.71 | −29.35 | −5.20 | 25.09 | 22.22 |
+| 6 | dxRevive Studio 2, mix 22.5 % | −29.93 | −5.55 | 25.31 | 22.41 |
+| 7 | bus: Neutron 3 (EQ, two RMS 2:1 compressors at −24.5 / −21.3 dB, 20/100 ms, limiter −2.0, out +3.8 dB, width 0) | −26.48 | −3.01 | 24.38 | 21.64 |
+| 8 | bus: dxRevive Studio 2, mix 9.75 % | −26.74 | −3.28 | 24.32 | 21.57 |
+
+Renders include the −1 dB track and −1 dB bus faders; devices see the level
+before them. LUFS counted as mono.
+
+What each device does, loudness-matched third-octave difference:
+
+- **De-reverb:** +1.8 dB of level, nothing else — spectrum and crest within
+  ±0.1 dB on this material.
+- **Breath Control:** nothing measurable.
+- **Vocal Rider:** +0.4 LU; the 0…+3 range keeps it small.
+- **Compressor:** −2.2 dB crest. It sees −24.0 LUFS, so its threshold sits
+  1.5 dB *below* integrated loudness, where ours sit +2 dB (leveler) and
+  +8 dB (peak) above `THRESHOLD_REFERENCE_LUFS`. Lower threshold, but a
+  30 ms release on an RMS detector, and the net work is about the same.
+- **EQ Eight:** −12 dB at 50 Hz, −27 dB at 20 Hz.
+- **dxRevive at 22.5 %:** −3.6 dB below 60 Hz, −2.1 dB at 2 kHz, −2.9 dB at
+  12.7 kHz on the long-term spectrum. The long-term spectrum hides most of
+  it: frame by frame its bands move 4.1 dB (90th percentile) in both
+  directions. The +4…+5.7 dB lift at 3–20 kHz measured in our chain was at
+  100 % mix; here there is none.
+- **Neutron:** crest only −0.9 dB, the limiter at its ceiling. The EQ is the
+  part that shows: +1.6…2 dB at 250 Hz, −2.2 dB at 400 Hz, +3 dB at
+  5–12 kHz. **The brightness of the reference comes from here.**
+
+`chain.process` on the same file, no plug-in, declick on, compared with
+step 8:
+
+- **Dynamics agree.** At Live's level (target −26.74) our chain gives crest
+  24.5 dB / PSR 20.6 LU against Live's 24.3 / 21.6. At −19.9 ours falls to
+  19.4 / 16.6 — that is the limiter meeting a fixed −1.5 dBTP ceiling, not
+  the compressors. Nothing to port in the compressor thresholds.
+- **Tone does not** (ours minus Live): +4…+7 dB at 30–60 Hz (80 Hz high-pass
+  against Live's steeper 100 Hz), −2…−3 dB at 160–250 Hz, +1.7 dB at 400 Hz,
+  −3.5…−4.6 dB at 3–10 kHz. Everything above 60 Hz of that is the bus EQ.
+
+**Result: the compressors stay as they are; a tone stage was added** at
+about half the bus EQ's amounts, because that curve is a house sound tuned
+by ear for these speakers and the chain runs blind on everyone
+(`TONE_*` in `chain.py`):
+
+- 250 Hz +1.5 dB (Q 1) and 400 Hz −2 dB (Q 1.8) in the cleanup stage with
+  the high-pass, speech only, so the compressors see the shaped signal.
+- A 3 kHz high shelf +1.5 dB **after** the dynamics. Placement measured: our
+  de-esser takes 1.8 dB off 5–10 kHz of real speech, and of a +1.5 dB shelf
+  placed before it 0.9 dB survived the chain; placed after, 1.41.
+
+Same comparison after the change (ours minus Live, at Live's level):
+250 Hz −2.8 → −1.7 dB, 400 Hz +1.7 → +0.7 dB, 5–10 kHz −4.3…−4.6 →
+−2.7…−3.1 dB. No sign flipped in the shaped bands; above 12.7 kHz ours is
+now +2.2 dB, where Live's bus EQ rolls off from 14 kHz. Crest 24.5 → 24.6 dB,
+PSR 20.6 → 20.8 LU: the dynamics did not move.
+Listening A/B on the same excerpt, loudness-matched: with the tone stage
+preferred over without, and over the Live render itself (2026-09-22) —
+so the +2.2 dB above 12.7 kHz stays; no roll-off added to match Live.
+
+**What the same listening test then found about the limiter.** Rendered at
+the production stem target (−15.8 LUFS, from a −14 programme target), the
+chain sounded distorted. The peaks entering the limiter are +8.0 dBFS, so it
+was doing −9.6 dB and taking crest to 15.4 dB. The compressors cannot reach
+those peaks: above 0 dBFS there were 1005 events, median 0.15 ms, 0.19 % of
+samples, and the 40 % dry path preserves them by design. Loudness-matched
+A/B: crest 15.4 dB bad, 18.5 and 19.4 dB good. Smoothing the limiter's
+attack, lowering thresholds 4 dB, raising per-stage reduction to 8 dB,
+a 0.85 parallel mix and an oversampled soft clipper (limiter work −9.6 →
+−1.5 dB at the same loudness) all failed the ear; giving up level won.
+`LIMITER_BUDGET_DB` is therefore **6.0 and on by default**, where it had been
+0.0 — written, and switched off. The file lands 3 dB below target and says so
+(`reached_target`).
+
+Still open:
+
+- The high-pass: 80 Hz, or 100 Hz and steeper — below 60 Hz ours is still
+  +4…+7 dB.
+- De-reverb and Breath Control have no counterpart here. On this material
+  they change neither tone nor dynamics, so the gap is smaller than assumed —
+  one excerpt, one room.
+
 ---
 
 ## 4. Hard rules that are cheap to violate

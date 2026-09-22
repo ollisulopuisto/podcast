@@ -42,7 +42,15 @@ def main() -> int:
         roles = resolve_roles(timeline, settings.tracks)
 
         grid, program_start = None, 0.0
-        if audio.duck:
+        # Vaimennus, ristivuodon vähennys JA tasonkuljettaja tarvitsevat
+        # saman ruudukon itsenäisesti (ks. mix.py: ``solos = solo_masks(grid)
+        # if settings.debleed else {}`` ja ``if settings.rider and grid is
+        # None: ...``) — rakentaminen pelkän vaimennuksen ehdolla jätti
+        # kaksi muuta hiljaa tekemättä aina kun vaimennus oli pois päältä.
+        # Tasonkuljettaja on oletuksena päällä, joten tämä osui joka
+        # projektiin jossa vaimennus oli pois eikä ristivuodon vähennystä
+        # ollut sammutettu käsin.
+        if audio.duck or audio.debleed or audio.rider:
             from ..analysis import analyze
 
             analysis = analyze(timeline)

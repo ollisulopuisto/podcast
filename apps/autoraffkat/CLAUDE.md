@@ -91,6 +91,20 @@ drops from 19.2 dB to 15.2, and the same voice arriving twice a few
 milliseconds apart is a comb filter. It is audible only when both tracks
 play together, which is to say only after the export.
 
+The same silent-failure class hit debleed, independently, because it reads
+the same grid on its own condition. `audio/worker.py` built the speaker grid
+`if audio.duck:` only; `mix.py` needs it separately for debleed
+(`solo_masks(grid) if settings.debleed else {}`) and already turns a missing
+grid into `result.errors["debleed"]` rather than silence — but only if the
+grid was ever attempted. With duck off and debleed on, the grid stayed
+`None` and debleed no-opped with no error and no warning short of the
+terminal log line, on real material two independently very quiet mic tracks
+(source ≈ −36 to −39 LUFS) each got +26 dB / +35 dB of makeup gain to reach
+target with their bleed of each other un-removed. The fix builds the grid
+whenever `duck or debleed` is on, in `worker.py`, not in `mix.py` — the
+function already had the right contract, the caller just didn't always
+give it what the contract needed.
+
 A de-clicker's threshold is a rate, not a multiplier. Correcting the
 reference from a local maximum to a local mean without changing the
 multiplier turned a no-op into a distortion generator: measured on real

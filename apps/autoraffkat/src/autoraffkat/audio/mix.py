@@ -1465,6 +1465,15 @@ def process(
     if settings.debleed and not solos:
         result.errors["debleed"] = t("audio.debleed_no_grid")
         _log(result.errors["debleed"])
+    # Tasonkuljettaja lukee samaa ruudukkoa kolmatta kertaa itsenäisesti
+    # (ks. speechmix.chain.apply: ``if speaking is not None and
+    # settings.rider: ride(...)``), eikä se ollut koskaan raportoinut
+    # puuttuvasta ruudukosta mitään — sama «asetus päällä, tuloksessa ei
+    # mitään» kuin debleedillä ja vaimennuksella, vain hiljaisempi koska
+    # kukaan ei ole aiemmin kysynyt siitä.
+    if settings.rider and grid is None:
+        result.errors["rider"] = t("audio.rider_no_grid")
+        _log(result.errors["rider"])
     masks = duck_masks(grid, settings)
     if settings.duck:
         # Maskit avaimetaan puhujan nimellä ja työt hakevat samalla nimellä.
