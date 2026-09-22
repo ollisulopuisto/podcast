@@ -47,6 +47,7 @@ FINGERPRINT_FIELDS = (
 # samoilla asetuksilla syntyvää. Sama tarkoitus kuin verhokäyrän
 # ``CACHE_VERSION``:illa.
 #
+# 12: vartija luopuu tasosta ennen kuin crest putoaa (PSR 15 LU).
 # 11: vuodonpoiston suodin 43 ms -> 171 ms.
 # 10: rajoittimen budjetti on oletuksena päällä.
 # 9: puheen sävy (runko, laatikkomaisuus, yläpään hylly).
@@ -59,4 +60,4 @@ FINGERPRINT_FIELDS = (
 # 2: naksunpoiston kynnys. Vanhat tiedostot on tehty detektorilla joka
 #    korjasi 2 % kaikista näytteistä; ne eivät ole ajan tasalla millään
 #    asetuksella, ja ilman tätä painike olisi kertonut päinvastaista.
-FINGERPRINT_VERSION = 11
+FINGERPRINT_VERSION = 12

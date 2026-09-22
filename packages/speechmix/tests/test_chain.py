@@ -920,3 +920,29 @@ def test_room_tone_gets_no_tone_shaping():
     out, _ = chain.process(audio, RATE, AudioSettings(), 0.0, False, -20.0, None)
     shape = _shape(audio, out)
     assert all(abs(v) < 0.5 for v in shape.values()), shape
+
+
+def test_the_chain_gives_up_level_before_it_gives_up_crest():
+    """Vartija on siinä mitä korva kuuli, ei siinä mitä rajoitin teki.
+
+    Rajoittimen budjetti mittaa **jatkuvaa** vaimennusta, ja se jäi tällä
+    materiaalilla nollaan: mitattuna oikealla puhujalla rajoitin teki
+    -5,54 dB piikkeinä, budjetin mittari luki 0,00 dB eikä vartija
+    herännyt — ja crest päätyi 14,9:ään. Kuunneltuna samalla äänekkyydellä
+    crest 15,4 oli huono ja 18,5 hyvä, eli korva reagoi lopputulokseen eikä
+    yhteenkään vaiheeseen.
+
+    Taso ostaa crestiä lähes yksi yhteen: mitattuna tavoitteen lasku
+    -15,8 -> -17,8 -> -19,8 nosti crestiä 14,9 -> 16,9 -> 18,9, joten
+    periksi antaminen todella korjaa eikä vain hiljennä.
+    """
+    audio = _noise_speech(20.0)
+    out, info = chain.process(audio, RATE, AudioSettings(), 0.0, True, -14.0, None)
+
+    assert info.psr_lu >= chain.PSR_GUARD_LU - 0.5, (
+        f"PSR jäi {info.psr_lu:.2f}, raja {chain.PSR_GUARD_LU}"
+    )
+    assert info.reached_target is False, "tason jäämistä ei kerrottu"
+    assert info.backed_off_db < 0.0, "tasosta ei otettu mitään"
+    measured = chain.loudness(out.mean(axis=0), RATE)
+    assert measured < -14.0, measured
