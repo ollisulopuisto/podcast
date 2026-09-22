@@ -483,15 +483,25 @@ loudness-matched A/B (2026-09-22): without guard −15.48 LUFS/crest 14.28/PSR
 14.84 — **the last preferred**, 5.4 dB under the −14 target. Crest was
 worth more than loudness again.
 
-The delivery stage (`program_lufs`) buys the level back on the sum, where
-the limiter only acts where peaks coincide. It had been written and left
-at 0 = off; it is now **−16 by default**. Same minute: guard −19.39 LUFS/
-crest 18.29 → delivered −15.75/14.05, limiter cost 1.3 LU inside the 3 LU
-budget. By ear the delivered versions beat the undelivered ones, with
-dxRevive 25 and without, and dxRevive 25 was preferred on the noise lifted
-with them (a 400 ms 10th-percentile level −24.5 → −24.8 dB, so the ear
-heard more than that number shows). −14 is not reachable with this crest:
-PSR 15 LU under a −1 dBTP ceiling leaves −16 at most.
+The delivery stage buys the level back on the sum, where limiting only acts
+where peaks coincide. It had been written and left off; it now **follows
+`target_lufs`** (`mix.delivery_lufs`), so choosing YouTube or streaming in
+the interface is what the programme lands on. Same minute at −16: guard
+−19.39 LUFS/crest 18.29 → delivered −15.75/14.05, cost 1.3 LU. By ear the
+delivered versions beat the undelivered ones, and dxRevive 25 was preferred
+on the noise the lift brings up.
+
+−14 needed a **peak stage** in front of the shared limiter
+(`chain.peak_stage_gain`, `PEAK_STAGE_MS = 20`): a future-minimum over
+20 ms, a release capped at 333 dB/s, then a 20 ms average, all in dB. The
+gain ramps across at least a pitch period instead of stepping — steepest
+change 387 dB/s against the limiter's 76 000 on the same sum. At −14 the
+crest is 12.3 dB either way, because level and ceiling fix it; what
+changes is how the reduction is made. Limiter alone: −9.2 dB and
+distorted. Peak stage: up to −8.6 dB over 29 % of the time, −0.5 dB left
+for the limiter, and it "sounds surprisingly good" (2026-09-22, 10 ms also
+tried, 20 chosen). Delivery cost at −14 is 2.9 LU — just inside the 3 LU
+budget, so a harder episode will land a little short and say so.
 
 The high-pass stays at 80 Hz. Ours is +4…+7 dB above Live below 60 Hz,
 where Live cuts at 100 Hz and steeper, but that is rumble and not speech:

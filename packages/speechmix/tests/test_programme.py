@@ -70,6 +70,21 @@ def test_the_pass_is_idempotent():
     np.testing.assert_allclose(again, np.ones_like(again), atol=1e-9)
 
 
+def test_the_shared_curve_does_not_step():
+    """Huippuvaihe: vaimennus liukuu vähintään äänijakson yli.
+
+    Pelkkä rajoitin hyppää — mitattuna 117 000 dB/s, yli 2 dB yhden näytteen
+    aikana — ja moduloi siten 110 Hz:n äänen jakson sisällä. Tasolla -14
+    se kuului säröisenä; huippuvaiheen kanssa samalla tasolla ei.
+    """
+    a, b = _stem(1), _stem(2)
+    gain = programme.shared_gain([a, b], RATE)
+    db = 20 * np.log10(gain)
+    assert db.min() < -1.0
+    assert np.max(np.abs(np.diff(db))) * RATE < 2000.0
+    assert np.max(np.abs((a + b) * gain)) <= 10 ** (chain.CEILING_DB / 20) + 1e-9
+
+
 def test_a_sum_already_under_the_ceiling_is_untouched():
     quiet = _stem(3, peak_db=-20.0)
     gain = programme.shared_gain([quiet, quiet], RATE)

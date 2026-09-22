@@ -1011,11 +1011,29 @@ def limiter_gain(
     jokaiseen stemiin erikseen, jolloin summa noudattaa kattoa eikä
     puhujien tasapaino muutu. Ks. ``mix.program_ceiling``.
     """
-    from scipy import signal as _sig
     from scipy.ndimage import minimum_filter1d
 
     if audio.size == 0:
         return np.ones(0, dtype=np.float64)
+    needed = _needed_gain(audio, ceiling_db)
+    if needed.min() >= 1.0:
+        return np.ones(audio.shape[1], dtype=np.float64)
+    window = max(1, int(lookahead_ms * rate / 1000.0))
+    ahead = minimum_filter1d(needed, size=2 * window + 1, mode="nearest")
+    smooth = _one_pole(ahead, rate, release_ms)
+    # Pehmennys saa nostaa vahvistusta hitaasti mutta ei koskaan yli sen mitä
+    # huippu sallii, muuten katto ylittyy juuri siellä missä sitä tarvitaan.
+    return np.minimum(smooth, ahead)
+
+
+def _needed_gain(audio: np.ndarray, ceiling_db: float) -> np.ndarray:
+    """Näytteittäin vaadittu vahvistus, jotta true peak pysyy katon alla.
+
+    Ylinäytteistettynä: näytteiden **väliin** jäävä huippu on se joka
+    leikkaa D/A-muuntimessa ja lossy-koodauksessa.
+    """
+    from scipy import signal as _sig
+
     ceiling = 10.0 ** (ceiling_db / 20.0)
     up = LIMITER_OVERSAMPLE
     dense = _sig.resample_poly(audio, up, 1, axis=-1)
@@ -1025,15 +1043,59 @@ def limiter_gain(
     needed = dense_gain[:usable].reshape(-1, up).min(axis=1)
     if needed.shape[0] < audio.shape[1]:
         needed = np.pad(needed, (0, audio.shape[1] - needed.shape[0]), mode="edge")
-    needed = needed[: audio.shape[1]]
-    if needed.min() >= 1.0:
+    return needed[: audio.shape[1]]
+
+
+#: Huippuvaihe: rajoittimen edessä oleva hidas käyrä, joka vie huiput katolle
+#: niin että rajoittimelle jää vain jäännös. Ikkuna on vähintään äänijakson
+#: mittainen (110 Hz:n ääni on 9 ms), joten vaimennus ei moduloi yhden jakson
+#: sisällä — rajoittimen askel teki juuri sitä, 117 000 dB/s.
+#:
+#: Mitattu pp 55:n summalla tasolla -14 (kuunneltu 2026-09-22): pelkkä
+#: rajoitin teki -9,2 dB ja kuulosti säröiseltä; huippuvaihe 20 ms teki
+#: enintään -8,6 dB 29 %:ssa ajasta ja rajoittimelle jäi -0,5, ja se
+#: «kuulosti yllättävän hyvältä». 10 ms oli samoilla luvuilla (-8,1, 22 %)
+#: ja kuuntelija valitsi 20:n. Crest on molemmissa sama 12,3 dB, koska taso ja
+#: katto määräävät sen; vaihe muuttaa vain sen, miten vaimennus tehdään.
+PEAK_STAGE_MS = 20.0
+#: Paluunopeus, dB/s. 20 dB 60 ms:ssa, prototyypin arvo.
+PEAK_STAGE_RELEASE_DB_S = 333.0
+
+
+def peak_stage_gain(
+    audio: np.ndarray,
+    rate: int,
+    ceiling_db: float = CEILING_DB,
+    window_ms: float = PEAK_STAGE_MS,
+    release_db_s: float = PEAK_STAGE_RELEASE_DB_S,
+) -> np.ndarray:
+    """Huippuvaiheen vahvistuskäyrä, arvot välillä (0, 1].
+
+    Kolme askelta desibeleinä: tuleva minimi ikkunan yli (vaimennus alkaa
+    ikkunan verran ennen huippua), rajattu paluunopeus ja lopuksi keskiarvo
+    saman ikkunan yli, joka tekee hyökkäyksestä rampin. Keskiarvo ei voi
+    jäädä huipun vaatimuksen yläpuolelle, koska jokainen sen ikkunan arvo on
+    jo huipun minimi. Vaimennus kulkee siis lineaarisesti koko ikkunan yli
+    eikä hyppää.
+    """
+    from scipy.ndimage import minimum_filter1d, uniform_filter1d
+
+    if audio.size == 0:
+        return np.ones(0, dtype=np.float64)
+    need = 20.0 * np.log10(_needed_gain(audio, ceiling_db))
+    if need.min() >= 0.0:
         return np.ones(audio.shape[1], dtype=np.float64)
-    window = max(1, int(lookahead_ms * rate / 1000.0))
-    ahead = minimum_filter1d(needed, size=2 * window + 1, mode="nearest")
-    smooth = _one_pole(ahead, rate, release_ms)
-    # Pehmennys saa nostaa vahvistusta hitaasti mutta ei koskaan yli sen mitä
-    # huippu sallii, muuten katto ylittyy juuri siellä missä sitä tarvitaan.
-    return np.minimum(smooth, ahead)
+    width = max(1, int(window_ms * rate / 1000.0))
+    # Tuleva minimi: [t, t + ikkuna).
+    future = minimum_filter1d(need, width, origin=-(width // 2), mode="nearest")
+    # Paluu enintään ``step`` näytettä kohden: held[i] = min_j≤i(future[j]
+    # + (i - j)·step), vektorina kumulatiivisella minimillä.
+    step = release_db_s / rate
+    ramp = np.arange(need.shape[0]) * step
+    held = ramp + np.minimum.accumulate(future - ramp)
+    # Keskiarvo yli (t - ikkuna, t].
+    shaped = uniform_filter1d(held, width, origin=(width - 1) // 2, mode="nearest")
+    return 10.0 ** (np.minimum(shaped, 0.0) / 20.0)
 
 
 def sustained_reduction_db(
