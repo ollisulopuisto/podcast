@@ -9,6 +9,8 @@ from typing import List
 
 import mlx.core as mx
 
+from speechmix import programme
+
 from .processor import Processor
 from .track import Track
 
@@ -117,6 +119,20 @@ class Bus:
         # 3) in current thread`.  See `tests/test_mlx_threads.py`; the same
         # trap is in `processor.py` and `cli_mix.py`.
         processed_signals = [proc_track(t) for t in self.tracks]
+
+        # Vartijan ja budjetin peruutukset tasataan ennen summaa: yhden
+        # puhujan lasku yksin siirtäisi tasapainoa, jaksossa 55 noin 3,6 dB.
+        # Sama sääntö kuin autoraffkatissa, samasta kirjastosta.
+        extra = programme.shared_backoff({
+            i: sum(getattr(p, "backed_off_db", 0.0) for p in t.processors)
+            for i, t in enumerate(self.tracks)
+        })
+        for i, t in enumerate(self.tracks):
+            if extra.get(i) and processed_signals[i] is not None:
+                processed_signals[i] = processed_signals[i] * float(
+                    10 ** (extra[i] / 20)
+                )
+                t.signal = processed_signals[i]
 
         for i, (t, sig) in enumerate(zip(self.tracks, processed_signals, strict=True)):
             if progress_callback:

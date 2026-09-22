@@ -245,3 +245,40 @@ def test_nothing_below_the_floor_means_no_lift():
     gain = programme.short_term_lift(values, floor_db=-19.0, step_sec=0.1,
                                      max_lift=6.0)
     assert np.allclose(gain, 0.0)
+
+
+def _quiet_programme():
+    """Kahden puhujan summa selvästi tavoitteen alla, huiput ylhäällä."""
+    a, b = _stem(1, seconds=20.0), _stem(2, seconds=20.0)
+    return (a + b) * 10 ** (-18 / 20)
+
+
+def _true_peak_db(audio):
+    from scipy import signal as sp
+
+    dense = sp.resample_poly(audio, 4, 1, axis=-1)
+    return 20 * np.log10(np.abs(dense).max())
+
+
+def test_master_lands_on_the_target_under_the_ceiling():
+    """Sama masterointi kuin autoraffkatissa: nosto, huippuvaihe, rajoitin.
+
+    automixer nosti summan staattisesti tavoitteeseen ja ajoi perään pelkän
+    rajoittimen — yhdistelmän joka kuulosti säröiseltä samalla tasolla,
+    jolla huippuvaihe kuulosti puhtaalta.
+    """
+    audio = _quiet_programme()
+    out, info = programme.master(audio, RATE, -16.0)
+    assert abs(chain.loudness(out.mean(axis=0), RATE) - -16.0) <= 0.5
+    assert info.reached
+    assert _true_peak_db(out) <= programme.PROGRAM_PEAK_DB + 0.1
+    assert info.boost_db > 0
+
+
+def test_master_gives_up_level_before_the_budget():
+    """Budjetin yli menevä osa otetaan nostosta, ei tiivistyksestä."""
+    audio = _quiet_programme()
+    _, info = programme.master(audio, RATE, -4.0, budget_lu=1.0)
+    assert info.cost_lu <= 1.1
+    assert not info.reached
+    assert info.lufs < -4.5

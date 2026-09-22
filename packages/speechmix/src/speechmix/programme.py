@@ -252,3 +252,90 @@ def trim_to_target(summed: np.ndarray, rate: int, target_lufs: float,
         return 0.0
     trim = float(target_lufs - measured)
     return round(max(-abs(max_trim), min(0.0, trim)), 2)
+
+
+#: Masteroinnin huippukatto, dBTP. Ketjun ``CEILING_DB`` on stemin katto ja
+#: jättää varaa summalle; tämä on se luku johon valmis ohjelma rajataan.
+PROGRAM_PEAK_DB = -1.0
+
+#: Kuinka paljon äänekkyyttä masteroinnin rajoitus saa syödä, LU. Ala on
+#: mitattu muualla: masteroinnissa 1–3 dB rajoitusta on tervettä, 8–10
+#: tuhoaa transientit. pp 55:n summa tasolla -14 huippuvaiheen kanssa: 2,9.
+PROGRAM_LIMIT_BUDGET_LU = 3.0
+
+#: Kuinka lähelle tavoitetta on päästävä, LU, ja montako kierrosta haetaan.
+#: Rajoitin vie osan noston tuomasta äänekkyydestä, joten yksi kierros jää
+#: aina alle; ero pienenee nopeasti.
+MASTER_TOLERANCE_LU = 0.5
+MASTER_ROUNDS = 4
+
+
+class MasterResult:
+    """Mitä masterointi teki: nosto, tulos, rajoituksen hinta."""
+
+    def __init__(self, boost_db: float, lufs: float | None, cost_lu: float,
+                 reached: bool):
+        self.boost_db = boost_db
+        self.lufs = lufs
+        self.cost_lu = cost_lu
+        self.reached = reached
+
+
+def _lufs(audio: np.ndarray, rate: int) -> float | None:
+    """Monikanavainen integroitu äänekkyys: kanavien tehot summataan."""
+    import pyloudnorm as pyln
+
+    block = np.asarray(audio, dtype=np.float64)
+    if block.shape[-1] < rate:
+        return None
+    try:
+        value = float(pyln.Meter(rate).integrated_loudness(block.T))
+    except Exception:
+        return None
+    return value if np.isfinite(value) and value >= -70.0 else None
+
+
+def master(audio: np.ndarray, rate: int, target_lufs: float,
+           ceiling_db: float = PROGRAM_PEAK_DB,
+           budget_lu: float = PROGRAM_LIMIT_BUDGET_LU) -> tuple:
+    """Valmis ohjelma tavoitetasoon: nosto, huippuvaihe, rajoitin.
+
+    Muistissa oleva versio siitä minkä autoraffkatin ``program_deliver``
+    tekee tiedostoista paloittain. ``audio`` on ``(kanavat, näytteet)``.
+    Palauttaa ``(ääni, MasterResult)``.
+
+    Nosto on absoluuttinen, ei askel: jokainen kierros lähtee samasta
+    signaalista, jottei rajoitettua rajoiteta uudestaan. Budjetin yli menevä
+    osa otetaan nostosta, koska taso on korjattavissa yhdellä liu'ulla ja
+    litistetty ohjelma ei ole — tulos jää silloin alle ja sanoo sen.
+    """
+    audio = np.asarray(audio, dtype=np.float64)
+
+    def run(boost):
+        lifted = audio * float(10 ** (boost / 20))
+        out = lifted * shared_gain([lifted], rate, ceiling_db)
+        after, before = _lufs(out, rate), _lufs(lifted, rate)
+        cost = 0.0 if after is None or before is None else before - after
+        return out, after, cost
+
+    measured = _lufs(audio, rate)
+    if measured is None:
+        out, after, cost = run(0.0)
+        return out, MasterResult(0.0, after, cost, False)
+    boost = 0.0
+    out, after, cost = audio, measured, 0.0
+    capped = False
+    for _ in range(MASTER_ROUNDS):
+        if after is None or (abs(target_lufs - after) <= MASTER_TOLERANCE_LU and boost):
+            break
+        boost = max(-MAX_PROGRAM_BOOST,
+                    min(MAX_PROGRAM_BOOST, boost + target_lufs - after))
+        out, after, cost = run(boost)
+        if budget_lu and cost > budget_lu:
+            boost -= cost - budget_lu
+            out, after, cost = run(boost)
+            capped = True
+            break
+    reached = (not capped and after is not None
+               and abs(target_lufs - after) <= MASTER_TOLERANCE_LU)
+    return out, MasterResult(round(boost, 2), after, round(cost, 2), reached)

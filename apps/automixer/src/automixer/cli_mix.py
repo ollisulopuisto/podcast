@@ -15,14 +15,12 @@ from concurrent.futures import ThreadPoolExecutor
 import mlx.core as mx
 import numpy as np
 import psutil
-import pyloudnorm as pyln
 import soundfile as sf
 import yaml
 
 from automixer.domain import room, shared
 from automixer.domain.bus import Bus
 from automixer.domain.processor import (
-    CeilingProcessor,
     CompressorProcessor,
     DuckingProcessor,
     ExternalPluginProcessor,
@@ -34,6 +32,7 @@ from automixer.domain.processor import (
     SpeechSettings,
 )
 from automixer.domain.track import Track
+from speechmix import programme
 
 
 class Mixer:
@@ -410,21 +409,24 @@ class Mixer:
 
         final_mix_mx = speech_sig + music_sig
 
-        update_progress(85, "Normalizing to target LUFS...")
-        final_mix_np = np.array(final_mix_mx)
-        meter = pyln.Meter(self.sr)
-        try:
-            current_loudness = meter.integrated_loudness(final_mix_np)
-        except Exception:
-            current_loudness = -23.0  # Fallback
-
+        # Masterointi samasta kirjastosta kuin autoraffkatissa: nosto
+        # tavoitteeseen, huippuvaihe ja rajoitin summasta, ja budjetin yli
+        # menevä osa otetaan nostosta. Tässä oli staattinen nosto ja pelkkä
+        # rajoitin — sama yhdistelmä joka kuulosti säröiseltä tasolla -14,
+        # kun huippuvaihe samalla tasolla kuulosti puhtaalta.
+        update_progress(85, "Mastering to target LUFS...")
         target_lufs = self.config.get("target_lufs", -16.0)
-        makeup_gain_db = target_lufs - current_loudness
-        final_mix_mx = final_mix_mx * (10 ** (makeup_gain_db / 20))
-
-        master_output = CeilingProcessor().process(final_mix_mx, self.sr)
-
-        master_np = np.array(master_output)
+        mastered, info = programme.master(
+            shared.as_channels(final_mix_mx), self.sr, target_lufs
+        )
+        update_progress(
+            90,
+            f"Mastered: {info.lufs if info.lufs is not None else 0:.1f} LUFS, "
+            f"lift {info.boost_db:+.1f} dB, limiting {info.cost_lu:.1f} LU"
+            + ("" if info.reached else f" (short of {target_lufs:.1f})"),
+        )
+        guarded, _ = shared.peak_guard(mastered, ceiling_db=programme.PROGRAM_PEAK_DB)
+        master_np = np.asarray(guarded, dtype=np.float32).T
 
         if not is_preview:
             update_progress(95, "Exporting 24-bit WAV...")

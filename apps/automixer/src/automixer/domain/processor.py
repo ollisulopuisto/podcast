@@ -405,6 +405,9 @@ class SpeechChainProcessor(Processor):
         self.target_lufs = target_lufs
         self.settings = settings or SpeechSettings()
         self.speaking = speaking
+        # Kuinka paljon vartija ja budjetti luopuivat tasosta (≤ 0). Väylä
+        # tasaa sen kaikille puhujille, ks. `Bus.process`.
+        self.backed_off_db = 0.0
 
     def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
         audio = shared.as_channels(signal)
@@ -414,7 +417,7 @@ class SpeechChainProcessor(Processor):
             def stage(_name, fraction):
                 progress_callback(fraction)
 
-        out, _ = shared.process(
+        out, info = shared.process(
             audio,
             sr,
             self.settings,
@@ -424,6 +427,7 @@ class SpeechChainProcessor(Processor):
             stage=stage,
             speaking=self.speaking,
         )
+        self.backed_off_db = float(info.backed_off_db)
         return shared.from_channels(out, signal)
 
 
