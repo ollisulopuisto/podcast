@@ -42,7 +42,12 @@ def main() -> int:
         roles = resolve_roles(timeline, settings.tracks)
 
         grid, program_start = None, 0.0
-        if audio.duck:
+        # Vaimennus JA ristivuodon vähennys tarvitsevat saman ruudukon
+        # itsenäisesti (ks. mix.py: ``solos = solo_masks(grid) if
+        # settings.debleed else {}``) — rakentaminen pelkän vaimennuksen
+        # ehdolla jätti ristivuodon vähennyksen hiljaa tekemättä aina kun
+        # vaimennus oli pois päältä.
+        if audio.duck or audio.debleed:
             from ..analysis import analyze
 
             analysis = analyze(timeline)
