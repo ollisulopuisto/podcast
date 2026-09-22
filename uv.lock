@@ -211,6 +211,7 @@ version = "2026.8.28.1"
 source = { editable = "apps/automixer" }
 dependencies = [
     { name = "mlx" },
+    { name = "nhsx" },
     { name = "numpy" },
     { name = "pedalboard" },
     { name = "psutil" },
@@ -226,6 +227,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "mlx", specifier = ">=0.30.6" },
+    { name = "nhsx", editable = "packages/nhsx" },
     { name = "numpy", specifier = ">=2.4.2" },
     { name = "pedalboard", specifier = ">=0.9.24" },
     { name = "psutil", specifier = ">=7.2.2" },

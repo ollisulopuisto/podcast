@@ -269,6 +269,10 @@ class Clip:
     # Häivytys hiljaisuudesta ja hiljaisuuteen, sekunteina. Ks. ``envelope``.
     fade_in: float = 0.0
     fade_out: float = 0.0
+    # Raidan vaimentimen osuus ``gain``ista. Miksaava lukija (automixer)
+    # ottaa alueiden keskinäisen tason mutta ei raidan faderia, koska se
+    # asettaa raitojen tasot itse.
+    track_gain: float = 1.0
 
     @property
     def end(self) -> float:
@@ -481,6 +485,7 @@ def plan(session: Session, extra_dir: str = "") -> Mix:
                     ramps=ramps,
                     fade_in=fade_in,
                     fade_out=fade_out,
+                    track_gain=track_gain,
                 )
             )
 

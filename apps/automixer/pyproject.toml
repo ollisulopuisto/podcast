@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "speechmix",
+    # Hindenburgin istunnon luku ja aluesijoittelu, ks. `session.py`.
+    "nhsx",
     "mlx>=0.30.6",
     "numpy>=2.4.2",
     "pedalboard>=0.9.24",
@@ -49,4 +51,5 @@ pythonpath = ["src"]
 # autoraffkatilla, ja samasta syystä: mittauksen korjaama vika näkyy
 # kaikissa kolmessa samassa commitissa eikä julkaisun ja noston päässä.
 [tool.uv.sources]
+nhsx = { workspace = true }
 speechmix = { workspace = true }

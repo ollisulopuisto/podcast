@@ -9,6 +9,8 @@ command-line entry point for executing mixes from the terminal.
 import argparse
 import glob
 import os
+import shutil
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -18,6 +20,7 @@ import psutil
 import soundfile as sf
 import yaml
 
+from automixer import session as hindenburg
 from automixer.domain import room, shared
 from automixer.domain.bus import Bus
 from automixer.domain.processor import (
@@ -33,6 +36,10 @@ from automixer.domain.processor import (
 )
 from automixer.domain.track import Track
 from speechmix import programme
+
+#: Puheraitojen taso ennen masterointia. Kynnykset liukuvat sen mukana
+#: kirjastossa; `session.MUSIC_LUFS` sovittaa musiikin tähän samaan.
+SPEECH_REFERENCE_LUFS = -23.0
 
 
 class Mixer:
@@ -244,7 +251,7 @@ class Mixer:
 
         # 2. Channel Strip Config
         update_progress(20, "Auto-configuring dynamics...")
-        reference_lufs = -23.0
+        reference_lufs = SPEECH_REFERENCE_LUFS
 
         # Vaimennus koko ruudukosta kerralla: se on puhujien **välinen**
         # päätös, ei yhden raidan ominaisuus, ja siksi sitä ei voi laskea
@@ -330,9 +337,13 @@ class Mixer:
                 )
 
         for t in music_bus.tracks:
-            l_val = t.loudness if t.loudness is not None else -30.0
-            t.add_processor(GainProcessor(gain_db=-30.0 - l_val))
             music_cfg = buses_cfg.get("music", {})
+            # `None`: taso on jo sovitettu (Hindenburgin istunto, ks.
+            # `session.MUSIC_LUFS`), eikä raitaa normalisoida uudestaan.
+            level = music_cfg.get("level_lufs", -30.0)
+            if level is not None:
+                l_val = t.loudness if t.loudness is not None else level
+                t.add_processor(GainProcessor(gain_db=level - l_val))
             for p_cfg in music_cfg.get("processors", []):
                 if p_cfg["type"] == "plugin":
                     t.add_processor(self._create_processor(p_cfg))
@@ -486,7 +497,9 @@ def main():
     parser.add_argument("--speech", nargs="+", help="Explicitly specify speech tracks")
     parser.add_argument("--music", nargs="+", help="Explicitly specify music tracks")
     parser.add_argument(
-        "--output", "-o", default="final_mix.wav", help="Output filename"
+        "--output", "-o", default=None,
+        help="Output filename (default: final_mix.wav, or '<session> automixer.wav' "
+        "beside a Hindenburg session)",
     )
     parser.add_argument(
         "--target-lufs", type=float, default=-16.0, help="Target loudness (LUFS)"
@@ -628,6 +641,26 @@ def main():
         args.music_duck = False
 
     config_tracks = []
+    sessions = [p for p in args.tracks if p.lower().endswith(".nhsx")]
+    workdir = None
+    if sessions:
+        # Hindenburgin istunto: editointi sieltä, miksaus täältä. Raidat
+        # kootaan väliaikaisiksi WAVeiksi ja siivotaan ajon jälkeen.
+        if len(args.tracks) > 1 or args.speech or args.music:
+            print("A Hindenburg session is mixed on its own: give one .nhsx.")
+            return
+        workdir = tempfile.mkdtemp(prefix="automixer-")
+        loaded = hindenburg.load(sessions[0], workdir)
+        for note in loaded.notes:
+            print(f"  ! {note}")
+        config_tracks = loaded.tracks
+        if args.output is None:
+            args.output = os.path.splitext(sessions[0])[0] + " automixer.wav"
+        # Musiikin häivytykset tehtiin Hindenburgissa ja taso on sovitettu.
+        args.music_carve = False
+        args.music_duck = False
+    if args.output is None:
+        args.output = "final_mix.wav"
 
     if args.speech:
         for p in args.speech:
@@ -641,7 +674,7 @@ def main():
                 {"name": os.path.basename(p), "path": p, "type": "music"}
             )
 
-    if not args.speech and not args.music:
+    if not sessions and not args.speech and not args.music:
         # If no explicit tracks, use positional tracks or all wav files in current dir
         paths = args.tracks
         if not paths:
@@ -712,6 +745,7 @@ def main():
                 "processors": build_proc_list(args.speech_plugins),
             },
             "music": {
+                "level_lufs": None if sessions else -30.0,
                 "carve_enabled": args.music_carve,
                 "carve_strength": args.music_carve_strength,
                 "duck_enabled": args.music_duck,
@@ -721,8 +755,11 @@ def main():
         },
     }
 
-    mixer = Mixer(config)
-    mixer.run()
+    try:
+        Mixer(config).run()
+    finally:
+        if workdir is not None:
+            shutil.rmtree(workdir, ignore_errors=True)
 
 
 if __name__ == "__main__":
