@@ -153,7 +153,28 @@ TONE_PRESENCE_DB = 1.5
 #: on korjattavissa yhdellä liu'ulla. Summan katosta huolehtii silti
 #: ``programme.shared_gain``, joten stemin ei tarvitse olla itse kattoa
 #: vasten.
-LIMITER_BUDGET_DB = 0.0
+#: Kuusi desibeliä, ja se on **päällä**. Nolla oli pois päältä, eli ketjun
+#: ainoa rajaton vaihe pysyi rajattomana kaikilla oletusasetuksilla.
+#:
+#: Mitattuna oikealla puheella (87 s, -26,2 LUFS, crest 25,4 dB) YouTuben
+#: -14:stä johdetulla stemin tavoitteella -15,8: signaali osuu rajoittimeen
+#: +8,0 dBFS:n huipuilla, rajoitin tekee -9,6 dB työtä ja crest putoaa
+#: 15,4:ään. Kompressorit eivät voi auttaa, koska huiput ovat yksittäisiä
+#: aallonharjoja: yli 0 dBFS:n meni 1005 tapahtumaa, mediaani 0,15 ms,
+#: pisin 0,6 ms, 0,19 % näytteistä — 15 ms:n hyökkäys ei näe niitä, ja
+#: rinnakkaishaaran kuiva 40 % säilyttää ne tarkoituksella. Rajoittimen
+#: vahvistus liikkui 117 000 dB/s eli yli 2 dB yhden näytteen aikana, ja
+#: 110 Hz:n äänellä jakso on 9 ms — vahvistusta moduloidaan siis jakson
+#: sisällä, mikä on määritelmällisesti säröä.
+#:
+#: Kuunneltuna, äänekkyydeltään täsmätty A/B samasta pätkästä: crest 15,4
+#: kuulostaa säröiseltä, 18,5 ja 19,4 eivät. Kokeiltiin myös rajoittimen
+#: hyökkäyksen pehmennys (nopein muutos 15 800 -> 1 900 dB/s), kynnysten
+#: lasku 4 dB, vaihekohtaisen vaimennuksen nosto 5 -> 8 dB, rinnakkaisosuus
+#: 0,85 ja ylinäytteistetty pehmeä leikkuri rajoittimen edessä (rajoittimen
+#: työ -9,6 -> -1,5 dB samalla äänekkyydellä). **Yksikään ei kuulostanut
+#: paremmalta kuin tason antaminen periksi.** Määrä ratkaisee, ei muoto.
+LIMITER_BUDGET_DB = 6.0
 
 #: Mistä kohtaa jakaumaa «jatkuva työ» luetaan. Käyrän minimi on **yhden
 #: näytteen** vaatimus, ja koko tiedoston vaimentaminen sen mukaan on juuri

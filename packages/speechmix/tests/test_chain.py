@@ -686,6 +686,29 @@ def test_a_reachable_target_is_still_reached():
     assert info.reached_target is True
 
 
+def test_the_budget_is_on_by_default():
+    """Rajoittimen raja on oletus, ei valinnainen lisä.
+
+    Se oli vuosi kirjoitettuna ja nollassa, eli pois päältä, ja ketjun ainoa
+    rajaton vaihe pysyi rajattomana. Mitattuna oikealla puheella (crest 25,4
+    dB, -26,2 LUFS) tavoitteella -15,8: rajoitin vei crestin 15,4:ään ja
+    teki -9,6 dB työtä, ja tulos kuulosti säröiseltä. Huiput ovat
+    yksittäisiä aallonharjoja — yli 0 dBFS meni 1005 tapahtumaa, mediaani
+    0,15 ms, 0,19 % näytteistä — joten kompressorit eivät niitä näe ja
+    rajoitin tekee kaiken yksin.
+
+    Kuunneltuna samalla äänekkyydellä: crest 15,4 huono, 18,5 hyvä. Budjetti
+    kuuden desibelin kohdalla antaa 18,5 ja jättää tason 3 dB tavoitteesta,
+    ja se on oikea valinta: taso on korjattavissa yhdellä liu'ulla,
+    tiivistetty puhe ei.
+    """
+    audio = _spiky()
+    out, info = chain.process(audio, RATE, AudioSettings(), 0.0, True, -14.0, None)
+    assert chain.LIMITER_BUDGET_DB > 0.0, "budjetti on pois päältä"
+    assert chain.sustained_reduction_db(out, RATE) <= chain.LIMITER_BUDGET_DB + 0.5
+    assert info.reached_target is False, "tason jäämistä ei kerrottu"
+
+
 def test_the_budget_moves_the_excess_into_level_not_compression():
     """Budjetti pitää crestin ja antaa tason periksi.
 
@@ -697,7 +720,11 @@ def test_the_budget_moves_the_excess_into_level_not_compression():
     audio = _spiky()
     loose = AudioSettings()
     loose.limiter_budget_db = 6.0
-    tight, _ = chain.process(_spiky(), RATE, AudioSettings(), 0.0, True, -14.0, None)
+    # Rajaton haara on nyt se joka on pyydettävä erikseen: budjetti on
+    # oletuksena päällä, ks. test_the_budget_is_on_by_default.
+    unbounded = AudioSettings()
+    unbounded.limiter_budget_db = 0.0
+    tight, _ = chain.process(_spiky(), RATE, unbounded, 0.0, True, -14.0, None)
     kept, info = chain.process(audio, RATE, loose, 0.0, True, -14.0, None)
 
     assert _crest_db(kept) > _crest_db(tight) + 6.0, (
