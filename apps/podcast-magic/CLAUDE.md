@@ -279,6 +279,10 @@ toteutukset testaavat itseään sitä vasten
 (`tests/test_conformance.py` täällä, `Tests/NhsxKitTests/` siellä).
 
 **Kun muutat `packages/nhsx`:n `read.py`:tä tai `mix.py`:tä, muutat sopimusta** — ja automixerin Hindenburg-tuontia.
+`FadeIn`/`FadeOut` (häivytys hiljaisuudesta, `Clip.fade_in`/`fade_out`) on
+luettu Pythonissa mutta ei vielä katselimessa, eikä se ole
+yhdenmukaisuussuunnitelmassa: katselin soittaa ne toistaiseksi täydellä
+tasolla.
 Jos vastaus muuttuu, se luodaan uudestaan tahallaan ja diffi luetaan —
 muuttunut luku on joko korjaus tai regressio — ja Swift-puoli muutetaan
 samassa hengessä. Muuten esikatselu näyttää eri jakson kuin `nhsx-render`

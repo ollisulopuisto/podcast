@@ -362,6 +362,8 @@ def test_the_known_attributes_are_written_out_by_hand(tmp_path):
         {
             "Ref", "Start", "Length", "Offset", "Muted", "Name", "Gain", "Pan",
             "ClipGain", "IsMusic", "UseTranscription",
+            # Päätetty: häivytykset hiljaisuudesta, pikis 2026-09-11.
+            "FadeIn", "FadeOut",
         }
     )
     assert mix.KNOWN_FADE_ATTRS == frozenset({"Start", "Length", "Gain"})

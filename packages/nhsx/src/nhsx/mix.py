@@ -58,6 +58,10 @@ KNOWN_REGION_ATTRS = frozenset(
         # Eivät vaikuta tasoon: lippuja litterointia ja musiikkitunnistusta
         # varten. Tunnettuja, jotta varoitus säilyy merkitsevänä.
         "IsMusic", "UseTranscription",
+        # Häivytys hiljaisuudesta ja hiljaisuuteen, pituus aikana. Nähty
+        # pikis 2026-09-11 -istunnossa (2 + 6 aluetta); ennen kuin ne
+        # luettiin, jokainen editoitu häivytys soi täydellä tasolla.
+        "FadeIn", "FadeOut",
     }
 )
 
@@ -185,11 +189,33 @@ def level_at(ramps: "tuple[Ramp, ...]", when: float) -> float:
     return level
 
 
-def envelope(length: float, sample_rate: int, ramps: "tuple[Ramp, ...]" = ()) -> np.ndarray:
-    """Leikkeen äänenvoimakkuuskäyrä, ``length`` sekuntia ``sample_rate``:lla."""
+def envelope(length: float, sample_rate: int, ramps: "tuple[Ramp, ...]" = (),
+             fade_in: float = 0.0, fade_out: float = 0.0) -> np.ndarray:
+    """Leikkeen äänenvoimakkuuskäyrä, ``length`` sekuntia ``sample_rate``:lla.
+
+    ``fade_in`` ja ``fade_out`` kerrotaan luiskien päälle: ne ovat
+    häivytyksiä hiljaisuudesta ja hiljaisuuteen, eivät tasolta toiselle.
+    Muodoksi on **oletettu** sama raised-cosine kuin mitatulla `<Fade>`illa;
+    näitä kahta ei ole mitattu.
+    """
     n = int(round(length * sample_rate))
     if n <= 0:
         return np.zeros(0, dtype=np.float32)
+    env = _ramp_envelope(n, sample_rate, ramps)
+    for seconds, head in ((fade_in, True), (fade_out, False)):
+        m = min(n, int(round(seconds * sample_rate)))
+        if m <= 0:
+            continue
+        curve = _share((np.arange(m, dtype=np.float32) + 0.5) / m).astype(np.float32)
+        if head:
+            env[:m] *= curve
+        else:
+            env[n - m:] *= curve[::-1]
+    return env
+
+
+def _ramp_envelope(n: int, sample_rate: int, ramps: "tuple[Ramp, ...]") -> np.ndarray:
+    """Pelkkien luiskien käyrä, ``n`` näytettä."""
     if not ramps:
         return np.ones(n, dtype=np.float32)
 
@@ -240,6 +266,9 @@ class Clip:
     gain: float = 1.0
     pan: float = 0.0
     ramps: tuple[Ramp, ...] = ()
+    # Häivytys hiljaisuudesta ja hiljaisuuteen, sekunteina. Ks. ``envelope``.
+    fade_in: float = 0.0
+    fade_out: float = 0.0
 
     @property
     def end(self) -> float:
@@ -344,6 +373,16 @@ def _ramps(region_elem, length: float, unknown: dict[str, int]) -> tuple[Ramp, .
     return tuple(ramps)
 
 
+def _fade(value: str | None, length: float) -> float:
+    """Häivytyksen pituus alueen sisään rajattuna. Rikkinäinen on nolla,
+    samasta syystä kuin rikkinäinen `<Fade>`: esikatselua ei kaadeta."""
+    try:
+        seconds = time_to_seconds(value)
+    except ValueError:
+        return 0.0
+    return max(0.0, min(seconds, length))
+
+
 def _gain_and_pan(elem, known: frozenset[str], unknown: dict[str, int], prefix: str = ""):
     """Tason ja panoroinnin luku, ja kaiken muun kertominen."""
     for attr in elem.attrib:
@@ -410,6 +449,10 @@ def plan(session: Session, extra_dir: str = "") -> Mix:
                 # katselimen Swift-puoli, joka ei jaa tämän kanssa riviäkään —
                 # saa valmiit luvut eikä sääntöä opeteltavakseen.
                 ramps = _ramps(elem, region.length, mixdown.unknown)
+                fade_in = _fade(elem.get("FadeIn"), region.length)
+                fade_out = _fade(elem.get("FadeOut"), region.length)
+            else:
+                fade_in = fade_out = 0.0
 
             if track_muted or (elem is not None and _truthy(elem.get("Muted"))):
                 mixdown.muted += 1
@@ -436,6 +479,8 @@ def plan(session: Session, extra_dir: str = "") -> Mix:
                     # Raidan panorointi siirtää leikkeen omaa, ei korvaa sitä.
                     pan=max(-1.0, min(1.0, pan + track_pan)),
                     ramps=ramps,
+                    fade_in=fade_in,
+                    fade_out=fade_out,
                 )
             )
 
