@@ -503,6 +503,11 @@ for the limiter, and it "sounds surprisingly good" (2026-09-22, 10 ms also
 tried, 20 chosen). Delivery cost at −14 is 2.9 LU — just inside the 3 LU
 budget, so a harder episode will land a little short and say so.
 
+automixer masters through the same code: `programme.master` is the
+in-memory form of the file-streaming `program_deliver`, and its speech bus
+applies `shared_backoff`. It had a static lift into the plain limiter —
+the combination that distorted.
+
 The high-pass stays at 80 Hz. Ours is +4…+7 dB above Live below 60 Hz,
 where Live cuts at 100 Hz and steeper, but that is rumble and not speech:
 decided by ear, not worth a stage.

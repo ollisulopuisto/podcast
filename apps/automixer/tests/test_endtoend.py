@@ -239,3 +239,24 @@ def test_the_speech_grid_reaches_the_chain_as_the_rider_mask(turn_taking, monkey
     assert len(seen) == 2, seen
     assert all(mask is not None for mask in seen), "kummallakin mikillä on maski"
     assert any(mask.any() for mask in seen), "maskissa pitää olla puhetta"
+
+
+def test_the_master_is_the_shared_mastering(session, monkeypatch):
+    """Masteri nostaa huippuvaiheen kautta, ei staattisesti rajoittimeen.
+
+    Staattinen nosto ja pelkkä rajoitin oli se yhdistelmä joka kuulosti
+    säröiseltä; `programme.master` on sama masterointi kuin autoraffkatissa.
+    """
+    from speechmix import programme
+
+    seen = []
+    original = programme.master
+
+    def spy(audio, rate, target_lufs, *args, **kwargs):
+        seen.append(target_lufs)
+        return original(audio, rate, target_lufs, *args, **kwargs)
+
+    monkeypatch.setattr(programme, "master", spy)
+    mix = render(session)
+    assert seen == [-16.0]
+    assert true_peak_db(mix) <= programme.PROGRAM_PEAK_DB + 0.1
