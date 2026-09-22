@@ -145,10 +145,19 @@ microphone on 64 % of the frames where only the other person spoke, and
 the gaps fall on turn-taking boundaries where the bleed is loudest — and
 overlapping speech needs both microphones open anyway.
 
-`debleed.py` estimates the leakage path as a least-squares FIR (2048 taps,
+`debleed.py` estimates the leakage path as a least-squares FIR (8192 taps,
 solved from the Toeplitz structure) over the passages where only the source
 speaks, and subtracts it everywhere. Coherence 0.1069 → 0.0098; the target's
 own speech preserved at r = 0.9993.
+
+The filter has to reach past the room, not just the direct path. 2048 taps
+at 48 kHz is 43 ms; the reflections are longer. Real two-mic material (68.7
+min, microphones about 1.8 m apart, direct path +5.5 ms): 2048 taps removed
+3.92 dB, 8192 (171 ms) 5.14 dB, own speech still r = 0.9999; 16384 added only
+0.14 dB. Cost: 33.1 → 33.5 s and 10.6 → 11.3 GB. By ear, 8192 was better on
+both speakers, turn transitions were clean, and the summed de-bled pair
+showed no new artefacts. Ducking on top of it (automix) pumped audibly and
+was rejected.
 
 It must run on the **raw** audio, *before* any generative restoration
 plug-in: such a plug-in does not preserve the linear relation between tracks,
@@ -454,6 +463,25 @@ a 0.85 parallel mix and an oversampled soft clipper (limiter work −9.6 →
 `LIMITER_BUDGET_DB` is therefore **6.0 and on by default**, where it had been
 0.0 — written, and switched off. The file lands 3 dB below target and says so
 (`reached_target`).
+
+**The budget missed a case, so the guard now reads crest.** On the same
+episode one speaker's stem came out at crest 14.9 dB with the budget reading
+0.00 — the limiter did −5.54 dB, but in short bursts that the 0.1-percentile
+measure does not count. Level buys crest about 1:1 (−15.8 → −17.8 → −19.8
+LUFS gave 14.9 → 16.9 → 18.9 dB). `PSR_GUARD_LU = 15.0`: when peak-to-short-
+term loudness after the limiter falls below it, the chain backs the gain off
+*before* the limiter until it holds. PSR does not move with level, so the
+back-off cannot happen after. The guard only recovers what the limiter took
+— its limit is the lower of 15 LU and the unlimited signal's own PSR; without
+that it lowered sine bursts by 14 dB and fixed nothing. The back-off goes
+into `backed_off_db`, so `shared_backoff` keeps the speakers' balance.
+
+Ep 55 stems: one −16.02 LUFS/crest 14.91 → −19.79/18.86 (back-off −5.36),
+the other −16.02/19.52 → −17.18/20.72 (−1.72). Summed programme,
+loudness-matched A/B (2026-09-22): without guard −15.48 LUFS/crest 14.28/PSR
+11.02; guard −18.29/17.23/13.98; guard with shared back-off −19.39/18.29/
+14.84 — **the last preferred**, 5.4 dB under the −14 target. Crest was
+worth more than loudness again.
 
 The high-pass stays at 80 Hz. Ours is +4…+7 dB above Live below 60 Hz,
 where Live cuts at 100 Hz and steeper, but that is rumble and not speech:

@@ -1187,6 +1187,27 @@ def multiband(
 # numeerinen raja tälle, ja se on mitattavissa — joten se mitataan.
 PSR_FLOOR_LU = 6.0
 
+#: Mihin ketju **pysähtyy**: alle tämän se antaa tason periksi, LU.
+#:
+#: Owsinskin kuusi yllä on kirjallisuuden raja ylipakkaukselle ja jää
+#: varoitukseksi. Tämä on mitattu korvalla tästä materiaalista, ja se on
+#: paljon tiukempi.
+#:
+#: Kuunneltuna samasta pätkästä, äänekkyydeltään täsmättynä: crest 15,4 dB
+#: (PSR 13,1) kuulosti säröiseltä, crest 18,5 (PSR 16,0) ja 19,4 (16,6)
+#: eivät. Raja on siis niiden välissä, ja 15 on sen varovainen puoli.
+#:
+#: Miksi tämä eikä rajoittimen budjetti: budjetti mittaa **jatkuvaa**
+#: vaimennusta, ja oikealla puhujalla se luki 0,00 dB samaan aikaan kun
+#: rajoitin teki -5,54 dB piikkeinä ja crest päätyi 14,9:ään. Vartija ei
+#: herännyt, koska se mittasi eri asiaa kuin korva. Tämä mittaa
+#: lopputulosta.
+#:
+#: Periksi antaminen myös korjaa eikä vain hiljennä: mitattuna tavoitteen
+#: lasku -15,8 -> -17,8 -> -19,8 nosti crestiä 14,9 -> 16,9 -> 18,9, eli
+#: taso ostaa crestiä lähes yksi yhteen niin kauan kuin rajoitin tekee työtä.
+PSR_GUARD_LU = 15.0
+
 
 def peak_to_short_term(audio: np.ndarray, rate: int) -> float:
     """True peak miinus suurin lyhyen aikavälin äänekkyys, LU.
@@ -1458,6 +1479,14 @@ def process(
         # Ylimenevä osa otetaan tasosta eikä tiivistyksestä. Vaimennus ennen
         # rajoitinta vähentää vaadittua rajoitusta yksi yhteen, joten siirto
         # on tarkka — ja taso on se puoli joka on jälkikäteen korjattavissa.
+        # Rajoittamaton signaali talteen PSR-vartijaa varten, ks.
+        # PSR_GUARD_LU. Vaimennus on tehtävä **ennen** rajoitinta: PSR on
+        # true peak miinus lyhyen aikavälin taso, joten tason laskeminen
+        # jälkikäteen siirtää molempia yhtä paljon eikä muuta sitä lainkaan.
+        # Kopio maksaa yhden tiedoston verran muistia, ja se vapautetaan heti
+        # kun vartija on tehnyt työnsä.
+        pre = audio.copy()
+        pre_lift = lift
         budget = float(getattr(settings, "limiter_budget_db", LIMITER_BUDGET_DB))
         if budget > 0:
             over = sustained_reduction_db(audio, rate) - budget
@@ -1491,6 +1520,31 @@ def process(
             reached = not capped and (
                 settled is None or abs(target_lufs - settled) <= 0.3
             )
+        # Vartija lopputulokselle, ks. PSR_GUARD_LU. Budjetti yllä katsoo
+        # yhtä vaihetta; tämä katsoo sitä mitä tiedostosta tuli. Vaimennus
+        # tehdään rajoittamattomaan kopioon ja rajoitin ajetaan uudestaan,
+        # koska valmiiseen tulokseen se ei enää vaikuttaisi.
+        #
+        # Raja on **pienempi** rajasta ja siitä mitä signaalissa oli ennen
+        # rajoitinta: vartija saa palauttaa vain sen minkä rajoitin vei.
+        # Ilman tätä tiheä lähde vaimennetaan loputtomiin korjaamatta
+        # mitään — sinipurskeilla PSR on luonnostaan matala, ja vartija
+        # otti tasosta 14 dB ilman että PSR liikkui.
+        limit = min(PSR_GUARD_LU, peak_to_short_term(pre, rate))
+        for _ in range(2):
+            if target_lufs is None or not np.isfinite(limit):
+                break
+            psr = peak_to_short_term(audio, rate)
+            if not np.isfinite(psr) or psr >= limit - 0.1:
+                break
+            short = float(limit - psr)
+            extra = (lift - pre_lift) - short
+            audio = _board(pedalboard.Gain(gain_db=extra))(pre, rate, reset=True)
+            audio, limiter_db = limiter(audio, rate)
+            lift = pre_lift + extra
+            backed_off -= short
+            capped, reached = True, False
+        del pre
         # Viimeinen varmistus. Rajoittimen jälkeen tämän ei pitäisi laueta,
         # ja jos laukeaa, se on rajoittimessa oleva vika eikä turvaverkon työ.
         audio, trimmed = peak_guard(audio)

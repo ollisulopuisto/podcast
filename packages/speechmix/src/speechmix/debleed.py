@@ -45,10 +45,26 @@ from __future__ import annotations
 
 import numpy as np
 
-# Suotimen pituus. 2048 näytettä on 43 ms 48 kHz:llä: suora ääni (5–7 ms
-# mitattuna) ja varhaiset heijastukset mahtuvat, myöhäinen jälkikaiku ei —
-# eikä sen tarvitse, se on jo hajonnut eikä muodosta kampaa.
-TAPS = 2048
+# Suotimen pituus. 8192 näytettä on 171 ms 48 kHz:llä.
+#
+# Tässä luki pitkään 2048 (43 ms) sillä perusteella, että suora ääni (5–7 ms
+# mitattuna) ja varhaiset heijastukset mahtuvat eikä myöhäistä jälkikaikua
+# tarvitse tavoittaa, koska se on hajonnut eikä muodosta kampaa. Mitattuna
+# se ei pidä paikkaansa: pituudesta on hyötyä pitkälle yli 43 ms:n.
+#
+# Kokonainen jakso (68,7 min, kaksi mikkiä 1,8 m:n päässä toisistaan):
+#
+#     tapit   vuotoa pois   oma puhe   aika     muisti
+#      2048      3,92 dB     0,9999    33,1 s   10,6 GB
+#      8192      5,14 dB     0,9999    33,5 s   11,3 GB
+#     16384      5,2  dB     0,9999     —        —
+#
+# Hyöty loppuu 8192:een: 16384 toi 0,14 dB lisää ja kaksinkertaistaa
+# suotimen. Hintaa ei mitattu olevan: 0,4 s ja 0,7 GB koko jaksosta.
+# Kuunneltuna 8192 oli parempi molemmilla puhujilla, siirtymät mukaan
+# lukien, eikä raitojen summaan syntynyt uutta artefaktia — ylisovittunut
+# suodin käyttäytyisi päinvastoin.
+TAPS = 8192
 
 # Autokorrelaation diagonaalin korotus. Ilman tätä Toeplitz-ratkaisu on
 # huonosti ehdollistettu kaistoilla joilla lähteessä ei ole energiaa.
