@@ -51,7 +51,7 @@ def shared_gain(blocks, rate: int,
     Idempotentti rakenteeltaan: käyrä on ``min(1, katto/huippu)``, joten
     summalle joka jo noudattaa kattoa se on ykkönen kaikkialla.
 
-    ``ceiling_db`` on oletuksena ketjun oma stemikatto. Jakelussa se on eri
+    ``ceiling_db`` on oletuksena ketjun oma stemikatto. Masteroinnissa se on eri
     luku: stemin katto jättää varaa summalle, ohjelman katto on se johon
     valmis miksaus rajataan.
     """
@@ -122,7 +122,7 @@ def shared_backoff(backoffs) -> dict:
             for key, v in backoffs.items()}
 
 
-#: Kuinka paljon jakelutason eteen saa nostaa. Rajaton nosto olisi sama vika
+#: Kuinka paljon masterointitason eteen saa nostaa. Rajaton nosto olisi sama vika
 #: kuin rajaton rajoitin: hiljainen tai tyhjä mittausikkuna pyytäisi
 #: kymmeniä desibelejä, ja jaettu käyrä maksaisi ne crestinä.
 MAX_PROGRAM_BOOST = 12.0
@@ -130,16 +130,16 @@ MAX_PROGRAM_BOOST = 12.0
 
 def boost_to(summed: np.ndarray, rate: int, target_lufs: float | None,
              max_boost: float = MAX_PROGRAM_BOOST) -> float:
-    """Kuinka paljon **summa** on jakelutason alla, desibeleinä (≥ 0).
+    """Kuinka paljon **summa** on masterointitason alla, desibeleinä (≥ 0).
 
-    Stemin tavoite ja jakelun tavoite ovat eri asia, ja niiden sekoittaminen
-    on koko tiivistysongelman juuri: -14 LUFS on jakelutason luku, ja
+    Stemin tavoite ja masteroinnin tavoite ovat eri asia, ja niiden sekoittaminen
+    on koko tiivistysongelman juuri: -14 LUFS on masterointitason luku, ja
     stemiltä pyydettynä se vaatii crestin jota puheella ei ole. Summasta
     pyydettynä sama luku maksaa rajoitusta vain siellä missä huiput osuvat
     yhteen — ja sen hoitaa ``shared_gain``, sama jaettu käyrä joka pitää
     katon, eikä yksikään stemi maksa toisen puolesta.
 
-    ``None`` tai nolla on pois päältä eikä nollaan normalisointia: jakelutaso
+    ``None`` tai nolla on pois päältä eikä nollaan normalisointia: masterointitaso
     on valinta, ja valitsematta jättäminen tarkoittaa että taso tulee
     stemeistä kuten ennenkin.
     """

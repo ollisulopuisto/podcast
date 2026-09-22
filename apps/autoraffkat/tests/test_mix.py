@@ -195,7 +195,7 @@ def test_fingerprint_covers_every_setting():
     # nostaa nollan, eli se on idempotentti; ja `process` ajaa katon myös
     # silloin kun muuta tehtävää ei ole, jottei tason muuttaminen jää hiljaa
     # tekemättä. Ks. `test_the_delivery_target_still_works_when_nothing_is_stale`.
-    # Jakelun luvut tehdään katon yhteydessä ja mitataan joka ajolla
+    # Masteroinnin luvut tehdään katon yhteydessä ja mitataan joka ajolla
     # uudestaan, joten niiden muuttaminen ei vanhenna yhtäkään stemiä.
     delivery = {n for n in fields if n.startswith("program_") and n != "program_target"}
     outside = {"enabled", "room_track"} | ducking | delivery
@@ -1136,7 +1136,7 @@ def test_the_stamp_says_the_plugin_did_not_run(fixture_dir):
 
 def test_delivery_follows_the_programme_target():
     """Ketjun vartija luopuu tasosta crestin hyväksi, ja ohjelma jäi
-    mitattuna -19,4 LUFS:iin tavoitteen -14 sijaan. Jakelu nostaa sen
+    mitattuna -19,4 LUFS:iin tavoitteen -14 sijaan. Masterointi nostaa sen
     takaisin summan huippuvaiheella, joten sen on seurattava sitä tavoitetta
     jonka käyttäjä valitsi — ei omaa lukuaan, joka unohtuu."""
     assert mix.delivery_lufs(AudioSettings()) == AudioSettings().target_lufs
@@ -1149,7 +1149,7 @@ def test_delivery_follows_the_programme_target():
 def test_the_delivery_target_still_works_when_nothing_is_stale(fixture_dir):
     """Tason muuttaminen ei saa jäädä hiljaa tekemättä.
 
-    `process` palaa heti kun jokainen stemi on ajan tasalla. Jakelutaso ei ole
+    `process` palaa heti kun jokainen stemi on ajan tasalla. Masterointitaso ei ole
     stemin käsittelyä vaan katon yhteydessä tehtävä nosto, joten siitä
     palaaminen tarkoittaisi että säädin liikkuu, lokiin ei tule mitään ja ääni
     pysyy samana — tämän projektin tavallisin vikaluokka.
@@ -1176,7 +1176,7 @@ def test_the_delivery_target_still_works_when_nothing_is_stale(fixture_dir):
         again = mix.process(tl, roles, settings, grid=grid,
                             program_start=float(start))
         assert again.processed == 0, "stemejä käsiteltiin turhaan"
-        assert again.program_boost > 0, "jakelutaso jäi tekemättä"
+        assert again.program_boost > 0, "masterointitaso jäi tekemättä"
     finally:
         for item in tl.media:
             if item.path and item.path.endswith(".wav"):
