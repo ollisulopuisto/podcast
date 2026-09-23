@@ -6,6 +6,7 @@ and run analyses or full mix renders interactively from the terminal.
 """
 
 import contextlib
+import json
 import os
 import sys
 import threading
@@ -35,8 +36,18 @@ from textual.widgets import (
 from textual.widgets.selection_list import Selection
 
 from automixer.analyzer import SpotAnalyzer
-from automixer.cli_mix import Mixer, parse_plugin_params, parse_track_params
-from speechmix import chain
+from automixer.cli_mix import (
+    Mixer,
+    load_plugin_state,
+    parse_plugin_params,
+    parse_track_params,
+)
+from speechmix import chain, editor
+
+#: Liitännäisen oma tila (dxReviven malli) jakson kansiossa, jotta seuraava
+#: ajo samasta jaksosta saa saman mallin. Sama muoto kelpaa
+#: komentorivin `--plugin-state`ille.
+PLUGIN_STATE_FILE = "automixer-plugin.json"
 
 
 class LogScreen(ModalScreen):
@@ -152,6 +163,10 @@ class AutomixerApp(App):
         self.system_plugins = []
         self.selected_speech_plugins = set()
         self.selected_music_plugins = set()
+        self.plugin_state = ""
+        saved = os.path.join(self.work_dir, PLUGIN_STATE_FILE)
+        if os.path.exists(saved):
+            self.plugin_state = load_plugin_state(saved)
         self.preview_buffer = None
         self.playback_active = False
 
@@ -280,6 +295,11 @@ class AutomixerApp(App):
                     Input(
                         placeholder="e.g. panu/dxrevive:mix=50; kari/dxrevive:mix=25",
                         id="track_params_input",
+                    ),
+                    Horizontal(
+                        Button("Open plugin window (model)…", id="plugin_editor_btn"),
+                        Label(self._state_text(), id="plugin_state_label"),
+                        classes="field",
                     ),
                     Button("Refresh Scan", id="refresh_plugins_btn"),
                 )
@@ -411,9 +431,45 @@ class AutomixerApp(App):
             self.run_preview()
         elif event.button.id == "stop_playback_btn":
             self.action_stop_playback()
+        elif event.button.id == "plugin_editor_btn":
+            self.open_plugin_window()
         elif event.button.id == "refresh_plugins_btn":
             self.query_one("#plugin_search", Input).value = ""
             self.action_refresh_plugins()
+
+    def _state_text(self) -> str:
+        return (f"model state saved ({len(self.plugin_state)} chars)"
+                if self.plugin_state else "plug-in default model")
+
+    def open_plugin_window(self):
+        """Liitännäisen oma ikkuna, josta dxReviven malli valitaan.
+
+        Ikkuna on lapsiprosessissa (`speechmix.editor`): se estää kunnes
+        ikkuna suljetaan ja vaatii pääsäikeen, jota TUI ei voi luovuttaa.
+        Tila tallennetaan jakson kansioon.
+        """
+        plugins = sorted(self.selected_speech_plugins)
+        if not plugins:
+            self.notify("Select a speech plug-in first", severity="error")
+            return
+
+        def task():
+            try:
+                result = editor.open_editor(plugins[0], None, self.plugin_state or None)
+            except Exception as exc:
+                self.call_from_thread(self.log_system, f"❌ Plug-in window: {exc}")
+                return
+            if not result.state:
+                return
+            self.plugin_state = result.state
+            with open(os.path.join(self.work_dir, PLUGIN_STATE_FILE), "w",
+                      encoding="utf-8") as handle:
+                json.dump({"plugin": plugins[0], "state": result.state}, handle)
+            self.call_from_thread(
+                lambda: self.query_one("#plugin_state_label", Label).update(
+                    self._state_text()))
+
+        threading.Thread(target=task, daemon=True).start()
 
     def update_track_roles_display(self):
         """
@@ -563,6 +619,9 @@ class AutomixerApp(App):
             return procs
 
         s_bus["processors"] = build_proc_list(s_bus["plugin_paths"])
+        if self.plugin_state:
+            for p_cfg in s_bus["processors"]:
+                p_cfg["state"] = self.plugin_state
         m_bus["processors"] = build_proc_list(m_bus["plugin_paths"])
         self.config["target_lufs"] = float(self.query_one("#target_lufs", Input).value)
         self.config["output_path"] = self.query_one("#output_path", Input).value

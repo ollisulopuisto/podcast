@@ -16,8 +16,14 @@ Before anything is built on top of it:
 - A few real episodes, listened to against the hand-made render with
   `scripts/ab/compare.py` (loudness-matched).
 - Settle which controls are actually touched per episode. So far: the
-  programme target, dxRevive amount per speaker. That list is the GUI's
-  first screen; everything else stays one level down or is not a control.
+  programme target, dxRevive amount per speaker, and dxRevive's model. That
+  list is the GUI's first screen; everything else stays one level down or
+  is not a control.
+
+First result (pikis 2026-09-11, loudness-matched): automixer with dxRevive
+Studio 2 at 25 / 25 / 50 % (Olli / Kari / Panu — Panu's room is the
+reverberant one) beat both the hand render and automixer without
+dxRevive. Per-speaker cleanup is a real control.
 
 ## 2. A desktop GUI like autoraffkat's
 
