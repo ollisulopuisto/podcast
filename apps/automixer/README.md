@@ -86,8 +86,18 @@ Specify tracks and options explicitly:
 automixer --speech mic1.wav mic2.wav --music theme_THEME.wav -o episode1.wav --target-lufs -14.0
 ```
 
+#### **From a Hindenburg session**
+Edit in Hindenburg, mix here:
+```bash
+automixer "episode.nhsx" --target-lufs -16
+```
+Cuts, fades and each region's clip gain come from the session; track faders
+and pan do not (the chain sets levels). Music tracks keep their stereo and
+fades, and are loudness-matched to speech. The mix lands beside the session
+as `episode automixer.wav`. Plain audio files work as before.
+
 **Available Options:**
-- `tracks`: Positional arguments for audio files (auto-detected if `--speech`/--music` not used).
+- `tracks`: Positional arguments for audio files, or one `.nhsx` session (auto-detected if `--speech`/--music` not used).
 - `--speech`: Explicitly specify speech tracks.
 - `--music`: Explicitly specify music tracks.
 - `--output`, `-o`: Output filename (default: `final_mix.wav`).
@@ -146,6 +156,11 @@ You can now control your plugins directly from the TUI. In the **Plugins** tab, 
 - Separate multiple parameters with commas.
 - Separate multiple plugins with semicolons.
 - The app will match the name you type against the plugin's filename.
+
+Per-track parameters win over those, for the speaker whose room needs more
+(CLI `--track-params`, or the second field in the **Plugins** tab):
+`panu/dxrevive: mix=50; kari/dxrevive: mix=25` — the track is matched by
+part of its name, the plugin by part of its filename.
 
 ## 💻 Optimization for Mac
 This project is built from the ground up to leverage:

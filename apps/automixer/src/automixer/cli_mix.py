@@ -277,7 +277,9 @@ class Mixer:
             # everything else for the same reason.
             for p_cfg in speech_cfg.get("processors", []):
                 if p_cfg["type"] == "plugin":
-                    t.add_processor(self._create_processor(p_cfg))
+                    own = dict(p_cfg, params=track_plugin_params(
+                        p_cfg, t.name, self.config.get("track_params", {})))
+                    t.add_processor(self._create_processor(own))
 
             # Then the whole speech chain, from the shared library.
             #
@@ -448,6 +450,64 @@ class Mixer:
             return None
         update_progress(100, "✅ Preview Render Ready")
         return master_np
+
+
+def _values(text: str) -> dict:
+    """``k=v,k=v`` sanakirjaksi; luku jos se on luku."""
+    out = {}
+    for kv in text.split(","):
+        if "=" in kv:
+            key, value = kv.split("=", 1)
+            try:
+                out[key.strip()] = float(value.strip())
+            except ValueError:
+                out[key.strip()] = value.strip()
+    return out
+
+
+def parse_plugin_params(text: str) -> dict:
+    """``liitännäinen:k=v,k=v; toinen:k=v`` -> ``{liitännäinen: {k: v}}``.
+
+    Liitännäinen tunnistetaan nimen osasta, pienin kirjaimin: ``dxrevive``
+    osuu tiedostoon ``Accentize-dxRevive.vst3``.
+    """
+    out = {}
+    for part in (text or "").split(";"):
+        if ":" in part:
+            name, values = part.split(":", 1)
+            out[name.strip().lower()] = _values(values)
+    return out
+
+
+def parse_track_params(text: str) -> dict:
+    """``raita/liitännäinen:k=v; …`` -> ``{raita: {liitännäinen: {k: v}}}``.
+
+    Raidan oma asetus voittaa väylän: yhden puhujan huone voi tarvita
+    enemmän siivousta kuin muiden (pikis 2026-09-11, Panu).
+    """
+    out: dict = {}
+    for part in (text or "").split(";"):
+        if "/" in part and ":" in part:
+            track, rest = part.split("/", 1)
+            out.setdefault(track.strip().lower(), {}).update(parse_plugin_params(rest))
+    return out
+
+
+def track_plugin_params(p_cfg: dict, track_name: str, overrides: dict) -> dict:
+    """Väylän parametrit, joiden päälle raidan omat.
+
+    Raita tunnistetaan nimen osasta, joten ``panu`` osuu myös tiedostoon
+    ``2026-09-11--guest232006--panu.wav``.
+    """
+    params = dict(p_cfg.get("params") or {})
+    plugin = os.path.basename(p_cfg.get("path", "")).lower()
+    name = track_name.lower()
+    for track, per_plugin in overrides.items():
+        if track and track in name:
+            for key, values in per_plugin.items():
+                if key in plugin:
+                    params.update(values)
+    return params
 
 
 def speaker_pans(count: int) -> list[float]:
@@ -628,6 +688,11 @@ def main():
     parser.add_argument(
         "--plugin-params", help="Plugin parameters (e.g. WavesNS1: threshold=0.5)"
     )
+    parser.add_argument(
+        "--track-params", default="",
+        help="Per-track plugin parameters, winning over --plugin-params "
+        "(e.g. 'panu/dxrevive:mix=50; kari/dxrevive:mix=25')",
+    )
 
     parser.add_argument(
         "--minimal",
@@ -700,22 +765,7 @@ def main():
         icon = "🎤" if t["type"] == "speech" else "🎵"
         print(f"  {icon} {t['type'].upper()}: {t['name']}")
 
-    # Parse plugin parameters
-    parsed_params = {}
-    if args.plugin_params:
-        for part in args.plugin_params.split(";"):
-            if ":" in part:
-                p_name, p_vals = part.split(":", 1)
-                p_name = p_name.strip().lower()
-                kv_pairs = {}
-                for kv in p_vals.split(","):
-                    if "=" in kv:
-                        k, v = kv.split("=", 1)
-                        try:
-                            kv_pairs[k.strip()] = float(v.strip())
-                        except Exception:
-                            kv_pairs[k.strip()] = v.strip()
-                parsed_params[p_name] = kv_pairs
+    parsed_params = parse_plugin_params(args.plugin_params)
 
     def build_proc_list(paths):
         if not paths:
@@ -738,6 +788,7 @@ def main():
         "ad_spot": args.ad_spot,
         "ad_duration": args.ad_duration,
         "tracks": config_tracks,
+        "track_params": parse_track_params(args.track_params),
         "buses": {
             "speech": {
                 "hp_enabled": args.speech_hp,
