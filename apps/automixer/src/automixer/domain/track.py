@@ -76,7 +76,10 @@ class Track:
         stat = os.stat(self.path)
         # Combine path, size, and mtime for a fast "is this the same file" check
         hasher = hashlib.sha256()
-        hasher.update(f"{self.path}|{stat.st_size}|{stat.st_mtime}".encode())
+        # Musiikki mitataan stereona ja puhe monona, joten sama tiedosto
+        # antaa eri lukeman roolin mukaan.
+        shape = "stereo" if self.type == "music" else "mono"
+        hasher.update(f"{self.path}|{stat.st_size}|{stat.st_mtime}|{shape}".encode())
         return hasher.hexdigest()
 
     def _get_cache_path(self) -> Path:
@@ -189,8 +192,12 @@ class Track:
 
         data, sr = sf.read(self.path, start=start_frame_orig, frames=frames_to_read)
 
-        # Mix to mono for processing
-        data_mono = data.mean(axis=1) if len(data.shape) > 1 else data
+        # Mikki on monolähde; musiikki säilyttää stereokuvansa. Aiemmin
+        # kaikki luettiin monona, jolloin tunnarin stereo katosi hiljaa.
+        if len(data.shape) > 1 and not (self.type == "music" and data.shape[1] == 2):
+            data_mono = data.mean(axis=1)
+        else:
+            data_mono = data
 
         # Analysis (Only if loading full track or if we want local loudness)
         if is_full_load and self.loudness is None:
