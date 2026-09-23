@@ -90,3 +90,14 @@ If you'd like to work on this:
 1. Open an issue on GitHub discussing your plan and the NLE version you're testing against.
 2. Check [`CONTRIBUTING.md`](../../CONTRIBUTING.md) and [`CLAUDE.md`](../../CLAUDE.md) for local setup, test running, and code conventions.
 3. Start small: Phase 1 (validating and adjusting FCPXML for DaVinci Resolve) is the fastest way to get a working PR merged!
+
+---
+
+## Editing: cut on movement
+
+Cutting on a movement — a hand, a turn of the head — hides the cut, and is
+what an editor does by eye. The video layer already measures faces per
+keyframe (`video/`); a motion measure there could move a speaker change to
+the nearest movement within a short reach, the same way a long-take break
+moves to a measured reaction (`decide.REACTION_REACH`). Wanted after the
+turn-taking fixes of 2026-09-23 have been listened to.
