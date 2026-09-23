@@ -35,7 +35,7 @@ from automixer.domain.processor import (
     SpeechSettings,
 )
 from automixer.domain.track import Track
-from speechmix import programme
+from speechmix import panning, programme
 
 #: Puheraitojen taso ennen masterointia. Kynnykset liukuvat sen mukana
 #: kirjastossa; `session.MUSIC_LUFS` sovittaa musiikin tähän samaan.
@@ -350,11 +350,9 @@ class Mixer:
 
         # 3. Spatial
         update_progress(30, "Applying spatial separation...")
-        if len(speech_track_list) > 1:
-            pan_range = 0.2
-            step = pan_range / (len(speech_track_list) - 1)
-            for i, t in enumerate(speech_track_list):
-                t.pan = -(pan_range / 2) + (i * step)
+        for t, pan in zip(speech_track_list, speaker_pans(len(speech_track_list)),
+                          strict=True):
+            t.pan = pan
 
         # 4. Bus Processing
         # Ad spot logic needs to be aware of the preview window
@@ -450,6 +448,16 @@ class Mixer:
             return None
         update_progress(100, "✅ Preview Render Ready")
         return master_np
+
+
+def speaker_pans(count: int) -> list[float]:
+    """Puhujien paikat raitojen järjestyksessä, -1…+1.
+
+    Sama leveys kuin autoraffkatissa (`speechmix.panning`). Täällä ei ole
+    kuvaa josta istumajärjestyksen voisi mitata, joten järjestys on
+    raitojen oma.
+    """
+    return [round(p / 100.0, 4) for p in panning.spread(count)]
 
 
 def detect_tracks(paths):
