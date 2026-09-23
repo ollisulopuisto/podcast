@@ -8,12 +8,14 @@ on:
     paths:
       - 'viewer/**'
       - 'apps/podcast-magic/src/podcastmagic/nhsx/**'
-      - '.github/workflows/quicklook.yml'
+      - 'packages/nhsx/src/nhsx/**'
+      - '.github/workflows/viewer.yml'
   pull_request:
     paths:
       - 'viewer/**'
       - 'apps/podcast-magic/src/podcastmagic/nhsx/**'
-      - '.github/workflows/quicklook.yml'
+      - 'packages/nhsx/src/nhsx/**'
+      - '.github/workflows/viewer.yml'
 
 # `nhsx/**` on tässä tarkoituksella. Yhdenmukaisuus rikkoutuu yhtä hyvin
 # Python-puolen muutoksesta kuin Swift-puolen, ja kumpikaan ei kaadu

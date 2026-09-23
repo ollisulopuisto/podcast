@@ -410,3 +410,26 @@ def test_a_release_workflow_syncs_the_whole_workspace(app: Path):
 def test_no_workflow_is_hidden_inside_an_app():
     strays = [str(p.relative_to(ROOT)) for p in ROOT.glob("apps/*/.github/workflows/*")]
     assert not strays, strays
+
+
+# --------------------------------------------------------------------------
+# CI
+# --------------------------------------------------------------------------
+
+
+def test_ci_runs_every_members_tests_and_lints_everything():
+    """Jäsen jonka testejä CI ei aja on jäsen jonka testit ovat vihreitä aina.
+
+    `packages/nhsx`in testit eivät ajautuneet lainkaan, lintti tarkisti vain
+    luettelemansa hakemistot (nhsx, `scripts/` ja `tests/` jäivät ulos), ja
+    automixerin lintti oli `continue-on-error`. Kaikki kolme olivat
+    hiljaisia: CI oli vihreä ja tarkisti vähemmän kuin näytti.
+    """
+    workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+    assert "continue-on-error" not in workflow.replace("`continue-on-error`", "")
+    assert re.search(r"run: uv run ruff check \.\s*$", workflow, re.MULTILINE)
+    for member in MEMBERS:
+        if not (member / "tests").is_dir():
+            continue
+        where = member.relative_to(ROOT).as_posix()
+        assert f"--directory {where} pytest" in workflow, f"CI ei aja: {where}"
