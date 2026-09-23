@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="fi">
+<head>
+<meta charset="utf-8">
+<title>Kuunteluvertailu</title>
+<style>
+  :root { --bg:#111; --fg:#eee; --dim:#888; --acc:#e8a33d; --panel:#1c1c1c; }
+  body { background:var(--bg); color:var(--fg); font:15px/1.4 -apple-system, system-ui, sans-serif; margin:24px; }
+  h1 { font-size:18px; margin:0 0 12px; }
+  #tracks { display:grid; gap:6px; margin:16px 0; }
+  .t { display:flex; gap:12px; align-items:center; padding:10px 14px; background:var(--panel);
+       border:2px solid transparent; border-radius:8px; cursor:pointer; user-select:none; flex-wrap:wrap; }
+  .t.on { border-color:var(--acc); }
+  .k { font-weight:700; width:1.5em; color:var(--acc); }
+  .n { flex:1; min-width:12em; overflow-wrap:anywhere; }
+  .m { color:var(--dim); font-variant-numeric:tabular-nums; }
+  canvas { width:100%; height:90px; background:var(--panel); border-radius:8px; cursor:pointer; display:block; }
+  #bar { display:flex; gap:12px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+  button { background:var(--panel); color:var(--fg); border:1px solid #333; border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; }
+  #time { font-variant-numeric:tabular-nums; }
+  .help { color:var(--dim); margin-top:14px; }
+  #status { color:var(--dim); }
+</style>
+</head>
+<body>
+<h1>Kuunteluvertailu — <span id="setid">…</span></h1>
+<div id="status">Ladataan…</div>
+<div id="tracks"></div>
+<canvas id="wave"></canvas>
+<div id="bar">
+  <button id="play">▶︎ Toista</button>
+  <span id="time">0:00.0</span>
+  <label><input type="checkbox" id="match" checked> Tasaa äänekkyys</label>
+  <label><input type="checkbox" id="blind"> Sokko</label>
+  <button id="reveal" hidden>Paljasta</button>
+  <label><input type="checkbox" id="loop"> Silmukka</label>
+</div>
+<div class="help">
+  numeronäppäin vaihtaa version (numero on rivin edessä) · välilyönti toista/tauko · ←/→ 2 s · shift+←/→ 10 s ·
+  klikkaa aaltomuotoa hypätäksesi · silmukka: raahaa aaltomuodon päällä alue ·
+  tasaus: kaikki soivat hiljaisimman tasolla, jottei kovempi voita pelkällä tasolla
+</div>
+<script>
+// Kaksi soittotapaa. Lyhyet tiedostot puretaan muistiin ja käynnistetään
+// samalla kellonlyömällä: näytteen tarkka synkka. Pitkät soitetaan
+// <audio>-elementteinä: puolen tunnin stereojakso olisi 690 Mt purettuna,
+// ja kaksi sellaista kaataa välilehden. Elementit pidetään tahdissa
+// korjaamalla ajelehtiminen aktiivisen mukaan.
+const LONG_S = 300;          // tätä pidemmät soitetaan suoratoistona
+const DRIFT_S = 0.04;        // sallittu ero aktiiviseen, s
+const FADE = 0.008;          // vaihdon ristihäivytys, s
+let FILES = [], META = [], KEYS = [];
+const ctx = new AudioContext();
+let gains = [], player = null;
+let active = 0, order = [], loopA = null, loopB = null;
+const $ = s => document.querySelector(s);
+
+function bufferPlayer(buffers) {
+  let sources = [], playing = false, startedAt = 0, offset = 0;
+  const duration = () => Math.min(...buffers.map(b => b.duration));
+  const stop = () => { sources.forEach(s => { try { s.stop(); } catch (e) {} }); sources = []; };
+  return {
+    duration, get playing() { return playing; },
+    now: () => playing ? offset + ctx.currentTime - startedAt : offset,
+    start(at) {
+      stop();
+      offset = Math.max(0, Math.min(at, duration() - 0.01));
+      const when = ctx.currentTime + 0.03;
+      sources = buffers.map((b, i) => {
+        const s = ctx.createBufferSource(); s.buffer = b; s.connect(gains[i]); s.start(when, offset); return s;
+      });
+      startedAt = when; playing = true;
+    },
+    pause() { offset = this.now(); stop(); playing = false; },
+    seek(t) { playing ? this.start(t) : (offset = Math.max(0, Math.min(t, duration()))); },
+    tick() {},
+  };
+}
+
+function mediaPlayer(elements) {
+  let playing = false;
+  const duration = () => Math.min(...elements.map(e => e.duration || Infinity));
+  return {
+    duration, get playing() { return playing; },
+    now: () => elements[active].currentTime,
+    start(at) {
+      elements.forEach(e => { e.currentTime = at; });
+      Promise.all(elements.map(e => e.play())).catch(err => { $("#status").textContent = err.message; });
+      playing = true;
+    },
+    pause() { elements.forEach(e => e.pause()); playing = false; },
+    seek(t) { elements.forEach(e => { e.currentTime = Math.max(0, Math.min(t, duration())); }); },
+    tick() {
+      if (!playing) return;
+      const t = elements[active].currentTime;
+      elements.forEach((e, i) => { if (i !== active && Math.abs(e.currentTime - t) > DRIFT_S) e.currentTime = t; });
+    },
+  };
+}
+
+async function load() {
+  const rows = await (await fetch("files.json")).json();
+  META = rows.map(r => (typeof r === "string" ? { name: r } : r));
+  FILES = META.map(r => r.name);
+  // Tunniste: hakemisto + versioiden määrä + lyhyt tiiviste nimistä, jotta
+  // samasta vertailusta puhutaan samalla nimellä.
+  const folder = decodeURIComponent(location.pathname.split("/").filter(Boolean).slice(-2)[0] || "ab");
+  let h = 0; for (const c of FILES.join("|")) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const id = `${folder} · ${FILES.length} versiota · #${h.toString(36).slice(0, 4)}`;
+  // Näppäin on tiedoston oma numero, jos nimet alkavat eri numeroilla.
+  const lead = FILES.map(f => (f.match(/^\s*(\d+)/) || [])[1]);
+  KEYS = (lead.every(x => x !== undefined && x.length === 1) &&
+          new Set(lead).size === lead.length) ? lead : FILES.map((_, i) => String(i + 1));
+  $("#setid").textContent = id;
+  document.title = "Vertailu " + id;
+  order = FILES.map((_, i) => i);
+  gains = FILES.map(() => { const g = ctx.createGain(); g.gain.value = 0; g.connect(ctx.destination); return g; });
+  const long = META.some(r => (r.seconds || 0) > LONG_S);
+  if (long) {
+    const elements = FILES.map((f, i) => {
+      const e = new Audio(encodeURIComponent(f)); e.preload = "auto"; e.crossOrigin = "anonymous";
+      ctx.createMediaElementSource(e).connect(gains[i]); return e;
+    });
+    await Promise.all(elements.map(e => new Promise((ok, fail) => {
+      if (e.readyState >= 1) ok(); e.onloadedmetadata = ok; e.onerror = () => fail(new Error(e.src));
+    })));
+    player = mediaPlayer(elements);
+  } else {
+    const buffers = await Promise.all(FILES.map(async f => {
+      const r = await fetch(encodeURIComponent(f));
+      if (!r.ok) throw new Error(f + ": " + r.status);
+      return ctx.decodeAudioData(await r.arrayBuffer());
+    }));
+    player = bufferPlayer(buffers);
+  }
+  const lens = META.map(r => r.seconds).filter(x => x !== undefined);
+  const spread = lens.length ? Math.max(...lens) - Math.min(...lens) : 0;
+  $("#status").textContent = `${FILES.length} tiedostoa, ${player.duration().toFixed(1)} s` +
+    (long ? ", suoratoisto" : ", muistissa") +
+    (spread > 0.05 ? ` · varoitus: pituudet eroavat ${spread.toFixed(2)} s` : "");
+  applyGains(); render(); drawWave();
+}
+
+// Tasauksessa jokainen soi hiljaisimman tasolla: vain vaimennusta, ei
+// nostoa, jottei yksikään leikkaannu.
+function trimDb(i) {
+  if (!$("#match").checked) return 0;
+  const levels = META.map(r => r.lufs).filter(x => x !== undefined && x !== null);
+  if (!levels.length || META[i].lufs === undefined || META[i].lufs === null) return 0;
+  return Math.min(...levels) - META[i].lufs;
+}
+function applyGains() {
+  const t = ctx.currentTime;
+  gains.forEach((g, j) => {
+    g.gain.cancelScheduledValues(t);
+    g.gain.setValueAtTime(g.gain.value, t);
+    g.gain.linearRampToValueAtTime(j === active ? Math.pow(10, trimDb(j) / 20) : 0, t + FADE);
+  });
+}
+
+function toggle() {
+  ctx.resume();
+  if (player.playing) { player.pause(); $("#play").textContent = "▶︎ Toista"; }
+  else { const t = player.now(); player.start(t >= player.duration() - 0.05 ? 0 : t); $("#play").textContent = "❚❚ Tauko"; }
+}
+function seek(t) { player.seek(t); }
+
+function select(slot) {
+  const i = order[slot]; if (i === undefined) return;
+  active = i; applyGains(); render(); drawWave();
+}
+
+function render() {
+  const blind = $("#blind").checked;
+  $("#tracks").innerHTML = order.map((i, slot) => {
+    const m = META[i], trim = trimDb(i);
+    const nums = m.lufs === undefined ? "" :
+      `${m.lufs} LUFS · ${m.tp} dBTP · crest ${m.crest} dB · PSR ${m.psr} LU` +
+      (trim ? ` · soi ${trim.toFixed(1)} dB` : "");
+    return `<div class="t ${i === active ? "on" : ""}" data-slot="${slot}">
+      <span class="k">${blind ? slot + 1 : KEYS[i]}</span>
+      <span class="n">${blind ? "Versio " + String.fromCharCode(65 + slot) : FILES[i].replace(/\.wav$/, "")}</span>
+      <span class="m">${blind ? "" : nums}</span></div>`;
+  }).join("");
+  document.querySelectorAll(".t").forEach(el => el.onclick = () => select(+el.dataset.slot));
+}
+
+// Aaltomuoto valitusta versiosta, valmiiksi lasketuista huipuista.
+let peaks = null;
+function drawWave() {
+  const c = $("#wave"), dpr = devicePixelRatio || 1;
+  c.width = Math.round(c.clientWidth * dpr); c.height = Math.round(c.clientHeight * dpr);
+  peaks = META[active] && META[active].peaks ? META[active].peaks : null;
+}
+addEventListener("resize", () => drawWave());
+function frame() {
+  const c = $("#wave"), g = c.getContext("2d"), w = c.width, h = c.height;
+  if (player) {
+    player.tick();
+    g.clearRect(0, 0, w, h);
+    const D = player.duration();
+    if (loopA !== null && loopB !== null) {
+      g.fillStyle = "rgba(232,163,61,.18)";
+      g.fillRect(loopA / D * w, 0, (loopB - loopA) / D * w, h);
+    }
+    if (peaks) {
+      g.fillStyle = "#555";
+      const scale = Math.pow(10, trimDb(active) / 20);
+      for (let x = 0; x < w; x++) {
+        const v = peaks[Math.floor(x / w * peaks.length)] * scale * h / 2;
+        g.fillRect(x, h / 2 - v, 1, v * 2);
+      }
+    }
+    let t = player.now();
+    if (player.playing && $("#loop").checked && loopA !== null && loopB !== null && t >= loopB) { player.start(loopA); t = loopA; }
+    if (player.playing && t >= D) { player.pause(); player.seek(0); $("#play").textContent = "▶︎ Toista"; t = 0; }
+    g.fillStyle = "#e8a33d"; g.fillRect(t / D * w - 1, 0, 2, h);
+    const s = Math.max(0, t);
+    $("#time").textContent = `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
+  }
+  requestAnimationFrame(frame);
+}
+
+// Klikkaus hyppää, raahaus asettaa silmukan.
+let dragFrom = null;
+const tAt = e => { const r = $("#wave").getBoundingClientRect(); return (e.clientX - r.left) / r.width * player.duration(); };
+$("#wave").onmousedown = e => { dragFrom = tAt(e); };
+window.onmouseup = e => {
+  if (dragFrom === null) return;
+  const to = tAt(e);
+  if (Math.abs(to - dragFrom) > 0.3) {
+    loopA = Math.min(dragFrom, to); loopB = Math.max(dragFrom, to);
+    $("#loop").checked = true; seek(loopA);
+  } else seek(to);
+  dragFrom = null;
+};
+
+$("#play").onclick = toggle;
+$("#match").onchange = () => { applyGains(); render(); };
+$("#blind").onchange = () => {
+  if ($("#blind").checked) {
+    order = FILES.map((_, i) => i).sort(() => Math.random() - 0.5);
+    $("#reveal").hidden = false;
+  } else { order = FILES.map((_, i) => i); $("#reveal").hidden = true; }
+  render();
+};
+$("#reveal").onclick = () => { $("#blind").checked = false; $("#reveal").hidden = true; render(); };
+
+window.onkeydown = e => {
+  if (e.key === " ") { e.preventDefault(); toggle(); }
+  else if (/^[0-9]$/.test(e.key)) {
+    // Sokkotilassa numero on rivin paikka, muuten tiedoston oma numero.
+    const slot = $("#blind").checked ? (+e.key - 1) : order.findIndex(i => KEYS[i] === e.key);
+    if (slot >= 0 && slot < order.length) select(slot);
+  }
+  else if (e.key === "ArrowLeft") seek(player.now() - (e.shiftKey ? 10 : 2));
+  else if (e.key === "ArrowRight") seek(player.now() + (e.shiftKey ? 10 : 2));
+};
+
+load().catch(err => { $("#status").textContent = "Lataus epäonnistui: " + err.message; });
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

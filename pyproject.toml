@@ -109,6 +109,10 @@ known-first-party = [
     # Testeissä zip vertaa tarkoituksella eri mittaisia jonoja.
     "B905",
 ]
+# Vertailupalvelimen `send_head` palauttaa avoimen tiedoston, jonka
+# `http.server` kirjoittaa ja sulkee itse: `with` sulkisi sen ennen
+# kirjoitusta. Sama sopimus kuin kirjaston omalla `send_head`illa.
+"scripts/ab/compare.py" = ["SIM115"]
 # `Processor.process(signal, sr, progress_callback)` on rajapinta, ja jokainen
 # toteutus kirjoittaa sen kokonaan. Useimmat ovat yksi mlx-operaatio, jolla ei
 # ole väliaikoja joista raportoida — mutta nimeä ei voi muuttaa `_`-alkuiseksi,
