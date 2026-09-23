@@ -65,6 +65,15 @@ autotui
     - Scan for ad breaks and select your preferred spot.
 3.  **Render**: Hit **"RENDER FINAL MIX"** to produce your high-fidelity stereo WAV.
 
+### **One video file: `autovideo`**
+Restores and levels the audio of a single video; the video stream is copied, never re-encoded.
+```bash
+autovideo "episode.mp4"                           # dxRevive, -16 LUFS → "episode [-16 LUFS].mp4"
+autovideo "episode.mp4" --edit --state dx.state   # pick the dxRevive model first, remember it
+autovideo "episode.mp4" --state dx.state --param mix=60 --lufs -14
+```
+Speech is processed as mono and written back in the source layout (dual mono for stereo), aimed so a stereo file measures the target under BS.1770. dxRevive's model lives only in its state, so without `--state` it runs its default model. Refuses: overwriting the source, more than one audio stream, over two channels, a missing plug-in, a plug-in that shifts the audio by more than 1 ms, or a remux that changes the picture's container metadata (colour tags, `hvc1`/`hev1`, HDR/Dolby Vision records).
+
 ### **The Automixer CLI**
 The `automixer` command provides a powerful, zero-configuration way to mix your podcast. It features **Automatic Track Detection** based on filename keywords.
 
