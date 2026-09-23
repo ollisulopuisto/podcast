@@ -2,7 +2,7 @@
 
     uv run python -m automixer.finder_action
 
-writes ``~/Library/Services/autovideo.workflow``. The workflow holds one line
+writes ``~/Library/Services/<NAME>.workflow``. The workflow holds one line
 that runs ``autovideo_finder.sh`` from this checkout, so a ``git pull`` changes
 what the action does without reinstalling; moving the checkout needs a
 reinstall.
@@ -23,7 +23,10 @@ from pathlib import Path
 
 RUNNER = Path(__file__).with_name("autovideo_finder.sh").resolve()
 PROJECT = RUNNER.parents[2]
-NAME = "autovideo"
+# The bundle's file name is what Finder lists, so it says what the action does.
+NAME = "Restore & Level Video Audio (dxRevive, -16 LUFS)"
+# Names earlier installs used; removed so the menu does not list the action twice.
+OLD_NAMES = ("autovideo",)
 SERVICES = Path.home() / "Library" / "Services"
 STATE = Path.home() / "Library" / "Application Support" / "autovideo" / "dx.state"
 REPO_STATE = PROJECT.parents[1] / "dx.state"
@@ -119,6 +122,8 @@ def write_workflow(bundle: Path) -> Path:
 
 def install(services: Path = SERVICES, repo_state: Path = REPO_STATE,
             state: Path = STATE) -> Path:
+    for old in OLD_NAMES:
+        shutil.rmtree(services / f"{old}.workflow", ignore_errors=True)
     bundle = write_workflow(services / f"{NAME}.workflow")
     if not state.exists() and repo_state.exists():
         state.parent.mkdir(parents=True, exist_ok=True)

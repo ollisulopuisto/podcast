@@ -98,7 +98,7 @@ model selector is not one of them: it lives only in the plug-in's opaque
 state. Without `--state` the plug-in runs its default model at 50 % mix,
 and says so.
 
-**From Finder.** Select videos → right-click → Quick Actions → **autovideo**.
+**From Finder.** Select videos → right-click → Quick Actions → **Restore & Level Video Audio (dxRevive, -16 LUFS)**.
 Install once (again only if the checkout moves):
 ```bash
 uv run python -m automixer.finder_action

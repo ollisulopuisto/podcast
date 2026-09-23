@@ -103,7 +103,9 @@ def test_workflow_is_a_finder_quick_action_for_movies(tmp_path):
     info = plistlib.loads((bundle / "Contents" / "Info.plist").read_bytes())
     service = info["NSServices"][0]
     assert service["NSMessage"] == "runWorkflowAsService"
-    assert service["NSMenuItem"]["default"] == "autovideo"
+    # Valikossa näkyy mitä toiminto tekee, ei ohjelman nimeä.
+    assert service["NSMenuItem"]["default"] == \
+        "Restore & Level Video Audio (dxRevive, -16 LUFS)"
     assert service["NSRequiredContext"]["NSApplicationIdentifier"] == "com.apple.finder"
     assert service["NSSendFileTypes"] == ["public.movie"]
 
@@ -137,7 +139,8 @@ def test_workflow_command_runs_the_selected_files(tmp_path):
 
 def test_install_replaces_an_old_bundle_and_copies_the_state_once(tmp_path):
     services = tmp_path / "Services"
-    stale = services / "autovideo.workflow" / "Contents" / "stale"
+    bundle = services / f"{finder_action.NAME}.workflow"
+    stale = bundle / "Contents" / "stale"
     stale.parent.mkdir(parents=True)
     stale.write_text("old")
     source_state = tmp_path / "repo-dx.state"
@@ -146,7 +149,7 @@ def test_install_replaces_an_old_bundle_and_copies_the_state_once(tmp_path):
 
     finder_action.install(services, source_state, target_state)
     assert not stale.exists()
-    assert (services / "autovideo.workflow" / "Contents" / "Info.plist").exists()
+    assert (bundle / "Contents" / "Info.plist").exists()
     assert target_state.read_text() == "repo"
 
     # Käyttäjän myöhemmin valitsema malli ei jää uudelleenasennuksen alle.
@@ -158,3 +161,12 @@ def test_install_replaces_an_old_bundle_and_copies_the_state_once(tmp_path):
 def test_runner_is_executable():
     """Finder ajaa sen `bash`illa, mutta käsin ajettaessa suoritusbitti ratkaisee."""
     assert os.access(finder_action.RUNNER, os.X_OK)
+
+
+def test_install_removes_the_action_under_its_old_name(tmp_path):
+    """Muuten valikossa olisi kaksi samaa toimintoa eri nimillä."""
+    services = tmp_path / "Services"
+    old = services / "autovideo.workflow" / "Contents"
+    old.mkdir(parents=True)
+    finder_action.install(services, tmp_path / "none", tmp_path / "dx.state")
+    assert sorted(p.name for p in services.iterdir()) == [f"{finder_action.NAME}.workflow"]
