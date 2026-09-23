@@ -32,21 +32,13 @@ jobs:
       # kaada testejä, se vain jättää jonkin kohdan tekemättä mitään — ja
       # juuri se on näissä projekteissa toistuva vika.
       #
-      # Yksi `ruff check .` ilman poikkeuksia. Se oli jaettu kahtia niin kauan
-      # kuin automixerillä oli 44 virhettä; ne on nyt korjattu, ja jaettu
-      # portti oli tarkoitettu väliaikaiseksi.
+      # Yksi `ruff check .` ilman poikkeuksia. Se oli jaettu hakemistolistaksi
+      # ja automixerin `continue-on-error`-askeleeksi niin kauan kuin
+      # automixerillä oli 44 virhettä; ne on korjattu. Lista oli ehtinyt jättää
+      # ulos myös `packages/nhsx`in, `scripts/`in ja `tests/`in — portti joka
+      # tarkistaa vain luettelemansa ei huomaa uutta hakemistoa.
       - name: Lint
-        run: uv run ruff check packages/speechmix apps/autoraffkat apps/fcp-subs-whisper apps/podcast-magic colab-transcribe
-
-      # automixer on kesken muutossa, sama velka kuin sen testeillä alla:
-      # 44 virhettä, joista yksikään ei ole tässä muutoksessa syntynyt.
-      # Erillisenä askeleena eikä `ruff check .`:na, jotta se ei estä muiden
-      # sääntöjen tarkistusta — koko lintti oli tähän asti kaatunut ennen
-      # kuin ehti tarkistaa mitään. Yhdistä takaisin `ruff check .`:ksi kun
-      # automixer on siivottu.
-      - name: Lint (automixer)
-        continue-on-error: true
-        run: uv run ruff check apps/automixer
+        run: uv run ruff check .
 
       # Ensin: ovatko jäsenet samaa mieltä. Kirjastorajojen, versionumeroiden
       # ja työkalujen ajautuminen ei kaada yhtään testiä alla — se vain tekee
@@ -56,6 +48,12 @@ jobs:
 
       - name: speechmix
         run: uv run --directory packages/speechmix pytest -q
+
+      # Hindenburg-istunnon lukija ja aluesijoittelu. Sen testit eivät
+      # ajautuneet CI:ssä lainkaan, vaikka podcast-magic ja automixer
+      # lukevat istunnot sen kautta.
+      - name: nhsx
+        run: uv run --directory packages/nhsx pytest -q
 
       - name: autoraffkat
         run: uv run --directory apps/autoraffkat pytest -q
