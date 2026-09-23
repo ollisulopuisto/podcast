@@ -883,3 +883,94 @@ def test_reaction_then_wide_puts_three_shots_where_reaction_puts_one():
     # Päätykuvat ovat molemmissa, omana sääntönään.
     assert any(s.angle == "WIDE" for s in middle(three))
     assert not any(s.angle == "WIDE" for s in middle(one))
+
+
+# ------------------------------------ vuoro, ei äänipätkä (pp 55, 2026-09-23)
+
+
+def _lane(name, key, spans, n, quiet=-60.0):
+    """Puhuja jonka jokaisella jaksolla on oma tasonsa: ``(alku, loppu, dB)``."""
+    on = np.zeros(n, dtype=bool)
+    db = np.full(n, quiet, dtype=np.float32)
+    for start, end, level in spans:
+        on[int(start / HOP) : int(end / HOP)] = True
+        db[int(start / HOP) : int(end / HOP)] = level
+    return SpeakerLanes(name, db, on, key)
+
+
+def _two(spans_a, spans_b, seconds=40.0):
+    n = int(seconds / HOP)
+    return Grid(n=n, program_start=0.0, wide_key="W",
+                speakers=[_lane("A", "CA", spans_a, n), _lane("B", "CB", spans_b, n)])
+
+
+def test_bleed_is_not_the_outgoing_speaker_still_talking():
+    """Toisen puhujan ääni omassa mikissä ei ole omaa puhetta.
+
+    pp 55, 0:06: Pp lopetti 5,74, Puhuja 2 aloitti 6,70 — ja Pp:n mikki
+    kuuli hänet 6,88–7,60, 17–23 dB hiljempaa. Häntä laskettiin siitä, ja
+    kuva jäi Pp:hen 7,60:een asti. Aito päällekkäispuhe oli ±5 dB.
+    """
+    g = Globals(min_shot=1.0, lead=0.3, hang=0.6, confirm=0.4, wide_every=0.0)
+    grid = _two([(2, 8, -30), (10.2, 11.0, -50)], [(10.0, 20, -30)])
+    cut = next(s for s in decide(grid, g).segments if s.angle == "CB")
+    assert cut.start == pytest.approx(9.7, abs=0.05)
+
+
+def test_bleed_does_not_make_an_overlap():
+    """Vuoto ei ole päällekkäispuhetta: se vei kuvan laajaan ilman syytä."""
+    g = Globals(min_shot=1.0, lead=0.0, confirm=0.4, min_overlap=0.5,
+                overlap_rule=OVERLAP_WIDE, wide_every=0.0)
+    grid = _two([(2, 12, -30)], [(4, 9, -48)])
+    assert [s.angle for s in middle(decide(grid, g).segments)] == ["CA"]
+
+
+def test_a_turn_broken_into_syllables_is_cut_at_its_start():
+    """Vahvistus mittaa puheenvuoroa, ei yhtenäistä äänipätkää.
+
+    Verhokäyrä katkeilee tavutahdissa (puhe mediaani 0,22 s, tauot 0,14 s),
+    joten vuoron alku on pätkiä. Ennen niitä ei hyväksytty ennen ensimmäistä
+    0,4 s:n pätkää, ja leikkaus myöhästyi.
+    """
+    syllables = [(10 + k * 0.32, 10 + k * 0.32 + 0.2, -30) for k in range(10)]
+    g = Globals(min_shot=1.0, lead=0.0, hang=0.0, confirm=0.4, wide_every=0.0)
+    grid = _two([(2, 8, -30)], syllables)
+    cut = next(s for s in decide(grid, g).segments if s.angle == "CB")
+    assert cut.start == pytest.approx(10.0, abs=0.05)
+
+
+def test_a_backchannel_does_not_take_the_picture():
+    """Välihuudahdus ei ole puheenvuoro.
+
+    pp 55, 13:08: Puhuja 2:n 0,40 s «joo» riitti 0,4 s:n vahvistukseen,
+    kuva leikkasi häneen ja jäi, vaikka Pp jatkoi. Tässä 0,5 s, selvästi
+    vahvistuksen yli.
+    """
+    g = Globals(min_shot=1.0, lead=0.0, hang=0.0, confirm=0.4, wide_every=0.0)
+    grid = _two([(2, 9, -30), (9.9, 16, -30)], [(9.2, 9.7, -28)])
+    assert "CB" not in [s.angle for s in decide(grid, g).segments]
+
+
+def test_the_opening_wide_is_a_shot_even_when_speech_starts_at_once():
+    """Aloituslaaja on vähintään ohjelman oma lyhin kuva.
+
+    pp 55 alkoi laajalla joka kesti 0,52 s: ohjelma alkoi jo laajalla, joten
+    sääntö ei pidentänyt sitä, ja ennakko leikkasi puheen alkuun.
+    """
+    g = Globals(min_shot=2.5, lead=0.3, confirm=0.4, wide_every=0.0)
+    d = decide(_two([(0.8, 30, -30)], []), g)
+    assert d.segments[0].angle == "W"
+    assert d.segments[0].duration >= 2.5 - 1e-6
+
+
+def test_a_long_take_break_does_not_run_into_the_turn_change():
+    """Pitkän oton katko ei osu juuri ennen vuoronvaihtoa.
+
+    Vaihto katkaisee oton joka tapauksessa. Katko joka jatkuu vaihtoon asti
+    näyttää kuulijan, laajan ja sitten saman kuulijan puhumassa — ja
+    paluuta puhujaan ei tule.
+    """
+    g = Globals(min_shot=1.0, lead=0.0, confirm=0.4, wide_every=10.0,
+                wide_hold=3.0, long_take_rule=LONGTAKE_RETURN)
+    d = decide(_two([(2, 13.5, -30)], [(14, 30, -30)]), g)
+    assert [s.angle for s in middle(d.segments)][:2] == ["CA", "CB"]

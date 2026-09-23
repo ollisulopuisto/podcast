@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [Unreleased]
+
+### Fixed
+- **The cut follows the new speaker sooner** (`decide.py`), from listening to pp 55:
+  - Bleed is not speech: a microphone more than 12 dB below the loudest active one does not count as talking (`BLEED_DB`). Bleed measured 17–23 dB down, real overlap ±5 dB. It had kept the outgoing speaker "talking" (0:06 and 9:49 cut 0.7–0.8 s late) and made overlaps that were not there.
+  - Confirmation measures a turn, not one burst: pauses under 0.3 s within a speaker's speech are part of the turn, and a turn under 0.8 s is a backchannel (`TURN_GAP`, `TURN_MIN`). A 0.4 s "joo" at 13:08 no longer takes the picture.
+  - The opening wide is at least the programme's minimum shot; it had been 0.52 s.
+  - A long-take break that would run into the next turn change is not made.
+  - pp 55: median delay after a turn change 1.06 → 0.68 s, 708 → 524 shots.
+
 ## [autoraffkat-v2026.9.11.5] - 2026-09-11
 
 ### Added

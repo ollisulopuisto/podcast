@@ -49,6 +49,24 @@ REACTION_REACH = 4.0
 WIDE = -2  # want-taulukon erikoisarvot
 HOLD = -1
 
+# Kuinka paljon kovinta hiljempi mikki on vielä omaa puhetta eikä vuotoa, dB.
+# Mitattu pp 55:stä: kun molemmat mikit ylittivät kynnyksensä, toisen puhujan
+# vuoto oli 17–23 dB kovinta alempana, aito päällekkäispuhe ±5 dB. Ilman
+# tätä vuoto piti edellisen puhujan «äänessä» (häntä laskettiin siitä: 0:06
+# ja 9:49 leikkasivat 0,7–0,8 s myöhässä) ja teki päällekkäispuhetta jota ei
+# ollut — 708 kuvasta 142 hävisi kun vuoto jätettiin pois.
+BLEED_DB = 12.0
+
+# Puheenvuoro, ei äänipätkä. Verhokäyrä katkeilee tavutahdissa (mitattuna
+# puhe mediaani 0,22 s, tauot 0,14 s), joten saman puhujan alle
+# TURN_GAP-mittaiset tauot kuuluvat samaan vuoroon, ja vahvistus mitataan
+# koko vuorosta. Alle TURN_MIN-mittainen vuoro on välihuudahdus: pp 55:n
+# 13:08 oli 0,40 s «joo», joka riitti 0,4 s:n vahvistukseen ja vei kuvan.
+# Kokeiltu 0,3/0,8, 0,3/1,0, 0,5/1,0 ja 0,3/1,2; 0,3/0,8 viipyi vähiten
+# (mediaani 0,72 s, oli 1,06) ja poisti 13:08:n.
+TURN_GAP = 0.3
+TURN_MIN = 0.8
+
 WIDE_LABEL = "Laaja"
 
 
@@ -124,6 +142,10 @@ def _want_array(grid: Grid, g: Globals) -> tuple[np.ndarray, np.ndarray]:
     want = np.full(n, HOLD, dtype=np.int32)
     if count_speakers == 0:
         return want, active
+    if count_speakers >= 2:
+        # Vuoto ei ole puhetta, ks. BLEED_DB.
+        loudest_on = np.where(active, levels, -300.0).max(axis=0)
+        active &= levels >= loudest_on - BLEED_DB
 
     count = active.sum(axis=0)
     # Vertailu vain äänessä olevien kesken. Hiljaisen mikin taso voi olla
@@ -162,6 +184,28 @@ def _want_array(grid: Grid, g: Globals) -> tuple[np.ndarray, np.ndarray]:
             want[(want == i) & ~sp.available] = HOLD
 
     return want, active
+
+
+def _turns(want: np.ndarray) -> np.ndarray:
+    """Äänipätkät puheenvuoroiksi, ja välihuudahdukset pois.
+
+    Saman kohteen välissä oleva alle ``TURN_GAP``in tauko (kukaan ei puhu)
+    täytetään, ja alle ``TURN_MIN``in vuoro muutetaan pitämiseksi. Ks.
+    vakioiden kommentti.
+    """
+    out = want.copy()
+    gap = _hops(TURN_GAP)
+    runs = list(_runs(out))
+    for k in range(1, len(runs) - 1):
+        start, end, target = runs[k]
+        before, after = runs[k - 1][2], runs[k + 1][2]
+        if target == HOLD and before == after and before >= 0 and end - start <= gap:
+            out[start:end] = before
+    need = _hops(TURN_MIN)
+    for start, end, target in _runs(out):
+        if target >= 0 and end - start < need:
+            out[start:end] = HOLD
+    return out
 
 
 def _compute_tempo(active: np.ndarray, n: int) -> np.ndarray:
@@ -449,6 +493,12 @@ def _force_wide(
 
             if seg.end - stop < g.min_shot:
                 stop = seg.end
+            if to_alt and seg.end - cursor < hold + g.min_shot:
+                # Katko jatkuisi vuoronvaihtoon asti eikä puhujaan palattaisi:
+                # vaihto katkaisee oton joka tapauksessa. Muuten kuva näyttää
+                # kuulijan, laajan ja saman kuulijan puhumassa.
+                out[-1] = Segment(out[-1].angle, out[-1].label, out[-1].start, seg.end)
+                break
             if to_alt:
                 insert_key, insert_label = alt_target(seg.angle, cursor, stop)
                 # Reaktio, laaja, takaisin: kolme kuvaa yhden sijaan, kun
@@ -503,7 +553,18 @@ def _bookend_wide(
     out = list(segments)
 
     first = out[0]
-    if first.angle != wide_key:
+    if first.angle == wide_key and first.duration < g.min_shot and len(out) > 1:
+        # Ohjelma alkoi jo laajalla, mutta ennakko leikkasi puheen alkuun:
+        # pp 55:n laaja kesti 0,52 s. Laaja venytetään ohjelman omaan
+        # minimiin, ja minimiä lyhyemmäksi jäävä seuraava kuva on laajaa.
+        head = first.start + g.min_shot
+        while len(out) > 1 and out[1].end - head < g.min_shot:
+            out[0] = Segment(wide_key, wide_label, first.start, out[1].end)
+            del out[1]
+        if len(out) > 1 and out[1].start < head:
+            out[0] = Segment(wide_key, wide_label, first.start, head)
+            out[1] = Segment(out[1].angle, out[1].label, head, out[1].end)
+    elif first.angle != wide_key:
         if first.duration >= 2 * g.min_shot:
             head = first.start + g.min_shot
             out[0] = Segment(first.angle, first.label, head, first.end)
@@ -553,7 +614,7 @@ def decide(grid: Grid, g: Globals, marks=None) -> Decision:
             0 if grid.speakers else WIDE,
         )
     cuts = _cut_points(
-        want, g, tempo=tempo, active=active, initial_target=initial_target
+        _turns(want), g, tempo=tempo, active=active, initial_target=initial_target
     )
     total = grid.duration
 
