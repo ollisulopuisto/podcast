@@ -65,6 +65,85 @@ autotui
     - Scan for ad breaks and select your preferred spot.
 3.  **Render**: Hit **"RENDER FINAL MIX"** to produce your high-fidelity stereo WAV.
 
+### **One video file: `autovideo`**
+Restores and levels the audio of a single video — dxRevive, then the shared
+speech chain, to -16 LUFS with a true-peak ceiling. The picture is **copied
+byte for byte**, never decoded or re-encoded.
+
+```bash
+autovideo "clip.mov" --edit --state dx.state   # once: pick the dxRevive model, saved to dx.state
+autovideo "clip.mov" --state dx.state          # → "clip [-16 LUFS].mov" (or .mp4, see below)
+autovideo "clip.mov" --state dx.state --param mix=60 --lufs -14
+autovideo "clip.mov" --no-plugin               # levelling only, no restoration
+```
+
+A whole folder:
+```bash
+for f in ~/promo/*.mov; do uv run autovideo "$f" --state dx.state; done
+```
+
+| Option | |
+|---|---|
+| `-o PATH` | output file (default: `<name> [<lufs> LUFS].<ext>` next to the source) |
+| `--lufs N` | target loudness (default -16) |
+| `--plugin NAME\|PATH` | installed plug-in by name, or a path (default `dxRevive`) |
+| `--no-plugin` | skip restoration |
+| `--param NAME=VALUE` | plug-in parameter in its own units; repeatable |
+| `--state FILE` | the plug-in's saved state (base64) |
+| `--edit` | open the plug-in window first; the result is saved to `--state` |
+
+**`dx.state` is needed on every run.** dxRevive publishes four parameters —
+`mix` (0–100, default **50**), `input_gain`, `output_gain`, `bypass` — and the
+model selector is not one of them: it lives only in the plug-in's opaque
+state. Without `--state` the plug-in runs its default model at 50 % mix,
+and says so.
+
+**iPhone clips.** An iPhone records two audio tracks: stereo AAC (marked
+default) and a 4-channel APAC spatial-audio track that ffmpeg cannot encode.
+The default track is processed and the other is **left out** of the output —
+copied across, the spatial track is the one Apple players pick, and they
+would play the unprocessed sound. The run prints which track it used and
+what it left out. Several audio tracks with no single default is refused.
+
+**Dolby Vision → `.mp4`.** ffmpeg 9's QuickTime (`.mov`) muxer never writes
+the Dolby Vision configuration record; the mp4 muxer does, with
+`-strict unofficial`. An iPhone DV 8.4 (HLG) clip lost the record as `.mov`
+and kept it as `.mp4` with an identical picture hash, so a Dolby Vision
+`.mov` gets an `.mp4` output by default. Asking for `.mov` with `-o` is
+refused rather than written as flat HLG.
+
+**What the numbers mean.** Each run ends with a line like
+```
+Measured -37.9 LUFS (mono), lifted +20.5 dB, limiter -4.5 dB, PSR 13.1 LU
+```
+The limiter figure is how much the true-peak ceiling had to take off after
+the lift. On eight iPhone promo clips (sources -29 to -40 LUFS) it ranged
+4.5–7.9 dB; the top of that range is worth a listen for flattened plosives.
+A run that could not reach the target within the limiter budget warns.
+
+**Speech layout.** Speech is processed as mono and written back in the
+source layout (dual mono for stereo). The chain measures the *mean* of its
+channels, BS.1770 sums their power — the same speech on both sides of a
+stereo file measured -13.0 LUFS against a -16 target — so stereo is aimed
+3 dB lower and measures the target in any BS.1770 meter.
+
+**Sync.** ffmpeg moves each input's start to zero, and the processed WAV
+always starts at zero, so an audio track that began after the picture would
+come out early by exactly that much. It is put back at the source audio's
+own offset, and the tests check it from the content (onset within 5 ms),
+not from the metadata.
+
+**Nothing is written** unless every check passes. It refuses:
+- overwriting the source;
+- more than two channels, or several audio tracks with no single default;
+- a missing plug-in (`--no-plugin` is the explicit way to skip it);
+- a plug-in that shifts the audio by more than 1 ms;
+- a remux that changes the picture's container metadata — colour tags,
+  `hvc1`/`hev1`, profile, size, HDR/Dolby Vision records. The message names
+  what was lost.
+
+Other tracks in the source (iPhone metadata tracks, timecode) are not copied.
+
 ### **The Automixer CLI**
 The `automixer` command provides a powerful, zero-configuration way to mix your podcast. It features **Automatic Track Detection** based on filename keywords.
 

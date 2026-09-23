@@ -24,6 +24,7 @@ dependencies = [
 automixer = "automixer.cli_mix:main"
 autoanalyze = "automixer.cli_analyze:main"
 autotui = "automixer.app:main"
+autovideo = "automixer.cli_video:main"
 
 # The importable package is `automixer`, living under src/.  Spelling the build
 # out rather than relying on setuptools' auto-discovery keeps the installed

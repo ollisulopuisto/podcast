@@ -14,6 +14,7 @@ Whether you need to automatically cut multicam video to the speaker, transcribe 
 | **Generate subtitles & captions** using Whisper | [fcp-subs-whisper](#fcp-subs-whisper) | **CLI** | Video / Audio → Final Cut Pro (`.srt` / `.ssa`) |
 | **Transcribe & silence bleed** locally on your Mac | [podcast-magic](#podcast-magic) | **Web GUI / Desktop GUI** | Hindenburg (`.nhsx`) |
 | **Mix & master** multi-track speech and music to -16 LUFS | [automixer](#automixer) | **Interactive TUI / CLI** | WAV / AIFF audio files |
+| **Fix the sound of one video** (dxRevive + level) without re-encoding the picture | [autovideo](#automixer) | **CLI** | `.mov` / `.mp4`, incl. iPhone HDR / Dolby Vision |
 | **Transcribe & silence bleed** using a cloud GPU | [colab-transcribe](#colab-transcribe) | **Interactive TUI / CLI** | Hindenburg (`.nhsx`) + Google Colab |
 | **Render or inspect** a session without Hindenburg | [nhsx-render](#nhsx-render) | **CLI (headless)** | Hindenburg (`.nhsx`) → WAV |
 | **Quick Look preview** sessions in macOS Finder | [NHSX Viewer](#nhsx-viewer--quick-look) | **macOS GUI / Quick Look** | Hindenburg (`.nhsx`) |
@@ -107,6 +108,11 @@ Then run whichever tool you need with `uv run <tool>`.
   ```bash
   uv run autotui                             # launch interactive terminal UI (TUI) dashboard
   uv run automixer                           # run via headless CLI
+  ```
+* **One video file (`autovideo`):** restores and levels a video's audio with dxRevive and the shared speech chain; the picture is copied byte for byte, HDR and Dolby Vision included. Handles iPhone clips (stereo track processed, spatial track left out).
+  ```bash
+  uv run autovideo "clip.mov" --edit --state dx.state   # once: pick the dxRevive model
+  uv run autovideo "clip.mov" --state dx.state          # → "clip [-16 LUFS].mov" (.mp4 for Dolby Vision)
   ```
 
 📖 Details: [apps/automixer/README.md](apps/automixer/README.md)
