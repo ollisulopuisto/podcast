@@ -51,7 +51,7 @@ def test_speakers_are_spread_as_narrowly_as_in_autoraffkat():
     from automixer.cli_mix import speaker_pans
     from speechmix import panning
 
-    assert speaker_pans(2) == [-0.03, 0.03]
-    assert speaker_pans(3) == [-0.04, 0.0, 0.04]
+    assert speaker_pans(2) == [-0.015, 0.015]
+    assert speaker_pans(3) == [-0.02, 0.0, 0.02]
     assert speaker_pans(panning.PAN_MAX_SPEAKERS + 1) == [0.0] * (panning.PAN_MAX_SPEAKERS + 1)
     assert speaker_pans(1) == [0.0]

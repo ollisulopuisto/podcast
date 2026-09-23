@@ -243,7 +243,7 @@ The pan positions are spread evenly by *order*, never in proportion to the
 measured angle: the angle gives the ordering reliably and the distance not at
 all, since it depends on how the chairs happen to be turned and on the lens.
 Three speakers are therefore left, centre, right. The spread is tiny on
-purpose — a few percent, ±6 at the widest — because speech belongs in the
+purpose — a few percent, ±3 at the widest — because speech belongs in the
 middle and a wide spread turns a two-hander into a radio play. Above five
 speakers nothing is panned: the positions would be closer together than the
 measurement is accurate, and then centre beats almost-centre.

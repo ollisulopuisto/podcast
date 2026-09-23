@@ -20,7 +20,8 @@ import numpy as np
 # Nämä eivät ole mitattuja lukuja vaan valittu yläraja: mitattavaa olisi
 # «kuuluuko tämä», ja siihen vastaus on että ei juuri pidäkään. Leveys
 # kasvaa puhujamäärän mukana vain sen verran että paikat pysyvät erillään.
-PAN_WIDTH = {2: 6.0, 3: 8.0, 4: 10.0, 5: 12.0}
+# Puolitettu (oli 6/8/10/12) kuunneltuna 2026-09-23: vielä hienovaraisempi.
+PAN_WIDTH = {2: 3.0, 3: 4.0, 4: 5.0, 5: 6.0}
 
 # Useampaa kuin viittä ei panoroida. Kuudella paikat ovat niin lähellä
 # toisiaan ettei ero ole enää paikka vaan epätarkkuus, ja silloin keskeltä
