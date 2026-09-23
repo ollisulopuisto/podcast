@@ -236,6 +236,9 @@ def test_tui_disables_run_button_and_prevents_duplicate_runs(tmp_path: Path):
 
         while not finish_run.is_set():
             time.sleep(0.01)
+        # Hidas CI-ajuri: säie ei palaa heti vapautuksen jälkeen. Kiinteä
+        # 0,05 s:n odotus alla kaatui juuri tähän kahdesti (PR #27, #28).
+        time.sleep(0.2)
         return 0
 
     async def scenario():
@@ -264,10 +267,15 @@ def test_tui_disables_run_button_and_prevents_duplicate_runs(tmp_path: Path):
                 # Runner should still only have been invoked ONCE
                 assert call_count == 1
 
-                # Let the first job finish
+                # Let the first job finish. Odotetaan tilaa, ei kiinteää
+                # aikaa: säikeen paluu ja käyttöliittymän päivitys eivät ole
+                # ajastettavissa.
                 finish_run.set()
-                await asyncio.sleep(0.05)
-                await pilot.pause()
+                for _ in range(100):
+                    await asyncio.sleep(0.05)
+                    await pilot.pause()
+                    if not app._is_running:
+                        break
 
                 # Button should be re-enabled
                 assert not run_btn.disabled
