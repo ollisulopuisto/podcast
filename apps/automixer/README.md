@@ -98,6 +98,17 @@ model selector is not one of them: it lives only in the plug-in's opaque
 state. Without `--state` the plug-in runs its default model at 50 % mix,
 and says so.
 
+**From Finder.** Select videos → right-click → Quick Actions → **autovideo**.
+Install once (again only if the checkout moves):
+```bash
+uv run python -m automixer.finder_action
+```
+The action runs `src/automixer/autovideo_finder.sh` from this checkout with
+`--state ~/Library/Application Support/autovideo/dx.state` (copied from the
+repo's `dx.state` on first install, never overwritten after). Without that
+file it refuses rather than run the default model. Each file ends in a
+notification; output goes to `~/Library/Logs/autovideo.log`.
+
 **iPhone clips.** An iPhone records two audio tracks: stereo AAC (marked
 default) and a 4-channel APAC spatial-audio track that ffmpeg cannot encode.
 The default track is processed and the other is **left out** of the output —
