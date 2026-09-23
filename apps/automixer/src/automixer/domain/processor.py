@@ -332,7 +332,13 @@ class ExternalPluginProcessor(Processor):
         self.plugin_path = plugin_path
         self.parameters = parameters or {}
         self.state = state
-        self.plugin = chain.load_plugin(plugin_path, self.parameters, state)
+        # Rinnakkaiset palat, kuten autoraffkatissa: liitännäinen käyttää
+        # yhtä ydintä, ja ainoa tie muihin on useampi instanssi. Mitattuna
+        # 20 minuutin tiedostolla 168 -> 68 s; palojen ero kokonaisena
+        # ajettuun on 25,7 dB signaalin alla (`chain.PIECE_MARGIN`).
+        self.plugin = chain.load_pool(
+            plugin_path, self.parameters, chain.worker_count(0), state
+        )
 
     def process(self, signal: mx.array, sr: int, progress_callback=None) -> mx.array:
         sig_np = np.array(signal)

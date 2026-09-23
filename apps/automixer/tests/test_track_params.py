@@ -79,3 +79,22 @@ def test_the_tui_sends_track_params_to_the_mixer(tmp_path):
 
     config = asyncio.run(scenario())
     assert config["track_params"] == {"panu": {"dxrevive": {"mix": 50.0}}}
+
+
+def test_the_plugin_runs_in_parallel_pieces_like_autoraffkat(monkeypatch):
+    """dxRevive käyttää yhtä ydintä, ja ainoa tie muihin on useampi
+    instanssi rinnakkain (`chain.load_pool`). autoraffkat teki niin —
+    mitattuna 168 -> 68 s 20 minuutin tiedostolla — automixer ajoi yhden."""
+    from automixer.domain.processor import ExternalPluginProcessor
+    from speechmix import chain
+
+    seen = {}
+
+    def pool(path, params=None, count=1, state=None):
+        seen.update(path=path, count=count, state=state)
+        return "pool"
+
+    monkeypatch.setattr(chain, "load_pool", pool)
+    processor = ExternalPluginProcessor(DXREVIVE, {"mix": 50.0}, state="abc")
+    assert processor.plugin == "pool"
+    assert seen == {"path": DXREVIVE, "count": chain.worker_count(0), "state": "abc"}
