@@ -2,7 +2,7 @@ import Foundation
 
 /// Istunto miksauksena: mikä kuuluu, milloin, miten kovaa ja kummalta puolelta.
 ///
-/// `apps/podcast-magic/src/podcastmagic/nhsx/mix.py`:n kaksonen. Jokainen
+/// `packages/nhsx/src/nhsx/mix.py`:n kaksonen. Jokainen
 /// päätös tässä on sama päätös siellä, ja `Conformance/plan.json` on se
 /// vastaus, jonka molempien on tuotettava. Kun muutat jompaakumpaa, aja
 /// molemmat testit.

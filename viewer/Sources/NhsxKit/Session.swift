@@ -2,7 +2,7 @@ import Foundation
 
 /// Hindenburgin istuntotiedoston luku.
 ///
-/// Tämä on `apps/podcast-magic/src/podcastmagic/nhsx/read.py`:n kaksonen.
+/// Tämä on `packages/nhsx/src/nhsx/read.py`:n kaksonen.
 /// Ne eivät jaa riviäkään koodia — laajennus on hiekkalaatikossa eikä voi
 /// käynnistää Pythonia — joten ainoa asia joka pitää ne samaa mieltä on
 /// `Conformance/`in istunto ja sen kirjattu vastaus, jota molemmat testaavat

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from nhsx.read import NhsxError, locate, time_to_seconds
+from nhsx.read import read as read_session
 from podcastmagic import nhsx
-from podcastmagic.nhsx.read import NhsxError, locate, time_to_seconds
-from podcastmagic.nhsx.read import read as read_session
 from podcastmagic.nhsx.write import next_free_path, set_transcription
 
 
@@ -123,7 +123,7 @@ def test_second_transcription_replaces_the_first(session_file):
     session = nhsx.read(session_file)
     file_info = session.file_by_id("1")
     set_transcription(file_info.elem, [nhsx.Word("uusi", 2.0, 0.5)])
-    from podcastmagic.nhsx.read import children
+    from nhsx.read import children
 
     assert len(children(file_info.elem, "Transcription")) == 1
     assert [w.text for w in file_info.words()] == ["uusi"]

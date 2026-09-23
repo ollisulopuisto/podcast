@@ -15,8 +15,8 @@ import wave
 import numpy as np
 import pytest
 
+from nhsx.mix import Clip, Mix, Ramp
 from podcastmagic.nhsx import render
-from podcastmagic.nhsx.mix import Clip, Mix, Ramp
 
 SR = 1000  # testien näytetaajuus: laskettava käsin, riittävän tiheä
 PROBE = 0.01  # ``ramp``in asteikko, ks. siellä

@@ -33,8 +33,9 @@ import json
 import subprocess
 from dataclasses import dataclass, field
 
+from nhsx.read import Session, locate
+
 from ..binaries import MissingBinary, get_binary_path
-from .read import Session, locate
 
 
 @dataclass(frozen=True)

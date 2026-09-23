@@ -284,3 +284,26 @@ def test_microphone_ducking_is_off_unless_asked(turn_taking, monkeypatch, tmp_pa
     monkeypatch.setattr("sys.argv", ["automixer", "--mic-duck", str(wav)])
     cli_mix.main()
     assert [c["buses"]["speech"]["mic_duck_enabled"] for c in seen] == [False, True]
+
+
+def test_music_keeps_its_stereo_image(session, tmp_path):
+    """Musiikkiraita soi stereona. Luku teki kaikista raidoista monoa, myös
+    musiikista, joten tunnarin stereokuva katosi hiljaa — kelvollinen
+    tiedosto, kaksi kanavaa, sama sisältö molemmissa."""
+    t = np.arange(int(4.0 * RATE)) / RATE
+    left = 0.2 * np.sin(2 * np.pi * 440 * t)
+    right = 0.2 * np.sin(2 * np.pi * 660 * t)
+    sf.write(tmp_path / "tunnari.wav", np.stack([left, right], axis=1).astype(np.float32), RATE)
+    session["tracks"].append(
+        {"name": "Tunnari", "path": str(tmp_path / "tunnari.wav"), "type": "music"}
+    )
+    session["buses"] = {"music": {"carve_enabled": False, "duck_enabled": False}}
+    mix = render(session)
+
+    def band(channel, lo, hi):
+        spectrum = np.abs(np.fft.rfft(mix[:, channel]))
+        freqs = np.fft.rfftfreq(len(mix), 1 / RATE)
+        return 20 * np.log10(spectrum[(freqs > lo) & (freqs < hi)].max())
+
+    assert band(0, 430, 450) - band(1, 430, 450) > 20
+    assert band(1, 650, 670) - band(0, 650, 670) > 20

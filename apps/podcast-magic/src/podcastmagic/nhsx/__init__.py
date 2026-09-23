@@ -10,8 +10,9 @@ tekee sen ilman Hindenburgia. ``prospect`` kertoo mitä istunnossa on niiltä
 osin kuin sitä ei vielä osata lukea.
 """
 
-from .mix import Clip, Mix, plan
-from .read import (
+from nhsx import mix
+from nhsx.mix import Clip, Mix, plan
+from nhsx.read import (
     FileInfo,
     NhsxError,
     Session,
@@ -22,6 +23,7 @@ from .read import (
     seconds_to_time,
     time_to_seconds,
 )
+
 from .write import set_transcription, write
 
 __all__ = [
@@ -33,6 +35,7 @@ __all__ = [
     "TrackInfo",
     "Word",
     "locate",
+    "mix",
     "plan",
     "read",
     "seconds_to_time",

@@ -59,22 +59,22 @@ def test_the_spread_is_even_and_stays_narrow():
     vasen, keskus, oikea.
     """
     kaksi = staging.pans({"V": 0.5, "O": -0.5})
-    assert kaksi["V"] == -3.0 and kaksi["O"] == 3.0
+    assert kaksi["V"] == -1.5 and kaksi["O"] == 1.5
 
     kolme = staging.pans({"V": 0.5, "K": 0.02, "O": -0.5})
     assert kolme["K"] == 0.0
-    assert kolme["V"] == -4.0 and kolme["O"] == 4.0
+    assert kolme["V"] == -2.0 and kolme["O"] == 2.0
 
     # Epätasaisesti mitatut kulmat eivät tee epätasaisia paikkoja.
     vino = staging.pans({"V": 0.9, "K": 0.85, "O": -0.1})
-    assert sorted(vino.values()) == [-4.0, 0.0, 4.0]
+    assert sorted(vino.values()) == [-2.0, 0.0, 2.0]
 
     # Levein sallittu on silti kapea: kuulokkeilla tätä ei juuri huomaa.
     for count in staging.PAN_WIDTH.keys():
         sides = {f"p{i}": 1.0 - i * 0.1 for i in range(count)}
         values = staging.pans(sides)
-        assert max(values.values()) <= 6.0
-        assert min(values.values()) >= -6.0
+        assert max(values.values()) <= 3.0
+        assert min(values.values()) >= -3.0
 
 
 def test_more_than_five_speakers_are_not_panned():
@@ -92,5 +92,5 @@ def test_an_unmeasured_speaker_stays_in_the_centre():
     """Paikkaa jota ei tiedetä ei arvata."""
     values = staging.pans({"V": 0.5, "O": -0.5, "X": float("nan")})
     assert values["X"] == 0.0
-    assert values["V"] == -3.0 and values["O"] == 3.0
+    assert values["V"] == -1.5 and values["O"] == 1.5
     assert staging.order({"V": 0.5, "O": -0.5, "X": float("nan")})[-1] == "X"

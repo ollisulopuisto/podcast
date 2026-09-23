@@ -14,12 +14,12 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from nhsx.read import RegionInfo
 from speechmix import grid
 from speechmix.dsp import FLOOR_DB
 
 from .. import audio as audio_io
 from ..nhsx import Session, TrackInfo, locate
-from ..nhsx.read import RegionInfo
 
 
 @dataclass

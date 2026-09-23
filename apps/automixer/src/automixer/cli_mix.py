@@ -9,6 +9,8 @@ command-line entry point for executing mixes from the terminal.
 import argparse
 import glob
 import os
+import shutil
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -18,6 +20,7 @@ import psutil
 import soundfile as sf
 import yaml
 
+from automixer import session as hindenburg
 from automixer.domain import room, shared
 from automixer.domain.bus import Bus
 from automixer.domain.processor import (
@@ -32,7 +35,11 @@ from automixer.domain.processor import (
     SpeechSettings,
 )
 from automixer.domain.track import Track
-from speechmix import programme
+from speechmix import panning, programme
+
+#: Puheraitojen taso ennen masterointia. Kynnykset liukuvat sen mukana
+#: kirjastossa; `session.MUSIC_LUFS` sovittaa musiikin tähän samaan.
+SPEECH_REFERENCE_LUFS = -23.0
 
 
 class Mixer:
@@ -244,7 +251,7 @@ class Mixer:
 
         # 2. Channel Strip Config
         update_progress(20, "Auto-configuring dynamics...")
-        reference_lufs = -23.0
+        reference_lufs = SPEECH_REFERENCE_LUFS
 
         # Vaimennus koko ruudukosta kerralla: se on puhujien **välinen**
         # päätös, ei yhden raidan ominaisuus, ja siksi sitä ei voi laskea
@@ -270,7 +277,9 @@ class Mixer:
             # everything else for the same reason.
             for p_cfg in speech_cfg.get("processors", []):
                 if p_cfg["type"] == "plugin":
-                    t.add_processor(self._create_processor(p_cfg))
+                    own = dict(p_cfg, params=track_plugin_params(
+                        p_cfg, t.name, self.config.get("track_params", {})))
+                    t.add_processor(self._create_processor(own))
 
             # Then the whole speech chain, from the shared library.
             #
@@ -330,20 +339,22 @@ class Mixer:
                 )
 
         for t in music_bus.tracks:
-            l_val = t.loudness if t.loudness is not None else -30.0
-            t.add_processor(GainProcessor(gain_db=-30.0 - l_val))
             music_cfg = buses_cfg.get("music", {})
+            # `None`: taso on jo sovitettu (Hindenburgin istunto, ks.
+            # `session.MUSIC_LUFS`), eikä raitaa normalisoida uudestaan.
+            level = music_cfg.get("level_lufs", -30.0)
+            if level is not None:
+                l_val = t.loudness if t.loudness is not None else level
+                t.add_processor(GainProcessor(gain_db=level - l_val))
             for p_cfg in music_cfg.get("processors", []):
                 if p_cfg["type"] == "plugin":
                     t.add_processor(self._create_processor(p_cfg))
 
         # 3. Spatial
         update_progress(30, "Applying spatial separation...")
-        if len(speech_track_list) > 1:
-            pan_range = 0.2
-            step = pan_range / (len(speech_track_list) - 1)
-            for i, t in enumerate(speech_track_list):
-                t.pan = -(pan_range / 2) + (i * step)
+        for t, pan in zip(speech_track_list, speaker_pans(len(speech_track_list)),
+                          strict=True):
+            t.pan = pan
 
         # 4. Bus Processing
         # Ad spot logic needs to be aware of the preview window
@@ -441,6 +452,74 @@ class Mixer:
         return master_np
 
 
+def _values(text: str) -> dict:
+    """``k=v,k=v`` sanakirjaksi; luku jos se on luku."""
+    out = {}
+    for kv in text.split(","):
+        if "=" in kv:
+            key, value = kv.split("=", 1)
+            try:
+                out[key.strip()] = float(value.strip())
+            except ValueError:
+                out[key.strip()] = value.strip()
+    return out
+
+
+def parse_plugin_params(text: str) -> dict:
+    """``liitännäinen:k=v,k=v; toinen:k=v`` -> ``{liitännäinen: {k: v}}``.
+
+    Liitännäinen tunnistetaan nimen osasta, pienin kirjaimin: ``dxrevive``
+    osuu tiedostoon ``Accentize-dxRevive.vst3``.
+    """
+    out = {}
+    for part in (text or "").split(";"):
+        if ":" in part:
+            name, values = part.split(":", 1)
+            out[name.strip().lower()] = _values(values)
+    return out
+
+
+def parse_track_params(text: str) -> dict:
+    """``raita/liitännäinen:k=v; …`` -> ``{raita: {liitännäinen: {k: v}}}``.
+
+    Raidan oma asetus voittaa väylän: yhden puhujan huone voi tarvita
+    enemmän siivousta kuin muiden (pikis 2026-09-11, Panu).
+    """
+    out: dict = {}
+    for part in (text or "").split(";"):
+        if "/" in part and ":" in part:
+            track, rest = part.split("/", 1)
+            out.setdefault(track.strip().lower(), {}).update(parse_plugin_params(rest))
+    return out
+
+
+def track_plugin_params(p_cfg: dict, track_name: str, overrides: dict) -> dict:
+    """Väylän parametrit, joiden päälle raidan omat.
+
+    Raita tunnistetaan nimen osasta, joten ``panu`` osuu myös tiedostoon
+    ``2026-09-11--guest232006--panu.wav``.
+    """
+    params = dict(p_cfg.get("params") or {})
+    plugin = os.path.basename(p_cfg.get("path", "")).lower()
+    name = track_name.lower()
+    for track, per_plugin in overrides.items():
+        if track and track in name:
+            for key, values in per_plugin.items():
+                if key in plugin:
+                    params.update(values)
+    return params
+
+
+def speaker_pans(count: int) -> list[float]:
+    """Puhujien paikat raitojen järjestyksessä, -1…+1.
+
+    Sama leveys kuin autoraffkatissa (`speechmix.panning`). Täällä ei ole
+    kuvaa josta istumajärjestyksen voisi mitata, joten järjestys on
+    raitojen oma.
+    """
+    return [round(p / 100.0, 4) for p in panning.spread(count)]
+
+
 def detect_tracks(paths):
     """
     Attempts to guess track types based on filenames.
@@ -486,7 +565,9 @@ def main():
     parser.add_argument("--speech", nargs="+", help="Explicitly specify speech tracks")
     parser.add_argument("--music", nargs="+", help="Explicitly specify music tracks")
     parser.add_argument(
-        "--output", "-o", default="final_mix.wav", help="Output filename"
+        "--output", "-o", default=None,
+        help="Output filename (default: final_mix.wav, or '<session> automixer.wav' "
+        "beside a Hindenburg session)",
     )
     parser.add_argument(
         "--target-lufs", type=float, default=-16.0, help="Target loudness (LUFS)"
@@ -607,6 +688,11 @@ def main():
     parser.add_argument(
         "--plugin-params", help="Plugin parameters (e.g. WavesNS1: threshold=0.5)"
     )
+    parser.add_argument(
+        "--track-params", default="",
+        help="Per-track plugin parameters, winning over --plugin-params "
+        "(e.g. 'panu/dxrevive:mix=50; kari/dxrevive:mix=25')",
+    )
 
     parser.add_argument(
         "--minimal",
@@ -628,6 +714,26 @@ def main():
         args.music_duck = False
 
     config_tracks = []
+    sessions = [p for p in args.tracks if p.lower().endswith(".nhsx")]
+    workdir = None
+    if sessions:
+        # Hindenburgin istunto: editointi sieltä, miksaus täältä. Raidat
+        # kootaan väliaikaisiksi WAVeiksi ja siivotaan ajon jälkeen.
+        if len(args.tracks) > 1 or args.speech or args.music:
+            print("A Hindenburg session is mixed on its own: give one .nhsx.")
+            return
+        workdir = tempfile.mkdtemp(prefix="automixer-")
+        loaded = hindenburg.load(sessions[0], workdir)
+        for note in loaded.notes:
+            print(f"  ! {note}")
+        config_tracks = loaded.tracks
+        if args.output is None:
+            args.output = os.path.splitext(sessions[0])[0] + " automixer.wav"
+        # Musiikin häivytykset tehtiin Hindenburgissa ja taso on sovitettu.
+        args.music_carve = False
+        args.music_duck = False
+    if args.output is None:
+        args.output = "final_mix.wav"
 
     if args.speech:
         for p in args.speech:
@@ -641,7 +747,7 @@ def main():
                 {"name": os.path.basename(p), "path": p, "type": "music"}
             )
 
-    if not args.speech and not args.music:
+    if not sessions and not args.speech and not args.music:
         # If no explicit tracks, use positional tracks or all wav files in current dir
         paths = args.tracks
         if not paths:
@@ -659,22 +765,7 @@ def main():
         icon = "🎤" if t["type"] == "speech" else "🎵"
         print(f"  {icon} {t['type'].upper()}: {t['name']}")
 
-    # Parse plugin parameters
-    parsed_params = {}
-    if args.plugin_params:
-        for part in args.plugin_params.split(";"):
-            if ":" in part:
-                p_name, p_vals = part.split(":", 1)
-                p_name = p_name.strip().lower()
-                kv_pairs = {}
-                for kv in p_vals.split(","):
-                    if "=" in kv:
-                        k, v = kv.split("=", 1)
-                        try:
-                            kv_pairs[k.strip()] = float(v.strip())
-                        except Exception:
-                            kv_pairs[k.strip()] = v.strip()
-                parsed_params[p_name] = kv_pairs
+    parsed_params = parse_plugin_params(args.plugin_params)
 
     def build_proc_list(paths):
         if not paths:
@@ -697,6 +788,7 @@ def main():
         "ad_spot": args.ad_spot,
         "ad_duration": args.ad_duration,
         "tracks": config_tracks,
+        "track_params": parse_track_params(args.track_params),
         "buses": {
             "speech": {
                 "hp_enabled": args.speech_hp,
@@ -712,6 +804,7 @@ def main():
                 "processors": build_proc_list(args.speech_plugins),
             },
             "music": {
+                "level_lufs": None if sessions else -30.0,
                 "carve_enabled": args.music_carve,
                 "carve_strength": args.music_carve_strength,
                 "duck_enabled": args.music_duck,
@@ -721,8 +814,11 @@ def main():
         },
     }
 
-    mixer = Mixer(config)
-    mixer.run()
+    try:
+        Mixer(config).run()
+    finally:
+        if workdir is not None:
+            shutil.rmtree(workdir, ignore_errors=True)
 
 
 if __name__ == "__main__":

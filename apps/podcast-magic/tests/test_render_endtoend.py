@@ -28,8 +28,8 @@ import wave
 import numpy as np
 import pytest
 
+from nhsx.read import read
 from podcastmagic.nhsx import cli, mix
-from podcastmagic.nhsx.read import read
 
 SR = 48000
 AMP = 0.5

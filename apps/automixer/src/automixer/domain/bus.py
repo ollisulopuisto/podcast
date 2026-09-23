@@ -144,9 +144,16 @@ class Bus:
                 offset = int(t.start_sec * sr)
 
                 pan = getattr(t, "pan", 0.0)
-                left_gain = mx.sqrt(mx.array(0.5 * (1.0 - pan)))
-                right_gain = mx.sqrt(mx.array(0.5 * (1.0 + pan)))
-                sig_stereo = mx.stack([sig * left_gain, sig * right_gain], axis=-1)
+                if len(sig.shape) > 1:
+                    # Stereolähde (musiikki): panorointi on tasapaino, ja
+                    # keskellä kumpikin kanava soi sellaisenaan.
+                    sig_stereo = sig * mx.array(
+                        [min(1.0, 1.0 - pan), min(1.0, 1.0 + pan)]
+                    )
+                else:
+                    left_gain = mx.sqrt(mx.array(0.5 * (1.0 - pan)))
+                    right_gain = mx.sqrt(mx.array(0.5 * (1.0 + pan)))
+                    sig_stereo = mx.stack([sig * left_gain, sig * right_gain], axis=-1)
 
                 if (
                     ad_spot > 0

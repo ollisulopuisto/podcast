@@ -21,18 +21,13 @@ from __future__ import annotations
 
 import numpy as np
 
-# Kuinka leveälle puhujat levitetään, prosentteina Final Cutin asteikolla
-# (-100 = vasen, +100 = oikea). Ensimmäinen luku on kahdelle puhujalle.
-#
-# Nämä eivät ole mitattuja lukuja vaan valittu yläraja: mitattavaa olisi
-# «kuuluuko tämä», ja siihen vastaus on että ei juuri pidäkään. Leveys
-# kasvaa puhujamäärän mukana vain sen verran että paikat pysyvät erillään.
-PAN_WIDTH = {2: 6.0, 3: 8.0, 4: 10.0, 5: 12.0}
+from speechmix import panning
 
-# Useampaa kuin viittä ei panoroida. Kuudella paikat ovat niin lähellä
-# toisiaan ettei ero ole enää paikka vaan epätarkkuus, ja silloin keskeltä
-# on parempi kuin melkein keskeltä.
-PAN_MAX_SPEAKERS = 5
+# Leveys ja sen perustelu asuvat kirjastossa, jotta automixer levittää
+# samalla tavalla. Nimet pysyvät täällä, koska testit ja dokumentit
+# viittaavat niihin.
+PAN_WIDTH = panning.PAN_WIDTH
+PAN_MAX_SPEAKERS = panning.PAN_MAX_SPEAKERS
 
 # Kuinka monta mittausta puhujalta tarvitaan ennen kuin puolta uskotaan.
 #
@@ -100,14 +95,6 @@ def pans(sides: dict) -> dict:
     names = order(sides)
     measured = [n for n in names if np.isfinite(sides.get(n, float("nan")))]
     out = dict.fromkeys(sides, 0.0)
-    count = len(measured)
-    if count < 2 or count > PAN_MAX_SPEAKERS:
-        return out
-    width = PAN_WIDTH[count]
-    # Tasavälit -width/2 … +width/2. Parittomalla määrällä keskimmäinen
-    # osuu nollaan itsestään, mikä on juuri haluttu: kolmesta yksi on
-    # keskellä eikä ketään siirretä turhaan.
-    steps = np.linspace(-width / 2.0, width / 2.0, count)
-    for name, value in zip(measured, steps, strict=True):
-        out[name] = round(float(value), 2)
+    for name, value in zip(measured, panning.spread(len(measured)), strict=True):
+        out[name] = value
     return out

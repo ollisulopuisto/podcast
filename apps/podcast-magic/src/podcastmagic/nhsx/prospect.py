@@ -28,8 +28,13 @@ from pathlib import Path
 
 from lxml import etree
 
-from .mix import KNOWN_FADE_ATTRS, KNOWN_REGION_ATTRS, KNOWN_TRACK_ATTRS, localname_attr
-from .read import NhsxError, localname
+from nhsx.mix import (
+    KNOWN_FADE_ATTRS,
+    KNOWN_REGION_ATTRS,
+    KNOWN_TRACK_ATTRS,
+    localname_attr,
+)
+from nhsx.read import NhsxError, localname
 
 # Litteroinnin sisus: tunnettu, dokumentoitu ja liian iso raportoitavaksi.
 SKIP_INSIDE = "Transcription"

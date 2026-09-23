@@ -43,8 +43,9 @@ from pathlib import Path
 
 import numpy as np
 
+from nhsx.mix import Mix, envelope, pan_gains
+
 from ..binaries import get_binary_path
-from .mix import Mix, envelope, pan_gains
 
 # Ohjelman oletustaajuus. 48 kHz eikä 44,1: Hindenburgin lähteet ovat
 # käytännössä 48 kHz, ja renderöinti ilman uudelleennäytteistystä on sekä
@@ -166,7 +167,7 @@ def blocks(
         count = int(round(clip.length * sample_rate))
         if count <= 0:
             continue
-        env = envelope(clip.length, sample_rate, clip.ramps)
+        env = envelope(clip.length, sample_rate, clip.ramps, clip.fade_in, clip.fade_out)
         env = _spread(env.reshape(-1, 1), count).reshape(-1)
         left, right = pan_gains(clip.pan)
         prepared.append((clip, first, count, env, np.float32(left), np.float32(right)))

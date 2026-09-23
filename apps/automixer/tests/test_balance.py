@@ -42,3 +42,16 @@ def test_one_speakers_backoff_is_shared_so_the_balance_stays():
     levels = [float(np.abs(np.array(t.signal)).max()) for t in bus.tracks]
     assert abs(20 * np.log10(levels[1] / 0.1) - -3.0) < 0.01
     assert abs(20 * np.log10(levels[0] / 0.1)) < 0.01
+
+
+def test_speakers_are_spread_as_narrowly_as_in_autoraffkat():
+    """Sama leveys kuin autoraffkatissa, jaetusta kirjastosta. automixer
+    levitti aina ±10 %:iin — kahdella puhujalla kolme kertaa leveämmälle —
+    ja kuudesta ylöspäin keskelle, koska paikat olisivat epätarkkuutta."""
+    from automixer.cli_mix import speaker_pans
+    from speechmix import panning
+
+    assert speaker_pans(2) == [-0.015, 0.015]
+    assert speaker_pans(3) == [-0.02, 0.0, 0.02]
+    assert speaker_pans(panning.PAN_MAX_SPEAKERS + 1) == [0.0] * (panning.PAN_MAX_SPEAKERS + 1)
+    assert speaker_pans(1) == [0.0]

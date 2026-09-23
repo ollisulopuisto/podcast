@@ -6,7 +6,7 @@ from itertools import pairwise
 
 from lxml import etree
 
-from ..nhsx.read import localname, seconds_to_time, time_to_seconds
+from nhsx.read import localname, seconds_to_time, time_to_seconds
 
 
 def merge(intervals: list[tuple[float, float]], max_gap: float = 0.0) -> list[tuple[float, float]]:

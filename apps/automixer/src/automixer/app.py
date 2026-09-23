@@ -35,7 +35,7 @@ from textual.widgets import (
 from textual.widgets.selection_list import Selection
 
 from automixer.analyzer import SpotAnalyzer
-from automixer.cli_mix import Mixer
+from automixer.cli_mix import Mixer, parse_plugin_params, parse_track_params
 from speechmix import chain
 
 
@@ -275,6 +275,11 @@ class AutomixerApp(App):
                     Input(
                         placeholder="e.g. WavesNS1: threshold=0.5",
                         id="plugin_params_input",
+                    ),
+                    Label("Per-track parameters (win over the above):"),
+                    Input(
+                        placeholder="e.g. panu/dxrevive:mix=50; kari/dxrevive:mix=25",
+                        id="track_params_input",
                     ),
                     Button("Refresh Scan", id="refresh_plugins_btn"),
                 )
@@ -538,22 +543,12 @@ class AutomixerApp(App):
             self.query_one("#music_duck_thresh", Input).value
         )
         m_bus["plugin_paths"] = list(self.selected_music_plugins)
-        params_raw = self.query_one("#plugin_params_input", Input).value
-        parsed_params = {}
-        if params_raw:
-            for part in params_raw.split(";"):
-                if ":" in part:
-                    p_name, p_vals = part.split(":", 1)
-                    p_name = p_name.strip().lower()
-                    kv_pairs = {}
-                    for kv in p_vals.split(","):
-                        if "=" in kv:
-                            k, v = kv.split("=", 1)
-                            try:
-                                kv_pairs[k.strip()] = float(v.strip())
-                            except Exception:
-                                kv_pairs[k.strip()] = v.strip()
-                    parsed_params[p_name] = kv_pairs
+        parsed_params = parse_plugin_params(
+            self.query_one("#plugin_params_input", Input).value
+        )
+        self.config["track_params"] = parse_track_params(
+            self.query_one("#track_params_input", Input).value
+        )
 
         def build_proc_list(paths):
             procs = []

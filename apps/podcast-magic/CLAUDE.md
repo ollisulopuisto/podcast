@@ -165,7 +165,7 @@ toisin päin: hännän lisääminen ensin sulkisi tauot pituuteen
 
 ## Istunnon kuuleminen: mikä on mitattu ja mikä arvattu
 
-`nhsx/mix.py` sijoittaa alueet ohjelma-aikajanalle tasoineen, häivytyksineen
+`nhsx/mix.py` (jaettu paketti `packages/nhsx`, myös automixerin käytössä) sijoittaa alueet ohjelma-aikajanalle tasoineen, häivytyksineen
 ja panorointeineen; `nhsx/render.py` summaa ne WAViksi. Yhdessä ne ovat se,
 mikä tekee istunnosta kuunneltavan **ilman Hindenburgia** — tiedosto on XML
 ja äänipooli on WAVeja levyllä, eikä muuta tarvita.
@@ -278,7 +278,11 @@ mieltä huomaamatta, ja `plan.json` on sen kirjattu vastaus. Molemmat
 toteutukset testaavat itseään sitä vasten
 (`tests/test_conformance.py` täällä, `Tests/NhsxKitTests/` siellä).
 
-**Kun muutat `nhsx/read.py`:tä tai `nhsx/mix.py`:tä, muutat sopimusta.**
+**Kun muutat `packages/nhsx`:n `read.py`:tä tai `mix.py`:tä, muutat sopimusta** — ja automixerin Hindenburg-tuontia.
+`FadeIn`/`FadeOut` (häivytys hiljaisuudesta, `Clip.fade_in`/`fade_out`) on
+luettu Pythonissa mutta ei vielä katselimessa, eikä se ole
+yhdenmukaisuussuunnitelmassa: katselin soittaa ne toistaiseksi täydellä
+tasolla.
 Jos vastaus muuttuu, se luodaan uudestaan tahallaan ja diffi luetaan —
 muuttunut luku on joko korjaus tai regressio — ja Swift-puoli muutetaan
 samassa hengessä. Muuten esikatselu näyttää eri jakson kuin `nhsx-render`
