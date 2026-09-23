@@ -176,17 +176,62 @@ def test_refuses_to_overwrite_the_source(video):
         cli_video.fix_video(video, video, target_lufs=-16.0, plugin=None)
 
 
-def test_refuses_more_than_one_audio_stream(video, tmp_path):
-    two = tmp_path / "two.mp4"
-    run("-i", str(video), "-map", "0:v", "-map", "0:a", "-map", "0:a",
-        "-c", "copy", str(two))
+def with_second_audio(video, tmp_path, default: int):
+    """iPhone-muoto: stereo-AAC ja toinen ääniraita (siellä APAC-tilaääni).
+
+    Toinen raita on 1 kHz:n sini alusta asti, joten väärän raidan
+    käsittely näkyy purskeen paikassa eikä vain raitojen määrässä.
+    """
+    tone = tmp_path / "tone.wav"
+    t = np.arange(int(8.5 * RATE)) / RATE
+    sf.write(tone, (0.3 * np.sin(2 * np.pi * 1000 * t)).astype(np.float32), RATE)
+    # Matroska, koska mov-muxeri merkitsee ensimmäisen raidan oletukseksi,
+    # jos mikään ei ole — raidatonta tapausta ei saisi muuten tehtyä.
+    two = tmp_path / f"two{default}.mkv"
+    run("-i", str(video), "-i", str(tone),
+        "-map", "0:v", "-map", "0:a", "-map", "1:a",
+        "-c:v", "copy", "-c:a", "aac",
+        "-disposition:a:0", "default" if default == 0 else "0",
+        "-disposition:a:1", "default" if default == 1 else "0",
+        "-default_mode", "passthrough",
+        str(two))
+    return two
+
+
+def test_default_audio_stream_is_the_one_processed(video, tmp_path):
+    two = with_second_audio(video, tmp_path, default=0)
+    out = tmp_path / "out.mkv"
+    cli_video.fix_video(two, out, target_lufs=-16.0, plugin=None)
+
+    # Toista raitaa ei kopioida: Applen soittimet valitsisivat tilaäänen,
+    # eli käsittelemättömän äänen, korjatun sijaan.
+    assert [s["codec_type"] for s in streams(out)] == ["video", "audio"]
+    assert abs(onset(out) - (BURST_AT + OFFSET)) < 0.03
+    assert abs(integrated_lufs(out) - -16.0) < 0.5
+
+
+def test_refuses_several_audio_streams_without_one_default(video, tmp_path):
+    two = with_second_audio(video, tmp_path, default=-1)
     with pytest.raises(cli_video.VideoError, match="audio streams"):
-        cli_video.fix_video(two, tmp_path / "out.mp4", target_lufs=-16.0,
+        cli_video.fix_video(two, tmp_path / "out.mkv", target_lufs=-16.0,
                             plugin=None)
+    assert not (tmp_path / "out.mkv").exists()
 
 
 def test_default_output_sits_next_to_the_source(tmp_path):
     assert cli_video.default_output(tmp_path / "ep 12.mov") == tmp_path / "ep 12 [-16 LUFS].mov"
+
+
+def test_dolby_vision_mov_defaults_to_mp4(tmp_path, monkeypatch):
+    """ffmpeg 9:n mov-muxeri ei kirjoita DV-konfiguraatiota (dvcC/dvvC)
+    lainkaan, mp4-muxeri kirjoittaa sen ``-strict unofficial``:lla. iPhonen
+    DV 8.4 -tiedoston remux .mov:ksi menetti sen, .mp4:ksi ei."""
+    monkeypatch.setattr(cli_video, "_probe", lambda path: {"streams": [
+        {"codec_type": "video",
+         "side_data_list": [{"side_data_type": "DOVI configuration record"}]},
+    ]})
+    (tmp_path / "clip.MOV").touch()
+    assert cli_video.default_output(tmp_path / "clip.MOV") == tmp_path / "clip [-16 LUFS].mp4"
 
 
 def test_missing_dxrevive_is_an_error_not_a_silent_skip(monkeypatch):

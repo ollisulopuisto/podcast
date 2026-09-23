@@ -42,9 +42,22 @@ class VideoError(Exception):
     """Something about the file or the run that makes the result untrustworthy."""
 
 
+DOLBY_VISION = "DOVI configuration record"
+
+
 def default_output(source: Path, lufs: float = TARGET_LUFS) -> Path:
+    """``<name> [<lufs> LUFS]`` next to the source, same container — except
+    Dolby Vision in a .mov, which becomes .mp4: ffmpeg 9's QuickTime muxer
+    never writes the DV configuration record (an iPhone DV 8.4 clip lost it
+    as .mov and kept it as .mp4), and the picture check would refuse it."""
     source = Path(source)
-    return source.with_name(f"{source.stem} [{lufs:g} LUFS]{source.suffix}")
+    suffix = source.suffix
+    if suffix.lower() == ".mov" and source.exists():
+        video = [s for s in _probe(source)["streams"] if s["codec_type"] == "video"]
+        if any(d.get("side_data_type") == DOLBY_VISION
+               for s in video for d in s.get("side_data_list", [])):
+            suffix = ".mp4"
+    return source.with_name(f"{source.stem} [{lufs:g} LUFS]{suffix}")
 
 
 def find_plugin(name: str) -> str:
@@ -95,6 +108,33 @@ def _picture(info: dict) -> dict:
     }
 
 
+def _pick_audio(info: dict, log) -> dict:
+    """The one audio stream to process.
+
+    iPhones record two: stereo AAC marked default, and a 4-channel APAC
+    spatial track (ambisonics) that ffmpeg cannot encode. The default one is
+    processed and the rest are left out of the output — copied across, the
+    spatial track is what Apple players pick, so the file would play the
+    unprocessed sound next to the fixed one.
+    """
+    audio = [s for s in info["streams"] if s["codec_type"] == "audio"]
+    if len(audio) == 1:
+        return audio[0]
+    default = [s for s in audio if s.get("disposition", {}).get("default")]
+    if len(default) != 1:
+        raise VideoError(
+            f"Found {len(audio)} audio streams and {len(default)} marked default; "
+            "cannot tell which one to process."
+        )
+    dropped = ", ".join(
+        f"#{s['index']} {s['codec_name']} {s.get('channels', '?')} ch"
+        for s in audio if s is not default[0]
+    )
+    log(f"Processing audio stream #{default[0]['index']} (default); "
+        f"left out: {dropped}")
+    return default[0]
+
+
 def _ffmpeg(*args: str) -> None:
     done = subprocess.run(
         ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-y", *args],
@@ -121,19 +161,14 @@ def fix_video(
         raise VideoError("Refusing to overwrite the source file.")
 
     info = _probe(source)
-    audio_streams = [s for s in info["streams"] if s["codec_type"] == "audio"]
-    if len(audio_streams) != 1:
-        raise VideoError(
-            f"Expected one audio stream, found {len(audio_streams)} audio streams."
-        )
-    stream = audio_streams[0]
+    stream = _pick_audio(info, log)
     offset = float(stream.get("start_time", 0) or 0) - float(
         info["format"].get("start_time", 0) or 0
     )
 
     with tempfile.TemporaryDirectory(prefix="autovideo-") as work:
         raw = Path(work) / "in.wav"
-        _ffmpeg("-i", str(source), "-map", "0:a:0", "-c:a", "pcm_f32le", str(raw))
+        _ffmpeg("-i", str(source), "-map", f"0:{stream['index']}", "-c:a", "pcm_f32le", str(raw))
         audio, rate = sf.read(raw, dtype="float32", always_2d=True)
         audio = np.ascontiguousarray(audio.T)
         log(f"Audio: {audio.shape[0]} ch, {rate} Hz, {audio.shape[1] / rate:.1f} s, "
@@ -176,6 +211,9 @@ def fix_video(
                 "-map", "0:v", "-map", "1:a:0",
                 "-c:v", "copy", *audio_codec,
                 "-map_metadata", "0",
+                # The mp4 muxer writes Dolby Vision's dvcC/dvvC only at this
+                # level; without it the record is dropped (and refused below).
+                "-strict", "unofficial",
                 str(partial),
             )
             after = _picture(_probe(partial))
