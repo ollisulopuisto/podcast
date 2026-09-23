@@ -120,8 +120,10 @@ def test_it_calls_the_library_and_not_a_copy_of_it(monkeypatch):
     assert processor.chain is chain
 
     called: list[str] = []
+    # Liitännäinen ladataan altaana (`chain.load_pool`), kuten
+    # autoraffkatissa: rinnakkaiset palat ovat ainoa tie muihin ytimiin.
     monkeypatch.setattr(
-        chain, "load_plugin", lambda *a, **k: (called.append("load"), _Fake())[1]
+        chain, "load_pool", lambda *a, **k: (called.append("load"), _Fake())[1]
     )
     monkeypatch.setattr(
         chain,
