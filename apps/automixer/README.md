@@ -162,6 +162,12 @@ Per-track parameters win over those, for the speaker whose room needs more
 `panu/dxrevive: mix=50; kari/dxrevive: mix=25` — the track is matched by
 part of its name, the plugin by part of its filename.
 
+A plug-in's own state — dxRevive's **model** is not one of its parameters —
+is chosen in the plug-in's own window: **Open plugin window (model)…** in the
+Plugins tab. The TUI keeps it in the episode folder as
+`automixer-plugin.json`. On the CLI, `--plugin-state FILE` takes that file,
+an autoraffkat episode's settings (`*.autoraffkat.json`), or base64 text.
+
 ## 💻 Optimization for Mac
 This project is built from the ground up to leverage:
 - **Metal Performance Shaders**: Via the `mlx` library for FFTs and convolutions.

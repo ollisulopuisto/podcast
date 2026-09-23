@@ -8,6 +8,7 @@ command-line entry point for executing mixes from the terminal.
 
 import argparse
 import glob
+import json
 import os
 import shutil
 import tempfile
@@ -510,6 +511,25 @@ def track_plugin_params(p_cfg: dict, track_name: str, overrides: dict) -> dict:
     return params
 
 
+def load_plugin_state(path) -> str:
+    """Liitännäisen oma tila base64:nä tiedostosta.
+
+    Kelpaa kolme muotoa: TUI:n tallentama ``{"state": …}``, autoraffkatin
+    jakson asetukset (``audio.plugin_state``) ja pelkkä base64-teksti.
+    dxRevivella mallin valinta on tilassa eikä yksikään sen parametreista.
+    """
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read().strip()
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return text
+    if isinstance(data, dict):
+        audio = data.get("audio") if isinstance(data.get("audio"), dict) else {}
+        return str(data.get("state") or audio.get("plugin_state") or "")
+    return ""
+
+
 def speaker_pans(count: int) -> list[float]:
     """Puhujien paikat raitojen järjestyksessä, -1…+1.
 
@@ -689,6 +709,11 @@ def main():
         "--plugin-params", help="Plugin parameters (e.g. WavesNS1: threshold=0.5)"
     )
     parser.add_argument(
+        "--plugin-state", default="",
+        help="The speech plug-in's own state (e.g. dxRevive's model): a file "
+        "saved by the TUI, an autoraffkat episode's settings, or base64 text",
+    )
+    parser.add_argument(
         "--track-params", default="",
         help="Per-track plugin parameters, winning over --plugin-params "
         "(e.g. 'panu/dxrevive:mix=50; kari/dxrevive:mix=25')",
@@ -781,6 +806,12 @@ def main():
             procs.append({"type": "plugin", "path": p, "params": params})
         return procs
 
+    state = load_plugin_state(args.plugin_state) if args.plugin_state else ""
+    speech_processors = build_proc_list(args.speech_plugins)
+    for p_cfg in speech_processors:
+        if state:
+            p_cfg["state"] = state
+
     config = {
         "project": "CLI Mix",
         "target_lufs": args.target_lufs,
@@ -801,7 +832,7 @@ def main():
                 "rider_enabled": args.speech_rider,
                 "mic_duck_enabled": args.speech_mic_duck,
                 "mic_duck_db": args.mic_duck_db,
-                "processors": build_proc_list(args.speech_plugins),
+                "processors": speech_processors,
             },
             "music": {
                 "level_lufs": None if sessions else -30.0,
