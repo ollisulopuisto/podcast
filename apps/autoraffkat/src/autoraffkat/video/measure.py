@@ -58,6 +58,13 @@ def cache_dir() -> Path:
 # eri merkitys, eli eri avain ja eri rivi polkuindeksissä.
 CROWD = "joukko"
 
+# Joukkokuvasta kasvot haetaan joka viidennestä avainruudusta (~5 s).
+# Kehys on vakaa ja siirtyy vain pitkästä liikkeestä, joten tiheämpi otos ei
+# kerro siitä mitään lisää; suun liike tarvitsee määrää, ja tunnista jää
+# ~700 ruutua. Mitattuna 61 min kamerasta purku 151 s ja kasvot 124 s:
+# purku on sama joka tapauksessa, kasvot putoavat viidesosaan.
+CROWD_EVERY = 5
+
 
 def cache_key(path: str, detector: detect.Detector, crowd: bool = False) -> str:
     """Polku, koko, muokkausaika, purkuleveys — ja tunnistimen nimi ja versio.
@@ -335,10 +342,10 @@ def measure_file(path: str, detector: detect.Detector, progress=None,
 
         if crowd:
             rows: list[tuple[int, dict]] = []
-            for index, frame in enumerate(frames):
-                if progress is not None and (index % 50 == 0 or index == len(frames) - 1):
+            for index in range(0, len(frames), CROWD_EVERY):
+                if progress is not None and index % (50 * CROWD_EVERY) == 0:
                     progress(0.5 + 0.5 * ((index + 1) / len(frames)))
-                rows += [(index, face) for face in detector.measure_all(str(frame))]
+                rows += [(index, face) for face in detector.measure_all(str(frames[index]))]
             _log(f"{name}: valmis, {len(rows)} kasvoa {len(frames)} ruudussa, "
                  f"{time.monotonic() - started:.0f} s")
             if progress is not None:

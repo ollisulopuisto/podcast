@@ -94,22 +94,24 @@ def _item(key="CLOSE_A", width=1920, height=1080, dur=36):
     return item
 
 
-def test_median_over_the_shots_own_rows():
-    """Kehys on kuvan omien rivien mediaani, ei koko tiedoston.
+def test_a_short_stretch_elsewhere_keeps_the_frame():
+    """Viisi sekuntia muualla ei ole uusi kehys.
 
-    Taulukko kattaa koko tiedoston; kuva vain osan siitä. Ensimmäisen
-    viiden sekunnin kasvot ovat vasemmalla, loppujen keskellä — ja kumpi
-   kin saa oman kehynsä.
+    Ennen kehys oli kuvan omien rivien mediaani, jolloin jokainen kuva
+    rajattiin hieman eri kohtaan. Käyttäjän toive (2026-09-25): rajaus
+    pysyy vakaana läpi jakson ja siirtyy vain pitkäkestoisesta
+    liikkeestä, ks. ``steady``. Kuvan omat rivit päättävät yhä sen, onko
+    kasvoja ylipäätään löytynyt.
     """
     from autoraffkat.reframe import Reframer
 
     item = _item()
     table = _table(10, cx=0.5)
     table["x"][:5] = 0.2 - 0.05
-    r = Reframer({item.key: table}).from_item(item, 0.0, 4.0)
-    assert abs(r.pos_x - (0.3 * 3413.33 / 19.2)) < 0.5
-    r2 = Reframer({item.key: table}).from_item(item, 5.0, 9.0)
-    assert r2.pos_x == 0.0
+    framer = Reframer({item.key: table})
+    first = framer.from_item(item, 0.0, 4.0)
+    second = framer.from_item(item, 5.0, 9.0)
+    assert first.pos_x == second.pos_x
 
 
 def test_too_few_found_rows_gives_nothing():
@@ -305,3 +307,42 @@ def test_a_crowd_shot_is_framed_on_its_speaker():
     assert guest.pos_x > 0 > mikko.pos_x   # vieras vasemmalla -> kuva oikealle
     assert abs(guest.pos_x - (0.30 * 3413.33 / 19.2)) < 0.5
     assert framer.from_item(item, 0.0, 2.0, focus="Tomi") is None  # ei kuvassa
+
+
+# ------------------------------------------------------ vakaa kehys (2026-09-25)
+
+
+def test_small_movement_does_not_move_the_frame():
+    """Tuolissa huojuminen ei ole uusi kehys; pitkä siirtymä on.
+
+    Kasvot heiluvat ±0,01 leveydestä koko ajan, 30 s:n käynti 0,7:ssä on
+    nousu ja takaisin istumaan, ja 150 s:n kohdalla kamera siirtyy
+    pysyvästi niin että kasvot ovat 0,62:ssa.
+    """
+    rng = np.random.default_rng(3)
+    times = np.arange(300, dtype=np.float64)
+    x = 0.5 + rng.uniform(-0.01, 0.01, 300)
+    x[60:75] = 0.7            # 15 s pois: ei uutta kehystä
+    x[150:] += 0.12           # pysyvä siirtymä
+    steps = reframe.steady(times, x)
+    levels = [round(v, 2) for _t, v in steps]
+    assert len(steps) == 2, steps
+    assert levels[0] == 0.5 and levels[1] == 0.62
+    assert 150 <= steps[1][0] <= 185
+
+
+def test_consecutive_shots_of_one_camera_frame_identically():
+    """Saman kameran kaksi kuvaa samassa kohdassa jaksoa: sama kehys,
+    vaikka kasvot heiluisivat — muuten jokainen leikkaus takaisin samaan
+    kameraan nytkähtäisi muutaman pikselin."""
+    from autoraffkat.reframe import Reframer
+
+    item = _item(dur=120)
+    rng = np.random.default_rng(5)
+    table = _boxes(n=120, x=0.45)
+    table["times"] = np.arange(120, dtype=np.float32)
+    table["x"] = (0.45 + rng.uniform(-0.01, 0.01, 120)).astype(np.float32)
+    framer = Reframer({item.key: table})
+    first = framer.from_item(item, 10.0, 20.0)
+    second = framer.from_item(item, 40.0, 55.0)
+    assert first.pos_x == second.pos_x

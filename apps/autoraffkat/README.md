@@ -313,7 +313,10 @@ face. Which face is whom is measured from the mouths — the one that opens
 when a microphone talks — separately for each part, so a camera that shows
 two people in one part and one in the next is fine. The camera card shows
 the result left to right; if it is wrong, click a name to move it left and
-that order is used instead. Unmeasured clips stay centred in the fill rather
+that order is used instead. The framing is steady: small movement in the
+chair never reframes, and the frame only moves when someone stays
+somewhere else for half a minute or more — the camera was moved, or they
+stood up and sat down differently. Unmeasured clips stay centred in the fill rather
 than guessed, and the export warns about unmeasured close-ups. Composes with micro-movement, which multiplies
 on top of the reframe.
 

@@ -1141,6 +1141,15 @@ the middle one. The rules it lives by:
   1080p). Per camera, because the same camera at two zooms in consecutive
   shots looks like a jump; and matching matters most exactly where shot
   and reverse shot alternate quickly. With one close-up nothing zooms.
+* **The frame is steady, not per shot.** A shot is framed on the camera
+  file's *steady* position (`steady()`), not its own median: a rolling
+  30 s median takes out the fidgeting, and the frame moves only when that
+  median has stayed more than 0.04 of the width (137 px in the fill, an
+  eighth of the crop) away for 30 s — the camera was moved, or someone
+  stood up and sat down differently. Per-shot medians made every cut back
+  to the same camera land a few pixels elsewhere. The user asked for it
+  this way (2026-09-25), and a test holds both halves: 15 s elsewhere does
+  nothing, a permanent shift moves the frame once.
 * **Vertical position exists only when there is zoom.** At 100 % the
   filled picture *is* the project height and any vertical offset reveals
   an edge. A zoomed camera's face moves to the 100 % camera's face height
@@ -1183,7 +1192,10 @@ The same camera can hold two people in part 1 and one in part 2 when a
 guest leaves and nothing is moved, so each file is matched only against
 the speakers who talk during it, and the number of seats comes from how
 many faces the frames actually hold. The crowd pass (`measure_file(...,
-crowd=True)`) keeps every face per keyframe with its inner-lip aperture;
+crowd=True)`) keeps every face of every `CROWD_EVERY`th keyframe (~5 s)
+with its inner-lip aperture — measured on a 61-minute camera, extraction
+151 s and faces 124 s; extraction is the same either way, the faces drop
+to a fifth, and a steady frame gains nothing from denser sampling;
 faces under half the median size are background. Seats are a 1-D k-means
 on the face centres, and each seat goes to the speaker whose mic is on when
 its mouth is open more than when it is off — one frame a second says

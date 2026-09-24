@@ -311,7 +311,10 @@ kasvo mitataan suusta — se joka aukeaa kun mikki puhuu — erikseen
 jokaisessa osassa, joten kamera joka näyttää yhdessä osassa kaksi ihmistä ja
 seuraavassa yhden toimii. Kamerakortti näyttää tuloksen vasemmalta
 oikealle; jos se on väärin, nimen klikkaus siirtää sitä vasemmalle ja sitä
-järjestystä käytetään. Mittaamattomat kuvat jäävät täytön keskelle
+järjestystä käytetään. Rajaus on vakaa: tuolissa liikehdintä ei koskaan
+siirrä sitä, vaan kehys siirtyy vasta kun kasvot pysyvät muualla puoli
+minuuttia tai kauemmin — kamera siirrettiin, tai joku nousi ja istui eri
+asentoon. Mittaamattomat kuvat jäävät täytön keskelle
 arvaamisen sijaan, ja vienti varoittaa mittaamattomista lähikuvista. Yhdistettävissä mikroliikkeen
 kanssa, joka kertautuu kehystyksen päälle.
 

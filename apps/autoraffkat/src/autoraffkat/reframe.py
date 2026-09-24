@@ -53,6 +53,15 @@ EPS_S = 0.05
 # pehmeämpi kuva. Pienemmät kasvot jäävät pienemmiksi eikä niitä pakoteta.
 MAX_ZOOM = 1.25
 
+# Kehys pysyy paikallaan. Tuolissa huojuminen ei ole uusi kehys, joten
+# paikka on liukuva mediaani ``STEADY_WINDOW``in yli, ja kehys siirtyy vasta
+# kun kasvot ovat olleet yli ``STEADY_SHIFT``in päässä ``STEADY_HOLD``in
+# ajan: kamera on siirretty, tai joku nousi ja istui toiseen asentoon.
+# 0,04 lähteen leveydestä on täytössä 137 px, kahdeksasosa rajausikkunasta.
+STEADY_WINDOW = 30.0
+STEADY_SHIFT = 0.04
+STEADY_HOLD = 30.0
+
 
 @dataclass
 class Reframe:
@@ -122,6 +131,50 @@ def look(tables: dict, timeline, roles) -> Look:
     return Look(zooms=zooms, eyeline=lines[reference], target=target)
 
 
+def steady(times: np.ndarray, values: np.ndarray, window: float = STEADY_WINDOW,
+           shift: float = STEADY_SHIFT, hold: float = STEADY_HOLD) -> list[tuple[float, float]]:
+    """Paikka portaina: ``[(alkuaika, taso), …]``, taso vaihtuu harvoin.
+
+    Liukuva mediaani ottaa huojunnan pois; porras syntyy vasta kun mediaani
+    on pysynyt yli ``shift``in päässä nykyisestä tasosta ``hold``in ajan,
+    ja uusi taso on sen jakson raakamediaani. Lyhyt käynti muualla —
+    nousu ja takaisin — ei siirrä kehystä. Ajetaan viennissä, ei
+    säätökierroksella.
+    """
+    order = np.argsort(times)
+    t = np.asarray(times, dtype=np.float64)[order]
+    v = np.asarray(values, dtype=np.float64)[order]
+    if not len(t):
+        return []
+    lo = np.searchsorted(t, t - window / 2)
+    hi = np.searchsorted(t, t + window / 2, side="right")
+    smooth = np.array([np.median(v[a:b]) for a, b in zip(lo, hi, strict=True)])
+    level = float(np.median(v[t <= t[0] + window]))
+    steps = [(float(t[0]), level)]
+    away = None
+    for i in range(len(t)):
+        if abs(smooth[i] - level) <= shift:
+            away = None
+            continue
+        if away is None:
+            away = i
+        if t[i] - t[away] >= hold:
+            level = float(np.median(v[away:i + 1]))
+            steps.append((float(t[away]), level))
+            away = None
+    return steps
+
+
+def level_at(steps: list[tuple[float, float]], at: float) -> float:
+    """Portaan taso hetkellä ``at``."""
+    level = steps[0][1]
+    for start, value in steps:
+        if start > at:
+            break
+        level = value
+    return level
+
+
 def plan_shot(fx: float, fy: float, width: int, height: int,
               zoom: float = 1.0, eyeline: float | None = None) -> Reframe | None:
     """Yhden kuvan kehys kasvojen paikasta, täytön päälle.
@@ -172,6 +225,15 @@ class Reframer:
         self.crowd = crowd or {}
         self.crowd_tables = crowd_tables or {}
         self.index = {name: i for i, name in enumerate(names or [])}
+        self._steady: dict = {}
+
+    def _levels(self, key, times, x, y):
+        """Vakaa paikka (x- ja y-portaat) kerran per tiedosto tai istuja."""
+        hit = self._steady.get(key)
+        if hit is None:
+            hit = (steady(times, x), steady(times, y))
+            self._steady[key] = hit
+        return hit
 
     def from_item(
         self,
@@ -205,9 +267,15 @@ class Reframer:
         )
         if int(rows.sum()) < MIN_SAMPLES:
             return None
-        x, y, _h = _faces(table, rows)
+        # Paikka tiedoston vakaasta portaasta, ei kuvan omasta mediaanista:
+        # saman kameran kuvat samassa kohdassa jaksoa rajataan täsmälleen
+        # samoin, eikä huojunta nytkäytä rajausta leikkauksesta toiseen.
+        found = table["found"]
+        x, y, _h = _faces(table)
+        xs, ys = self._levels(item.key, table["times"][found], x, y)
+        middle = (float(f0) + float(f1)) / 2
         return plan_shot(
-            float(np.median(x)), float(np.median(y)), item.width, item.height,
+            level_at(xs, middle), level_at(ys, middle), item.width, item.height,
             zoom=self.look.zooms.get(item.key, 1.0), eyeline=self.look.eyeline,
         )
 
@@ -223,13 +291,14 @@ class Reframer:
         seat = found.seats[speaker]
         x, y, h = seat.x, seat.y, seat.h
         f0, f1 = item.file_time_at(t0), item.file_time_at(t1)
-        if f0 is not None and f1 is not None:
-            times = table["times"][table["frame"][seat.rows]]
-            here = seat.rows[(times >= f0 - EPS_S) & (times < f1 + EPS_S)]
-            if len(here) >= MIN_SAMPLES:
-                x = float(np.median(table["x"][here] + table["w"][here] / 2))
-                y = float(np.median(1.0 - (table["y"][here] + table["h"][here] / 2)))
-                h = float(np.median(table["h"][here]))
+        if f0 is not None and f1 is not None and len(seat.rows) >= MIN_SAMPLES:
+            rows = seat.rows
+            xs, ys = self._levels(
+                (item.key, speaker), table["times"][table["frame"][rows]],
+                table["x"][rows] + table["w"][rows] / 2,
+                1.0 - (table["y"][rows] + table["h"][rows] / 2))
+            middle = (float(f0) + float(f1)) / 2
+            x, y = level_at(xs, middle), level_at(ys, middle)
         target = self.look.target
         zoom = min(MAX_ZOOM, max(1.0, target / h)) if target and h > 0 else 1.0
         return plan_shot(x, y, item.width, item.height, zoom=zoom,

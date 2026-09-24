@@ -367,13 +367,14 @@ class Crowd(Stub):
         ]
 
 
-def test_a_crowd_table_keeps_every_face(clip):
+def test_a_crowd_table_keeps_every_face(clip, monkeypatch):
     """Laajassa ja ryhmäkuvassa kasvoja on useita, ja kaikki tarvitaan.
 
     Lähikuvan taulukko pitää ruutua kohden suurimman kasvon; laajasta se
     olisi se joka sattuu olemaan lähimpänä. Joukkotaulukossa jokainen
     löytö on oma rivinsä ja ``frame`` kertoo mihin ruutuun se kuuluu.
     """
+    monkeypatch.setattr(measure, "CROWD_EVERY", 1)  # joka ruutu tässä
     table = measure.measure_file(str(clip), Crowd(), crowd=True)
     frames = len(table["times"])
     assert len(table["frame"]) == 2 * frames
@@ -391,3 +392,19 @@ def test_crowd_and_close_up_tables_are_cached_apart(clip, monkeypatch, tmp_path)
     assert "frame" not in single and "frame" in crowd
     assert measure.is_cached(str(clip), Stub())
     assert measure.is_cached(str(clip), Crowd(), crowd=True)
+
+
+def test_crowd_faces_are_looked_for_every_few_seconds(clip, monkeypatch):
+    """Kehystykseen riittää harva otos, ja kasvojen haku on puolet ajasta.
+
+    Mitattuna oikealla jaksolla: 61 min kamera, purku 151 s ja kasvot 124 s.
+    Purku on sama joka tapauksessa (avainruudut on purettava joka
+    tapauksessa), mutta kasvot haetaan joukkokuvasta vain joka
+    ``CROWD_EVERY``:nnestä ruudusta.
+    """
+    monkeypatch.setattr(measure, "CROWD_EVERY", 3)
+    stub = Crowd()
+    table = measure.measure_file(str(clip), stub, crowd=True)
+    frames = len(table["times"])
+    assert stub.seen == len(range(0, frames, 3))
+    assert set(table["frame"]) == set(range(0, frames, 3))
