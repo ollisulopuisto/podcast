@@ -213,16 +213,18 @@ class AppState:
         arvaaminen. Puhujaehdotus tulee mikkitiedoston ensimmäisestä sanasta,
         koska äänitteet nimetään käytännössä aina puhujan mukaan. Kameroita ei
         arvata: monikamerassa kulmat ovat ``1``, ``2``, ``3``.
+
+        Arvaus koskee jokaista raitaa jota asetuksissa ei vielä ole, ei vain
+        ensimmäistä avausta: kun raita-avaimet muuttuvat (lukija oppi
+        tahdistetut kulmat), tallennetut asetukset ovat vanhoilla avaimilla ja
+        uudet raidat jäivät käyttämättömiksi ilman arvausta.
         """
         assert self.timeline is not None
-        if self.settings.tracks:
-            for track in self.timeline.tracks:
-                self.settings.config_for(track.key)
-            return
-        inherited = self._inherit()
+        known = set(self.settings.tracks)
+        inherited = set() if known else self._inherit()
         for track in self.timeline.tracks:
             cfg = self.settings.config_for(track.key)
-            if track.key in inherited:
+            if track.key in known or track.key in inherited:
                 continue
             lowered = track.name.lower()
             if track.has_audio and not track.has_video:

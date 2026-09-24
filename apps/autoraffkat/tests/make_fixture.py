@@ -469,8 +469,14 @@ _SYNCED_SOURCES = {
 _SYNCED_CAMERA = {"close_a": "FOCUS CAM 1", "wide": "FOCUS CAM 2", "close_b": "FOCUS CAM 3"}
 
 
-def write_synced_multicam_xml(path: str, target_dir: str) -> None:
+def write_synced_multicam_xml(path: str, target_dir: str,
+                              layout=SYNCED_ANGLES, names: dict | None = None) -> None:
     """Kaksi osaa, kulmat synkkaklippeinä (kamera + mikki). Ks. ``SYNCED_ANGLES``.
+
+    ``layout`` korvaa kulmat; osan mikki voi olla myös monikko, jolloin
+    kulmaan tahdistetaan useampi mikki (kamera ja moniraitatallennin).
+    ``names`` antaa mikin tiedostonimen osalle: ``(puhuja, osa) -> nimi``
+    ilman päätettä, oletuksena ``Tomi_001``.
 
     Tiedostot kopioidaan lähteistä osakohtaisiksi (``FOCUS CAM 1 01.mp4``,
     ``Tomi_001.wav``) — ilman lähdettä tyhjinä, sillä lukija ei tarvitse
@@ -509,24 +515,32 @@ def write_synced_multicam_xml(path: str, target_dir: str) -> None:
         resources.append(line)
         return rid
 
+    def file_name(speaker: str, part: int) -> str:
+        return (names or {}).get((speaker, part), f"{speaker}_00{part}")
+
     for part in (1, 2):
         angles = []
-        for name, camera, mics, mute in SYNCED_ANGLES:
+        for name, camera, mics, mute in layout:
             cam = asset(f"{_SYNCED_CAMERA[camera]} 0{part}.mp4", camera, True)
-            speaker = mics[part - 1]
-            mic = asset(f"{speaker}_00{part}.wav", speaker, False)
+            speakers = mics[part - 1]
+            speakers = (speakers,) if isinstance(speakers, str) else tuple(speakers)
+            attached = []
+            for index, speaker in enumerate(speakers):
+                mic = asset(f"{file_name(speaker, part)}.wav", speaker, False)
+                attached.append(
+                    f'              <asset-clip ref="{mic}" lane="-{index + 1}" '
+                    f'offset="0s" name="{file_name(speaker, part)}" start="0s" '
+                    f'duration="{frames}/25s" audioRole="dialogue"/>')
             angles += [
                 f'        <mc-angle name="{name}" angleID="P{part}A{name}">',
-                f'          <sync-clip offset="0s" name="{speaker.lower()} {part}" '
+                f'          <sync-clip offset="0s" name="{speakers[0].lower()} {part}" '
                 f'duration="{frames}/25s" tcFormat="NDF">',
                 f'            <asset-clip ref="{cam}" offset="0s" '
                 f'name="{_SYNCED_CAMERA[camera]} 0{part}" start="0s" '
                 f'duration="{frames}/25s" audioRole="dialogue">',
                 *(['              <adjust-volume amount="-96dB"/>']
                   if mute == "volume" else []),
-                f'              <asset-clip ref="{mic}" lane="-1" offset="0s" '
-                f'name="{speaker}_00{part}" start="0s" duration="{frames}/25s" '
-                'audioRole="dialogue"/>',
+                *attached,
                 "            </asset-clip>",
                 *(['            <sync-source sourceID="storyline">',
                    '              <audio-role-source role="dialogue.dialogue-1" '

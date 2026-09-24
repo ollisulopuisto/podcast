@@ -253,9 +253,11 @@ function speakerIndex(name) {
    tilaääni. Ne koskevat koko jaksoa samalla tavalla kuin muut rivit koskevat
    yhtä ihmistä.
 
-   Alin rivi on ryhmäkuville: kamera joka näyttää useamman puhujan mutta ei
-   kaikkia. Se ei mahdu yhden ihmisen riville, joten sillä on oma rivinsä, ja
-   ketkä kuvassa ovat valitaan kortista. Äänipuolta sillä ei ole. */
+   Ryhmäkuva on kamera joka näyttää useamman puhujan mutta ei kaikkia. Sillä
+   on oma rivinsä, ja sen äänipuolelle kytketään kuvassa näkyvien mikit —
+   kaksi, kolme, mitä kuvassa on. Nimi on silloin kunkin mikin kortissa,
+   koska rivillä on useampi ihminen. Puhuja jolla on oma lähikuva pysyy
+   omalla rivillään, ja hänet lisätään ryhmäkuvaan kortin napista. */
 
 /* Nostettu kortti. Raahaus ja klikkaus kirjoittavat molemmat tähän ja pudotus
    lukee sen: sama reitti hiirellä ja näppäimistöllä, eikä pudotus jää
@@ -280,8 +282,7 @@ function isRoom(media) {
 function buildSlots() {
   const shared = { id: 'shared', kind: 'shared', name: '', index: -1,
                    video: [], audio: [] };
-  const groups = { id: 'groups', kind: 'group', name: '', index: 1e7,
-                   video: [], audio: [] };
+  const groups = [];
   const named = new Map();
   const loose = [];
   const tray = [];
@@ -294,12 +295,31 @@ function buildSlots() {
     return named.get(name);
   };
 
-  (state.tracks || []).forEach((media) => {
+  /* Ryhmäkuva on oma rivinsä kameraa kohden. Mikki kuuluu ryhmäkuvan
+     riville kun puhujalla ei ole omaa lähikuvaa: silloin kuva on hänen
+     ainoa paikkansa. */
+  const tracks = state.tracks || [];
+  const closes = new Set(tracks.filter((t) => t.config.role === 'close')
+    .map((t) => (t.config.speaker || '').trim()));
+  tracks.forEach((media) => {
+    if (media.kind === 'video' && media.config.role === 'group') {
+      groups.push({ id: `g:${media.key}`, kind: 'group', name: '', camera: media.key,
+                    index: 1e7 + groups.length, video: [media], audio: [] });
+    }
+  });
+  const groupOf = (name) => (closes.has(name) ? null : groups.find(
+    (g) => (g.video[0].config.covers || []).includes(name)));
+
+  tracks.forEach((media) => {
     const role = media.config.role;
     const name = (media.config.speaker || '').trim();
     if (media.kind === 'video' && role === 'wide') { shared.video.push(media); return; }
-    if (media.kind === 'video' && role === 'group') { groups.video.push(media); return; }
+    if (media.kind === 'video' && role === 'group') return;
     if (media.kind === 'audio' && isRoom(media)) { shared.audio.push(media); return; }
+    if (role === 'mic' && name && groupOf(name)) {
+      groupOf(name).audio.push(media);
+      return;
+    }
     if (role === 'close' || role === 'mic') {
       let slot;
       if (name) {
@@ -316,10 +336,36 @@ function buildSlots() {
   });
 
   const speakers = [...named.values()].sort((a, b) => a.index - b.index);
-  /* Ryhmäkuvien rivi vasta kun on kaksi puhujaa joita kuva voisi näyttää —
-     tai kun siinä jo on kortti: raita ei saa kadota rivin mukana. */
-  const extra = (groups.video.length || speakers.length >= 2) ? [groups] : [];
-  return { slots: [shared, ...speakers, ...loose, ...extra], tray };
+  return { slots: [shared, ...speakers, ...loose, ...groups], tray };
+}
+
+/* Puhujan nimi mikin tiedostosta: äänitteet nimetään puhujan mukaan
+   (``Tomi_001``, ``Mikko``). Kelpaa vain jos nimi on vapaa ja pelkkiä
+   kirjaimia — muuten «Puhuja N», jonka ehtii vaihtaa. */
+function guessName(media) {
+  const taken = new Set((state.tracks || []).filter((t) => t !== media)
+    .map((t) => (t.config.speaker || '').trim()).filter(Boolean));
+  const first = ((media.name || '').split(/[\s_.\-]+/)[0] || '');
+  if (media.kind === 'audio' && /^\p{L}+$/u.test(first)) {
+    const name = first[0].toUpperCase() + first.slice(1);
+    if (!taken.has(name)) return name;
+  }
+  return newSpeakerName();
+}
+
+/* Ryhmäkuvista pois nimet joita yksikään mikki ei enää kanna. Mikin
+   siirto varastoon tai toiselle riville vie puhujan pois; ilman tätä
+   ryhmäkuva viittaisi ihmiseen jota ei ole, ja palvelin valittaisi
+   nimestä jota käyttäjä ei nähnyt minnekään kirjoittavansa. */
+function pruneCovers() {
+  const tracks = state.tracks || [];
+  const alive = new Set(tracks.filter((t) => t.config.role === 'mic')
+    .map((t) => (t.config.speaker || '').trim()).filter(Boolean));
+  tracks.forEach((t) => {
+    if (t.config.role === 'group' && t.config.covers) {
+      t.config.covers = t.config.covers.filter((n) => alive.has(n));
+    }
+  });
 }
 
 /* Nimetyt puhujat paletin järjestyksessä: ryhmäkuvan valinnat. */
@@ -356,7 +402,9 @@ function assign(media, dest) {
   const cfg = media.config;
   const audio = state.audio || {};
   if (audio.room_track === media.key) audio.room_track = '';
-  cfg.covers = dest.kind === 'group' ? (cfg.covers || []) : [];
+  if (media.kind === 'video') {
+    cfg.covers = dest.kind === 'group' ? (cfg.covers || []) : [];
+  }
 
   if (dest.kind === 'tray') {
     cfg.role = 'unused';
@@ -376,6 +424,16 @@ function assign(media, dest) {
     cfg.role = 'unused';
     cfg.speaker = '';
     audio.room_track = media.key;
+  } else if (dest.kind === 'group' && media.kind === 'audio') {
+    /* Mikki ryhmäkuvaan: puhuja on olemassa mikin kautta, ja kamera
+       näyttää hänet. Nimi säilyy jos sillä jo oli oma. */
+    cfg.role = 'mic';
+    cfg.speaker = (cfg.speaker || '').trim() || guessName(media);
+    const camera = trackByKey(dest.camera);
+    if (camera) {
+      const covers = camera.config.covers || (camera.config.covers = []);
+      if (!covers.includes(cfg.speaker)) covers.push(cfg.speaker);
+    }
   } else if (dest.kind === 'group') {
     cfg.role = 'group';
     cfg.speaker = '';
@@ -383,6 +441,7 @@ function assign(media, dest) {
     cfg.role = media.kind === 'video' ? 'close' : 'mic';
     cfg.speaker = dest.name;
   }
+  pruneCovers();
 
   picked = null;
   renderTracks();
@@ -400,6 +459,23 @@ function newSpeakerName() {
     const name = T('patch.speakerN', { n });
     if (!taken.has(name)) return name;
   }
+}
+
+/* Uuden ryhmäkuvan paikka: kamera siihen, ja sen riville kytketään kuvassa
+   näkyvien mikit. */
+function newGroupRow() {
+  const row = document.createElement('div');
+  row.className = 'slot slot-new';
+  const cell = document.createElement('div');
+  cell.className = 'cell cell-video empty';
+  cell.dataset.accepts = 'video';
+  cell.append(Object.assign(document.createElement('span'),
+    { className: 'placeholder', textContent: T('patch.newGroup') }));
+  row.append(dropTarget(cell, (m) => !!m && m.kind === 'video',
+    (m) => assign(m, { kind: 'group', side: 'video', name: '' })),
+  Object.assign(document.createElement('div'), { className: 'strip' }),
+  Object.assign(document.createElement('div'), { className: 'cell cell-none' }));
+  return row;
 }
 
 /* Kortin nosto. Klikkaus nostaa ja seuraava klikkaus paikkaan laskee — sama
@@ -486,6 +562,13 @@ function trackCard(media, dest) {
   }
 
   if (media.config.role === 'group') card.append(coverChips(media));
+  if (dest && dest.kind === 'group' && media.kind === 'audio') {
+    /* Ryhmäkuvan rivillä ei ole yhtä puhujan väriä, joten kortti kantaa
+       omansa: sama väri kuin palkissa ja selitteessä. */
+    card.style.setProperty('--tint', colorFor(speakerIndex(media.config.speaker)));
+    card.classList.add('own-tint');
+    card.append(micName(media));
+  }
 
   if (media.missing) {
     const gone = (media.parts || []).filter((p) => p.missing).map((p) => p.path);
@@ -551,12 +634,18 @@ function coverChips(media) {
   box.setAttribute('role', 'group');
   box.setAttribute('aria-label', T('patch.covers'));
   const covers = media.config.covers || (media.config.covers = []);
-  const names = speakerNames();
-  covers.forEach((n) => { if (n && !names.includes(n)) names.push(n); });
-  if (!names.length) {
-    box.append(Object.assign(document.createElement('span'),
-      { className: 'muted small', textContent: T('patch.coversNone') }));
-  }
+  /* Napit vain niille joiden mikki ei ole tällä rivillä: rivin mikit ovat
+     kuvassa jo siksi että ne on kytketty tähän. Muut — omalla lähikuvallaan
+     olevat — lisätään tästä. */
+  const here = new Set((state.tracks || []).filter((t) => t.config.role === 'mic'
+    && covers.includes(t.config.speaker) && !(state.tracks || []).some(
+      (c) => c.config.role === 'close' && c.config.speaker === t.config.speaker))
+    .map((t) => t.config.speaker));
+  const names = speakerNames().filter((n) => !here.has(n));
+  covers.forEach((n) => { if (n && !here.has(n) && !names.includes(n)) names.push(n); });
+  if (!names.length) return box;
+  box.append(Object.assign(document.createElement('span'),
+    { className: 'muted small', textContent: T('patch.coversAlso') }));
   names.forEach((name) => {
     const chip = document.createElement('button');
     chip.type = 'button';
@@ -576,6 +665,27 @@ function coverChips(media) {
     box.append(chip);
   });
   return box;
+}
+
+/* Ryhmäkuvan rivillä on useampi ihminen, joten nimi on mikin kortissa eikä
+   rivillä. Nimenvaihto kulkee ryhmäkuvaan samoin kuin rivin nimestä. */
+function micName(media) {
+  const field = document.createElement('input');
+  field.type = 'text';
+  field.className = 'speaker mic-name';
+  field.placeholder = T('app.speaker');
+  field.value = media.config.speaker || '';
+  field.setAttribute('aria-label', T('app.speaker'));
+  let was = field.value;
+  field.addEventListener('click', (e) => { if (e.stopPropagation) e.stopPropagation(); });
+  field.addEventListener('input', () => {
+    media.config.speaker = field.value;
+    renameCovers(was, field.value);
+    was = field.value;
+    schedule();
+  });
+  field.addEventListener('change', () => { renderLegend(); renderTracks(); });
+  return field;
 }
 
 /* Pudotuksen kuuntelijat. Samat kolme tapahtumaa joka kohteessa, joten ne
@@ -608,7 +718,7 @@ function slotCell(slot, side, hint) {
   const cell = document.createElement('div');
   cell.className = `cell cell-${side}`;
   cell.dataset.accepts = side;
-  const dest = { kind: slot.kind, side, name: slot.name };
+  const dest = { kind: slot.kind, side, name: slot.name, camera: slot.camera };
   const cards = side === 'video' ? slot.video : slot.audio;
 
   if (cards.length) {
@@ -670,10 +780,8 @@ function slotRow(slot) {
   }
   const shared = slot.kind === 'shared';
   if (slot.kind === 'group') {
-    /* Ryhmäkuvalla ei ole ääntä: mikki kuuluu ihmiselle, ei kuvalle.
-       Tyhjä solu ilman pudotusta, jotta sarakkeet pysyvät linjassa. */
     row.append(slotCell(slot, 'video', T('role.group')), slotStrip(slot),
-      Object.assign(document.createElement('div'), { className: 'cell cell-none' }));
+      slotCell(slot, 'audio', T('patch.groupMics')));
     return row;
   }
   row.append(
@@ -695,7 +803,8 @@ function newSlotRow() {
     cell.append(Object.assign(document.createElement('span'),
       { className: 'placeholder', textContent: T('patch.newSpeaker') }));
     return dropTarget(cell, (m) => !!m && m.kind === side,
-      (m) => assign(m, { kind: 'speaker', side, name: newSpeakerName() }));
+      (m) => assign(m, { kind: 'speaker', side,
+                         name: side === 'audio' ? guessName(m) : newSpeakerName() }));
   };
   row.append(cellFor('video'),
              Object.assign(document.createElement('div'), { className: 'strip' }),
@@ -748,6 +857,7 @@ function renderTracks() {
   const { slots, tray } = buildSlots();
   slots.forEach((slot) => host.append(slotRow(slot)));
   host.append(newSlotRow());
+  host.append(newGroupRow());
   renderTray(tray);
   applyPicked();
 }

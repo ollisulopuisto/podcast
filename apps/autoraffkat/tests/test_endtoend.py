@@ -170,6 +170,29 @@ def test_defaults_are_guessed_but_speakers_are_asked(scratch_xml):
     assert any("puhujaa" in p or "speaker" in p.lower() for p in result["problems"])
 
 
+def test_new_tracks_are_guessed_even_when_the_episode_has_settings(scratch_xml):
+    """Raita jota asetuksissa ei ole saa arvauksen, vaikka asetuksia on.
+
+    Arvaus tehtiin vain jakson ensimmäisellä avauksella. Kun raita-avaimet
+    muuttuivat — lukija oppi erottamaan tahdistetun kulman kameraksi ja
+    mikiksi — tallennetut asetukset olivat vanhoilla avaimilla, ja jokainen
+    uusi raita jäi käyttämättömäksi: mikit piti etsiä ja raahata käsin, eikä
+    ryhmäkuvaan voinut valita ketään koska ketään ei ollut.
+    """
+    from autoraffkat import project
+    from autoraffkat.project import ProjectSettings
+
+    source = scratch_xml()
+    project.save(str(source), ProjectSettings(
+        tracks={"VANHA AVAIN": TrackConfig(role=ROLE_MIC, speaker="Vanha")}))
+    state = AppState(xml_path=str(source))
+    state.load()
+    assert state.settings.tracks["MIC_A.wav"].role == ROLE_MIC
+    assert state.settings.tracks["WIDE.mp4"].role == ROLE_WIDE
+    # Tallennettu raita pysyy sellaisenaan.
+    assert state.settings.tracks["VANHA AVAIN"].speaker == "Vanha"
+
+
 def test_wide_can_be_excluded_and_exported(scratch_xml):
     """Laajan kuvan voi jättää käyttämättömäksi (unused), jolloin leikkaus käyttää vain lähikuvia."""
     state = AppState(xml_path=str(scratch_xml()))

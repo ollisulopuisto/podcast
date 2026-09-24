@@ -63,15 +63,23 @@ was one card that could not take two roles; the same angle carried the
 guest's mic in one part and Mikko's in the next; and a mic sitting in two
 angles (a part with fewer mics than cameras) was on two tracks and played
 twice. `_build_tracks` therefore splits such an angle: the camera is grouped
-by angle as before, the mic by file name with the part number dropped
-(`Tomi_001`, `Tomi_002` → `Tomi`, `_part_name`), never merging two files of
-the same multicam. Plain one-file angles keep their old keys, so saved roles
+by angle as before, the mic by file name with the part counter dropped
+(`_group_sounds`): first `Tomi_001`/`Tomi_002`, then names that differ in one
+counter position (`Tomi 1`/`Tomi 2`, `Vieras-A`/`-B`, `ZOOM0001_Tr2`/
+`ZOOM0002_Tr2`). Never two files of the same multicam, and never when two
+files of one multicam fit the same pattern (`Mic 1`, `Mic 2` then `Mic 3`):
+that is a guess that would make two people one track, while leaving them
+apart costs one extra card. Plain one-file angles keep their old keys, so saved roles
 still inherit.
 
 The export follows. When the picture's angle holds a mic, that angle is
 `srcEnable="all"` with the camera's role off and the mic's on — `video` would
 silence the person on screen. A mic in two angles plays from the picture's
-angle when it is there, otherwise from its first, and never from both. Roles
+angle when it is there, otherwise from an angle already playing another
+mic, otherwise its first — never from two. An angle can hold several mics (a
+camera synced to a multitrack recorder): it is one `mc-source` with all of
+them, and a mic of that angle that plays from elsewhere is written
+`active="0"` rather than left out, since an unlisted role may play. Roles
 are stamped on the **mic's clip**, not the whole angle: a camera muted by the
 role `dialogue.dialogue-1` would otherwise take the mic's role, fall out of
 the mute and sum under the mic. Established from a real project (hmh hannes,
@@ -947,9 +955,14 @@ shared slot is `wide`, audio into it is `audio.room_track`, and the tray is
 to sit, not a new option in a list.
 
 The group shot is that rule applied once. A camera showing some speakers but
-not all belongs to no single row, so it has its own row at the bottom (video
-only — a microphone belongs to a person, not a shot), and who is in it is
-chosen on the card, by name. The name is a reference, so renaming a slot
+not all gets a row of its own (`+ group shot`), and the microphones of the
+people in it are dropped on that row's audio side — a camera with two mics
+is a two-shot, which is how people describe it. The name then lives on each
+mic card, since the row holds several people. A mic sits on the group row
+only when its speaker has no close-up of their own; someone who has one
+stays on their row and joins the shot through the card's **Also in the
+shot** buttons. Moving a mic away from the row takes the person out of the
+shot (`pruneCovers`), so a shot never names someone nobody carries. The name is a reference, so renaming a slot or a mic card
 rewrites it in every group shot (`renameCovers`); a name no microphone
 carries is a roling problem, never silently dropped, because the symptom
 would be a camera that is simply never used.

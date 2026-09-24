@@ -17,6 +17,10 @@ and this project adheres to Calendar Versioning (CalVer).
 - **A mic missing from one multicam part no longer cuts the programme short** (`analysis.py`): the programme was bounded to where *every* mic exists, so a timeline of parts with 2, 3 and 2 mics exported only the middle part, with no warning. Mics now bound it together — a mic absent from a part means that speaker is silent there.
 
 - **Synced multicams** (`fcpxml/read.py`, `fcpxml/write.py`): a multicam built from camera + mic sync clips (Final Cut's usual workflow) is read as a camera track and a mic track per angle instead of one glued track. Mics are grouped across parts by file name (`Tomi_001`/`Tomi_002` → `Tomi`), so an angle that carries a different mic in each part and a mic that sits in two angles both work. The export plays the on-screen camera's mic from its own angle (`srcEnable="all"`), every mic exactly once, and stamps roles on the mic's clip only, so the camera's own audio stays muted.
+- **A group shot takes its mics directly** (`server/static/app.js`): drop a camera on *+ group shot* and the microphones of the people in it on its row — two mics on one camera is a two-shot. Each mic card carries its speaker's name. Before, a speaker without a close-up could not be put in a group shot at all unless they already had a row somewhere.
+- **New tracks are guessed even when the episode has settings** (`server/app.py`): roles were guessed only on an episode's first open, so tracks whose keys changed (synced angles now split into camera + mic) all landed in *Unused*.
+- **Several mics synced into one angle** (`fcpxml/write.py`): all of them play, from one `mc-source`; before, the on-screen angle kept one and the off-screen angle was written twice. A mic also present in another angle is explicitly off there.
+- **More part counters** (`fcpxml/read.py`): mics group across parts as `Tomi 1`/`Tomi 2`, `Vieras-A`/`-B` and `ZOOM0001_Tr2`/`ZOOM0002_Tr2`, not only `Tomi_001`/`Tomi_002`. Ambiguous patterns are left apart rather than guessed.
 
 ### Added
 - **Group shots** (`model.py`, `analysis.py`, `decide.py`, `preview.py`, `server/static/app.js`):

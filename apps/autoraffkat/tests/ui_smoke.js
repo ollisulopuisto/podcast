@@ -345,24 +345,49 @@ for (const lang of ['fi', 'en']) {
       context.renderTracks();
       context.pickUp(video);
 
-      /* Ryhmäkuva: oma rivinsä, ei puhujaa, ja nimen vaihto seuraa
-         kortin valintoihin. */
+      /* Ryhmäkuva: kamera, jolle kytketään kaksi mikkiä. Kummallakaan ei
+         ole omaa lähikuvaa, joten mikit ovat kameran rivillä ja nimi on
+         kunkin mikin kortissa. */
+      const audios = fresh.tracks.filter((t) => t.kind === 'audio');
       context.assign(video, { kind: 'group', side: 'video', name: '' });
       if (video.config.role !== 'group' || video.config.speaker) {
         throw new Error('ryhmäkuva ei asettunut');
       }
-      if (!context.buildSlots().slots.some(
-        (sl) => sl.kind === 'group' && sl.video.includes(video))) {
-        throw new Error('ryhmäkuva ei päätynyt ryhmäkuvien riville');
+      const groupSlot = () => context.buildSlots().slots.find(
+        (sl) => sl.kind === 'group' && sl.video.includes(video));
+      if (!groupSlot()) throw new Error('ryhmäkuvalla ei ole omaa riviä');
+      const dest = { kind: 'group', side: 'audio', name: '', camera: video.key };
+      audios.slice(0, 2).forEach((mic) => context.assign(mic, dest));
+      const covered = video.config.covers.slice().sort();
+      const mics = audios.slice(0, 2).map((m) => m.config.speaker).sort();
+      if (audios.length >= 2 && (covered.length !== 2
+          || covered.join() !== mics.join()
+          || !audios.slice(0, 2).every((m) => m.config.role === 'mic'))) {
+        throw new Error(`kaksi mikkiä ei kytkeytynyt kameraan: ${covered} / ${mics}`);
       }
-      video.config.covers = [name];
-      context.renameCovers(name, 'Uusi nimi');
-      if (video.config.covers[0] !== 'Uusi nimi') {
+      if (audios.length >= 2 && groupSlot().audio.length !== 2) {
+        throw new Error('ryhmäkuvan mikit eivät ole sen rivillä');
+      }
+      const first = audios[0];
+      const old = first.config.speaker;
+      context.renameCovers(old, 'Uusi nimi');
+      if (!video.config.covers.includes('Uusi nimi')) {
         throw new Error('nimen vaihto ei seurannut ryhmäkuvaan');
       }
+      first.config.speaker = 'Uusi nimi';
       context.renderTracks();
+      context.assign(first, { kind: 'tray', side: 'any', name: '' });
+      if (video.config.covers.includes('Uusi nimi')) {
+        throw new Error('varastoon siirretty mikki jäi ryhmäkuvaan');
+      }
       context.assign(video, { kind: 'tray', side: 'any', name: '' });
       if (video.config.covers.length) throw new Error('varastoon jäi ryhmä');
+      /* Uusi puhuja mikistä saa nimen tiedostosta, ei «Puhuja N»:ää. */
+      const guessed = context.guessName(first);
+      if (!guessed) throw new Error('mikin nimestä ei tullut puhujaa');
+      /* Tila takaisin: seuraava kierros piirtää saman tilan, ja
+         varastoon jäänyt mikki piilottaisi äänipaneelin haarat. */
+      context.assign(first, { kind: 'speaker', side: 'audio', name: guessed });
     });
 
     /* Käsittelyn ollessa kesken piirto menee eri haaraan. */

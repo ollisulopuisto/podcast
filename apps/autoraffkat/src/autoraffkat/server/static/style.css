@@ -311,6 +311,7 @@ main {
   display: grid; place-items: center; color: var(--tint);
 }
 .card .glyph svg { width: 17px; height: 17px; }
+.card.own-tint { border-right: 3px solid var(--tint); }
 .card .meta { min-width: 0; }
 .card .name { font-weight: 500; font-size: 13px;
               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

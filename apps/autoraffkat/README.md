@@ -89,7 +89,10 @@ beside it and take the bundle's name: `episode 12.fcpxmld` produces
 `episode 12-cut broadcast.fcpxml` and `episode 12.autoraffkat.json`. The
 bundle belongs to Final Cut.
 
-A new episode inherits its roles from the previous one. Track keys are derived
+A new episode inherits its roles from the previous one, and a track that has
+no saved role yet — even in an episode that has settings — gets the same
+guess as a first open: a sound file is a microphone named after the first
+word of its file name. Track keys are derived
 from filenames, so `CAM 1` is the same camera next week too. Inheritance
 looks in the XML's directory, the one above it, and any `.fcpxmld` bundles
 there; the source is shown under the title as "Roles inherited from". An
@@ -387,10 +390,14 @@ The name is typed once per speaker, on the row, so a close-up and a microphone
 cannot drift apart over a typo. Drop a card on **+ new speaker** and a new row
 appears, named and ready to rename.
 
-A camera that shows some of the speakers but not all — a two-shot of the
-hosts while the guest has their own camera — goes on the **Group shots** row
-at the bottom, which appears once there are two named speakers. Its card
-has a button per speaker; press the ones who are in the shot. A speaker with
+A camera that shows some of the speakers but not all — a two-shot of two
+guests while the host has their own camera — goes on **+ group shot** at the
+bottom and gets a row of its own. Drop the microphones of the people in the
+shot on that row's audio side: two, three, whatever the shot shows. Each
+microphone card carries its speaker's name, since the row holds several
+people. Someone who also has their own close-up stays on their own row and
+is added to the shot with the **Also in the shot** buttons on the camera
+card. A speaker with
 no close-up of their own is then shown in the tightest group shot they are
 in, and overlapping speech goes to the tightest shot that shows everyone
 talking, falling back to the wide. Turn-taking between two people in the

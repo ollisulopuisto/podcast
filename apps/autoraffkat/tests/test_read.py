@@ -459,3 +459,58 @@ def test_synced_angles_split_into_a_camera_and_a_mic(tmp_path):
     assert sorted(tracks["Mikko"].angle_ids) == ["P1A3", "P2A2", "P2A3"]
     assert sorted(tracks["FOCUS CAM 2"].angle_ids) == ["P1A2", "P2A2"]
     assert tl.track_span("Vieras") == (0, 18)
+
+
+def test_mics_are_grouped_across_parts_by_any_part_counter():
+    """Osan numero ei ole aina ``_001``.
+
+    Tallentimet ja ihmiset numeroivat eri tavoin. Ryhmittelemätön mikki
+    toimii silti — kaksi korttia samalle puhujalle — mutta rooli ei periydy
+    seuraavaan jaksoon eikä korttia tunnista omaksi.
+    """
+    from autoraffkat.fcpxml.read import _group_sounds
+
+    files = [
+        ("Tomi 1", "osa1"), ("ZOOM0001_Tr2", "osa1"), ("Vieras-A", "osa1"),
+        ("Tomi 2", "osa2"), ("ZOOM0002_Tr2", "osa2"), ("Vieras-B", "osa2"),
+        ("Tomi_001", "osa3"), ("Solo", "osa3"),
+    ]
+    stems = [name for name, _ in files]
+    groups = _group_sounds(stems, [{o} for _, o in files])
+    assert sorted((name, sorted(stems[i] for i in members))
+                  for name, members in groups) == [
+        ("Solo", ["Solo"]),
+        ("Tomi", ["Tomi 1", "Tomi 2", "Tomi_001"]),
+        ("Vieras", ["Vieras-A", "Vieras-B"]),
+        ("ZOOM Tr2", ["ZOOM0001_Tr2", "ZOOM0002_Tr2"]),
+    ]
+
+
+def test_an_ambiguous_counter_is_not_guessed():
+    """Kaksi mikkiä samassa osassa, sama kaava: ei tiedetä kumpi jatkuu.
+
+    ``Mic 1`` ja ``Mic 2`` osassa 1, ``Mic 3`` osassa 2 — kumpi niistä on
+    sama mikki kuin ``Mic 3``? Arvaus yhdistäisi kaksi ihmistä yhdeksi
+    raidaksi, erillisinä raitoina ne ovat vain yksi kortti liikaa.
+    """
+    from autoraffkat.fcpxml.read import _group_sounds
+
+    groups = _group_sounds(["Mic 1", "Mic 2", "Mic 3"], [{"a"}, {"a"}, {"b"}])
+    assert sorted(members for _, members in groups) == [[0], [1], [2]]
+
+
+def test_synced_mics_with_other_counters_become_one_track(tmp_path):
+    import make_fixture
+
+    names = {("Tomi", 1): "Tomi 1", ("Tomi", 2): "Tomi 2",
+             ("Mikko", 1): "ZOOM0001_Tr2", ("Mikko", 2): "ZOOM0002_Tr2",
+             ("Vieras", 1): "Vieras-A"}
+    path = tmp_path / "names.fcpxml"
+    make_fixture.write_synced_multicam_xml(str(path), str(tmp_path), names=names)
+    tracks = {t.key: t.media_keys for t in read_fcpxml(str(path)).tracks
+              if not t.has_video}
+    assert tracks == {
+        "Tomi": ["Tomi 1.wav", "Tomi 2.wav"],
+        "Vieras A": ["Vieras-A.wav"],
+        "ZOOM Tr2": ["ZOOM0001_Tr2.wav", "ZOOM0002_Tr2.wav"],
+    }

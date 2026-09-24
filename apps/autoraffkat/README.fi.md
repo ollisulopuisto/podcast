@@ -514,10 +514,12 @@ Nimi kirjoitetaan kerran riville, joten lähikuva ja mikki eivät voi erkaantua
 kirjoitusvirheen takia. Pudota kortti kohtaan **+ uusi puhuja**, niin uusi rivi
 syntyy nimettynä ja valmiina nimettäväksi uudelleen.
 
-Kamera joka näyttää osan puhujista muttei kaikkia — juontajien kahden kuva,
-kun vieraalla on oma kameransa — menee alimmalle **Ryhmäkuvat**-riville,
-joka ilmestyy kun puhujia on nimetty kaksi. Kortissa on nappi per puhuja;
-valitse ne jotka kuvassa näkyvät. Puhuja jolla ei ole omaa lähikuvaa
+Kamera joka näyttää osan puhujista muttei kaikkia — kahden vieraan kuva,
+kun juontajalla on oma kameransa — pudotetaan kohtaan **+ ryhmäkuva**, ja se
+saa oman rivinsä. Rivin äänipuolelle pudotetaan kuvassa näkyvien mikit:
+kaksi, kolme, mitä kuvassa on. Nimi on kunkin mikin kortissa, koska rivillä
+on useampi ihminen. Puhuja jolla on myös oma lähikuva pysyy omalla
+rivillään, ja hänet lisätään kuvaan kamerakortin **Myös kuvassa** -napeista. Puhuja jolla ei ole omaa lähikuvaa
 näytetään silloin tiukimmassa ryhmäkuvassa jossa hän on, ja päällekkäispuhe
 menee tiukimpaan kuvaan jossa kaikki äänessä olevat näkyvät, viimeisenä
 laajaan. Vuoronvaihto kahden saman ryhmäkuvan puhujan välillä ei ole

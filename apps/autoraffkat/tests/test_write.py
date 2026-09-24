@@ -1676,3 +1676,53 @@ def test_a_synced_mic_gets_its_role_and_the_camera_keeps_its_own(tmp_path):
                 assert clip.get("audioRole") == "dialogue", name
             else:
                 assert clip.get("audioRole") == f"dialogue.{name.split('_')[0]}", name
+
+
+def test_several_mics_synced_into_one_angle_all_play_once(tmp_path):
+    """Kamera tahdistettuna moniraitatallentimeen: kulmassa kaksi mikkiä.
+
+    Kuvan kulmasta soi vain yksi mikki ja toinen katosi; kuvan
+    ulkopuolinen kulma kirjoitettiin kahdesti, kerran kummallekin
+    mikille. Nyt kulma on yksi ``mc-source`` jossa kaikki sen mikit, ja
+    mikki joka on myös toisessa kulmassa soi vain yhdestä: sen rooli on
+    pois päältä siellä mistä sitä ei kuunnella.
+    """
+    import make_fixture
+
+    layout = (
+        ("1", "close_a", (("Tomi", "Mikko"), ("Tomi", "Mikko")), "volume"),
+        ("2", "wide", ("Vieras", "Vieras"), "role"),
+        ("3", "close_b", ("Mikko", "Mikko"), "volume"),
+    )
+    path = tmp_path / "multi.fcpxml"
+    make_fixture.write_synced_multicam_xml(str(path), str(tmp_path), layout)
+    tl = read_fcpxml(str(path))
+    cut = [Segment("FOCUS CAM 1", "Tomi", 0.0, 9.0),
+           Segment("FOCUS CAM 3", "Mikko", 9.0, 18.0),
+           Segment("FOCUS CAM 2", "Laaja", 18.0, 36.0)]
+    xml = build_multicam_fcpxml(tl, cut, SYNCED_MICS, Fraction(0), Fraction(36),
+                                "Moniraita", source="multi.fcpxml")
+    root = ET.fromstring(xml)
+    plays = []
+    for clip in root.findall(".//spine/mc-clip"):
+        sources = clip.findall("mc-source")
+        ids = [x.get("angleID") for x in sources]
+        assert len(ids) == len(set(ids)), ids
+        plays.append({
+            x.get("angleID"): (x.get("srcEnable"), sorted(
+                r.get("role").split(".")[1] for r in x.findall("audio-role-source")
+                if r.get("active") != "0"))
+            for x in sources if x.get("srcEnable") in ("all", "audio")})
+    assert plays == [
+        {"P1A1": ("all", ["Mikko", "Tomi"]), "P1A2": ("audio", ["Vieras"])},
+        {"P1A3": ("all", ["Mikko"]), "P1A1": ("audio", ["Tomi"]),
+         "P1A2": ("audio", ["Vieras"])},
+        {"P2A2": ("all", ["Vieras"]), "P2A1": ("audio", ["Mikko", "Tomi"])},
+    ]
+    # Kuvan ulkopuolisessa kulmassa Mikko on nimenomaan pois, ei vain
+    # mainitsematta: rooli jota ei luetella voi soida.
+    second = root.findall(".//spine/mc-clip")[1]
+    off = [r.get("role") for x in second.findall("mc-source")
+           if x.get("angleID") == "P1A1"
+           for r in x.findall("audio-role-source") if r.get("active") == "0"]
+    assert "dialogue.Mikko" in off

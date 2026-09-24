@@ -968,7 +968,7 @@ _NO_MOVE = movement.Move(1.0, 1.0)
 
 def _mc_sources(
     video_angle: str,
-    audio_angles: list[tuple[str, str]],
+    audio_angles: list[tuple],
     roles: dict[str, str],
     raw_angles: dict[str, str] | None = None,
     pans: dict[str, float] | None = None,
@@ -977,18 +977,26 @@ def _mc_sources(
     mc=None,
     frame_duration=None,
     transform: list[str] | None = None,
-    video_speaker: str = "",
+    video_speakers: list[str] | None = None,
+    video_silent: list[str] | None = None,
 ) -> list[str]:
     """``<mc-source>``-rivit: yksi kuva, loput ääntä omilla rooleillaan.
 
     Kuvakulman oma ääni kytketään pois samalla tavalla kuin Final Cut sen
     kirjoittaa: rooli jää näkyviin mutta ``active="0"``.
 
-    ``video_speaker`` on puhuja jonka mikki on **samassa kulmassa** kuin
-    kuva — tahdistettu monikamera, jossa kulma on kamera ja mikki yhdessä.
-    Silloin kulma on ``srcEnable="all"``: kameran rooli pois, mikin rooli
-    päälle omine panorointeineen ja vaimennuksineen. Ilman tätä kuvassa
-    oleva puhuja ei kuulunut lainkaan.
+    ``video_speakers`` ovat puhujat joiden mikki on **samassa kulmassa**
+    kuin kuva ja soi siitä — tahdistettu monikamera, jossa kulma on kamera
+    ja mikki (tai useampi) yhdessä. Silloin kulma on ``srcEnable="all"``:
+    kameran rooli pois, mikkien roolit päälle omine panorointeineen ja
+    vaimennuksineen. Ilman tätä kuvassa oleva puhuja ei kuulunut lainkaan.
+
+    ``audio_angles`` on ``(kulma, puhujat, hiljaiset)``: kulma kerran,
+    kaikki siitä soivat mikit sen sisällä. ``hiljaiset`` (ja
+    ``video_silent``) ovat kulman mikit jotka soivat toisesta kulmasta;
+    niiden rooli kirjoitetaan pois päältä eikä jätetä mainitsematta, sillä
+    mainitsematon rooli voi soida. Pelkkä puhujan nimi merkkijonona käy
+    yhä yhden mikin kulmaksi.
 
     ``raw_angles`` lisää jokaisen käsitellyn mikin viereen saman kulman
     raakana ja vaimennettuna. Oma aliroolinsa siksi, että jos sen kytkee
@@ -1025,11 +1033,17 @@ def _mc_sources(
             "                </audio-role-source>",
         ]
 
-    def twin_lines(angle_id: str, speaker: str) -> list[str]:
+    def off_roles(speakers) -> list[str]:
+        return [
+            "                <audio-role-source "
+            f'role={quoteattr(f"dialogue.{sanitize_role(x)}")} active="0"/>'
+            for x in speakers
+        ]
+
+    def twin_lines(angle_id: str, speakers) -> list[str]:
         twin = (raw_angles or {}).get(angle_id)
         if not twin:
             return []
-        raw_role = f"dialogue.{sanitize_role(f'{speaker} {RAW_TAG}')}"
         # ``srcEnable="none"``, ei ``"audio"`` + ``active="0"``.
         #
         # Final Cut ei kirjoita jälkimmäistä yhdistelmää koskaan: sen
@@ -1044,33 +1058,38 @@ def _mc_sources(
         # rastittamattomana: sieltä sen saa päälle kun sitä tarvitsee.
         return [
             f'              <mc-source angleID={quoteattr(twin)} srcEnable="none">',
-            "                <audio-role-source "
-            + f'role={quoteattr(raw_role)} active="0"/>',
+            *off_roles(f"{x} {RAW_TAG}" for x in speakers),
             "              </mc-source>",
         ]
 
     lines: list[str] = []
+    speakers = list(video_speakers or [])
     if video_angle:
         role = roles.get(video_angle, "dialogue.dialogue-1")
-        heard = video_speaker and role != f"dialogue.{sanitize_role(video_speaker)}"
+        mic_roles = {f"dialogue.{sanitize_role(x)}" for x in speakers}
         lines += [
             f"              <mc-source angleID={quoteattr(video_angle)} "
-            f'srcEnable="{"all" if video_speaker else "video"}">',
+            f'srcEnable="{"all" if speakers else "video"}">',
             *([f'                <audio-role-source role={quoteattr(role)} active="0"/>']
-              if heard or not video_speaker else []),
-            *(mic_role(video_speaker) if video_speaker else []),
+              if role not in mic_roles else []),
+            *(line for x in speakers for line in mic_role(x)),
+            *off_roles(video_silent or []),
             *(transform or []),
             "              </mc-source>",
         ]
-        if video_speaker:
-            lines += twin_lines(video_angle, video_speaker)
-    for angle_id, speaker in audio_angles:
+        if speakers:
+            lines += twin_lines(video_angle, speakers)
+    for entry in audio_angles:
+        angle_id, playing = entry[0], entry[1]
+        playing = [playing] if isinstance(playing, str) else list(playing)
+        quiet = list(entry[2]) if len(entry) > 2 else []
         lines += [
             f'              <mc-source angleID={quoteattr(angle_id)} '
             'srcEnable="audio">',
-            *mic_role(speaker),
+            *(line for x in playing for line in mic_role(x)),
+            *off_roles(quiet),
             "              </mc-source>",
-            *twin_lines(angle_id, speaker),
+            *twin_lines(angle_id, playing),
         ]
     return lines
 
@@ -1663,19 +1682,31 @@ def build_multicam_fcpxml(
 
         own = set(mc.angle_ids)
         video_angle = next((x for x in angles_of.get(seg.angle, []) if x in own), "")
-        audio_angles = []
-        video_speaker = ""
+        # Kulma -> puhujat jotka soivat siitä, ja kulma -> kaikki sen mikit.
+        # Tahdistetussa kulmassa voi olla useampi mikki (kamera ja
+        # moniraitatallennin), ja mikki voi olla osassa kahdessa kulmassa
+        # (mikkejä kameroita vähemmän). Mikki soi yhdestä kulmasta: kuvan
+        # kulmasta jos se on siellä, muuten kulmasta joka soi jo toisen
+        # mikin takia, muuten ensimmäisestä. Muissa kulmissa sen rooli on
+        # pois päältä.
+        heard: dict[str, list[str]] = {}
+        present: dict[str, list[str]] = {}
         for key, speaker in mic_tracks:
-            # Mikki voi olla osassa kahdessa kulmassa (tahdistettu monikamera
-            # jossa mikkejä on kameroita vähemmän). Se soi yhdestä, ja kuvan
-            # kulma on paras: silloin kulma soi kokonaan eikä toista tarvita.
             mine = [x for x in angles_of.get(key, []) if x in own]
             if not mine:
                 continue
-            if video_angle in mine:
-                video_speaker = speaker
-            else:
-                audio_angles.append((mine[0], speaker))
+            for x in mine:
+                present.setdefault(x, []).append(speaker)
+            pick = (video_angle if video_angle in mine
+                    else next((x for x in mine if x in heard), mine[0]))
+            heard.setdefault(pick, []).append(speaker)
+
+        def silent(angle: str, playing: list[str]) -> list[str]:
+            return [x for x in present.get(angle, []) if x not in playing]
+
+        video_speakers = heard.pop(video_angle, []) if video_angle else []
+        audio_angles = [(x, speakers, silent(x, speakers))
+                        for x, speakers in heard.items()]
 
         start_frames = to_frames(mc.source_at(at), frame_duration)
         attrs = [
@@ -1691,7 +1722,8 @@ def build_multicam_fcpxml(
             transform=_transform_lines(
                 shot, moves[index] if moves else _NO_MOVE,
                 b - a, frame_duration, "                "),
-            video_speaker=video_speaker,
+            video_speakers=video_speakers,
+            video_silent=silent(video_angle, video_speakers) if video_angle else [],
         )
         # Puhujan nimi avainsanaksi. Selaimessa monikameraklipin nimi on
         # median oma («A-osa»), joten kaikki kuvat näyttävät samalta;

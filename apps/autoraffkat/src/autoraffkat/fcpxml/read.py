@@ -578,9 +578,92 @@ def _part_name(stem: str) -> str:
     kameran numero (``"FOCUS CAM 1 01"`` -> ``"FOCUS CAM 1"``) eikä sitä
     pudoteta.
     """
-    tokens = [t for t in re.split(r"[\s_]+", stem.strip()) if t]
+    tokens = _tokens(stem)
     kept = [t for t in tokens if not (t.isdigit() and len(t) >= 2 and t[0] == "0")]
     return " ".join(kept or tokens)
+
+
+def _tokens(stem: str) -> list[str]:
+    return [t for t in re.split(r"[\s_\-]+", stem.strip()) if t]
+
+
+def _counter(token: str) -> str | None:
+    """Sanan kaava osan laskurina, tai ``None`` jos sana ei voi olla laskuri.
+
+    Laskuri on yksittäinen kirjain (``Vieras-A``) tai sana jossa on
+    numeroita (``Tomi 1``, ``ZOOM0001``); numerot korvataan kaavassa
+    merkillä, jotta ``ZOOM0001`` ja ``ZOOM0002`` ovat sama kaava.
+    """
+    if len(token) == 1 and token.isalpha():
+        return "<kirjain>"
+    if any(c.isdigit() for c in token):
+        return re.sub(r"\d+", "#", token.lower())
+    return None
+
+
+def _group_sounds(stems: list[str], owners: list[set[str]]) -> list[tuple[str, list[int]]]:
+    """Mikkitiedostot raidoiksi osien yli: ``(nimi, indeksit)``.
+
+    Ensin sama nimi ilman etunollaista osanumeroa (``Tomi_001``,
+    ``Tomi_002``). Sitten jäljelle jääneet, joiden nimet eroavat yhdessä
+    laskurin kohdassa (``Tomi 1``/``Tomi 2``, ``Vieras-A``/``Vieras-B``,
+    ``ZOOM0001_Tr2``/``ZOOM0002_Tr2``). ``owners`` on kunkin tiedoston
+    multicamit: samasta multicamista ei yhdistetä koskaan, ja jos kaavaan
+    sopii kaksi saman multicamin tiedostoa, ei yhdistetä ollenkaan — ei
+    tiedetä kumpi jatkuu, ja väärä arvaus tekisi kahdesta ihmisestä yhden
+    raidan. Yhdistämättä jäänyt tiedosto on vain yksi kortti liikaa.
+    """
+    groups: list[list[int]] = []
+    for index, stem in enumerate(stems):
+        name = _part_name(stem).lower()
+        for members in groups:
+            taken = set().union(*(owners[m] for m in members))
+            if _part_name(stems[members[0]]).lower() == name and not owners[index] & taken:
+                members.append(index)
+                break
+        else:
+            groups.append([index])
+
+    classes: dict[tuple, list[int]] = {}
+    for members in groups:
+        if len(members) != 1:
+            continue
+        tokens = _tokens(stems[members[0]])
+        for pos, token in enumerate(tokens):
+            pattern = _counter(token)
+            if pattern is None:
+                continue
+            shape = tuple(pattern if k == pos else t.lower() for k, t in enumerate(tokens))
+            classes.setdefault((pos, shape), []).append(members[0])
+    joined: dict[int, tuple[int, list[int]]] = {}
+    for (pos, _shape), members in classes.items():
+        if len(members) < 2 or any(m in joined for m in members):
+            continue
+        seen: set[str] = set()
+        for m in members:
+            if owners[m] & seen:
+                break
+            seen |= owners[m]
+        else:
+            for m in members:
+                joined[m] = (pos, members)
+
+    result: list[tuple[str, list[int]]] = []
+    done: set[int] = set()
+    for members in groups:
+        first = members[0]
+        if first in done:
+            continue
+        if len(members) == 1 and first in joined:
+            pos, together = joined[first]
+            done.update(together)
+            tokens = _tokens(stems[together[0]])
+            varying = re.sub(r"\d+", "", tokens[pos])
+            kept = tokens[:pos] + ([varying] if len(varying) > 1 else []) + tokens[pos + 1:]
+            result.append((" ".join(kept), list(together)))
+        else:
+            result.append((_part_name(stems[first]), list(members)))
+    return result
 
 
 def _group_angles(
@@ -678,26 +761,15 @@ def _build_tracks(
     # varmasti eri mikkejä. Yksi tiedosto voi olla kahdessa kulmassa
     # (osassa jossa mikkejä on kameroita vähemmän), ja se on silti yksi
     # raita: kahdella raidalla se soisi viennissä kahdesti.
-    sound_groups: list[list[str]] = []
-    for key in synced_sounds:
-        name = _part_name(os.path.splitext(by_key[key].name or key)[0]).lower()
-        owners = {ctx.angle_owner.get(a, "") for a in angles_of.get(key, ())}
-        for members in sound_groups:
-            first = by_key[members[0]]
-            taken = {ctx.angle_owner.get(a, "")
-                     for m in members for a in angles_of.get(m, ())}
-            if (_part_name(os.path.splitext(first.name or first.key)[0]).lower() == name
-                    and not owners & taken):
-                members.append(key)
-                break
-        else:
-            sound_groups.append([key])
-    for members in sound_groups:
-        members.sort(key=lambda k: min(
-            (pl.offset for pl in by_key[k].placements), default=ZERO))
+    synced_sounds.sort(key=lambda k: min(
+        (pl.offset for pl in by_key[k].placements), default=ZERO))
+    for name, indices in _group_sounds(
+        [os.path.splitext(by_key[k].name or k)[0] for k in synced_sounds],
+        [{ctx.angle_owner.get(a, "") for a in angles_of.get(k, ())}
+         for k in synced_sounds],
+    ):
+        members = [synced_sounds[i] for i in indices]
         claimed.update(members)
-        first = by_key[members[0]]
-        name = _part_name(os.path.splitext(first.name or first.key)[0])
         angle_ids = list(dict.fromkeys(a for m in members for a in angles_of.get(m, ())))
         add(name, name, members, angle_ids)
 
