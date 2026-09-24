@@ -14,6 +14,9 @@ and this project adheres to Calendar Versioning (CalVer).
   - The opening wide is at least the programme's minimum shot; it had been 0.52 s.
   - A long-take break that would run into the next turn change is not made.
   - pp 55: median delay after a turn change 1.06 → 0.68 s, 708 → 524 shots.
+- **A mic missing from one multicam part no longer cuts the programme short** (`analysis.py`): the programme was bounded to where *every* mic exists, so a timeline of parts with 2, 3 and 2 mics exported only the middle part, with no warning. Mics now bound it together — a mic absent from a part means that speaker is silent there.
+
+- **Synced multicams** (`fcpxml/read.py`, `fcpxml/write.py`): a multicam built from camera + mic sync clips (Final Cut's usual workflow) is read as a camera track and a mic track per angle instead of one glued track. Mics are grouped across parts by file name (`Tomi_001`/`Tomi_002` → `Tomi`), so an angle that carries a different mic in each part and a mic that sits in two angles both work. The export plays the on-screen camera's mic from its own angle (`srcEnable="all"`), every mic exactly once, and stamps roles on the mic's clip only, so the camera's own audio stays muted.
 
 ### Added
 - **Group shots** (`model.py`, `analysis.py`, `decide.py`, `preview.py`, `server/static/app.js`):

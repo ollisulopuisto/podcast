@@ -571,6 +571,18 @@ def _common_name(names: list[str]) -> str:
     return " ".join(kept) or names[0]
 
 
+def _part_name(stem: str) -> str:
+    """Tiedostonimi ilman osan numeroa: ``"Tomi_001"`` -> ``"Tomi"``.
+
+    Osan numero tunnistetaan etunollasta (``01``, ``001``): pelkkä ``1`` on
+    kameran numero (``"FOCUS CAM 1 01"`` -> ``"FOCUS CAM 1"``) eikä sitä
+    pudoteta.
+    """
+    tokens = [t for t in re.split(r"[\s_]+", stem.strip()) if t]
+    kept = [t for t in tokens if not (t.isdigit() and len(t) >= 2 and t[0] == "0")]
+    return " ".join(kept or tokens)
+
+
 def _group_angles(
     order: list[str], names: dict[str, str], owner: dict[str, str]
 ) -> list[list[str]]:
@@ -632,9 +644,27 @@ def _build_tracks(
             )
         )
 
+    # Tahdistettujen kulmien pelkät äänet: ryhmitellään tiedostonimestä
+    # alla, koska kulma ei kerro kenen mikki siinä on.
+    synced_sounds: list[str] = []
     for group in grouped:
         keys = [k for k in by_key if any(a in angles_of.get(k, ()) for a in group)]
         if not keys:
+            continue
+        pictures = [k for k in keys if by_key[k].has_video]
+        sounds = [k for k in keys if not by_key[k].has_video]
+        if pictures and sounds:
+            # Kulma on synkkaklippi: kamera ja mikki tahdistettuina, kuten
+            # Final Cutissa kun pareista tehdään monikamera. Yhtenä raitana
+            # niille ei voisi antaa kahta roolia, ja sama kulma voi kantaa
+            # eri osissa eri ihmisen mikkiä — osa 1 vieraan, osa 2 Mikon,
+            # kun vierasta ei enää ollut. Kamera ryhmitellään kulmasta, mikki
+            # tiedostonimestä.
+            claimed.update(pictures)
+            stems = [os.path.splitext(by_key[k].name or k)[0] for k in pictures]
+            name = _part_name(_common_name(stems))
+            add(name, name, pictures, list(group))
+            synced_sounds += [k for k in sounds if k not in synced_sounds]
             continue
         claimed.update(keys)
         # Kulman nimi ryhmittelee, tiedostonimi nimeää: nimi ja angleID
@@ -642,6 +672,34 @@ def _build_tracks(
         # ja sen on kestettävä uusi vienti samasta projektista.
         stems = [os.path.splitext(by_key[k].name or k)[0] for k in keys]
         add(_common_name(stems), _common_name(stems), keys, list(group))
+
+    # Sama mikki eri osissa on yksi raita: ``Tomi_001`` ja ``Tomi_002``.
+    # Kahta saman multicamin tiedostoa ei yhdistetä koskaan — ne ovat
+    # varmasti eri mikkejä. Yksi tiedosto voi olla kahdessa kulmassa
+    # (osassa jossa mikkejä on kameroita vähemmän), ja se on silti yksi
+    # raita: kahdella raidalla se soisi viennissä kahdesti.
+    sound_groups: list[list[str]] = []
+    for key in synced_sounds:
+        name = _part_name(os.path.splitext(by_key[key].name or key)[0]).lower()
+        owners = {ctx.angle_owner.get(a, "") for a in angles_of.get(key, ())}
+        for members in sound_groups:
+            first = by_key[members[0]]
+            taken = {ctx.angle_owner.get(a, "")
+                     for m in members for a in angles_of.get(m, ())}
+            if (_part_name(os.path.splitext(first.name or first.key)[0]).lower() == name
+                    and not owners & taken):
+                members.append(key)
+                break
+        else:
+            sound_groups.append([key])
+    for members in sound_groups:
+        members.sort(key=lambda k: min(
+            (pl.offset for pl in by_key[k].placements), default=ZERO))
+        claimed.update(members)
+        first = by_key[members[0]]
+        name = _part_name(os.path.splitext(first.name or first.key)[0])
+        angle_ids = list(dict.fromkeys(a for m in members for a in angles_of.get(m, ())))
+        add(name, name, members, angle_ids)
 
     # Multicamin ulkopuoliset mediat omina raitoinaan.
     for item in media:

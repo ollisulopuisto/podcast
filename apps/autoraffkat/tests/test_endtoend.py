@@ -259,6 +259,218 @@ def _multicam_tracks():
 
 
 @needs_ffmpeg
+def test_a_mic_missing_from_one_part_does_not_end_the_programme(fixture_dir, tmp_path):
+    """Osa B ilman vieraan mikkiä on silti osa ohjelmaa.
+
+    Ohjelma rajattiin aikaan jossa *jokainen* mikki on olemassa, joten
+    yhdestä osasta puuttuva mikki katkaisi ohjelman ensimmäisen osan
+    loppuun: osa B putosi viennistä kokonaan, eikä mikään kertonut siitä.
+    """
+    import make_fixture
+
+    path = tmp_path / "uneven.fcpxml"
+    make_fixture.write_multicam_xml(
+        str(path), make_fixture.make_parts(str(fixture_dir), {}),
+        missing_in_b=("mic_b",))
+    timeline = read_fcpxml(str(path))
+    guest = next(t.key for t in timeline.tracks if "Track2" in t.key)
+    assert timeline.track_span(guest) == (0, 18), "fixture: mikki vain osassa A"
+
+    tracks = _multicam_tracks()
+    tracks[guest] = tracks.pop("guest Track2")
+    roles = resolve_roles(timeline, tracks)
+    assert roles.problems == []
+    grid, start, end = build_grid(analyze(timeline), tracks, roles)
+    assert (float(start), float(end)) == (0.0, 36.0)
+    decision = decide(
+        grid, Globals(min_shot=1.5, lead=0.15, confirm=0.3, min_overlap=0.4))
+    assert decision.segments[-1].end == pytest.approx(36.0)
+    # Osassa B vieraan mikki on hiljaa, ei puhuja: kuva ei mene hänelle.
+    assert not any(s.label == "Guest" and s.start >= 18.0 for s in decision.segments)
+
+
+CAMS = ("wide", "close_a", "close_b")
+
+
+@needs_ffmpeg
+def test_a_third_mic_only_in_the_middle_part(fixture_dir, tmp_path, monkeypatch):
+    """Kolme osaa: 3+2, 3+3, 3+2 — kolmas mikki vain keskimmäisessä.
+
+    Oikea jakso tällä rakenteella: vieras on mukana vain keskellä. Ohjelma
+    on koko aikajana, jokainen osa viittaa viennissä vain omiin
+    kulmiinsa, ja käsittely tekee jokaisen mikkitiedoston.
+    """
+    import shutil
+
+    import make_fixture
+
+    # Omat kopiot lähteistä: käsittely kirjoittaa [mix]-tiedostot lähteen
+    # viereen, ja jaetun fixturen vieressä ne näkyisivät muille testeille.
+    for name in ("WIDE.mp4", "CLOSE_A.mp4", "CLOSE_B.mp4", "MIC_A.wav", "MIC_B.wav"):
+        shutil.copy(fixture_dir / name, tmp_path / name)
+    source = tmp_path / "parts.fcpxml"
+    make_fixture.write_parts_xml(str(source), str(tmp_path), [
+        (*CAMS, "mic_a", "mic_b"),
+        (*CAMS, "mic_a", "mic_b", "mic_c"),
+        (*CAMS, "mic_a", "mic_b"),
+    ])
+    timeline = read_fcpxml(str(source))
+    key = {name: next(t.key for t in timeline.tracks if name in t.key)
+           for name in ("Track1", "Track2", "Track3")}
+    assert [len(timeline.track_media(key[n])) for n in key] == [3, 3, 1]
+    assert timeline.track_span(key["Track3"]) == (12, 24)
+
+    state = AppState(xml_path=str(source))
+    state.load()
+    for _ in range(200):
+        if state.progress.get("ready"):
+            break
+        time.sleep(0.05)
+    assert state.progress["ready"], "verhokäyrät eivät valmistuneet"
+    tracks = {
+        "WIDE": TrackConfig(role=ROLE_WIDE),
+        "CLOSE_A": TrackConfig(role=ROLE_CLOSE, speaker="Host"),
+        "CLOSE_B": TrackConfig(role=ROLE_CLOSE, speaker="Guest"),
+        key["Track1"]: TrackConfig(role=ROLE_MIC, speaker="Host"),
+        key["Track2"]: TrackConfig(role=ROLE_MIC, speaker="Guest"),
+        key["Track3"]: TrackConfig(role=ROLE_MIC, speaker="Third"),
+    }
+    client = TestClient(create_app(state))
+    result = client.post("/api/settings", json={
+        "tracks": {k: v.to_json() for k, v in tracks.items()},
+        "globals": Globals(min_shot=1.5, lead=0.15, confirm=0.3,
+                           min_overlap=0.4).to_json(),
+    }).json()
+    assert result["ok"], result.get("problems")
+    assert (result["program"]["start"], result["program"]["end"]) == (0.0, 36.0)
+    assert result["segments"][-1]["end"] == pytest.approx(36.0)
+
+    exp = client.post("/api/export").json()
+    assert exp["ok"], exp.get("problems")
+    root = ET.fromstring(pathlib.Path(exp["path"]).read_text(encoding="utf-8"))
+    clips = root.findall(".//spine/mc-clip")
+    assert {c.get("ref") for c in clips} == {"m1", "m2", "m3"}
+    for clip in clips:
+        part = clip.get("ref")[1:]
+        ids = {el.get("angleID") for el in clip.iter() if el.get("angleID")}
+        assert all(i.startswith(f"P{part}") for i in ids), (part, ids)
+        assert any("mic_c" in i for i in ids) == (part == "2"), (part, ids)
+
+    # Käsittely: jokainen mikkitiedosto, eikä virheitä.
+    import io
+    import json
+
+    from autoraffkat.audio import mix as mix_module
+    from autoraffkat.audio import worker
+    from autoraffkat.model import AudioSettings
+    from autoraffkat.project import ProjectSettings
+
+    monkeypatch.setattr(mix_module.chain, "load_pool", lambda *a, **k: None)
+    settings = ProjectSettings(tracks=tracks, audio=AudioSettings(
+        enabled=True, plugin_path="", debleed=True, duck=True))
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(
+        {"xml_path": str(source), "settings": settings.to_json(), "force": True})))
+    out = io.StringIO()
+    monkeypatch.setattr("sys.stdout", out)
+    assert worker.main() == 0
+    done = None
+    for line in out.getvalue().splitlines():
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if message.get("kind") == "done":
+            done = message
+    assert done is not None
+    assert done["errors"] == {}
+    assert len(done["replacements"]) == 7, sorted(done["replacements"])
+
+
+@needs_ffmpeg
+def test_a_synced_multicam_is_cut_processed_and_exported(fixture_dir, tmp_path, monkeypatch):
+    """Kulmat synkkaklippeinä (kamera + mikki), vieras vain osassa 1.
+
+    Rakenne on oikean projektin (hmh hannes): kamera ja mikki tahdistettu
+    pareittain, pareista monikamera, kaksi osaa. Koko putki rajapinnan
+    kautta: roolitus, leikkaus koko aikajanalle, käsittely ja vienti jossa
+    jokainen mikki soi kerran.
+    """
+    import io
+    import json
+    import shutil
+
+    import make_fixture
+
+    from autoraffkat.audio import mix as mix_module
+    from autoraffkat.audio import worker
+    from autoraffkat.model import AudioSettings
+    from autoraffkat.project import ProjectSettings
+
+    for name in ("WIDE.mp4", "CLOSE_A.mp4", "CLOSE_B.mp4", "MIC_A.wav", "MIC_B.wav"):
+        shutil.copy(fixture_dir / name, tmp_path / name)
+    source = tmp_path / "synced.fcpxml"
+    make_fixture.write_synced_multicam_xml(str(source), str(tmp_path))
+
+    tracks = {
+        "FOCUS CAM 1": TrackConfig(role=ROLE_CLOSE, speaker="Tomi"),
+        "FOCUS CAM 2": TrackConfig(role=ROLE_WIDE),
+        "FOCUS CAM 3": TrackConfig(role=ROLE_CLOSE, speaker="Mikko"),
+        "Tomi": TrackConfig(role=ROLE_MIC, speaker="Tomi"),
+        "Mikko": TrackConfig(role=ROLE_MIC, speaker="Mikko"),
+        "Vieras": TrackConfig(role=ROLE_MIC, speaker="Vieras"),
+    }
+    monkeypatch.setattr(mix_module.chain, "load_pool", lambda *a, **k: None)
+    settings = ProjectSettings(tracks=tracks, audio=AudioSettings(
+        enabled=True, plugin_path="", debleed=True, duck=True))
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(
+        {"xml_path": str(source), "settings": settings.to_json(), "force": True})))
+    out = io.StringIO()
+    monkeypatch.setattr("sys.stdout", out)
+    assert worker.main() == 0
+    monkeypatch.undo()
+    done = [json.loads(line) for line in out.getvalue().splitlines()
+            if line.startswith("{") and '"kind": "done"' in line][-1]
+    assert done["errors"] == {}
+    assert sorted(done["replacements"]) == [
+        "Mikko_001.wav", "Mikko_002.wav", "Tomi_001.wav", "Tomi_002.wav",
+        "Vieras_001.wav"]
+
+    state = AppState(xml_path=str(source))
+    state.load()
+    for _ in range(200):
+        if state.progress.get("ready"):
+            break
+        time.sleep(0.05)
+    assert state.progress["ready"], "verhokäyrät eivät valmistuneet"
+    client = TestClient(create_app(state))
+    result = client.post("/api/settings", json={
+        "tracks": {k: v.to_json() for k, v in tracks.items()},
+        "globals": Globals(min_shot=1.5, lead=0.15, confirm=0.3,
+                           min_overlap=0.4).to_json(),
+        "audio": settings.audio.to_json(),
+    }).json()
+    assert result["ok"], result.get("problems")
+    assert (result["program"]["start"], result["program"]["end"]) == (0.0, 36.0)
+    assert {s["angle"] for s in result["segments"]} >= {"FOCUS CAM 1", "FOCUS CAM 3"}
+
+    exp = client.post("/api/export").json()
+    assert exp["ok"], exp.get("problems")
+    root = ET.fromstring(pathlib.Path(exp["path"]).read_text(encoding="utf-8"))
+    mics = {"1": {"Tomi", "Vieras", "Mikko"}, "2": {"Tomi", "Mikko"}}
+    for clip in root.findall(".//spine/mc-clip"):
+        part = clip.get("ref")[-1]
+        heard = [r.get("role").split(".")[1]
+                 for source in clip.findall("mc-source")
+                 if source.get("srcEnable") in ("all", "audio")
+                 for r in source.findall("audio-role-source")
+                 if r.get("active") != "0"]
+        assert sorted(heard) == sorted(mics[part]), (part, heard)
+    # Käsitelty ääni on vientiin ohjattu mikin assettiin, ei kameraan.
+    srcs = [rep.get("src", "") for rep in root.iter("media-rep")]
+    assert sum("%5Bmix%5D" in s for s in srcs) == 5, srcs
+
+
+@needs_ffmpeg
 def test_multicam_speech_selects_the_right_camera(fixture_dir):
     """Sama tarkistus kuin synkkaklipille, mutta puhe jatkuu osien yli."""
     timeline = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))

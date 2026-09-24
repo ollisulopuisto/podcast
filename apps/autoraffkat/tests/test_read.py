@@ -427,3 +427,35 @@ def test_video_only_timeline_element_strips_has_audio(tmp_path):
     assert by_name["CAM"].has_audio is False
     assert by_name["MIC"].has_video is False
     assert by_name["MIC"].has_audio is True
+
+
+def test_synced_angles_split_into_a_camera_and_a_mic(tmp_path):
+    """Kulma joka on synkkaklippi (kamera + mikki) on kaksi raitaa, ei yksi.
+
+    Final Cutin tavallinen työnkulku: kamera ja mikki tahdistetaan
+    pareittain ja pareista tehdään monikamera. Kulmittain ryhmiteltynä
+    kamera ja mikki olivat yksi kortti, jolle ei voinut antaa kahta
+    roolia; kulma 2 oli osassa 1 vieraan mikki ja osassa 2 Mikon; ja
+    Mikon osan 2 tiedosto oli kahdella raidalla, eli viennissä kahdesti.
+    """
+    import make_fixture
+
+    path = tmp_path / "synced.fcpxml"
+    make_fixture.write_synced_multicam_xml(str(path), str(tmp_path))
+    tl = read_fcpxml(str(path))
+
+    tracks = {t.key: t for t in tl.tracks}
+    assert {k: t.media_keys for k, t in tracks.items()} == {
+        "FOCUS CAM 1": ["FOCUS CAM 1 01.mp4", "FOCUS CAM 1 02.mp4"],
+        "FOCUS CAM 2": ["FOCUS CAM 2 01.mp4", "FOCUS CAM 2 02.mp4"],
+        "FOCUS CAM 3": ["FOCUS CAM 3 01.mp4", "FOCUS CAM 3 02.mp4"],
+        "Tomi": ["Tomi_001.wav", "Tomi_002.wav"],
+        "Vieras": ["Vieras_001.wav"],
+        "Mikko": ["Mikko_001.wav", "Mikko_002.wav"],
+    }
+    assert all(t.has_video for k, t in tracks.items() if k.startswith("FOCUS"))
+    assert not any(t.has_video for k, t in tracks.items() if not k.startswith("FOCUS"))
+    # Mikko on osassa 2 kahdessa kulmassa; vienti valitsee niistä yhden.
+    assert sorted(tracks["Mikko"].angle_ids) == ["P1A3", "P2A2", "P2A3"]
+    assert sorted(tracks["FOCUS CAM 2"].angle_ids) == ["P1A2", "P2A2"]
+    assert tl.track_span("Vieras") == (0, 18)

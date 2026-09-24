@@ -1611,3 +1611,68 @@ def test_vertical_flat_export_has_a_vertical_sequence(fixture_dir):
     fmt = next(f for f in root.iter("format")
                if f.get("id") == seq.get("format"))
     assert fmt.get("height") == "1920"
+
+
+def _synced(tmp_path):
+    import make_fixture
+
+    path = tmp_path / "synced.fcpxml"
+    make_fixture.write_synced_multicam_xml(str(path), str(tmp_path))
+    return read_fcpxml(str(path))
+
+
+SYNCED_MICS = [("Tomi", "Tomi"), ("Mikko", "Mikko"), ("Vieras", "Vieras")]
+SYNCED_CUT = [
+    Segment("FOCUS CAM 1", "Tomi", 0.0, 9.0),
+    Segment("FOCUS CAM 3", "Mikko", 9.0, 18.0),
+    Segment("FOCUS CAM 2", "Laaja", 18.0, 27.0),
+    Segment("FOCUS CAM 3", "Mikko", 27.0, 36.0),
+]
+
+
+def test_a_mic_synced_with_the_picture_is_heard_once(tmp_path):
+    """Tahdistetussa kulmassa kuva ja mikki ovat samassa kulmassa.
+
+    Kuvakulman ääni kytkettiin aina pois (``srcEnable="video"``), ja mikki
+    ohitettiin koska sen kulma oli kuvan kulma: kuvassa oleva puhuja ei
+    kuulunut lainkaan. Ja mikki joka on osassa kahdessa kulmassa — Mikko
+    osassa 2 — ei saa soida kahdesti.
+    """
+    tl = _synced(tmp_path)
+    xml = build_multicam_fcpxml(tl, SYNCED_CUT, SYNCED_MICS, Fraction(0),
+                                Fraction(36), "Tahdistettu", source="synced.fcpxml")
+    root = ET.fromstring(xml)
+    heard = []
+    for clip in root.findall(".//spine/mc-clip"):
+        sources = {s.get("angleID"): s.get("srcEnable") for s in clip.findall("mc-source")}
+        heard.append({a: e for a, e in sources.items() if e in ("all", "audio")})
+    assert heard == [
+        {"P1A1": "all", "P1A3": "audio", "P1A2": "audio"},
+        {"P1A3": "all", "P1A1": "audio", "P1A2": "audio"},
+        {"P2A2": "all", "P2A1": "audio"},
+        {"P2A3": "all", "P2A1": "audio"},
+    ]
+    first = root.find(".//spine/mc-clip/mc-source")
+    roles = {r.get("role"): r.get("active") for r in first.findall("audio-role-source")}
+    assert roles == {"dialogue.dialogue-1": "0", "dialogue.Tomi": None}
+
+
+def test_a_synced_mic_gets_its_role_and_the_camera_keeps_its_own(tmp_path):
+    """Aliroolit leimataan mikin klippiin, ei koko kulmaan.
+
+    Kulman kamera on vaiennettu joko -96 dB:llä tai roolilla
+    ``dialogue.dialogue-1``. Jos kameran klippi saisi mikin roolin, rooliin
+    perustuva vaiennus ei enää osuisi siihen ja kameran oma ääni soisi.
+    """
+    tl = _synced(tmp_path)
+    xml = build_multicam_fcpxml(tl, SYNCED_CUT, SYNCED_MICS, Fraction(0),
+                                Fraction(36), "Tahdistettu", source="synced.fcpxml")
+    root = ET.fromstring(xml)
+    names = {a.get("id"): a.get("name") for a in root.iter("asset")}
+    for angle in root.iter("mc-angle"):
+        for clip in angle.iter("asset-clip"):
+            name = names[clip.get("ref")]
+            if name.startswith("FOCUS"):
+                assert clip.get("audioRole") == "dialogue", name
+            else:
+                assert clip.get("audioRole") == f"dialogue.{name.split('_')[0]}", name

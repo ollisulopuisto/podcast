@@ -56,6 +56,28 @@ reads roles, controls or `Segment.angle` speaks in track keys. Without this,
 `Roles.wide_key` and `closes` would be lists and every site reading them would
 have to handle several keys.
 
+A synced angle is two tracks, not one. The usual Final Cut workflow syncs
+each camera with one microphone and builds the multicam from the pairs, so an
+angle is a sync clip holding a camera and a mic. Grouped by angle, the pair
+was one card that could not take two roles; the same angle carried the
+guest's mic in one part and Mikko's in the next; and a mic sitting in two
+angles (a part with fewer mics than cameras) was on two tracks and played
+twice. `_build_tracks` therefore splits such an angle: the camera is grouped
+by angle as before, the mic by file name with the part number dropped
+(`Tomi_001`, `Tomi_002` → `Tomi`, `_part_name`), never merging two files of
+the same multicam. Plain one-file angles keep their old keys, so saved roles
+still inherit.
+
+The export follows. When the picture's angle holds a mic, that angle is
+`srcEnable="all"` with the camera's role off and the mic's on — `video` would
+silence the person on screen. A mic in two angles plays from the picture's
+angle when it is there, otherwise from its first, and never from both. Roles
+are stamped on the **mic's clip**, not the whole angle: a camera muted by the
+role `dialogue.dialogue-1` would otherwise take the mic's role, fall out of
+the mute and sum under the mic. Established from a real project (hmh hannes,
+2026-09-24) and not yet by importing the result into Final Cut — do that
+before trusting it.
+
 ## Roles are inherited between episodes
 
 A new episode with no settings of its own reads the nearest previous

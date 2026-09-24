@@ -257,10 +257,17 @@ def program_range(timeline: Timeline, roles: Roles) -> tuple[Fraction, Fraction]
     Raidan väli on ensimmäisestä osasta viimeiseen. Kahdessa osassa kuvattu
     mikki alkaa siis osan A alusta eikä osan B alusta, vaikka jälkimmäinen
     onkin oma assettinsa.
+
+    Mikit rajaavat yhdessä, eivät kukin erikseen: ohjelma on siellä missä
+    *jokin* mikki on. Mikki joka puuttuu yhdestä osasta tarkoittaa että
+    puhuja on siellä hiljaa. Jokaisen mikin leikkaus katkaisi ohjelman
+    ensimmäisen osan loppuun, ja toinen osa putosi viennistä sanomatta.
     """
     spans = [timeline.track_span(roles.wide_key)] if roles.wide_key else []
-    for keys in roles.mics.values():
-        spans += [timeline.track_span(k) for k in keys]
+    mics = [timeline.track_span(k) for keys in roles.mics.values() for k in keys]
+    mics = [s for s in mics if s is not None]
+    if mics:
+        spans.append((min(s[0] for s in mics), max(s[1] for s in mics)))
     spans = [s for s in spans if s is not None]
     if not spans:
         return timeline.start, timeline.end
