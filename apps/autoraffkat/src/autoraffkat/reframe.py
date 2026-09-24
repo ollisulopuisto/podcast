@@ -122,6 +122,19 @@ class Reframer:
         )
 
 
+def close_up_tables(tables: dict, timeline, roles) -> dict:
+    """Mittaustaulukot vain lähikuvien medioille.
+
+    Kehys on *yhden* kasvon mediaani, joten se kuuluu vain kuvaan jossa on
+    yksi ihminen. Ryhmäkuvalle taulukko voi olla olemassa — sama kamera oli
+    joskus lähikuva — ja silloin rajaus leikkaisi toisen puhujan pois. Ilman
+    taulukkoa kuva saa letterboxin, kuten laaja.
+    """
+    keep = {item.key for key in roles.closes.values()
+            for item in timeline.track_media(key)}
+    return {key: table for key, table in tables.items() if key in keep}
+
+
 def items_for(timeline, key: str) -> list:
     """Segmentin kulman media-alkiot: raita osineen tai suora media-avain.
 

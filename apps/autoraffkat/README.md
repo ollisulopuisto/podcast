@@ -251,7 +251,8 @@ Zero disables the rule. The wide never falls below the shortest shot, even if
 
 **Overlapping speech**, three rules:
 
-* *Wide* — both talking, cut to the wide
+* *Wide* — both talking, cut to the tightest shot that shows everyone
+  talking: a group shot if one covers them, otherwise the wide
 * *Hold current* — don't cut at all
 * *Louder wins* — the louder one gets the shot once the gap exceeds
   `dominance`
@@ -277,8 +278,9 @@ and the speaker's face lands on the centreline — so importing into Final
 Cut is the final step; no Smart Conform round-trip. The framing is the
 median face position over the shot, from the same measurement the reaction
 shots use (turn on **Measure video** once; the toggle starts it for you).
-Unmeasured clips and wide shots stay letterboxed rather than guessed, and
-the export warns about both. Composes with micro-movement, which multiplies
+Unmeasured clips, group shots and wide shots stay letterboxed rather than
+guessed — a group shot cropped to one face would cut the others out — and
+the export warns about unmeasured close-ups. Composes with micro-movement, which multiplies
 on top of the reframe.
 
 ## Tuning
@@ -384,6 +386,17 @@ dragging a card back there takes it out of the edit.
 The name is typed once per speaker, on the row, so a close-up and a microphone
 cannot drift apart over a typo. Drop a card on **+ new speaker** and a new row
 appears, named and ready to rename.
+
+A camera that shows some of the speakers but not all — a two-shot of the
+hosts while the guest has their own camera — goes on the **Group shots** row
+at the bottom, which appears once there are two named speakers. Its card
+has a button per speaker; press the ones who are in the shot. A speaker with
+no close-up of their own is then shown in the tightest group shot they are
+in, and overlapping speech goes to the tightest shot that shows everyone
+talking, falling back to the wide. Turn-taking between two people in the
+same group shot is not a cut. Renaming a speaker carries over to the group
+shots that name them. Reaction shots and panning still come only from
+close-ups, since a two-shot has no single face to measure.
 
 Picture cards show a frame from the middle of the file. In a multicam the
 angles are called `1`, `2` and `3`, and the filename doesn't say which speaker

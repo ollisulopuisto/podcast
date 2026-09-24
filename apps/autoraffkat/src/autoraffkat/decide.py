@@ -104,6 +104,21 @@ class SpeakerLanes:
 
 
 @dataclass
+class GroupShot:
+    """Kuva joka näyttää useamman puhujan: kahden kuva, kolmen kuva.
+
+    ``covers`` on puhujien indeksit ``Grid.speakers``issa. Laaja on sama asia
+    kaikille puhujille, mutta se pidetään erikseen, koska ohjelma alkaa ja
+    päättyy siihen ja pitkä puheenvuoro katkeaa siihen.
+    """
+
+    key: str
+    label: str
+    covers: tuple[int, ...]
+    available: np.ndarray | None = None  # missä kuva on olemassa
+
+
+@dataclass
 class Grid:
     """Päätöskerroksen syöte: kaikki ruudukolle kohdistettuna."""
 
@@ -111,6 +126,7 @@ class Grid:
     program_start: float  # aikajanan sekunneissa
     speakers: list[SpeakerLanes] = field(default_factory=list)
     wide_key: str = ""
+    groups: list[GroupShot] = field(default_factory=list)
 
     @property
     def duration(self) -> float:
@@ -123,14 +139,43 @@ class Decision:
 
     segments: list[Segment]
     active: np.ndarray  # (puhujia, n) bool — esikatselupalkkia varten
-    chosen: np.ndarray  # (n,) int — puhujan indeksi tai WIDE
+    # (n,) int — puhujan indeksi, ryhmäkuvan indeksi puhujien määrän päältä
+    # (``len(speakers) + g``) tai WIDE
+    chosen: np.ndarray
 
 
 # ------------------------------------------------------------------ päätös
 
 
+def _groups_tightest_first(grid: Grid) -> list[int]:
+    """Ryhmäkuvien indeksit, vähiten puhujia ensin.
+
+    Tiukin kuva joka näyttää tarvittavat ihmiset on se johon leikataan:
+    kahden kuva ennen kolmen kuvaa, kolmen kuva ennen laajaa.
+    """
+    return sorted(range(len(grid.groups)), key=lambda i: len(grid.groups[i].covers))
+
+
+def _shot_active(grid: Grid, active: np.ndarray) -> np.ndarray:
+    """Kuvakohtainen äänessäolo: puhujien rivit ja ryhmäkuvien rivit perään.
+
+    Ryhmäkuva on äänessä kun joku sen puhujista on. Tällä rivillä häntä
+    (L-cut) tietää milloin kuvassa olevat ovat vaienneet, samalla indeksillä
+    kuin ``want``.
+    """
+    if not grid.groups:
+        return active
+    rows = [active[list(shot.covers)].any(axis=0) if shot.covers
+            else np.zeros(grid.n, dtype=bool) for shot in grid.groups]
+    return np.vstack([active, *rows]) if active.size else np.vstack(rows)
+
+
 def _want_array(grid: Grid, g: Globals) -> tuple[np.ndarray, np.ndarray]:
-    """Kunkin hetken toivottu kuva ilman kestorajoituksia."""
+    """Kunkin hetken toivottu kuva ilman kestorajoituksia.
+
+    Arvot: puhujan indeksi on hänen lähikuvansa, ``len(speakers) + g``
+    ryhmäkuva ``g``, WIDE laaja ja HOLD edellinen kuva.
+    """
     n = grid.n
     count_speakers = len(grid.speakers)
     active = np.zeros((count_speakers, n), dtype=bool)
@@ -166,7 +211,20 @@ def _want_array(grid: Grid, g: Globals) -> tuple[np.ndarray, np.ndarray]:
         want[brief] = loudest[brief]
 
         if g.overlap_rule == OVERLAP_WIDE:
-            want[overlap] = WIDE if grid.wide_key else HOLD
+            # «Laaja» tarkoittaa kuvaa joka näyttää kaikki äänessä olevat.
+            # Laaja näyttää aina, mutta kahden kuva näyttää kaksi
+            # tiukemmin, joten se kysytään ensin.
+            loose = overlap.copy()
+            for index in _groups_tightest_first(grid):
+                shot = grid.groups[index]
+                outside = [i for i in range(count_speakers) if i not in shot.covers]
+                shows_all = ~active[outside].any(axis=0) if outside else loose
+                take = loose & shows_all
+                if shot.available is not None:
+                    take &= shot.available
+                want[take] = count_speakers + index
+                loose &= ~take
+            want[loose] = WIDE if grid.wide_key else HOLD
         elif g.overlap_rule == OVERLAP_HOLD:
             want[overlap] = HOLD
         else:  # OVERLAP_LOUDER
@@ -176,12 +234,27 @@ def _want_array(grid: Grid, g: Globals) -> tuple[np.ndarray, np.ndarray]:
             want[strong] = loudest[strong]
             want[overlap & ~strong] = HOLD
 
-    # Puhuja ilman lähikuvaa näytetään laajana (tai pidetään edellinen jos ei laajaa).
+    # Puhuja ilman lähikuvaa: tiukin ryhmäkuva jossa hän on, sitten laaja
+    # (tai pidetään edellinen jos laajaa ei ole). Lähikuva joka puuttuu
+    # tältä kohdalta: ryhmäkuva, sitten edellinen kuva.
+    order = _groups_tightest_first(grid)
     for i, sp in enumerate(grid.speakers):
+        mine = want == i
         if sp.close_key is None:
-            want[want == i] = WIDE if grid.wide_key else HOLD
+            fallback = WIDE if grid.wide_key else HOLD
         elif sp.available is not None:
-            want[(want == i) & ~sp.available] = HOLD
+            mine &= ~sp.available
+            fallback = HOLD
+        else:
+            continue
+        for index in order:
+            shot = grid.groups[index]
+            if i not in shot.covers:
+                continue
+            take = mine if shot.available is None else mine & shot.available
+            want[take] = count_speakers + index
+            mine &= ~take
+        want[mine] = fallback
 
     return want, active
 
@@ -322,8 +395,8 @@ def _find_breath_point(
     """Etsii luontevan tauko- tai hengähdyskohdan leikkaukselle."""
     if grid is None:
         return target_time
-    sp = next((s for s in grid.speakers if s.close_key == speaker_angle), None)
-    if sp is None or sp.on.size == 0:
+    shown = _lanes_of(grid, speaker_angle)
+    if not shown or shown[0].on.size == 0:
         return target_time
 
     t_rel = target_time - grid.program_start
@@ -334,7 +407,9 @@ def _find_breath_point(
     if i1 <= i0:
         return target_time
 
-    sub_on = sp.on[i0:i1]
+    # Ryhmäkuvassa tauko on hetki jolloin kukaan kuvassa olevista ei puhu,
+    # ja taso on kovimman heistä.
+    sub_on = np.any([lane.on[i0:i1] for lane in shown], axis=0)
     # 1. Ensisijaisesti etsitään taukoa (on == False)
     if not np.all(sub_on):
         runs = _runs(sub_on.astype(np.int8))
@@ -345,7 +420,7 @@ def _find_breath_point(
             return grid.program_start + mid_idx * HOP
 
     # 2. Jos puhe on tasaista eikä äänessä ole selkeää notkahdusta (>3 dB), pysytään tavoiteajassa
-    sub_level = sp.level[i0:i1]
+    sub_level = np.max([lane.level[i0:i1] for lane in shown], axis=0)
     if sub_level.size > 0:
         min_val = float(np.min(sub_level))
         max_val = float(np.max(sub_level))
@@ -354,6 +429,17 @@ def _find_breath_point(
             return grid.program_start + min_idx * HOP
 
     return target_time
+
+
+def _lanes_of(grid: Grid, angle: str) -> list[SpeakerLanes]:
+    """Kuvassa näkyvien puhujien rivit: lähikuvan puhuja tai ryhmäkuvan puhujat."""
+    for sp in grid.speakers:
+        if sp.close_key and sp.close_key == angle:
+            return [sp]
+    for shot in grid.groups:
+        if shot.key == angle:
+            return [grid.speakers[i] for i in shot.covers]
+    return []
 
 
 def _available_between(sp: SpeakerLanes, grid: Grid, start: float, end: float) -> bool:
@@ -614,7 +700,8 @@ def decide(grid: Grid, g: Globals, marks=None) -> Decision:
             0 if grid.speakers else WIDE,
         )
     cuts = _cut_points(
-        _turns(want), g, tempo=tempo, active=active, initial_target=initial_target
+        _turns(want), g, tempo=tempo, active=_shot_active(grid, active),
+        initial_target=initial_target,
     )
     total = grid.duration
 
@@ -625,6 +712,9 @@ def decide(grid: Grid, g: Globals, marks=None) -> Decision:
             continue
         if target == WIDE:
             key, label = grid.wide_key, WIDE_LABEL
+        elif target >= len(grid.speakers):
+            shot = grid.groups[target - len(grid.speakers)]
+            key, label = shot.key, shot.label
         else:
             sp = grid.speakers[target]
             key, label = (sp.close_key or grid.wide_key), sp.name
@@ -647,6 +737,9 @@ def decide(grid: Grid, g: Globals, marks=None) -> Decision:
     key_to_index = {
         sp.close_key: i for i, sp in enumerate(grid.speakers) if sp.close_key
     }
+    key_to_index.update(
+        (shot.key, len(grid.speakers) + i) for i, shot in enumerate(grid.groups)
+    )
     for seg in segments:
         lo = int(round((seg.start - grid.program_start) / HOP))
         hi = int(round((seg.end - grid.program_start) / HOP))

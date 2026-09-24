@@ -207,6 +207,43 @@ def test_wide_can_be_excluded_and_exported(scratch_xml):
 
 
 
+@needs_ffmpeg
+def test_a_group_shot_is_set_and_exported_through_the_interface(scratch_xml):
+    """Kahden kuva roolitetaan rajapinnan kautta ja päätyy vientiin.
+
+    Kummallakaan puhujalla ei ole omaa lähikuvaa, joten kaikki muu kuin
+    laaja on kahden kuvaa — ei laajaa niin kuin ennen ryhmäkuvia.
+    """
+    state = AppState(xml_path=str(scratch_xml()))
+    state.load()
+    for _ in range(200):
+        if state.progress.get("ready"):
+            break
+        time.sleep(0.05)
+    assert state.progress["ready"], "verhokäyrät eivät valmistuneet"
+
+    client = TestClient(create_app(state))
+    tracks = {k: v.to_json() for k, v in _tracks().items()}
+    tracks["CLOSE_A.mp4"] = {"role": "group", "speaker": "",
+                             "covers": ["Host", "Guest"]}
+    tracks["CLOSE_B.mp4"] = {"role": "unused", "speaker": ""}
+    result = client.post("/api/settings", json={
+        "tracks": tracks,
+        "globals": Globals(min_shot=1.5, lead=0.15, confirm=0.3,
+                           min_overlap=0.4).to_json(),
+    }).json()
+    assert result["ok"], result.get("problems")
+    shown = {(s["angle"], s["label"]) for s in result["segments"]}
+    assert shown == {("WIDE.mp4", "Laaja"), ("CLOSE_A.mp4", "Host & Guest")}
+
+    exp = client.post("/api/export").json()
+    assert exp["ok"], exp.get("problems")
+    root = ET.fromstring(pathlib.Path(exp["path"]).read_text(encoding="utf-8"))
+    media_srcs = [rep.get("src", "") for rep in root.findall(".//media-rep")]
+    assert any("CLOSE_A.mp4" in src for src in media_srcs)
+    assert not any("CLOSE_B.mp4" in src for src in media_srcs)
+
+
 # ------------------------------------------------------------------ multicam
 
 

@@ -18,10 +18,18 @@ from speechmix.errors import EnvelopeError
 from speechmix.rms import FLOOR_DB, envelope_for
 
 from .audio import cache_dir
-from .decide import Grid, SpeakerLanes
+from .decide import Grid, GroupShot, SpeakerLanes
 from .fcpxml.read import Timeline
 from .i18n import t
-from .model import HOP, ROLE_CLOSE, ROLE_MIC, ROLE_WIDE, MediaItem, TrackConfig
+from .model import (
+    HOP,
+    ROLE_CLOSE,
+    ROLE_GROUP,
+    ROLE_MIC,
+    ROLE_WIDE,
+    MediaItem,
+    TrackConfig,
+)
 
 # Tasoitus, pohjan persentiili ja kynnys ovat kirjastossa: automixer kysyy
 # saman kysymyksen samasta aineistosta, ja kaksi vastausta siihen on juuri se
@@ -177,6 +185,8 @@ class Roles:
     speakers: list[str] = field(default_factory=list)
     mics: dict[str, list[str]] = field(default_factory=dict)  # puhuja -> mikit
     closes: dict[str, str] = field(default_factory=dict)  # puhuja -> lähikuva
+    # ryhmäkuva -> puhujat, järjestyksessä jossa ne valittiin
+    groups: dict[str, list[str]] = field(default_factory=dict)
     problems: list[str] = field(default_factory=list)
 
 
@@ -210,6 +220,23 @@ def resolve_roles(timeline: Timeline, tracks: dict[str, TrackConfig]) -> Roles:
             if name not in roles.speakers:
                 roles.speakers.append(name)
             roles.closes[name] = track.key
+        elif cfg.role == ROLE_GROUP:
+            names = list(dict.fromkeys(n.strip() for n in cfg.covers if n.strip()))
+            if not names:
+                roles.problems.append(
+                    t("roles.group_without_speakers", name=track.name))
+                continue
+            roles.groups[track.key] = names
+
+    # Ryhmäkuva ei luo puhujaa: puhuja on se jolla on mikki. Nimi jota
+    # yksikään mikki ei kanna on kirjoitusvirhe tai vanhentunut nimi, ja
+    # hiljaa ohitettuna kuva jäisi käyttämättä sanomatta miksi.
+    track_names = {track.key: track.name for track in timeline.tracks}
+    for key, names in roles.groups.items():
+        for name in names:
+            if name not in roles.mics:
+                roles.problems.append(t("roles.group_unknown_speaker",
+                                        name=track_names[key], speaker=name))
 
     if not roles.mics:
         roles.problems.append(t("roles.no_mic"))
@@ -219,7 +246,7 @@ def resolve_roles(timeline: Timeline, tracks: dict[str, TrackConfig]) -> Roles:
     # Ilman yhtäkään lähikuvaa päätös on kelvollinen mutta hyödytön: koko
     # ohjelma olisi yhtä laajaa kuvaa (tai ilman kuvaa lainkaan). Se on roolituksen puute eikä tulos,
     # joten se sanotaan ääneen eikä viedä XML:ksi.
-    if roles.mics and not roles.closes:
+    if roles.mics and not roles.closes and not roles.groups:
         roles.problems.append(t("roles.no_closeups"))
     return roles
 
@@ -283,7 +310,22 @@ def build_grid(
             )
         )
 
+    index_of = {lane.name: i for i, lane in enumerate(lanes)}
+    groups = []
+    for key, names in roles.groups.items():
+        covers = tuple(index_of[name] for name in names if name in index_of)
+        if not covers:
+            continue
+        items = timeline.track_media(key)
+        groups.append(GroupShot(
+            key=key,
+            label=" & ".join(n for n in names if n in index_of),
+            covers=covers,
+            available=availability(items, program_start, n) if items else None,
+        ))
+
     grid = Grid(
-        n=n, program_start=float(program_start), speakers=lanes, wide_key=roles.wide_key
+        n=n, program_start=float(program_start), speakers=lanes,
+        wide_key=roles.wide_key, groups=groups,
     )
     return grid, program_start, program_end

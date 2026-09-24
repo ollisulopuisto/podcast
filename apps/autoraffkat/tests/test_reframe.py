@@ -130,3 +130,24 @@ def test_span_outside_the_media_gives_nothing():
 
     item = _item()
     assert Reframer({item.key: _table()}).from_item(item, 40.0, 50.0) is None
+
+
+def test_a_group_shot_is_never_cropped_to_one_face():
+    """Kahden kuva saa letterboxin, vaikka kameralle olisi mittaus.
+
+    Mittaus on olemassa jos sama kamera oli joskus lähikuva. Mediaanikasvo
+    kahden kuvassa on toisen ihmisen kasvot, ja rajaus leikkaisi toisen
+    pois — kelvollinen vienti, väärä kuva, eikä mikään kerro.
+    """
+    from types import SimpleNamespace
+
+    from autoraffkat.reframe import Reframer, close_up_tables
+
+    close, group = _item("CLOSE_A"), _item("TWO_SHOT")
+    timeline = SimpleNamespace(
+        track_media=lambda key: {"A": [close], "B": [group]}.get(key, []))
+    roles = SimpleNamespace(closes={"Host": "A"}, groups={"B": ["Host", "Guest"]})
+    tables = close_up_tables(
+        {close.key: _table(), group.key: _table()}, timeline, roles)
+    assert Reframer(tables).from_item(group, 0.0, 9.0) is None
+    assert Reframer(tables).from_item(close, 0.0, 9.0) is not None

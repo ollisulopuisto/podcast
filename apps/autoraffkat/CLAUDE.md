@@ -924,6 +924,14 @@ shared slot is `wide`, audio into it is `audio.room_track`, and the tray is
 `unused`. There is no role menu any more. Add a new role and it needs a place
 to sit, not a new option in a list.
 
+The group shot is that rule applied once. A camera showing some speakers but
+not all belongs to no single row, so it has its own row at the bottom (video
+only — a microphone belongs to a person, not a shot), and who is in it is
+chosen on the card, by name. The name is a reference, so renaming a slot
+rewrites it in every group shot (`renameCovers`); a name no microphone
+carries is a roling problem, never silently dropped, because the symptom
+would be a camera that is simply never used.
+
 **The name is written once.** It lives on the slot, so a pair cannot break by a
 typo on the second track — which is what the old per-track text field made easy
 and invisible. Renaming a slot writes to every member track.
@@ -939,6 +947,24 @@ Below 900 px the two columns cannot sit side by side. Then the slot stacks —
 name first, then its video and audio cards — which is the same grouping in a
 different direction, and the connector is hidden because adjacency already says
 it.
+
+## Every shot covers a set of speakers
+
+The decision layer does not know "close-up" and "wide" as kinds, only who a
+shot shows: a close-up covers one speaker, a group shot (`GroupShot`) some,
+the wide everyone. A speaker without a close-up of their own goes to the
+tightest group shot they are in, then the wide; overlapping speech under the
+wide rule goes to the tightest group shot that shows *everyone talking*,
+then the wide. Group shots are numbered after the speakers in `want` and in
+`Decision.chosen` (`len(speakers) + g`), and `_shot_active` gives each one
+an activity row — any of its speakers talking — so the L-cut hang works on
+them unchanged. The preview names them (`preview.groups`), or the browser
+would paint a group shot in some speaker's colour.
+
+Group shots are never reframed and never measured for reactions:
+`reframe.close_up_tables` drops their tables even when a cached measurement
+exists from when the same camera was a close-up, because the median face of
+a two-shot is one of the two people, and cropping to it cuts the other out.
 
 ## The first screen ranks controls; it does not hide them
 

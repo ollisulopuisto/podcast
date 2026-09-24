@@ -16,7 +16,14 @@ from pathlib import Path
 
 import pytest
 
-from autoraffkat.model import ROLE_CLOSE, ROLE_MIC, ROLE_WIDE, Globals, TrackConfig
+from autoraffkat.model import (
+    ROLE_CLOSE,
+    ROLE_GROUP,
+    ROLE_MIC,
+    ROLE_WIDE,
+    Globals,
+    TrackConfig,
+)
 from autoraffkat.server.app import AppState, _state_json, create_app
 
 STATIC = (
@@ -31,7 +38,9 @@ def _roles():
     return {
         "WIDE": TrackConfig(role=ROLE_WIDE),
         "CLOSE_A": TrackConfig(role=ROLE_CLOSE, speaker="Host"),
-        "CLOSE_B": TrackConfig(role=ROLE_CLOSE, speaker="Guest"),
+        # Ryhmäkuva mukaan, jotta sen kortti, palkin väri ja leikkauslistan
+        # nimi piirtyvät oikealla palvelimen tilalla.
+        "CLOSE_B": TrackConfig(role=ROLE_GROUP, covers=["Host", "Guest"]),
         "host Track1": TrackConfig(role=ROLE_MIC, speaker="Host"),
         "guest Track2": TrackConfig(role=ROLE_MIC, speaker="Guest"),
     }

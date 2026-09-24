@@ -14,8 +14,11 @@ from .timeline import ZERO
 ROLE_WIDE = "wide"
 ROLE_CLOSE = "close"
 ROLE_MIC = "mic"
+# Kuva jossa on useampi puhuja muttei kaikki: kahden kuva, kolmen kuva.
+# Laaja kattaa kaikki ja lähikuva yhden; tämä on niiden väli.
+ROLE_GROUP = "group"
 ROLE_UNUSED = "unused"
-ROLES = (ROLE_UNUSED, ROLE_WIDE, ROLE_CLOSE, ROLE_MIC)
+ROLES = (ROLE_UNUSED, ROLE_WIDE, ROLE_CLOSE, ROLE_GROUP, ROLE_MIC)
 
 OVERLAP_WIDE = "wide"
 OVERLAP_HOLD = "hold"
@@ -165,6 +168,7 @@ class TrackConfig:
 
     role: str = ROLE_UNUSED
     speaker: str = ""  # lähikuvan ja mikin yhdistävä nimi
+    covers: list[str] = field(default_factory=list)  # ryhmäkuvan puhujat
     sensitivity_db: float = 12.0  # dB pohjakohinan yli
     gain_db: float = 0.0  # vahvistuksen korjaus
 
@@ -178,6 +182,9 @@ class TrackConfig:
             for f in ("role", "speaker", "sensitivity_db", "gain_db")
             if f in data
         }
+        covers = data.get("covers")
+        if isinstance(covers, list):
+            known["covers"] = [str(name) for name in covers if str(name).strip()]
         return cls(**known)
 
 

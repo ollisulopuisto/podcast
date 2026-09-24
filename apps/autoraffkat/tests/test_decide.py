@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from autoraffkat import decide as decide_mod
-from autoraffkat.decide import Grid, SpeakerLanes, decide
+from autoraffkat.decide import Grid, GroupShot, SpeakerLanes, decide
 from autoraffkat.model import (
     HOP,
     LONGTAKE_RETURN,
@@ -974,3 +974,109 @@ def test_a_long_take_break_does_not_run_into_the_turn_change():
                 wide_hold=3.0, long_take_rule=LONGTAKE_RETURN)
     d = decide(_two([(2, 13.5, -30)], [(14, 30, -30)]), g)
     assert [s.angle for s in middle(d.segments)][:2] == ["CA", "CB"]
+
+
+# ------------------------------------------------------------------ ryhmäkuvat
+
+
+def _group_lane(n, spans, name, key, level=-28.0):
+    on = np.zeros(n, dtype=bool)
+    db = np.full(n, -60.0, dtype=np.float32)
+    for start, end in spans:
+        on[int(start / HOP) : int(end / HOP)] = True
+        db[int(start / HOP) : int(end / HOP)] = level
+    return SpeakerLanes(name, db, on, key)
+
+
+def _studio(spans_1, spans_2, spans_3, seconds=40.0, group_available=None):
+    """Kolme kameraa: A on laaja, B kattaa puhujat 1 ja 2, C puhujan 3.
+
+    Kenelläkään kahdesta ensimmäisestä ei ole omaa lähikuvaa — B on heidän
+    ainoa lähempi kuvansa.
+    """
+    n = int(seconds / HOP)
+    return Grid(
+        n=n,
+        program_start=0.0,
+        wide_key="A",
+        speakers=[
+            _group_lane(n, spans_1, "1", None),
+            _group_lane(n, spans_2, "2", None),
+            _group_lane(n, spans_3, "3", "C"),
+        ],
+        groups=[GroupShot("B", "1 & 2", (0, 1), group_available)],
+    )
+
+
+GROUP_GLOBALS = Globals(
+    min_shot=1.0, lead=0.0, hang=0.5, confirm=0.2, min_overlap=0.4, wide_every=0.0
+)
+
+
+def test_a_group_shot_carries_the_speakers_it_covers():
+    """Puhuja ilman omaa lähikuvaa saa ryhmäkuvan, ei laajaa.
+
+    Vuoronvaihto kahden saman kuvan puhujan välillä ei ole leikkaus: kuva
+    näyttää jo molemmat.
+    """
+    d = decide(_studio([(2, 8)], [(10, 16)], [(18, 24)]), GROUP_GLOBALS)
+    assert angles(d.segments) == [(0.0, "A"), (2.0, "B"), (18.0, "C"), (39.0, "A")]
+    assert [s.label for s in d.segments] == ["Laaja", "1 & 2", "3", "Laaja"]
+
+
+def test_overlap_goes_to_the_tightest_shot_that_shows_everyone_talking():
+    """Päällekkäispuhe laajaan vain jos mikään tiukempi kuva ei näytä kaikkia."""
+    n = int(40.0 / HOP)
+    grid = Grid(
+        n=n,
+        program_start=0.0,
+        wide_key="W",
+        speakers=[
+            _group_lane(n, [(2, 8), (12, 18), (24, 30)], "1", "C1"),
+            _group_lane(n, [(12, 18)], "2", "C2"),
+            _group_lane(n, [(24, 30)], "3", "C3"),
+        ],
+        groups=[GroupShot("B", "1 & 2", (0, 1))],
+    )
+    g = replace(GROUP_GLOBALS, overlap_rule=OVERLAP_WIDE)
+    picked = angles(decide(grid, g).segments)
+    assert (12.0, "B") in picked, picked
+    assert (24.0, "W") in picked, picked
+
+
+def test_a_missing_group_shot_falls_back_to_wide():
+    n = int(40.0 / HOP)
+    grid = _studio([(2, 8)], [(10, 16)], [(18, 24)],
+                   group_available=np.zeros(n, dtype=bool))
+    d = decide(grid, GROUP_GLOBALS)
+    assert angles(d.segments) == [(0.0, "A"), (18.0, "C"), (39.0, "A")]
+
+
+def test_the_preview_tells_a_group_shot_from_the_wide():
+    grid = _studio([(2, 8)], [(10, 16)], [(18, 24)])
+    d = decide(grid, GROUP_GLOBALS)
+    assert int(d.chosen[int(5.0 / HOP)]) == len(grid.speakers)
+    assert int(d.chosen[int(1.0 / HOP)]) == decide_mod.WIDE
+
+
+def test_a_long_group_shot_is_broken_like_any_other():
+    """Pitkä puheenvuoro katkeaa laajaan myös ryhmäkuvassa."""
+    g = replace(GROUP_GLOBALS, wide_every=5.0, wide_hold=2.0,
+                long_take_rule=LONGTAKE_RETURN)
+    d = decide(_studio([(2, 20)], [], [], seconds=30.0), g)
+    shots = [s.angle for s in middle(d.segments)]
+    assert shots.count("B") >= 2 and "A" in shots, shots
+
+
+def test_the_preview_names_the_group_shots():
+    """Palkki ja leikkauslista tarvitsevat ryhmäkuvan nimen ja värin.
+
+    Ilman tätä selain näkee arvon jota ei ole puhujalistassa, ja kuva
+    piirtyy ensimmäisen puhujan värillä — väärä ihminen, ei virhettä.
+    """
+    from autoraffkat.preview import build
+
+    grid = _studio([(2, 8)], [(10, 16)], [(18, 24)])
+    bar = build(grid, decide(grid, GROUP_GLOBALS), columns=40)
+    assert bar["groups"] == [{"label": "1 & 2", "index": 3, "covers": ["1", "2"]}]
+    assert 3 in bar["chosen"]

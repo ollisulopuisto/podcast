@@ -15,6 +15,12 @@ and this project adheres to Calendar Versioning (CalVer).
   - A long-take break that would run into the next turn change is not made.
   - pp 55: median delay after a turn change 1.06 → 0.68 s, 708 → 524 shots.
 
+### Added
+- **Group shots** (`model.py`, `analysis.py`, `decide.py`, `preview.py`, `server/static/app.js`):
+  - A camera can cover any set of speakers, not just one (close-up) or all (wide). Group shots sit on their own row in the patch bay; who is in the shot is chosen per card.
+  - A speaker without a close-up is shown in the tightest group shot they are in instead of the wide. Overlapping speech under the wide rule goes to the tightest shot that shows everyone talking.
+  - Group shots are letterboxed in vertical export and never cropped to a face, even when an old close-up measurement exists for that camera.
+
 ## [autoraffkat-v2026.9.11.5] - 2026-09-11
 
 ### Added

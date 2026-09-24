@@ -7,6 +7,7 @@
 
 const SPEAKER_COLORS = ['--sp0', '--sp1', '--sp2', '--sp3', '--sp4'];
 const WIDE_COLOR = '--wide';
+const GROUP_COLORS = ['--grp0', '--grp1', '--grp2'];
 const DEBOUNCE_MS = 45;
 
 /* Mikkimerkki peilikuvan päälle. Merkkijonona, koska SVG-solmu vaatisi
@@ -250,7 +251,11 @@ function speakerIndex(name) {
 
    Ylin rivi on niille raidoille joilla ei ole puhujaa: laaja kuva ja
    tilaääni. Ne koskevat koko jaksoa samalla tavalla kuin muut rivit koskevat
-   yhtä ihmistä. */
+   yhtä ihmistä.
+
+   Alin rivi on ryhmäkuville: kamera joka näyttää useamman puhujan mutta ei
+   kaikkia. Se ei mahdu yhden ihmisen riville, joten sillä on oma rivinsä, ja
+   ketkä kuvassa ovat valitaan kortista. Äänipuolta sillä ei ole. */
 
 /* Nostettu kortti. Raahaus ja klikkaus kirjoittavat molemmat tähän ja pudotus
    lukee sen: sama reitti hiirellä ja näppäimistöllä, eikä pudotus jää
@@ -275,6 +280,8 @@ function isRoom(media) {
 function buildSlots() {
   const shared = { id: 'shared', kind: 'shared', name: '', index: -1,
                    video: [], audio: [] };
+  const groups = { id: 'groups', kind: 'group', name: '', index: 1e7,
+                   video: [], audio: [] };
   const named = new Map();
   const loose = [];
   const tray = [];
@@ -291,6 +298,7 @@ function buildSlots() {
     const role = media.config.role;
     const name = (media.config.speaker || '').trim();
     if (media.kind === 'video' && role === 'wide') { shared.video.push(media); return; }
+    if (media.kind === 'video' && role === 'group') { groups.video.push(media); return; }
     if (media.kind === 'audio' && isRoom(media)) { shared.audio.push(media); return; }
     if (role === 'close' || role === 'mic') {
       let slot;
@@ -308,7 +316,29 @@ function buildSlots() {
   });
 
   const speakers = [...named.values()].sort((a, b) => a.index - b.index);
-  return { slots: [shared, ...speakers, ...loose], tray };
+  /* Ryhmäkuvien rivi vasta kun on kaksi puhujaa joita kuva voisi näyttää —
+     tai kun siinä jo on kortti: raita ei saa kadota rivin mukana. */
+  const extra = (groups.video.length || speakers.length >= 2) ? [groups] : [];
+  return { slots: [shared, ...speakers, ...loose, ...extra], tray };
+}
+
+/* Nimetyt puhujat paletin järjestyksessä: ryhmäkuvan valinnat. */
+function speakerNames() {
+  const names = [...new Set((state.tracks || [])
+    .map((t) => (t.config.speaker || '').trim()).filter(Boolean))];
+  return names.sort((a, b) => speakerIndex(a) - speakerIndex(b));
+}
+
+/* Puhujan nimen vaihto ryhmäkuviin. Nimi kirjoitetaan kerran riville, ja
+   ryhmäkuva viittaa siihen nimellä: ilman tätä uudelleennimeäminen
+   irrottaisi puhujan kuvasta ja palvelin valittaisi tuntemattomasta
+   nimestä, jota käyttäjä ei ole kirjoittanut minnekään. */
+function renameCovers(from, to) {
+  if (from === to) return;
+  (state.tracks || []).forEach((t) => {
+    if (t.config.role !== 'group' || !t.config.covers) return;
+    t.config.covers = t.config.covers.map((n) => (n === from ? to : n));
+  });
 }
 
 /* Kelpaako kortti kohteeseen. Ratkaistaan yhdessä paikassa, jotta raahaus ja
@@ -326,6 +356,7 @@ function assign(media, dest) {
   const cfg = media.config;
   const audio = state.audio || {};
   if (audio.room_track === media.key) audio.room_track = '';
+  cfg.covers = dest.kind === 'group' ? (cfg.covers || []) : [];
 
   if (dest.kind === 'tray') {
     cfg.role = 'unused';
@@ -345,6 +376,9 @@ function assign(media, dest) {
     cfg.role = 'unused';
     cfg.speaker = '';
     audio.room_track = media.key;
+  } else if (dest.kind === 'group') {
+    cfg.role = 'group';
+    cfg.speaker = '';
   } else {
     cfg.role = media.kind === 'video' ? 'close' : 'mic';
     cfg.speaker = dest.name;
@@ -451,6 +485,8 @@ function trackCard(media, dest) {
     card.append(knobs);
   }
 
+  if (media.config.role === 'group') card.append(coverChips(media));
+
   if (media.missing) {
     const gone = (media.parts || []).filter((p) => p.missing).map((p) => p.path);
     const warnEl = document.createElement('div');
@@ -505,6 +541,43 @@ function trackCard(media, dest) {
   return card;
 }
 
+/* Ryhmäkuvan puhujat: nappi per puhuja. Nimi on jo kirjoitettu kerran
+   riville, joten tässä se vain valitaan. Vanhentunut nimi näytetään
+   myös, jotta sen voi poistaa — muuten palvelimen valitus siitä ei
+   johtaisi mihinkään mitä voi klikata. */
+function coverChips(media) {
+  const box = document.createElement('div');
+  box.className = 'covers';
+  box.setAttribute('role', 'group');
+  box.setAttribute('aria-label', T('patch.covers'));
+  const covers = media.config.covers || (media.config.covers = []);
+  const names = speakerNames();
+  covers.forEach((n) => { if (n && !names.includes(n)) names.push(n); });
+  if (!names.length) {
+    box.append(Object.assign(document.createElement('span'),
+      { className: 'muted small', textContent: T('patch.coversNone') }));
+  }
+  names.forEach((name) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip';
+    chip.textContent = name;
+    chip.style.setProperty('--tint', colorFor(speakerIndex(name)));
+    const sync = () => chip.setAttribute('aria-pressed', String(covers.includes(name)));
+    sync();
+    /* Klikkaus ei saa nousta kortille, joka nostaisi sen käteen. */
+    chip.addEventListener('click', (e) => {
+      if (e.stopPropagation) e.stopPropagation();
+      const at = covers.indexOf(name);
+      if (at >= 0) covers.splice(at, 1); else covers.push(name);
+      sync();
+      schedule(0);
+    });
+    box.append(chip);
+  });
+  return box;
+}
+
 /* Pudotuksen kuuntelijat. Samat kolme tapahtumaa joka kohteessa, joten ne
    annetaan yhdestä paikasta: kortin voi pudottaa tai klikata paikalleen. */
 function dropTarget(el, wants, place) {
@@ -556,9 +629,11 @@ function slotStrip(slot) {
   strip.className = 'strip';
   if (slot.video.length && slot.audio.length) strip.classList.add('linked');
 
-  if (slot.kind === 'shared') {
-    strip.append(Object.assign(document.createElement('span'),
-      { className: 'strip-label', textContent: T('patch.shared') }));
+  if (slot.kind === 'shared' || slot.kind === 'group') {
+    strip.append(Object.assign(document.createElement('span'), {
+      className: 'strip-label',
+      textContent: T(slot.kind === 'shared' ? 'patch.shared' : 'patch.groups'),
+    }));
     return strip;
   }
 
@@ -569,8 +644,11 @@ function slotStrip(slot) {
   field.value = slot.name;
   field.setAttribute('aria-label', T('app.speaker'));
   const members = [...slot.video, ...slot.audio];
+  let was = slot.name;
   field.addEventListener('input', () => {
     members.forEach((m) => { m.config.speaker = field.value; });
+    renameCovers(was, field.value);
+    was = field.value;
     schedule();
   });
   /* Nimen vahvistus piirtää taulun uusiksi: väri ja paikkojen järjestys
@@ -591,6 +669,13 @@ function slotRow(slot) {
     row.classList.add('is-tinted');
   }
   const shared = slot.kind === 'shared';
+  if (slot.kind === 'group') {
+    /* Ryhmäkuvalla ei ole ääntä: mikki kuuluu ihmiselle, ei kuvalle.
+       Tyhjä solu ilman pudotusta, jotta sarakkeet pysyvät linjassa. */
+    row.append(slotCell(slot, 'video', T('role.group')), slotStrip(slot),
+      Object.assign(document.createElement('div'), { className: 'cell cell-none' }));
+    return row;
+  }
   row.append(
     slotCell(slot, 'video', shared ? T('role.wide') : T('role.close')),
     slotStrip(slot),
@@ -1965,6 +2050,23 @@ function colorFor(index) {
   return index < 0 ? css(WIDE_COLOR) : css(SPEAKER_COLORS[index % SPEAKER_COLORS.length]);
 }
 
+/* Valitun kuvan väri. Palvelin numeroi ryhmäkuvat puhujien perään, joten
+   ilman tätä ryhmäkuva saisi jonkun puhujan värin — väärä ihminen palkissa
+   eikä mitään virhettä. */
+function shotColor(value, preview) {
+  const groups = ((preview || (latest && latest.preview) || {}).groups) || [];
+  const at = groups.findIndex((g) => g.index === value);
+  return at >= 0 ? css(GROUP_COLORS[at % GROUP_COLORS.length]) : colorFor(value);
+}
+
+/* Leikkauslistan nimestä palkin arvo: laaja, ryhmäkuva tai puhuja. */
+function labelIndex(label) {
+  if (latest && label === latest.wide_label) return -1;
+  const groups = (latest && latest.preview && latest.preview.groups) || [];
+  const group = groups.find((g) => g.label === label);
+  return group ? group.index : speakerIndex(label);
+}
+
 /* Esikatselupalkki: rivi per puhuja (kuka on äänessä) ja alimpana valittu kuva.
    Piirretään devicePixelRatiolla, jotta viivat eivät sumene Retinalla. */
 /* Esikatselun zoomaus, pelkkää katselua varten — leikkaaminen tapahtuu
@@ -2114,7 +2216,7 @@ function drawBar() {
   ctx.fillRect(0, y, width, rowHeight);
   for (let i = 0; i < columns; i++) {
     const value = preview.chosen[i];
-    ctx.fillStyle = colorFor(value === preview.wide_value ? -1 : value);
+    ctx.fillStyle = shotColor(value === preview.wide_value ? -1 : value, preview);
     ctx.fillRect(i * step, y, Math.max(step, 1), rowHeight);
   }
   // Leikkausrajat ohuina viivoina, jotta tiheys näkyy myös silmällä.
@@ -2197,6 +2299,9 @@ function renderLegend() {
   if (!latest || !latest.preview) return;
   const entries = latest.preview.speakers.map((s) => [colorFor(s.index),
     s.has_close ? s.name : T('legend.noClose', { name: s.name })]);
+  (latest.preview.groups || []).forEach((g) => {
+    entries.push([shotColor(g.index), g.label]);
+  });
   entries.push([colorFor(-1), T('legend.wide')]);
   /* Reaktiorivi selitteeseen vain kun se on palkissakin: selite jota
      vastaavaa riviä ei ole kertoo väärää. */
@@ -2266,13 +2371,13 @@ function renderCuts() {
     /* Laaja ei ole puhuja, joten sitä ei löydy puhujalistasta: ilman tätä
        speakerIndex putoaisi nollaan ja laaja saisi ensimmäisen puhujan
        värin — eri värin kuin sama laaja selitteessä ja palkissa. */
-    const index = seg.label === latest.wide_label ? -1 : speakerIndex(seg.label);
+    const index = labelIndex(seg.label);
     tr.innerHTML =
       `<td>${i + 1}</td>` +
       `<td>${fmtTime(seg.start - start)}</td>` +
       `<td>${fmtTime(seg.end - start)}</td>` +
       `<td>${seg.duration.toFixed(2)} s</td>` +
-      `<td><span class="swatch" style="background:${colorFor(index)}"></span>`
+      `<td><span class="swatch" style="background:${shotColor(index)}"></span>`
       + `${shotLabel(seg.label)}</td>`;
     body.append(tr);
   });

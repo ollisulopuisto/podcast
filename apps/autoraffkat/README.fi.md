@@ -255,7 +255,9 @@ keston, vaikka «Laajan kesto» olisi pienempi.
 
 **Päällekkäispuhe**, kolme sääntöä:
 
-* *Laaja* — molemmat äänessä, mennään laajaan
+* *Laaja* — molemmat äänessä, mennään tiukimpaan kuvaan jossa kaikki
+  äänessä olevat näkyvät: ryhmäkuvaan jos sellainen kattaa heidät, muuten
+  laajaan
 * *Pidä nykyinen* — ei leikata mihinkään
 * *Vahvempi voittaa* — kovempi saa kuvan, kun ero ylittää `dominance`-rajan
 
@@ -279,8 +281,9 @@ korkeuden ja puhujan kasvot osuvat keskiviivalle — joten Final Cutiin
 tuonti on viimeinen askel; Smart Conform -kierretta ei tarvita. Kehystys
 on kuvan aikaisen kasvokohdan mediaani samasta mittauksesta kuin
 reaktiokuvatkin (paina kerran «Mittaa kuva»; kytkin käynnistää mittauksen
-itse). Mittaamattomat kuvat ja laajat jäävät letterboxiin arvaamisen
-sijaan, ja vienti varoittaa molemmista. Yhdistettävissä mikroliikkeen
+itse). Mittaamattomat kuvat, ryhmäkuvat ja laajat jäävät letterboxiin
+arvaamisen sijaan — yhden kasvon mukaan rajattu ryhmäkuva leikkaisi muut
+pois — ja vienti varoittaa mittaamattomista lähikuvista. Yhdistettävissä mikroliikkeen
 kanssa, joka kertautuu kehystyksen päälle.
 
 ## Säätäminen
@@ -510,6 +513,17 @@ vetäminen sinne ottaa sen pois leikkauksesta.
 Nimi kirjoitetaan kerran riville, joten lähikuva ja mikki eivät voi erkaantua
 kirjoitusvirheen takia. Pudota kortti kohtaan **+ uusi puhuja**, niin uusi rivi
 syntyy nimettynä ja valmiina nimettäväksi uudelleen.
+
+Kamera joka näyttää osan puhujista muttei kaikkia — juontajien kahden kuva,
+kun vieraalla on oma kameransa — menee alimmalle **Ryhmäkuvat**-riville,
+joka ilmestyy kun puhujia on nimetty kaksi. Kortissa on nappi per puhuja;
+valitse ne jotka kuvassa näkyvät. Puhuja jolla ei ole omaa lähikuvaa
+näytetään silloin tiukimmassa ryhmäkuvassa jossa hän on, ja päällekkäispuhe
+menee tiukimpaan kuvaan jossa kaikki äänessä olevat näkyvät, viimeisenä
+laajaan. Vuoronvaihto kahden saman ryhmäkuvan puhujan välillä ei ole
+leikkaus. Puhujan nimen vaihto seuraa ryhmäkuviin. Reaktiokuvat ja
+panorointi tulevat yhä vain lähikuvista, koska kahden kuvassa ei ole yhtä
+mitattavaa kasvoa.
 
 Kuvakortit näyttävät ruudun tiedoston puolivälistä. Monikamerassa kulmat ovat
 `1`, `2` ja `3` eikä tiedostonimikään kerro kumpaa puhujaa kamera kuvaa, joten

@@ -62,6 +62,16 @@ CATALOG: dict[str, dict[str, str]] = {
         "fi": "Valitse ainakin yksi mikki ja anna sille puhuja.",
         "en": "Choose at least one microphone and name its speaker.",
     },
+    "roles.group_without_speakers": {
+        "fi": "Ryhmäkuvasta «{name}» ei ole valittu ketään. Valitse kortista "
+        "ketkä kuvassa näkyvät.",
+        "en": "Group shot “{name}” shows nobody. Choose on its card who is "
+        "in the shot.",
+    },
+    "roles.group_unknown_speaker": {
+        "fi": "Ryhmäkuvassa «{name}» on puhuja «{speaker}», jolla ei ole mikkiä.",
+        "en": "Group shot “{name}” names “{speaker}”, who has no microphone.",
+    },
     "roles.speaker_without_mic": {
         "fi": "Puhujalta «{name}» puuttuu mikki.",
         "en": "Speaker “{name}” has no microphone.",

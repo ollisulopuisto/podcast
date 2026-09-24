@@ -344,6 +344,25 @@ for (const lang of ['fi', 'en']) {
       context.pickUp(video);
       context.renderTracks();
       context.pickUp(video);
+
+      /* Ryhmäkuva: oma rivinsä, ei puhujaa, ja nimen vaihto seuraa
+         kortin valintoihin. */
+      context.assign(video, { kind: 'group', side: 'video', name: '' });
+      if (video.config.role !== 'group' || video.config.speaker) {
+        throw new Error('ryhmäkuva ei asettunut');
+      }
+      if (!context.buildSlots().slots.some(
+        (sl) => sl.kind === 'group' && sl.video.includes(video))) {
+        throw new Error('ryhmäkuva ei päätynyt ryhmäkuvien riville');
+      }
+      video.config.covers = [name];
+      context.renameCovers(name, 'Uusi nimi');
+      if (video.config.covers[0] !== 'Uusi nimi') {
+        throw new Error('nimen vaihto ei seurannut ryhmäkuvaan');
+      }
+      context.renderTracks();
+      context.assign(video, { kind: 'tray', side: 'any', name: '' });
+      if (video.config.covers.length) throw new Error('varastoon jäi ryhmä');
     });
 
     /* Käsittelyn ollessa kesken piirto menee eri haaraan. */

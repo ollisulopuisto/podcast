@@ -13,6 +13,10 @@
   --sp2: #59c98a;
   --sp3: #c78bf0;
   --sp4: #f06a9b;
+  /* Ryhmäkuvat: erottuvat puhujista, koska kuva ei ole kenenkään yksin. */
+  --grp0: #2fb7c4;
+  --grp1: #d9c35a;
+  --grp2: #b0b8ff;
 }
 
 * { box-sizing: border-box; }
@@ -317,6 +321,22 @@ main {
 /* Mikin säätimet kortin sisällä. Kapeampi kuin paneelissa, koska sarake on
    puolet entisestä leveydestä. */
 .card .knobs { display: flex; flex-direction: column; gap: 2px; }
+
+/* Ryhmäkuvan puhujat. Valittu nappi saa puhujan värin, jotta rivin
+   värit ja kortin valinnat luetaan samalla silmäyksellä. */
+.card .covers { display: flex; flex-wrap: wrap; gap: 5px; }
+.card .chip {
+  font: inherit; font-size: 11.5px;
+  padding: 2px 9px; border-radius: 999px;
+  border: 1px solid var(--line); background: transparent; color: var(--muted);
+  cursor: pointer;
+}
+.card .chip[aria-pressed="true"] {
+  color: var(--text);
+  border-color: var(--tint);
+  background: color-mix(in srgb, var(--tint) 22%, transparent);
+}
+.card .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .card .knob { flex: 1 1 auto; gap: 7px; }
 .card .knob label { min-width: 58px; font-size: 11px; }
 .card .knob output { min-width: 44px; font-size: 11px; }

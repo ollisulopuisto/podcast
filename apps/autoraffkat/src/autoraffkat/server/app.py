@@ -538,6 +538,9 @@ class AppState:
                 cfg.role = role
             if "speaker" in values:
                 cfg.speaker = str(values["speaker"])[:60]
+            if isinstance(values.get("covers"), list):
+                cfg.covers = [str(name)[:60] for name in values["covers"]
+                              if str(name).strip()]
             if "sensitivity_db" in values:
                 cfg.sensitivity_db = float(values["sensitivity_db"])
             if "gain_db" in values:
@@ -1474,7 +1477,8 @@ def create_app(state: AppState) -> FastAPI:
                 reframer = None
                 framed = 0
                 if state.settings.globals.vertical:
-                    reframer = reframe.Reframer(state.video_tables)
+                    reframer = reframe.Reframer(reframe.close_up_tables(
+                        state.video_tables, state.timeline, roles))
                     framed = reframe.framed_count(
                         reframer, state.timeline, decision.segments)
                     if not state.video_tables:

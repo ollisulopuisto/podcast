@@ -88,7 +88,17 @@ def build(grid: Grid, decision: Decision, columns: int = 1400,
         "view_start": float(view_start),
         "view_end": float(view_end),
         "speakers": speakers,
-        # -2 = laaja, 0.. = puhujan indeksi
+        # Ryhmäkuvat jatkavat puhujien numerointia: ``chosen``in arvo
+        # ``len(speakers) + g`` on ryhmäkuva ``g``.
+        "groups": [
+            {
+                "label": shot.label,
+                "index": len(grid.speakers) + index,
+                "covers": [grid.speakers[i].name for i in shot.covers],
+            }
+            for index, shot in enumerate(getattr(grid, "groups", ()))
+        ],
+        # -2 = laaja, 0.. = puhujan indeksi, sitten ryhmäkuvat
         "chosen": [int(v) for v in chosen],
         "wide_value": WIDE,
     }
