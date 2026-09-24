@@ -64,11 +64,14 @@ const STRINGS = {
     'vertical.title': 'Pystyvienti',
     'vertical.hint': '1080×1920-projekti ja mitattu kehystys jo vientiin — ei Smart Conform -kierrota.',
     'vertical.unmeasured': 'Kuvia ei mitattu',
-    'why.vertical': 'Lähikuvaan kirjoitetaan mitattu kehystys: kuva täyttää korkeuden ja kasvot '
-      + 'osuvat keskiviivalle, joten tuonti on jo pysty eikä Smart Conformia tarvita. Kehystys on '
-      + 'mittauksesta (mediakuvan kasvot, mediaani kuvan aikana) eikä arvausta, ja mittaamaton kuva '
-      + 'jää letterboxiin. Laajat jätetään tarkoituksella kehyksittä: huoneen rajaus ei ole mittaus. '
-      + 'Yhdistettävissä mikroliikkeen kanssa, ja liike kertautuu kehyksen päälle.',
+    'why.vertical': 'Jokainen kuva asetetaan Spatial Conformiin «Fill», ja päälle kirjoitetaan '
+      + 'mitattu kehystys. Lähikuvat tasataan: suurimmat kasvot 100 %, muut zoomataan samankokoisiksi '
+      + '(enintään 125 %), joten kuva ja vastakuva vastaavat toisiaan. Laajat ja ryhmäkuvat pilkotaan '
+      + 'puhujan mukaan ja rajataan hänen kasvoilleen; kuka on kukin kasvo mitataan suun liikkeestä, '
+      + 'ja järjestyksen voi korjata kamerakortilta. Mittaamaton kuva jää täytön keskelle.',
+    'vertical.measuring': 'Mitataan kasvoja, {percent} %. Lähikuvat ensin, sitten laajat ja ryhmäkuvat.',
+    'vertical.measured': 'Mitattu {files} tiedostoa. Mittaa uudestaan jos roolit muuttuivat.',
+    'vertical.needMeasure': 'Kasvoja ei ole mitattu, joten mitään ei rajata. Mittaus kestää minuutteja ja jää välimuistiin.',
     'why.panning': 'Paikka mitataan pään asennosta: vastakkain istuvat katsovat '
       + 'toisiaan, joten vasemmalla istuva katsoo oikealle. Paikat jaetaan tasan '
       + 'järjestyksen mukaan — kulma kertoo järjestyksen mutta ei etäisyyttä. '
@@ -432,12 +435,14 @@ const STRINGS = {
     'vertical.title': 'Vertical export',
     'vertical.hint': 'A 1080×1920 project with measured reframing already in the export — no Smart Conform round-trip.',
     'vertical.unmeasured': 'No video measured',
-    'why.vertical': 'Each close-up gets a measured reframe: the picture fills the height and the face '
-      + 'lands on the centreline, so the import is already vertical and Smart Conform is not needed. '
-      + 'The framing comes from the measurement (face position in the picture, median over the shot), '
-      + 'never a guess, and an unmeasured clip stays letterboxed. Wide shots are deliberately left '
-      + 'unframed: the framing of a room is not a measurement. Composes with micro-movement, which '
-      + 'multiplies on top of the reframe.',
+    'why.vertical': 'Every picture is set to Spatial Conform «Fill», with a measured framing on top. '
+      + 'Close-ups are evened out: the biggest face stays at 100 %, the others zoom to match (at most '
+      + '125 %), so shot and reverse shot correspond. Wides and group shots are split by speaker and '
+      + 'framed on that person; who is which face is measured from mouth movement, and the order can '
+      + 'be corrected on the camera card. An unmeasured clip stays centred in the fill.',
+    'vertical.measuring': 'Measuring faces, {percent} %. Close-ups first, then wides and group shots.',
+    'vertical.measured': '{files} files measured. Measure again if the roles changed.',
+    'vertical.needMeasure': 'No faces measured, so nothing is framed. Measuring takes minutes and is cached.',
     'why.panning': 'The position is measured from head direction: people sitting '
       + 'opposite each other look at each other, so the one on the left looks '
       + 'right. Positions are spread evenly by order — the angle gives the '

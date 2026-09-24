@@ -385,6 +385,13 @@ for (const lang of ['fi', 'en']) {
       /* Uusi puhuja mikistä saa nimen tiedostosta, ei «Puhuja N»:ää. */
       const guessed = context.guessName(first);
       if (!guessed) throw new Error('mikin nimestä ei tullut puhujaa');
+      /* Pystyviennin osiossa on oma mittauspainike: se oli vain
+         reaktiokuvien alla, piilossa juuri siltä joka käytti pystyvientiä. */
+      const host = context.document.createElement('div');
+      context.verticalBody(host, { measured: 0, progress: {} }, false);
+      if (!host.children.some((c) => c.tagName === 'BUTTON')) {
+        throw new Error('pystyviennin osiosta puuttuu mittauspainike');
+      }
       /* Istujat: nimen klikkaus siirtää sitä vasemmalle, ja käsin annettu
          järjestys menee asetuksiin palvelimelle. */
       const wide = fresh.tracks.find((t) => t.key === 'WIDE');

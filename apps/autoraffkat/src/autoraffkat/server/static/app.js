@@ -1052,9 +1052,9 @@ function renderGlobals() {
     body: (body) => { movementBody(body); },
   }).row);
 
-  /* Pystyvienti: mitattu kehystys klippeihin ja 1080×1920-projekti, jotta
-     Final Cutiin tuonti on lopputulos eikä välietappi. Laajat saavat
-     letterboxin — huoneen rajaus ei ole mittaus eikä mielipide. */
+  /* Pystyvienti: 1080×1920-projekti, jokainen kuva Spatial Conform «Fill»
+     ja mitattu kehystys päälle — lähikuvat kasvojen koon mukaan, laajat ja
+     ryhmäkuvat puhujan mukaan. */
   rows.append(settingRow({
     key: 'vertical',
     label: T('vertical.title'),
@@ -1066,7 +1066,7 @@ function renderGlobals() {
       checked: state.globals.vertical,
       onChange: (on) => { state.globals.vertical = on; renderGlobals(); schedule(0); },
     },
-    body: (body) => { verticalBody(body); },
+    body: (body) => { verticalBody(body, video, reacting); },
   }).row);
 
   const overlapChosen = OVERLAP_RULES()
@@ -1130,34 +1130,7 @@ function reactionsBody(host, mark, video, running) {
         : T('reactions.needMeasure'));
   host.append(note);
 
-  if (running) {
-    host.append(progressBar(video.progress.fraction || 0));
-  } else {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'ghost small';
-    button.textContent = video.measured
-      ? T('reactions.again') : T('reactions.measure');
-    button.addEventListener('click', async () => {
-      setBusy(button, true, T('reactions.measuring'));
-      try {
-        const response = await fetch('/api/video', { method: 'POST' });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || '');
-        /* Vastaus on kapea: vain mittauksen tila. Aiemmin tähän sijoitettiin
-           koko tila, jolloin juuri liikutettu portti hyppäsi takaisin
-           siihen mitä palvelimelle oli ehditty tallentaa. */
-        state.video = data.video;
-        renderGlobals();
-        watchVideo();
-        return;
-      } catch (err) {
-        banner(err.message || T('reactions.failed'), true);
-      }
-      setBusy(button, false);
-    });
-    host.append(button);
-  }
+  measureControls(host, video, running);
 
   (video.errors || []).forEach((text) => {
     host.append(Object.assign(document.createElement('p'),
@@ -1235,14 +1208,62 @@ function movementBody(host) {
 }
 
 
+/* Mittauspainike tai käynnissä olevan mittauksen palkki. Sama kummassakin
+   sitä tarvitsevassa osiossa: pystyvienti tarvitsee kasvot yhtä lailla kuin
+   reaktiokuvat, ja painike vain reaktioiden alla oli piilossa juuri siltä
+   joka käytti pystyvientiä. */
+function measureControls(host, video, running) {
+  if (running) {
+    host.append(progressBar(video.progress.fraction || 0));
+    return;
+  }
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'ghost small';
+  button.textContent = video.measured
+    ? T('reactions.again') : T('reactions.measure');
+  button.addEventListener('click', async () => {
+    setBusy(button, true, T('reactions.measuring'));
+    try {
+      const response = await fetch('/api/video', { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || '');
+      /* Vastaus on kapea: vain mittauksen tila. Aiemmin tähän sijoitettiin
+         koko tila, jolloin juuri liikutettu portti hyppäsi takaisin
+         siihen mitä palvelimelle oli ehditty tallentaa. */
+      state.video = data.video;
+      renderGlobals();
+      watchVideo();
+      return;
+    } catch (err) {
+      banner(err.message || T('reactions.failed'), true);
+    }
+    setBusy(button, false);
+  });
+  host.append(button);
+}
+
 /* Pystyviennin runko. Ei säätimiä: kehyksen numero on mittauksesta
    johdettu, ja «kuinka paljon kehystystä» on kysymys johon käyttäjällä ei
-   ole vastausta — sama rivi kuin mikrolikkeelläkin. */
-function verticalBody(host) {
+   ole vastausta — sama rivi kuin mikrolikkeelläkin. Mittaus on silti tässä:
+   ilman sitä pystyvienti ei rajaa mitään. */
+function verticalBody(host, video, running) {
   const note = document.createElement('p');
   note.className = 'why';
   note.textContent = T('why.vertical');
   host.append(note);
+  host.append(Object.assign(document.createElement('p'), {
+    className: 'why',
+    textContent: running
+      ? T('vertical.measuring', { percent: Math.round((video.progress.fraction || 0) * 100) })
+      : (video.measured ? T('vertical.measured', { files: video.measured })
+        : T('vertical.needMeasure')),
+  }));
+  measureControls(host, video, running);
+  (video.errors || []).forEach((text) => {
+    host.append(Object.assign(document.createElement('p'),
+      { className: 'warn small', textContent: text }));
+  });
 }
 
 
