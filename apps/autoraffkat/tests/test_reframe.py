@@ -306,7 +306,10 @@ def test_a_crowd_shot_is_framed_on_its_speaker():
     mikko = framer.from_item(item, 20.0, 30.0, focus="Mikko")
     assert guest.pos_x > 0 > mikko.pos_x   # vieras vasemmalla -> kuva oikealle
     assert abs(guest.pos_x - (0.30 * 3413.33 / 19.2)) < 0.5
-    assert framer.from_item(item, 0.0, 2.0, focus="Tomi") is None  # ei kuvassa
+    # Tomi ei ole tässä kuvassa: rajaus näkyvimpään istujaan eikä keskelle,
+    # jossa se leikkaisi molemmat kasvot puoliksi.
+    elsewhere = framer.from_item(item, 0.0, 2.0, focus="Tomi")
+    assert elsewhere is not None and elsewhere.pos_x != 0.0
 
 
 # ------------------------------------------------------ vakaa kehys (2026-09-25)
@@ -346,3 +349,51 @@ def test_consecutive_shots_of_one_camera_frame_identically():
     first = framer.from_item(item, 10.0, 20.0)
     second = framer.from_item(item, 40.0, 55.0)
     assert first.pos_x == second.pos_x
+
+
+# --------------------------------------------- puolikkaat kasvot (2026-09-25)
+
+
+def test_a_neighbour_is_either_in_or_out_never_halved():
+    """Vieressä istuvan kasvot joko kokonaan pois tai kokonaan mukaan.
+
+    Kahden kuvassa puhujaan keskitetty rajaus leikkasi naapurin kasvot
+    reunasta puoliksi. Rajausta siirretään sen verran että naapuri jää
+    ulos, kun puhujan kasvot pysyvät silti marginaaleineen sisällä.
+    """
+    half = 1080 / (1920 * 1920 / 1080) / 2  # rajausikkunan puolikas, lähteen leveydestä
+    shot = reframe.plan_shot(0.62, 0.5, 1920, 1080, face_w=0.12,
+                             others=[(0.45, 0.12)])
+    centre = 0.5 - shot.pos_x * 19.2 / 3413.33
+    left, right = centre - half, centre + half
+    neighbour = (0.45 - 0.06, 0.45 + 0.06)
+    assert left >= neighbour[1] - 1e-6 or right <= neighbour[0] + 1e-6 \
+        or (left <= neighbour[0] and right >= neighbour[1])
+    assert left <= 0.62 - 0.06 and right >= 0.62 + 0.06  # puhuja kokonaan kuvassa
+
+
+def test_a_crowd_shot_without_a_speaker_frames_someone_not_the_gap():
+    """Kahden kuva jossa kukaan ei puhu (päätykuva, tauko) ei ole keskellä.
+
+    Keskellä on tyhjä väli kahden ihmisen välissä, ja rajaus leikkasi
+    molemmat kasvot puoliksi. Rajataan näkyvimpään istujaan.
+    """
+    from autoraffkat.seats import FileSeats, Seat
+
+    item = _item("CAM 3 01.mp4")
+    table = {"times": np.arange(40, dtype=np.float32),
+             "frame": np.repeat(np.arange(40, dtype=np.int32), 2),
+             "x": np.tile(np.array([0.15, 0.65], np.float32), 40),
+             "w": np.full(80, 0.1, np.float32), "y": np.full(80, 0.4, np.float32),
+             "h": np.tile(np.array([0.18, 0.22], np.float32), 40),
+             "mouth": np.zeros(80, np.float32)}
+    rows = np.arange(80)
+    found = FileSeats(seats={
+        1: Seat(1, 0.70, 0.5, 0.22, rows[1::2], w=0.1),
+        2: Seat(2, 0.20, 0.5, 0.18, rows[0::2], w=0.1),
+    })
+    framer = reframe.Reframer({}, crowd={item.key: found}, crowd_tables={item.key: table},
+                              names=["Tomi", "Mikko", "Vieras"])
+    shot = framer.from_item(item, 0.0, 5.0)
+    assert shot is not None
+    assert shot.pos_x < -20   # isompi kasvo oikealla -> kuva vasemmalle

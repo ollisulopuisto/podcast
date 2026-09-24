@@ -32,7 +32,6 @@ from itertools import pairwise
 
 import numpy as np
 
-from .decide import WIDE_LABEL
 from .model import HOP, Segment
 
 PROJECT_W = 1080
@@ -176,7 +175,8 @@ def level_at(steps: list[tuple[float, float]], at: float) -> float:
 
 
 def plan_shot(fx: float, fy: float, width: int, height: int,
-              zoom: float = 1.0, eyeline: float | None = None) -> Reframe | None:
+              zoom: float = 1.0, eyeline: float | None = None,
+              face_w: float = 0.0, others=()) -> Reframe | None:
     """Yhden kuvan kehys kasvojen paikasta, täytön päälle.
 
     ``fx`` on kasvojen keskipiste lähteen leveydestä (0 = vasen reuna),
@@ -195,7 +195,9 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
         return None
     slack_x = max(0.0, (shown_w - PROJECT_W) / 2)
     slack_y = max(0.0, (shown_h - PROJECT_H) / 2)
-    move_x = min(slack_x, max(-slack_x, -(fx - 0.5) * shown_w))
+    centre = _clear_neighbours(fx, face_w, others, PROJECT_W / shown_w / 2,
+                               slack_x / shown_w)
+    move_x = min(slack_x, max(-slack_x, -(centre - 0.5) * shown_w))
     # Kuvan nosto ylös siirtää kasvoja ylös: kasvojen etäisyys keskeltä
     # (alas positiivinen) on ``(fy - 0,5) * korkeus - nosto``.
     target = fy if eyeline is None else eyeline
@@ -203,6 +205,44 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
     lift = min(slack_y, max(-slack_y, lift))
     return Reframe(scale=float(zoom), pos_x=move_x / PROJECT_H * 100,
                    pos_y=lift / PROJECT_H * 100)
+
+
+# Puhujan kasvojen ympärille jätettävä tila, kasvon leveydestä, kun rajausta
+# siirretään naapurin takia: kasvot eivät saa päätyä reunaan kiinni.
+FACE_MARGIN = 0.25
+
+
+def _clear_neighbours(fx: float, face_w: float, others, half: float,
+                      reach: float) -> float:
+    """Rajausikkunan keskipiste niin ettei yksikään naapuri jää puolikkaaksi.
+
+    Oletus on puhujan kasvot keskellä. Jos naapurin kasvot osuvat reunaan,
+    ikkunaa siirretään niin että ne jäävät kokonaan ulos, tai jos se ei
+    onnistu, kokonaan sisään — kumpikin vain jos puhujan kasvot pysyvät
+    marginaaleineen sisällä ja ikkuna lähteen päällä. Muuten keskitys jää.
+    Kaikki lähteen leveyden murto-osina; ``half`` on ikkunan puolikas ja
+    ``reach`` kuinka kauas keskeltä ikkuna saa mennä.
+    """
+    margin = FACE_MARGIN * face_w
+    low, high = 0.5 - reach, 0.5 + reach
+    centre = min(high, max(low, fx))
+
+    def fits(c: float) -> bool:
+        return (low - 1e-9 <= c <= high + 1e-9
+                and c - half <= fx - face_w / 2 - margin
+                and fx + face_w / 2 + margin <= c + half)
+
+    for ox, ow in others:
+        a, b = ox - ow / 2, ox + ow / 2
+        left, right = centre - half, centre + half
+        if not (a < left < b or a < right < b):
+            continue
+        tries = (b + half, a + half) if ox < fx else (a - half, b - half)
+        for candidate in tries:
+            if fits(candidate):
+                centre = candidate
+                break
+    return centre
 
 
 class Reframer:
@@ -251,7 +291,7 @@ class Reframer:
         ``focus`` on laajan tai ryhmäkuvan puhuja: kehys hänen kasvoilleen,
         jos hänet on tunnistettu tästä tiedostosta.
         """
-        if focus:
+        if item.key in self.crowd:
             return self._crowd_shot(item, t0, t1, focus)
         table = self.tables.get(item.key)
         if table is None or "x" not in table or not item.width or not item.height:
@@ -280,29 +320,46 @@ class Reframer:
         )
 
 
+    def _seat_at(self, item, table, seat, middle):
+        """Istujan vakaa paikka (x, y) tiedoston hetkellä ``middle``."""
+        if middle is None or len(seat.rows) < MIN_SAMPLES:
+            return seat.x, seat.y
+        rows = seat.rows
+        xs, ys = self._levels(
+            (item.key, seat.speaker), table["times"][table["frame"][rows]],
+            table["x"][rows] + table["w"][rows] / 2,
+            1.0 - (table["y"][rows] + table["h"][rows] / 2))
+        return level_at(xs, middle), level_at(ys, middle)
+
     def _crowd_shot(self, item, t0: float, t1: float, focus: str) -> Reframe | None:
+        """Laaja tai ryhmäkuva: puhujan kasvoille, naapurit kokonaan sisään tai ulos.
+
+        Ilman puhujaa (päätykuva, tauko) tai kun puhuja ei ole tässä
+        tiedostossa, rajataan näkyvimpään istujaan eikä keskelle: keskellä
+        on usein tyhjä väli kahden ihmisen välissä, ja rajaus leikkasi
+        molemmat kasvot puoliksi.
+        """
         found = self.crowd.get(item.key)
         table = self.crowd_tables.get(item.key)
-        speaker = self.index.get(focus)
-        if found is None or table is None or speaker not in found.seats:
+        if found is None or table is None or not found.seats:
             return None
         if not item.width or not item.height:
             return None
+        speaker = self.index.get(focus)
+        if speaker not in found.seats:
+            speaker = max(found.seats.values(),
+                          key=lambda s: (s.h, -abs(s.x - 0.5))).speaker
         seat = found.seats[speaker]
-        x, y, h = seat.x, seat.y, seat.h
         f0, f1 = item.file_time_at(t0), item.file_time_at(t1)
-        if f0 is not None and f1 is not None and len(seat.rows) >= MIN_SAMPLES:
-            rows = seat.rows
-            xs, ys = self._levels(
-                (item.key, speaker), table["times"][table["frame"][rows]],
-                table["x"][rows] + table["w"][rows] / 2,
-                1.0 - (table["y"][rows] + table["h"][rows] / 2))
-            middle = (float(f0) + float(f1)) / 2
-            x, y = level_at(xs, middle), level_at(ys, middle)
+        middle = (float(f0) + float(f1)) / 2 if f0 is not None and f1 is not None else None
+        x, y = self._seat_at(item, table, seat, middle)
+        others = [(self._seat_at(item, table, other, middle)[0], other.w)
+                  for other in found.seats.values() if other.speaker != speaker]
         target = self.look.target
+        h = seat.h
         zoom = min(MAX_ZOOM, max(1.0, target / h)) if target and h > 0 else 1.0
         return plan_shot(x, y, item.width, item.height, zoom=zoom,
-                         eyeline=self.look.eyeline)
+                         eyeline=self.look.eyeline, face_w=seat.w, others=others)
 
 
 def focus_segments(segments: list, grid, crowd: dict[str, list[int]],
@@ -391,7 +448,7 @@ def framed_count(reframer: Reframer, timeline, segments: list) -> int:
     """
     count = 0
     for seg in segments:
-        if (seg.label == WIDE_LABEL and not seg.focus) or not seg.angle:
+        if not seg.angle:
             continue
         for item in items_for(timeline, seg.angle):
             if item.placement_at(seg.start) is None:

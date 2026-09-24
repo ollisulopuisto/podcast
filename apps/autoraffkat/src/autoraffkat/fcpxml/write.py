@@ -969,7 +969,7 @@ def _span_reframe(reframer, item, seg, t0: Fraction, t1: Fraction):
     jäi ilman (sama sääntö kuin reaktiokuvissa: hiljaisuus on tämän
     projektin toistuvin vika).
     """
-    if reframer is None or (seg.label == WIDE_LABEL and not seg.focus) or item is None:
+    if reframer is None or item is None:
         return None
     return reframer.from_item(item, float(t0), float(t1), focus=seg.focus)
 
@@ -1497,6 +1497,7 @@ REACTION_LANE = 1
 
 def _reaction_clips(
     reactions, roles, angles_of, mc, frame_duration, program_start, program_end,
+    timeline=None, reframer=None, vertical: bool = False,
 ):
     """Reaktiokuvat sisäkkäisinä ``mc-clip``einä omalle lanelleen.
 
@@ -1524,6 +1525,11 @@ def _reaction_clips(
     **Ääni pois.** Verrokissa on ``srcEnable="all"``, koska Final Cut
     tekee niin oletuksena. Meille se toisi lähikuvan kameramikin
     käsiteltyjen mikkien päälle, joten tässä on ``video``.
+
+    **Pystyviennissä täyttö ja kehys**, kuten muillakin kuvilla. Ilman niitä
+    omalla lanellaan oleva 16:9-kuva tuli pystykuvan päälle letterboxina,
+    vaakasuorana kaistaleena keskelle ruutua. Laajana näytetty reaktio
+    rajataan kuuntelijaan, jonka takia se on reaktio.
     """
     lines: list[str] = []
     own = set(mc.angle_ids)
@@ -1555,10 +1561,28 @@ def _reaction_clips(
             f'start="{frames_str(source, frame_duration)}" '
             f'duration="{frames_str(dur, frame_duration)}">'
         )
-        lines.append(
-            f'                <mc-source angleID={quoteattr(angle_id)} '
-            f'srcEnable="video"/>'
-        )
+        transform: list[str] = []
+        if vertical:
+            shot = None
+            part = next((i for i in (timeline.track_media(key) if timeline else [])
+                         if i.placement_at(start)), None)
+            if reframer is not None and part is not None:
+                focus = reaction.speaker if key == roles.wide_key else ""
+                shot = reframer.from_item(part, float(start), float(end), focus=focus)
+            transform = _transform_lines(shot, _NO_MOVE, dur, frame_duration,
+                                         "                  ", conform=True)
+        if transform:
+            lines += [
+                f'                <mc-source angleID={quoteattr(angle_id)} '
+                f'srcEnable="video">',
+                *transform,
+                "                </mc-source>",
+            ]
+        else:
+            lines.append(
+                f'                <mc-source angleID={quoteattr(angle_id)} '
+                f'srcEnable="video"/>'
+            )
         # Avainsana, jotta reaktiokuvat löytyvät Final Cutin hakemistosta.
         # Nimi ei riitä: monikameraklipin nimenä selain näyttää median oman
         # nimen, ja hakemiston Tags-välilehti oli tyhjä. Avainsana on se
@@ -1683,7 +1707,7 @@ def build_multicam_fcpxml(
         # Kehystys: spanin osa se media-alkio jonka sijoitus kattaa alun —
         # _split_spans on jo rajannut spanin yhteen osaan.
         shot = None
-        if reframer is not None and (seg.label != WIDE_LABEL or seg.focus):
+        if reframer is not None:
             part = next(
                 (i for i in timeline.track_media(seg.angle)
                  if i.placement_at(at)),
@@ -1760,6 +1784,8 @@ def build_multicam_fcpxml(
             sources = sources + _reaction_clips(
                 reactions, roles, angles_of, mc,
                 frame_duration, program_start, program_end,
+                timeline=timeline, reframer=reframer,
+                vertical=settings is not None and settings.globals.vertical,
             )
         if not attached_room and room_ids:
             attached_room = True

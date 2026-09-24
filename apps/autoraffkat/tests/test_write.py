@@ -844,7 +844,7 @@ def _roles_for(tl):
     })
 
 
-def _with_reactions(fixture_dir, spans):
+def _with_reactions(fixture_dir, spans, settings=None, reframer=None):
     from autoraffkat.reactions import Reaction
 
     tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
@@ -857,8 +857,29 @@ def _with_reactions(fixture_dir, spans):
         source="multicam.fcpxml",
         reactions=[Reaction(*s) for s in spans],
         roles=_roles_for(tl),
+        settings=settings,
+        reframer=reframer,
     )
     return tl, xml
+
+
+def test_a_vertical_reaction_shot_is_filled_and_framed(fixture_dir):
+    """Pystyviennissä reaktiokuva on täyttö ja kuuntelijan kehys, kuten
+    muutkin kuvat.
+
+    Ilman sitä omalla lanellaan oleva 16:9-kuva tuli pystykuvan päälle
+    letterboxina: vaakasuora kaistale keskellä ruutua (hmh hannes vertical
+    v3, 2026-09-25).
+    """
+    stub = _StubReframer()
+    _, xml = _with_reactions(fixture_dir, [("Guest", 8.0, 9.6, 2.1)],
+                             settings=_vertical_settings(), reframer=stub)
+    root = ET.fromstring(xml)
+    clip = next(c for c in root.iter("mc-clip") if "reaktio" in (c.get("name") or ""))
+    source = clip.find("mc-source")
+    assert source.find("adjust-conform").get("type") == "fill"
+    assert source.find("adjust-transform") is not None
+    assert ("CLOSE_B 01.mp4", 8.0, 9.6) in stub.calls
 
 
 def test_reactions_go_on_their_own_lane_not_into_the_multicam(fixture_dir):
@@ -1522,12 +1543,12 @@ def test_vertical_close_up_is_reframed_on_the_angle(fixture_dir):
     _, xml = _multicam_cut(fixture_dir, segments=_MOVEMENT_SPANS,
                            settings=_vertical_settings(), reframer=stub)
     clips = _spine_mc_clips(xml)
-    for clip, seg in zip(clips, _MOVEMENT_SPANS, strict=True):
+    # Laajakin kysytään: kehystäjä päättää (mittaamaton laaja -> ei kehystä,
+    # mitattu -> näkyvin istuja tai puhuja). Kirjoittajan oma kielto jätti
+    # päätykuvan keskelle, jossa kahden kuva leikkasi molemmat kasvot.
+    for clip, _seg in zip(clips, _MOVEMENT_SPANS, strict=True):
         source = clip.find('mc-source[@srcEnable="video"]')
         transform = source.find("adjust-transform")
-        if seg.label == WIDE_LABEL:
-            assert transform is None, "laajaa ei kehyksetä"
-            continue
         assert transform is not None
         assert transform.get("position") == "20 0"
         scale = float(transform.get("scale").split()[0])

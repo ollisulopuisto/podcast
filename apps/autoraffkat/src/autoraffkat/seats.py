@@ -49,6 +49,7 @@ class Seat:
     y: float                # kasvon keskipiste ylhäältä, lähteen korkeudesta
     h: float                # kasvon korkeus, lähteen korkeudesta
     rows: np.ndarray        # taulukon rivit (löydöt) jotka ovat hänen
+    w: float = 0.0          # kasvon leveys, lähteen leveydestä
 
 
 @dataclass
@@ -163,5 +164,6 @@ def _seats(table, rows, labels, who: dict[int, int], margin: float,
             y=float(np.median(y[mine])),
             h=float(np.median(table["h"][mine])),
             rows=mine,
+            w=float(np.median(table["w"][mine])),
         )
     return out
