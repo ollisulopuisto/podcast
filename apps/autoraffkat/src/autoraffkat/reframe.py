@@ -2,25 +2,32 @@
 
 Lähde on jo Vision-mitattu keyframeä kohden tiedostoa kohden — sama
 välimuisti jota reaktiokerros käyttää — ja tämä moduuli kääntää mittauksen
-klipin muodoksi: lähde täyttää projektin korkeuden ja kasvot osuvat
-keskiviivalle. Tiedostoa ei avata täällä, sama sääntö kuin ``decide.py``ssä.
+klipin muodoksi. Tiedostoa ei avata täällä, sama sääntö kuin ``decide.py``ssä.
 
-Geometria (Apuen oma FCPXML «Animation»-dokumentti, jonka mukaan position
-yksikkö on projektin korkeuden prosentti **molemmissa** akseleissa ja scale
-on murto-osa klipin sovitetusta peruskoosta — ensimmäinen aito tuonti
-Final Cutiin varmistaa johdannaisen, ei tämä tiedosto):
+Pohja on Final Cutin oma: kuvakulmalle ``<adjust-conform type="fill"/>``
+(Spatial Conform «Fill») ja sen päälle ``adjust-transform``. Näin
+käyttäjän itse tekemä pystypohja on kirjoitettu (hmh hannes vertical base,
+2026-09-25): Tomin kamera ``scale="1.22 1.22"``, ``position="-30.7292
+-8.59375"``, Mikon kamera 100 % ja pelkkä vaakasiirto.
 
-1920×1080-lähde 1080×1920-projektissa: sovitus skaalaa 0.5625
-(1080×607.5), korkeuden täyttö vaatii kertaa 3.1605, jolloin leveyttä
-näkyy 3413 px ja lähdeleveydestä 1080/3413 ≈ 0.3165. Täytön jälkeen
-näytetty korkeus on täsmälleen projektin korkeus, eli koko lähdekorkeus
-on näkyvissä — **pystysiirtoa ei koskaan tarvita, ja mikä tahansa
-nollasta poikkeava y paljastaisi reunan.** Siksi ``pos_y`` on aina nolla.
+Täytössä skaala on suhteessa **täytettyyn** kokoon: 1,0 on lähde joka
+täyttää projektin korkeuden, 1920×1080-lähteellä 3413×1920 px, josta
+näkyy leveydeltään 1080/3413 ≈ 0,3165. Sijainti on prosentteina projektin
+korkeudesta molemmissa akseleissa (1 = 19,2 px), y ylöspäin positiivinen.
+100 %:ssa pystysuunnassa ei ole liikkumavaraa — koko lähdekorkeus on
+näkyvissä — joten pystysiirto on mahdollinen vain zoomatulle kuvalle, ja
+vain sen verran kuin zoomi antaa.
+
+Kasvojen paikka on **laatikko** (``x + w/2``, ``y + h/2``), ei
+``cx``/``cy``: ne ovat maamerkkien keskiarvo kasvolaatikon *sisällä*
+(Visionin ``normalizedPoints`` normalisoidaan laatikkoon), joten ne ovat
+~0,5 missä kasvot sitten ovatkin. Kehystys luki niitä kuvan paikkana ja
+keskitti käytännössä kuvan keskelle.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -38,12 +45,18 @@ MIN_SAMPLES = 3
 # Keyframien aikaleimat horjuvat kehyksen verran GOP:n reunoilla.
 EPS_S = 0.05
 
+# Suurin zoomi täytön päälle. Käsin tehdyssä pohjassa Tomi tarvitsi 1,22
+# ollakseen Mikon kokoinen; täyttö suurentaa 1080-lähteen jo 1920:een, eli
+# 1,25 on 2,2-kertainen suurennus lähteestä, ja jokainen lisäprosentti on
+# pehmeämpi kuva. Pienemmät kasvot jäävät pienemmiksi eikä niitä pakoteta.
+MAX_ZOOM = 1.25
+
 
 @dataclass
 class Reframe:
-    """Yhden kuvan kehys: täyttöskaala ja vaakasiirto, ``pos_y`` aina nolla.
+    """Yhden kuvan kehys: skaala täytön päälle ja siirto.
 
-    Skaala on murto-osa klipin sovitetusta peruskoosta (fit), siirto
+    Skaala on suhde täytettyyn kokoon (1,0 = korkeus täynnä), siirto
     projektin korkeuden prosentteina — Final Cutin omat yksiköt, eivät
     pikseleitä.
     """
@@ -53,43 +66,99 @@ class Reframe:
     pos_y: float = 0.0
 
 
-def plan_shot(cx: float, width: int, height: int) -> Reframe | None:
-    """Yhden kuvan kehys mediaanikasvo-x:stä ja lähteen mitoista.
+@dataclass
+class Look:
+    """Koko jakson kehystyssäännöt: kameroittain zoomi ja yhteinen silmälinja.
 
-    ``cx`` on kasvojen keskipiste normalisoituna lähteen leveydestä
-    (0 = vasen reuna). Palauttaa ``None`` kun kehystä ei ole: mitat
-    puuttuvat tai lähde täyttää korkeutensa jo sovituksella, jolloin
-    mitään ei kirjoiteta — tyhjä muunnos olisi Final Cutille asetus
-    siinä missä mikä tahansa.
+    Zoomi on kameran eikä kuvan ominaisuus: sama kamera eri zoomilla
+    peräkkäisissä kuvissa näyttäisi hyppivältä. ``eyeline`` on
+    100 %:n kameran kasvojen korkeus ylhäältä (0–1 projektin
+    korkeudesta); ``None`` pitää kasvot siinä kohdassa jossa ne olisivat.
+    """
+
+    zooms: dict[str, float] = field(default_factory=dict)  # median avain -> zoomi
+    eyeline: float | None = None
+
+
+def _faces(table: dict, rows=None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Kasvojen keskipiste (x, y ylhäältä) ja korkeus löydetyiltä riveiltä."""
+    found = table["found"] if rows is None else rows
+    x = table["x"][found] + table["w"][found] / 2
+    y = 1.0 - (table["y"][found] + table["h"][found] / 2)
+    return x, y, table["h"][found]
+
+
+def look(tables: dict, timeline, roles) -> Look:
+    """Kameroiden zoomit tasaavat kasvojen koon; suurimmat kasvot 100 %.
+
+    Mediaani kameran kaikista löydöistä: ohjelman mittainen otos ei
+    heilu yksittäisen nojautumisen mukana. Kasvojen korkeus on lähteen
+    korkeuden murto-osa, ja täytössä lähteen korkeus on projektin korkeus,
+    joten suhde on suoraan zoomi.
+    """
+    heights: dict[str, float] = {}
+    lines: dict[str, float] = {}
+    for key in roles.closes.values():
+        for item in timeline.track_media(key):
+            table = tables.get(item.key)
+            if table is None or "h" not in table:
+                continue
+            if int(np.count_nonzero(table["found"])) < MIN_SAMPLES:
+                continue
+            _x, y, h = _faces(table)
+            heights[item.key] = float(np.median(h))
+            lines[item.key] = float(np.median(y))
+    if not heights:
+        return Look()
+    target = max(heights.values())
+    zooms = {k: float(min(MAX_ZOOM, max(1.0, target / h))) for k, h in heights.items()}
+    reference = max(heights, key=heights.get)
+    return Look(zooms=zooms, eyeline=lines[reference])
+
+
+def plan_shot(fx: float, fy: float, width: int, height: int,
+              zoom: float = 1.0, eyeline: float | None = None) -> Reframe | None:
+    """Yhden kuvan kehys kasvojen paikasta, täytön päälle.
+
+    ``fx`` on kasvojen keskipiste lähteen leveydestä (0 = vasen reuna),
+    ``fy`` korkeudesta ylhäältä. Vaakasuunnassa kasvot keskiviivalle,
+    pystysuunnassa ``eyeline``lle jos zoomi antaa liikkumavaraa. Siirto
+    rajataan niin ettei rajausikkuna koskaan astu sisällön ulkopuolelle.
+    Palauttaa ``None`` kun kehystettävää ei ole: mitat puuttuvat tai lähde
+    ei ole projektia leveämpi eikä zoomia ole.
     """
     if not width or not height:
         return None
-    fit = min(PROJECT_W / width, PROJECT_H / height)
-    extra = PROJECT_H / (height * fit)
-    if extra <= 1.0:
-        # Sovitus täyttää korkeuden jo valmiiksi: ei rajattavaa, ei
-        # muotoa. Skaala alle ykkösen ei ole kehystys vaan venytys.
+    fill = max(PROJECT_W / width, PROJECT_H / height)
+    shown_w = width * fill * zoom
+    shown_h = height * fill * zoom
+    if shown_w <= PROJECT_W + 1e-6 and zoom <= 1.0:
         return None
-    displayed_w = width * fit * extra
-    # Siirto rajataan niin että rajausikkuna ei koskaan astu sisällön
-    # ulkopuolelle — reunalle paljastuisi rako eikä kameraa olekaan.
-    half_gap = (displayed_w - PROJECT_W) / 2 / displayed_w
-    cx = min(0.5 + half_gap, max(0.5 - half_gap, cx))
-    pos_x = -(cx - 0.5) * displayed_w / PROJECT_H * 100
-    return Reframe(scale=extra, pos_x=pos_x)
+    slack_x = max(0.0, (shown_w - PROJECT_W) / 2)
+    slack_y = max(0.0, (shown_h - PROJECT_H) / 2)
+    move_x = min(slack_x, max(-slack_x, -(fx - 0.5) * shown_w))
+    # Kuvan nosto ylös siirtää kasvoja ylös: kasvojen etäisyys keskeltä
+    # (alas positiivinen) on ``(fy - 0,5) * korkeus - nosto``.
+    target = fy if eyeline is None else eyeline
+    lift = (fy - 0.5) * shown_h - (target - 0.5) * PROJECT_H
+    lift = min(slack_y, max(-slack_y, lift))
+    return Reframe(scale=float(zoom), pos_x=move_x / PROJECT_H * 100,
+                   pos_y=lift / PROJECT_H * 100)
 
 
 class Reframer:
-    """Mitatus → kehys. Lukematon luokka: taulukot ovat muistissa.
+    """Mittaus → kehys. Lukematon luokka: taulukot ovat muistissa.
 
     ``tables`` on sama sanakirja jonka reaktiokerroksen mittaus tuottaa:
-    median avain → ``{"times", "found", "cx", …}``-taulukko. Vastaa kuvaa
-    kohden ``None``illa kun kehystä ei ole — mittaamaton kuva saa
-    letterboxin eikä arvausta, ja siitä kerrotaan viennin varoituksissa.
+    median avain → ``{"times", "found", "x", "w", …}``-taulukko. Vastaa kuvaa
+    kohden ``None``illa kun kehystä ei ole — mittaamaton kuva jää
+    täytön keskelle eikä arvausta tehdä, ja siitä kerrotaan viennin
+    varoituksissa.
     """
 
-    def __init__(self, tables: dict):
+    def __init__(self, tables: dict, look: Look | None = None):
         self.tables = tables
+        self.look = look or Look()
 
     def from_item(
         self,
@@ -104,7 +173,7 @@ class Reframer:
         rivit otetaan kestosta pienellä toleranssilla molemmin puolin.
         """
         table = self.tables.get(item.key)
-        if table is None or not item.width or not item.height:
+        if table is None or "x" not in table or not item.width or not item.height:
             return None
         f0 = item.file_time_at(t0)
         f1 = item.file_time_at(t1)
@@ -117,8 +186,10 @@ class Reframer:
         )
         if int(rows.sum()) < MIN_SAMPLES:
             return None
+        x, y, _h = _faces(table, rows)
         return plan_shot(
-            float(np.median(table["cx"][rows])), item.width, item.height
+            float(np.median(x)), float(np.median(y)), item.width, item.height,
+            zoom=self.look.zooms.get(item.key, 1.0), eyeline=self.look.eyeline,
         )
 
 
@@ -128,7 +199,7 @@ def close_up_tables(tables: dict, timeline, roles) -> dict:
     Kehys on *yhden* kasvon mediaani, joten se kuuluu vain kuvaan jossa on
     yksi ihminen. Ryhmäkuvalle taulukko voi olla olemassa — sama kamera oli
     joskus lähikuva — ja silloin rajaus leikkaisi toisen puhujan pois. Ilman
-    taulukkoa kuva saa letterboxin, kuten laaja.
+    taulukkoa kuva jää täytön keskelle, kuten laaja.
     """
     keep = {item.key for key in roles.closes.values()
             for item in timeline.track_media(key)}

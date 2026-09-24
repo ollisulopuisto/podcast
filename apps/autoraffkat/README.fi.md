@@ -295,14 +295,17 @@ erotuvat selaimessa, ja jokaisella klipillä on avainsana — puhujan nimi tai
 laajalla «Laaja» — jolla kuvajoukon valitsee Final Cutin hakemistosta.
 
 **Pystyvienti** (oletuksena pois): projekti kirjoitetaan valmiiksi
-1080×1920 ja jokainen lähikuva saa *mitatun* kehystyksen — kuva täyttää
-korkeuden ja puhujan kasvot osuvat keskiviivalle — joten Final Cutiin
-tuonti on viimeinen askel; Smart Conform -kierretta ei tarvita. Kehystys
-on kuvan aikaisen kasvokohdan mediaani samasta mittauksesta kuin
-reaktiokuvatkin (paina kerran «Mittaa kuva»; kytkin käynnistää mittauksen
-itse). Mittaamattomat kuvat, ryhmäkuvat ja laajat jäävät letterboxiin
-arvaamisen sijaan — yhden kasvon mukaan rajattu ryhmäkuva leikkaisi muut
-pois — ja vienti varoittaa mittaamattomista lähikuvista. Yhdistettävissä mikroliikkeen
+1080×1920, jokainen kuva asetetaan Spatial Conformiin **Fill**, ja jokainen
+lähikuva saa sen päälle *mitatun* muunnoksen — joten Final Cutiin tuonti on
+viimeinen askel; Smart Conform -kierrettä ei tarvita. Puhujan kasvot osuvat
+keskiviivalle, ja lähikuvat tasataan: kamera jossa kasvot ovat suurimmat
+pysyy 100 %:ssa, muut zoomataan kunnes kasvot ovat samankokoiset (enintään
+125 %), ja zoomatut kasvot siirretään samalle korkeudelle kuin zoomaamattomat
+— joten kuva ja vastakuva peilaavat toisiaan kun leikkaus käy edestakaisin.
+Kehystys tulee samasta mittauksesta kuin reaktiokuvat (paina kerran «Mittaa
+kuva»; kytkin käynnistää mittauksen itse). Laajat, ryhmäkuvat ja
+mittaamattomat kuvat jäävät täytön keskelle arvaamisen sijaan, ja vienti
+varoittaa mittaamattomista lähikuvista. Yhdistettävissä mikroliikkeen
 kanssa, joka kertautuu kehystyksen päälle.
 
 ## Säätäminen

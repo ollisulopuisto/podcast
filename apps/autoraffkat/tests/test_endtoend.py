@@ -267,6 +267,51 @@ def test_a_group_shot_is_set_and_exported_through_the_interface(scratch_xml):
     assert not any("CLOSE_B.mp4" in src for src in media_srcs)
 
 
+@needs_ffmpeg
+def test_vertical_export_evens_out_face_sizes(scratch_xml):
+    """Pystyvienti zoomaa pienemmät kasvot suurimpien kokoisiksi.
+
+    Käsin tehty pohja: Tomin kamera 1,22, jotta hänen kasvonsa olivat Mikon
+    kokoiset. Taulukot annetaan suoraan, koska mittaus vaatii oikeat kasvot;
+    tämä testaa että zoomi päätyy vientiin asti.
+    """
+    import numpy as np
+
+    state = AppState(xml_path=str(scratch_xml()))
+    state.load()
+    for _ in range(200):
+        if state.progress.get("ready"):
+            break
+        time.sleep(0.05)
+
+    def faces(h):
+        n = 40
+        return {"times": np.arange(n, dtype=np.float32), "found": np.ones(n, bool),
+                "x": np.full(n, 0.45, np.float32), "w": np.full(n, 0.1, np.float32),
+                "y": np.full(n, 0.4, np.float32), "h": np.full(n, h, np.float32)}
+
+    state.video_tables = {"CLOSE_A.mp4": faces(0.246), "CLOSE_B.mp4": faces(0.30)}
+    client = TestClient(create_app(state))
+    result = client.post("/api/settings", json={
+        "tracks": {k: v.to_json() for k, v in _tracks().items()},
+        "globals": Globals(min_shot=1.5, lead=0.15, confirm=0.3, min_overlap=0.4,
+                           vertical=True).to_json(),
+    }).json()
+    assert result["ok"], result.get("problems")
+    exp = client.post("/api/export").json()
+    assert exp["ok"], exp.get("problems")
+    root = ET.fromstring(pathlib.Path(exp["path"]).read_text(encoding="utf-8"))
+    scales = {}
+    for clip in root.findall(".//spine/*"):
+        transform = clip.find("adjust-transform")
+        name = clip.get("name", "")
+        if transform is not None:
+            scales.setdefault(name.split()[0], set()).add(
+                round(float(transform.get("scale").split()[0]), 3))
+    assert scales.get("Host") == {round(0.30 / 0.246, 3)}, scales
+    assert scales.get("Guest") == {1.0}, scales
+
+
 # ------------------------------------------------------------------ multicam
 
 

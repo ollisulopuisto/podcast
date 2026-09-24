@@ -266,7 +266,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.2" },
     { name = "pedalboard", specifier = ">=0.9.24" },
     { name = "pyloudnorm", specifier = ">=0.2.0" },
-    { name = "pywebview", specifier = ">=5.0" },
+    { name = "pywebview", specifier = ">=6.0" },
     { name = "speechmix", editable = "packages/speechmix" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
@@ -2472,7 +2472,7 @@ requires-dist = [
     { name = "mlx-whisper", marker = "extra == 'mlx'", specifier = ">=0.4.0" },
     { name = "nhsx", editable = "packages/nhsx" },
     { name = "numpy", specifier = ">=2.4.2" },
-    { name = "pywebview", specifier = ">=5.0" },
+    { name = "pywebview", specifier = ">=6.0" },
     { name = "speechmix", editable = "packages/speechmix" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]

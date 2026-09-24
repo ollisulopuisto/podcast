@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [Unreleased]
+
+### Changed
+- **Vertical export uses Spatial Conform «Fill»** (`fcpxml/write.py`, `reframe.py`): every picture gets `adjust-conform type="fill"`, as in Final Cut's own vertical template, and the framing transform is relative to the filled size. Close-ups are evened out per camera — the biggest face stays at 100 %, the others zoom to match (at most 125 %) and a zoomed face is moved to the unzoomed one's height — so shot and reverse shot match. Wides and group shots stay centred in the fill instead of letterboxed.
+
+### Fixed
+- **The vertical framing centred on the middle of the frame, not the face** (`reframe.py`): it read `cx`, which is the landmarks' average inside the face's own box (~0.5 wherever the face is). It now reads the face box.
+- **pywebview deprecation warning on every file dialog** (`gui.py`, also podcast-magic): `OPEN_DIALOG` → `FileDialog.OPEN`, floor raised to pywebview 6.0 in both apps.
+
 ## [autoraffkat-v2026.9.25.2] - 2026-09-25
 
 The `2026.9.25.1` tag built on macOS but not on Windows, so it was never published; this is the same release with the Windows build fixed. It is also the first published release since `2026.9.11.4`.

@@ -102,3 +102,24 @@ def test_app_name_replaces_python_in_the_menu_bar():
         NSBundle.mainBundle().infoDictionary()
     )
     assert info["CFBundleName"] == "autoraffkat"
+
+
+def test_file_dialog_uses_the_current_pywebview_constant():
+    """``OPEN_DIALOG`` on vanhentunut ja tulosti varoituksen joka avauksella.
+
+    Arvo on sama luku (10), joten tarkistetaan tyyppi: vanha vakio palauttaa
+    pelkän ``int``in, uusi on ``FileDialog``-luettelon jäsen.
+    """
+    import webview
+
+    from autoraffkat.gui import DesktopApi
+
+    seen = []
+
+    class Window:
+        def create_file_dialog(self, dialog_type, **kwargs):
+            seen.append(dialog_type)
+            return ["/tmp/x.fcpxml"]
+
+    assert DesktopApi(Window()).open_file_dialog() == "/tmp/x.fcpxml"
+    assert seen[0] is webview.FileDialog.OPEN

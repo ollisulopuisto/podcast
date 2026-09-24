@@ -1565,9 +1565,8 @@ def test_reframe_composes_with_movement(fixture_dir):
 
 
 def test_vertical_without_measurements_letterboxes(fixture_dir):
-    """Mittaamaton jakso saa pystyprojektin jossa mitään ei kehyksetä —
-    arvaus on ainoa vaihtoehto joka on huonompi kuin letterbox, ja sitä
-    ei tehdä koskaan."""
+    """Mittaamaton jakso saa pystyprojektin jossa mitään ei kehyksetä:
+    kuva jää täytön keskelle, eikä paikkaa arvata."""
     stub = _StubReframer(ok=False)
     _, xml = _multicam_cut(fixture_dir, segments=_MOVEMENT_SPANS,
                            settings=_vertical_settings(), reframer=stub)
@@ -1577,6 +1576,33 @@ def test_vertical_without_measurements_letterboxes(fixture_dir):
     fmt = next(f for f in root.iter("format")
                if f.get("id") == seq.get("format"))
     assert fmt.get("height") == "1920"
+
+
+def test_vertical_sets_spatial_conform_fill_on_every_picture(fixture_dir):
+    """Pystyviennissä jokainen kuva on Spatial Conform «Fill», myös laaja.
+
+    Final Cutin oma pystypohja (hmh hannes vertical base) kirjoittaa sen
+    kulmalle ennen ``adjust-transform``ia, ja kehystyksen skaala on
+    suhteessa siihen. Ilman sitä mittaamaton kuva jäi letterboxiin ja
+    mitattu tarvitsi 3,16-kertaisen skaalan sovitetusta koosta.
+    """
+    stub = _StubReframer()
+    _, xml = _multicam_cut(fixture_dir, segments=_MOVEMENT_SPANS,
+                           settings=_vertical_settings(), reframer=stub)
+    for clip in _spine_mc_clips(xml):
+        source = clip.find('mc-source[@srcEnable="video"]')
+        kids = [child.tag for child in source]
+        assert "adjust-conform" in kids, kids
+        assert source.find("adjust-conform").get("type") == "fill"
+        if "adjust-transform" in kids:
+            assert kids.index("adjust-conform") < kids.index("adjust-transform")
+
+    _, flat = _cut(fixture_dir, settings=_vertical_settings())
+    conforms = ET.fromstring(flat).findall(".//spine/*/adjust-conform")
+    assert conforms and all(c.get("type") == "fill" for c in conforms)
+
+    _, off = _multicam_cut(fixture_dir, segments=_MOVEMENT_SPANS)
+    assert "adjust-conform" not in off
 
 
 def test_vertical_off_keeps_the_source_geometry(fixture_dir):

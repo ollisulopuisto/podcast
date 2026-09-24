@@ -22,7 +22,7 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "pedalboard>=0.9.24",
     "pyloudnorm>=0.2.0",
-    "pywebview>=5.0",
+    "pywebview>=6.0",  # FileDialog; OPEN_DIALOG on vanhentunut
 ]
 
 [project.scripts]

@@ -98,7 +98,7 @@ class DesktopApi:
         import webview
 
         result = self.window.create_file_dialog(
-            webview.OPEN_DIALOG,
+            webview.FileDialog.OPEN,
             allow_multiple=False,
             file_types=("Hindenburg (*.nhsx)", "All files (*.*)"),
         )

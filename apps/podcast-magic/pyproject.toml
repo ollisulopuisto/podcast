@@ -25,7 +25,7 @@ dependencies = [
     "lxml>=5.0",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
-    "pywebview>=5.0",
+    "pywebview>=6.0",  # FileDialog; OPEN_DIALOG on vanhentunut
 ]
 
 [project.scripts]

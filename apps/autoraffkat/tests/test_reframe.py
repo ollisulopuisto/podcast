@@ -16,10 +16,12 @@ from autoraffkat.timeline import ZERO
 
 
 def test_fill_scale_of_16x9_source():
-    """16:9 source in a 9:16 project: fill the height, scale 3.1605."""
-    r = reframe.plan_shot(0.5, 1920, 1080)
+    """16:9 source in a 9:16 project: Spatial Conform «Fill» fills the
+    height, so the scale on top of it is 1.0 (it was 3.1605 relative to
+    fit before the export wrote the conform)."""
+    r = reframe.plan_shot(0.5, 0.5, 1920, 1080)
     assert r is not None
-    assert abs(r.scale - 3.1605) < 0.001
+    assert r.scale == 1.0
     assert r.pos_x == 0.0
     assert r.pos_y == 0.0
 
@@ -30,13 +32,13 @@ def test_face_left_of_centre_moves_picture_right():
     Displayed width after fill is 3413 px; a 20 % shift of that is
     0.2 · 3413 / 19.2 ≈ 35.5 percent-of-height units.
     """
-    r = reframe.plan_shot(0.3, 1920, 1080)
+    r = reframe.plan_shot(0.3, 0.5, 1920, 1080)
     assert r.pos_x > 0
     assert abs(r.pos_x - 35.55) < 0.5
 
 
 def test_face_right_of_centre_moves_picture_left():
-    r = reframe.plan_shot(0.7, 1920, 1080)
+    r = reframe.plan_shot(0.7, 0.5, 1920, 1080)
     assert r.pos_x < 0
     assert abs(r.pos_x + 35.55) < 0.5
 
@@ -51,13 +53,13 @@ def test_position_never_reveals_a_gap():
     displayed = 1920 * 1920 / 1080
     slack = (displayed - 1080) / 2
     for cx in (0.0, 0.05, 0.5, 0.95, 1.0):
-        r = reframe.plan_shot(cx, 1920, 1080)
+        r = reframe.plan_shot(cx, 0.5, 1920, 1080)
         assert abs(r.pos_x) * 19.2 <= slack + 0.01
 
 
 def test_no_source_dims_gives_nothing():
     """Without dimensions there is nothing to compute — and no transform."""
-    assert reframe.plan_shot(0.5, 0, 0) is None
+    assert reframe.plan_shot(0.5, 0.5, 0, 0) is None
 
 
 def test_source_already_taller_than_16x9_is_identity():
@@ -66,7 +68,7 @@ def test_source_already_taller_than_16x9_is_identity():
     Fit already fills the height when the source is narrower than 9:16; a
     scale would only magnify. 1080×1920 is the extreme case.
     """
-    assert reframe.plan_shot(0.3, 1080, 1920) is None
+    assert reframe.plan_shot(0.3, 0.5, 1080, 1920) is None
 
 
 # ------------------------------------------------------------- taulukoista
@@ -74,10 +76,15 @@ def test_source_already_taller_than_16x9_is_identity():
 
 def _table(n=10, cx=0.5, found=True):
     """Testitaulukko samassa muodossa kuin ``measure_file`` tuottaa."""
+    # Kasvolaatikko jonka keskipiste on ``cx``: kehystys lukee laatikkoa.
     return {
         "times": np.arange(n, dtype=np.float32),
         "found": np.full(n, found),
-        "cx": np.full(n, cx, dtype=np.float32),
+        "cx": np.full(n, 0.5, dtype=np.float32),
+        "x": np.full(n, cx - 0.05, dtype=np.float32),
+        "w": np.full(n, 0.1, dtype=np.float32),
+        "y": np.full(n, 0.4, dtype=np.float32),
+        "h": np.full(n, 0.2, dtype=np.float32),
     }
 
 
@@ -98,7 +105,7 @@ def test_median_over_the_shots_own_rows():
 
     item = _item()
     table = _table(10, cx=0.5)
-    table["cx"][:5] = 0.2
+    table["x"][:5] = 0.2 - 0.05
     r = Reframer({item.key: table}).from_item(item, 0.0, 4.0)
     assert abs(r.pos_x - (0.3 * 3413.33 / 19.2)) < 0.5
     r2 = Reframer({item.key: table}).from_item(item, 5.0, 9.0)
@@ -151,3 +158,84 @@ def test_a_group_shot_is_never_cropped_to_one_face():
         {close.key: _table(), group.key: _table()}, timeline, roles)
     assert Reframer(tables).from_item(group, 0.0, 9.0) is None
     assert Reframer(tables).from_item(close, 0.0, 9.0) is not None
+
+
+# ------------------------------------------- täyttö ja kasvojen koko (2026-09-25)
+
+
+def _boxes(n=10, x=0.45, y=0.5, w=0.1, h=0.2, cx=0.5):
+    """Taulukko jossa kasvojen laatikko: Vision antaa sen kuvan
+    normalisoiduissa koordinaateissa, origo **alhaalla** vasemmalla."""
+    table = _table(n)
+    table["cx"] = np.full(n, cx, dtype=np.float32)
+    for name, value in (("x", x), ("y", y), ("w", w), ("h", h)):
+        table[name] = np.full(n, value, dtype=np.float32)
+    return table
+
+
+def test_the_face_is_where_its_box_is_not_where_its_landmarks_average():
+    """``cx`` on maamerkkien keskiarvo **kasvolaatikon** sisällä, ei kuvassa.
+
+    Visionin ``normalizedPoints`` normalisoidaan kasvojen omaan laatikkoon,
+    joten ``cx`` on ~0,5 missä tahansa kasvot ovat ja liikkuu vain kun pää
+    kääntyy. Kehystys luki sitä kuvan paikkana ja keskitti siis
+    käytännössä kuvan keskelle. Paikka on laatikko: ``x + w/2``.
+    """
+    from autoraffkat.reframe import Reframer
+
+    item = _item()
+    table = _boxes(x=0.60, w=0.10, cx=0.5)  # kasvot kohdassa 0,65
+    shot = Reframer({item.key: table}).from_item(item, 0.0, 9.0)
+    assert shot is not None
+    # 0,15 kuvan leveydestä, täytössä 3413 px leveä, 19,2 px yksikkö.
+    assert abs(shot.pos_x - (-0.15 * 3413.33 / 19.2)) < 0.5
+
+
+def test_fill_is_the_baseline_and_the_units_match_final_cut():
+    """Final Cutin oma pystypohja: Spatial Conform «Fill», Tomi 1,22 ja
+    sijainti -30,7292. Täytössä skaala on suhteessa täytettyyn kokoon
+    (1,0 = korkeus täynnä) ja sijainti prosentteina projektin korkeudesta.
+
+    Kasvojen paikka on johdettu näistä luvuista, joten testi ei todista
+    kehystystä vaan yksiköt: sama laskenta tuottaa Final Cutin kirjoittaman
+    luvun takaisin.
+    """
+    shot = reframe.plan_shot(0.64168, 0.5, 1920, 1080, zoom=1.22)
+    assert abs(shot.scale - 1.22) < 1e-9
+    assert abs(shot.pos_x - (-30.7292)) < 0.05
+    centred = reframe.plan_shot(0.5, 0.5, 1920, 1080)
+    assert (centred.scale, centred.pos_x, centred.pos_y) == (1.0, 0.0, 0.0)
+
+
+def test_faces_are_evened_out_by_zooming_the_smaller_ones():
+    """Suurimmat kasvot pysyvät 100 %:ssa, muut zoomataan samankokoisiksi.
+
+    Käsin tehdyssä pohjassa Tomin kamera oli zoomattu 1,22:een, jotta hänen
+    kasvonsa olivat Mikon kokoiset. Katto on 1,25: täyttö suurentaa jo
+    1080-lähteen 1920:een, ja jokainen lisäprosentti on pehmeämpi kuva.
+    """
+    from types import SimpleNamespace
+
+    items = {k: _item(k) for k in ("MIKKO", "TOMI", "KAUKANA")}
+    timeline = SimpleNamespace(track_media=lambda key: [items[key]] if key in items else [])
+    roles = SimpleNamespace(closes={"Mikko": "MIKKO", "Tomi": "TOMI", "Kaukana": "KAUKANA"})
+    tables = {"MIKKO": _boxes(h=0.30), "TOMI": _boxes(h=0.246), "KAUKANA": _boxes(h=0.10)}
+    look = reframe.look(tables, timeline, roles)
+    assert look.zooms["MIKKO"] == 1.0
+    assert abs(look.zooms["TOMI"] - 0.30 / 0.246) < 1e-3
+    assert look.zooms["KAUKANA"] == reframe.MAX_ZOOM == 1.25
+
+
+def test_a_zoomed_face_lands_on_the_reference_eyeline():
+    """Zoomatun kasvot samalle korkeudelle kuin 100 %:n kameran kasvot.
+
+    Täytössä pystysuunnassa ei ole liikkumavaraa, joten 100 %:n kamera
+    määrää silmälinjan; zoomattua voi siirtää sen verran kuin zoomi antaa.
+    """
+    # Kasvot 0,40 ylhäältä, silmälinja 0,45: kuvaa siirretään alas.
+    shot = reframe.plan_shot(0.5, 0.40, 1920, 1080, zoom=1.2, eyeline=0.45)
+    moved = (0.40 - 0.5) * 1920 * 1.2 - (0.45 - 0.5) * 1920
+    assert abs(shot.pos_y - moved / 19.2) < 1e-6
+    # Liikkumavaraa on vain (1,2 - 1) * 1920 / 2 = 192 px: ei reunaa näkyviin.
+    far = reframe.plan_shot(0.5, 0.05, 1920, 1080, zoom=1.2, eyeline=0.6)
+    assert abs(far.pos_y) * 19.2 <= 192 + 1e-6

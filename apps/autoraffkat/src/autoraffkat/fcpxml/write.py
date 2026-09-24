@@ -576,7 +576,8 @@ def build_fcpxml(
             reframer, item, seg, seg_start_tl, program_start + frame_duration * b)
         move = moves[index] if moves else _NO_MOVE
         transform = _transform_lines(
-            shot, move, b - a, frame_duration, "              ")
+            shot, move, b - a, frame_duration, "              ",
+            conform=settings is not None and settings.globals.vertical)
 
         if index == 0 and (mic_tracks or room_ids):
             body.append(clip + ">")
@@ -902,8 +903,15 @@ def _transform_lines(
     frames: int,
     frame_duration: Fraction,
     indent: str,
+    conform: bool = False,
 ) -> list[str]:
     """``<adjust-transform>`` yhdelle kuvalle: kehystys ja liike samassa.
+
+    ``conform`` on pystyvienti: kuvalle kirjoitetaan ensin
+    ``<adjust-conform type="fill"/>`` (Spatial Conform «Fill»), kuten Final
+    Cutin oma pystypohja sen kirjoittaa, ja kehystyksen skaala on suhteessa
+    täytettyyn kokoon. Se kirjoitetaan jokaiselle kuvalle, myös laajalle ja
+    mittaamattomalle: ilman sitä kuva jäisi letterboxiin.
 
     Final Cutissa on vain yksi ``adjust-transform``, joten pystyviennin
     kehystys ja mikroliike sulautetaan yhdeksi muodoksi: kehystys on
@@ -922,8 +930,9 @@ def _transform_lines(
     samasta syystä kuin panoroinnissa.
     """
     base = shot.scale if shot else 1.0
+    fill = [f'{indent}<adjust-conform type="fill"/>'] if conform else []
     if not move.animated and shot is None and move.identity:
-        return []
+        return fill
 
     def _pair(value: float) -> str:
         return f"{_number(value)} {_number(value)}"
@@ -931,9 +940,10 @@ def _transform_lines(
     pos = f' position="{_number(shot.pos_x)} {_number(shot.pos_y)}"' if shot else ""
     start = base * move.start_scale
     if not move.animated:
-        return [f'{indent}<adjust-transform scale="{_pair(start)}"{pos}/>']
+        return [*fill, f'{indent}<adjust-transform scale="{_pair(start)}"{pos}/>']
     end = base * move.end_scale
     return [
+        *fill,
         f"{indent}<adjust-transform{pos}>",
         f'{indent}  <param name="scale">',
         f"{indent}    <keyframeAnimation>",
@@ -1721,7 +1731,8 @@ def build_multicam_fcpxml(
             ducks, (at, program_start + frame_duration * b), mc, frame_duration,
             transform=_transform_lines(
                 shot, moves[index] if moves else _NO_MOVE,
-                b - a, frame_duration, "                "),
+                b - a, frame_duration, "                ",
+                conform=settings is not None and settings.globals.vertical),
             video_speakers=video_speakers,
             video_silent=silent(video_angle, video_speakers) if video_angle else [],
         )

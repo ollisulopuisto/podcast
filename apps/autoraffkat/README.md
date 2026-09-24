@@ -296,15 +296,18 @@ browser, and every clip carries a keyword — the speaker's name, or «Laaja»
 for the wide — which is how a batch of clips is selected in Final Cut's
 timeline index.
 
-**Vertical export** (off by default): the project is written as 1080×1920
-and each close-up gets a *measured* reframe — the picture fills the height
-and the speaker's face lands on the centreline — so importing into Final
-Cut is the final step; no Smart Conform round-trip. The framing is the
-median face position over the shot, from the same measurement the reaction
-shots use (turn on **Measure video** once; the toggle starts it for you).
-Unmeasured clips, group shots and wide shots stay letterboxed rather than
-guessed — a group shot cropped to one face would cut the others out — and
-the export warns about unmeasured close-ups. Composes with micro-movement, which multiplies
+**Vertical export** (off by default): the project is written as 1080×1920,
+every picture is set to Spatial Conform **Fill**, and each close-up gets a
+*measured* transform on top — so importing into Final Cut is the final step;
+no Smart Conform round-trip. The speaker's face lands on the centreline, and
+the close-ups are evened out: the camera with the biggest face stays at
+100 %, the others zoom in until the faces match (at most 125 %), and a
+zoomed face is moved to the same height as the unzoomed one — so shot and
+reverse shot mirror each other when the cut goes back and forth. The
+framing comes from the same measurement the reaction shots use (turn on
+**Measure video** once; the toggle starts it for you). Wides, group shots
+and unmeasured clips stay centred in the fill rather than guessed, and the
+export warns about unmeasured close-ups. Composes with micro-movement, which multiplies
 on top of the reframe.
 
 ## Tuning

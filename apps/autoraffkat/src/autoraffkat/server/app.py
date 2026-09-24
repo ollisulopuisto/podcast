@@ -1479,8 +1479,10 @@ def create_app(state: AppState) -> FastAPI:
                 reframer = None
                 framed = 0
                 if state.settings.globals.vertical:
-                    reframer = reframe.Reframer(reframe.close_up_tables(
-                        state.video_tables, state.timeline, roles))
+                    closes = reframe.close_up_tables(
+                        state.video_tables, state.timeline, roles)
+                    reframer = reframe.Reframer(
+                        closes, reframe.look(closes, state.timeline, roles))
                     framed = reframe.framed_count(
                         reframer, state.timeline, decision.segments)
                     if not state.video_tables:

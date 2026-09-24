@@ -56,3 +56,22 @@ def test_a_packaged_program_opens_a_window_only_where_there_is_one():
     # Pyydetty ikkuna on pyydetty ikkuna, myös Linuxilla.
     assert wants_window(True, frozen=False, system="linux") is True
     assert wants_window(False, frozen=True, system="darwin") is False
+
+
+def test_session_dialog_uses_the_current_pywebview_constant():
+    """``OPEN_DIALOG`` on vanhentunut ja tulosti varoituksen joka avauksella.
+
+    Arvo on sama luku (10), joten tarkistetaan tyyppi: vanha vakio palauttaa
+    pelkän ``int``in, uusi on ``FileDialog``-luettelon jäsen.
+    """
+    import webview
+
+    seen = []
+
+    class Window:
+        def create_file_dialog(self, dialog_type, **kwargs):
+            seen.append(dialog_type)
+            return ["/tmp/x.nhsx"]
+
+    assert gui.DesktopApi(Window()).open_session_dialog() == "/tmp/x.nhsx"
+    assert seen[0] is webview.FileDialog.OPEN
