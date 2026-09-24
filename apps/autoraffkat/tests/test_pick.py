@@ -294,7 +294,11 @@ def test_linux_picker_calls_zenity(monkeypatch):
     monkeypatch.setattr(pick.subprocess, "run", mock_run)
 
     result = pick.native(force=True)
-    assert result == "/home/user/project.fcpxml"
+    # Isännän polkusäännöillä, ei kovakoodattuna: ``sys.platform`` on
+    # tässä väärennetty mutta ``os.path`` ei, joten Windows-ajurilla sama
+    # polku saa asemakirjaimen. Kova ``/home/...`` kaatoi Windows-käännöksen
+    # 11.9. alkaen, eikä yksikään julkaisu päässyt sen jälkeen läpi.
+    assert result == pick.resolve("/home/user/project.fcpxml")
     assert cmd_run[0][0] == "zenity"
 
 

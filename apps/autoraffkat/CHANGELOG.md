@@ -5,9 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
-## [autoraffkat-v2026.9.25.1] - 2026-09-25
+## [autoraffkat-v2026.9.25.2] - 2026-09-25
+
+The `2026.9.25.1` tag built on macOS but not on Windows, so it was never published; this is the same release with the Windows build fixed. It is also the first published release since `2026.9.11.4`.
 
 ### Fixed
+- **Windows build** (`tests/test_pick.py`): the zenity picker test faked Linux on a Windows runner and expected a POSIX path, which Windows path handling turns into `D:\home\…`. It failed every Windows build from 11 September on.
 - **Video measurement no longer looks stuck through faceless stretches** (`video/measure.py`): progress was reported only on frames where a face was found, so a stretch where the speaker turned away froze the bar. Each file now also logs to the terminal — start, keyframes extracted, faces found, time taken — where before the measurement said nothing at all.
 - **The cut follows the new speaker sooner** (`decide.py`), from listening to pp 55:
   - Bleed is not speech: a microphone more than 12 dB below the loudest active one does not count as talking (`BLEED_DB`). Bleed measured 17–23 dB down, real overlap ±5 dB. It had kept the outgoing speaker "talking" (0:06 and 9:49 cut 0.7–0.8 s late) and made overlaps that were not there.
