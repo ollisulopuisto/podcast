@@ -397,3 +397,22 @@ def test_a_crowd_shot_without_a_speaker_frames_someone_not_the_gap():
     shot = framer.from_item(item, 0.0, 5.0)
     assert shot is not None
     assert shot.pos_x < -20   # isompi kasvo oikealla -> kuva vasemmalle
+
+
+def test_a_short_close_up_is_framed_from_the_camera_position():
+    """Alle kolmen sekunnin lähikuva kehystetään siinä missä pitkäkin.
+
+    Kuva vaati kolme omaa löytöä (avainruutu sekunnissa), joten
+    nopean rytmin lyhyet kuvat jäivät täytön keskelle: oikealla jaksolla
+    252 kuvaa 594:stä, kasvoista 30–100 % rajauksen ulkopuolella (video
+    files -istunnon mittaus, 2026-09-25). Paikka tulee tiedoston vakaasta
+    portaasta, joten kuvan omien ruutujen määrä ei kerro siitä mitään.
+    """
+    from autoraffkat.reframe import Reframer
+
+    item = _item()
+    table = _table(10, cx=0.7)
+    framer = Reframer({item.key: table})
+    short = framer.from_item(item, 2.2, 3.6)
+    assert short is not None
+    assert short.pos_x < -30

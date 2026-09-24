@@ -1106,11 +1106,18 @@ are already there. Four rules hold it together:
   gets no movement; it carries its label as a keyword («Laaja»), which is
   how a batch of wide shots is selected in Final Cut's index.
 
-The keyframe form is Apple's own example, not a guess: `param
-name="scale"` in x-y pairs as fractions (1 = 100 %), times in the clip's
-own base from zero to the clip's length, interpolation left at the DTD's
-`curve="smooth"` default — the softness is the feature. The keyframe
-overrides the attribute, so the attribute carries the static case.
+The keyframe form is Apple's own example — `param name="scale"` in x-y
+pairs as fractions (1 = 100 %), interpolation left at the DTD's
+`curve="smooth"` default, the softness being the feature — **but the times
+are in the host clip's local time base**, `start` to `start + duration`, the
+same rule Final Cut wrote for `adjust-volume` and `adjust-panner`. The first
+version wrote them from zero, reading "the clip's own time" off an example
+whose clip happened to start at zero; on a multicam clip `start` is the
+multicam's own time, both keyframes landed before the clip began, and the
+push never moved (139 animated clips on the real episode, found by the video
+files session measuring an export, 2026-09-25). Not yet confirmed by an
+import — do that before trusting it. The keyframe overrides the attribute,
+so the attribute carries the static case.
 
 ## Reframe is Spatial Conform «Fill» plus a measured transform
 

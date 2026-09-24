@@ -1437,9 +1437,14 @@ def test_wide_shots_get_no_transform_but_closes_do(fixture_dir):
 
 
 def test_static_framing_is_an_attribute_and_a_push_is_keyframes(fixture_dir):
-    """Paikallaan pysyvä kehys on attribuutti; liike on keyframeineen ja
-    leikkuuaika on klipin oma — nollasta kestoon, Final Cutin esimerkin
-    muodossa «s x y»-pareina."""
+    """Paikallaan pysyvä kehys on attribuutti; liike on keyframeineen.
+
+    Keyframen aika on **isännän paikallisessa aikapohjassa** — samassa kuin
+    ``mc-clip``in ``start`` — eikä nollasta: sama sääntö jonka Final Cut
+    itse kirjoitti ``adjust-volume``lle ja ``adjust-panner``ille, ja jonka
+    mukaan tämän viennin äänenvoimakkuuskin kirjoitetaan. Nollasta alkaen
+    molemmat keyframet osuivat klipin alun eteen ja liike jäi paikalleen
+    (video files -istunnon havainto, 2026-09-25)."""
     tl, xml = _multicam_cut(fixture_dir, segments=_MOVEMENT_SPANS,
                             settings=_moved_settings())
     clips = _spine_mc_clips(xml)
@@ -1455,10 +1460,11 @@ def test_static_framing_is_an_attribute_and_a_push_is_keyframes(fixture_dir):
             param = transform.find('param[@name="scale"]')
             keyframes = param.findall("keyframeAnimation/keyframe")
             assert len(keyframes) == 2
-            assert parse_time(keyframes[0].get("time")) == 0
+            start = parse_time(clip.get("start"))
+            assert parse_time(keyframes[0].get("time")) == start
             # Keyframet ulottuvat klipin kestoon — ei yli eikä alle,
             # sillä loppuun jäävä nousu olisi hyppäys seuraavaan kuvaan.
-            assert parse_time(keyframes[1].get("time")) == parse_time(
+            assert parse_time(keyframes[1].get("time")) == start + parse_time(
                 clip.get("duration"))
             first = keyframes[0].get("value").split()
             assert abs(float(first[0]) - move.start_scale) < 1e-6

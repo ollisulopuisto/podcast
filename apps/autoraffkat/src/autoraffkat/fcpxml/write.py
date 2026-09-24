@@ -578,7 +578,8 @@ def build_fcpxml(
         move = moves[index] if moves else _NO_MOVE
         transform = _transform_lines(
             shot, move, b - a, frame_duration, "              ",
-            conform=settings is not None and settings.globals.vertical)
+            conform=settings is not None and settings.globals.vertical,
+            origin=src_frames)
 
         if index == 0 and (mic_tracks or room_ids):
             body.append(clip + ">")
@@ -907,6 +908,7 @@ def _transform_lines(
     frame_duration: Fraction,
     indent: str,
     conform: bool = False,
+    origin: int = 0,
 ) -> list[str]:
     """``<adjust-transform>`` yhdelle kuvalle: kehystys ja liike samassa.
 
@@ -950,9 +952,9 @@ def _transform_lines(
         f"{indent}<adjust-transform{pos}>",
         f'{indent}  <param name="scale">',
         f"{indent}    <keyframeAnimation>",
-        f'{indent}      <keyframe time="{frames_str(0, frame_duration)}" '
+        f'{indent}      <keyframe time="{frames_str(origin, frame_duration)}" '
         f'value="{_pair(start)}"/>',
-        f'{indent}      <keyframe time="{frames_str(frames, frame_duration)}" '
+        f'{indent}      <keyframe time="{frames_str(origin + frames, frame_duration)}" '
         f'value="{_pair(end)}"/>',
         f"{indent}    </keyframeAnimation>",
         f"{indent}  </param>",
@@ -1570,7 +1572,8 @@ def _reaction_clips(
                 focus = reaction.speaker if key == roles.wide_key else ""
                 shot = reframer.from_item(part, float(start), float(end), focus=focus)
             transform = _transform_lines(shot, _NO_MOVE, dur, frame_duration,
-                                         "                  ", conform=True)
+                                         "                  ", conform=True,
+                                         origin=source)
         if transform:
             lines += [
                 f'                <mc-source angleID={quoteattr(angle_id)} '
@@ -1760,7 +1763,8 @@ def build_multicam_fcpxml(
             transform=_transform_lines(
                 shot, moves[index] if moves else _NO_MOVE,
                 b - a, frame_duration, "                ",
-                conform=settings is not None and settings.globals.vertical),
+                conform=settings is not None and settings.globals.vertical,
+                origin=start_frames),
             video_speakers=video_speakers,
             video_silent=silent(video_angle, video_speakers) if video_angle else [],
         )

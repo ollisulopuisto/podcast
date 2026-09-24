@@ -300,17 +300,15 @@ class Reframer:
         f1 = item.file_time_at(t1)
         if f0 is None or f1 is None:
             return None
-        rows = (
-            (table["times"] >= f0 - EPS_S)
-            & (table["times"] < f1 + EPS_S)
-            & table["found"]
-        )
-        if int(rows.sum()) < MIN_SAMPLES:
-            return None
         # Paikka tiedoston vakaasta portaasta, ei kuvan omasta mediaanista:
         # saman kameran kuvat samassa kohdassa jaksoa rajataan täsmälleen
         # samoin, eikä huojunta nytkäytä rajausta leikkauksesta toiseen.
+        # Siksi kuvan omien löytöjen määrä ei ole ehto: vaatimus kolmesta
+        # jätti nopean rytmin lyhyet kuvat keskelle (252/594 oikealla
+        # jaksolla, kasvoista 30–100 % ulkona). Tiedostolta vaaditaan.
         found = table["found"]
+        if int(np.count_nonzero(found)) < MIN_SAMPLES:
+            return None
         x, y, _h = _faces(table)
         xs, ys = self._levels(item.key, table["times"][found], x, y)
         middle = (float(f0) + float(f1)) / 2

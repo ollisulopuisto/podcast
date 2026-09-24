@@ -10,6 +10,11 @@ and this project adheres to Calendar Versioning (CalVer).
 ### Added
 - **Vertical wides and group shots follow the speaker** (`seats.py`, `reframe.py`, `video/measure.py`): wide and group-shot cameras are measured for every face (their own cache), each face is matched to a microphone by mouth movement — per file, so a camera with two people in one part and one in the next works — and in the vertical export those shots are split where the speaker changes and each piece framed on that speaker. The camera card shows who sits where, left to right; clicking a name moves it left and that order overrides the measurement.
 
+### Fixed
+- **Short vertical close-ups were left centred, cutting faces in half** (`reframe.py`): a shot needed three measured frames of its own, so under ~3 s it got no framing — 252 of 594 clips on the real episode, 30–100 % of the face outside the crop. The position comes from the camera's steady track; the shot's own frames no longer gate it. Reaction shots had the same problem.
+- **Micro-movement keyframes were written from 0, not from the clip's start** (`fcpxml/write.py`): on a multicam clip both keyframes landed before the clip began and the push did nothing. They now use the host's local time base like the volume and pan keyframes (not yet confirmed by an import).
+- **Reaction shots in a vertical export** were letterboxed 16:9 bands over the picture; they now get Fill and the listener's framing. A crowd shot with nobody talking frames the most prominent person instead of the gap between two, and a neighbour at the crop edge is pushed fully out or in.
+
 ### Changed
 - **Steady vertical framing** (`reframe.py`): a camera keeps one position until the face stays elsewhere for 30 s (more than 0.04 of the width); fidgeting never reframes, and cutting back to the same camera lands on exactly the same frame.
 - **Crowd shots are sampled every ~5 s for faces** (`video/measure.py`): face detection on wide and group-shot cameras runs on every 5th keyframe, a fifth of the time; close-ups keep every keyframe for reaction shots.
