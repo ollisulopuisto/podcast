@@ -305,9 +305,16 @@ the close-ups are evened out: the camera with the biggest face stays at
 zoomed face is moved to the same height as the unzoomed one — so shot and
 reverse shot mirror each other when the cut goes back and forth. The
 framing comes from the same measurement the reaction shots use (turn on
-**Measure video** once; the toggle starts it for you). Wides, group shots
-and unmeasured clips stay centred in the fill rather than guessed, and the
-export warns about unmeasured close-ups. Composes with micro-movement, which multiplies
+**Measure video** once; the toggle starts it for you).
+
+Wides and group shots follow the speaker: in the vertical export they are
+split where the speaker changes, and each piece is framed on that person's
+face. Which face is whom is measured from the mouths — the one that opens
+when a microphone talks — separately for each part, so a camera that shows
+two people in one part and one in the next is fine. The camera card shows
+the result left to right; if it is wrong, click a name to move it left and
+that order is used instead. Unmeasured clips stay centred in the fill rather
+than guessed, and the export warns about unmeasured close-ups. Composes with micro-movement, which multiplies
 on top of the reframe.
 
 ## Tuning

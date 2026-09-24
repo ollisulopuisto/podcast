@@ -338,6 +338,8 @@ main {
   background: color-mix(in srgb, var(--tint) 22%, transparent);
 }
 .card .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.card .seats { display: flex; flex-direction: column; gap: 4px; }
+.card .seat-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
 .card .knob { flex: 1 1 auto; gap: 7px; }
 .card .knob label { min-width: 58px; font-size: 11px; }
 .card .knob output { min-width: 44px; font-size: 11px; }

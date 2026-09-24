@@ -169,6 +169,9 @@ class TrackConfig:
     role: str = ROLE_UNUSED
     speaker: str = ""  # lähikuvan ja mikin yhdistävä nimi
     covers: list[str] = field(default_factory=list)  # ryhmäkuvan puhujat
+    # Laajan tai ryhmäkuvan istujat vasemmalta oikealle, jos käyttäjä on
+    # korjannut mitatun järjestyksen. Tyhjä = mitattu (``seats.py``).
+    seats: list[str] = field(default_factory=list)
     sensitivity_db: float = 12.0  # dB pohjakohinan yli
     gain_db: float = 0.0  # vahvistuksen korjaus
 
@@ -182,9 +185,10 @@ class TrackConfig:
             for f in ("role", "speaker", "sensitivity_db", "gain_db")
             if f in data
         }
-        covers = data.get("covers")
-        if isinstance(covers, list):
-            known["covers"] = [str(name) for name in covers if str(name).strip()]
+        for name in ("covers", "seats"):
+            names = data.get(name)
+            if isinstance(names, list):
+                known[name] = [str(n) for n in names if str(n).strip()]
         return cls(**known)
 
 
@@ -455,6 +459,9 @@ class Segment:
     label: str  # puhujan nimi tai "laaja" — esikatselua varten
     start: float
     end: float
+    # Pystyviennissä laaja ja ryhmäkuva rajataan puhujaan: kenen kasvoille
+    # tämä kuva kehystetään. Tyhjä = ei kenenkään (täytön keskelle).
+    focus: str = ""
 
     @property
     def duration(self) -> float:

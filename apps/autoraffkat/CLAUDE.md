@@ -1161,6 +1161,43 @@ the middle one. The rules it lives by:
 * **Turning the switch on starts the scan** when no tables exist, the
   same rule as panning: a feature that silently requires another
   feature's button pressed first is a feature that looks broken.
+  `video_missing()` is the one place that decides it, and it counts the
+  crowd tables too: with close-ups already measured, the old "no tables"
+  test never started the crowd pass.
+
+## Wides and group shots follow the speaker, by mouth
+
+Smart Conform does not know what to do with a wide or a two-shot in 9:16,
+so in a vertical export they are **split where the speaker changes**
+(`reframe.focus_segments`) and each piece is framed on that speaker's face
+(`Segment.focus`). In the 16:9 cut a two-shot is one shot because it shows
+both people; a vertical crop shows one, so a turn change is a cut. Silence
+and overlap hold the previous speaker, and a piece shorter than `min_shot`
+folds into its neighbour. Two things in the export had to stop merging
+same-angle neighbours — `_merge_spans` and `_merge_multicam_spans` both
+now compare `focus` — because merging was the old defence against Smart
+Conform cropping one camera two ways, which is now exactly the point.
+
+Which face is whom is measured, per **file**, not per camera (`seats.py`).
+The same camera can hold two people in part 1 and one in part 2 when a
+guest leaves and nothing is moved, so each file is matched only against
+the speakers who talk during it, and the number of seats comes from how
+many faces the frames actually hold. The crowd pass (`measure_file(...,
+crowd=True)`) keeps every face per keyframe with its inner-lip aperture;
+faces under half the median size are background. Seats are a 1-D k-means
+on the face centres, and each seat goes to the speaker whose mic is on when
+its mouth is open more than when it is off — one frame a second says
+nothing, an hour of them does. Position cannot decide it: in the test the
+speaker sits on the *right* on purpose. The assignment is the best
+permutation of those differences, and `margin` (best minus second best) is
+shown on the camera card. It has **not** been calibrated on real footage
+yet; that is why the order is on screen and can be fixed by clicking a
+name (`TrackConfig.seats`, left to right, inherited like other roles and
+restricted per file to the people in it).
+
+A crowd table is its own cache entry (`CROWD` in the key and the path
+index): a camera that was a close-up in one episode and a two-shot in the
+next must not have one measurement overwrite the other.
 
 ## Tests
 

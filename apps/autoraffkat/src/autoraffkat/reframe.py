@@ -28,10 +28,12 @@ keskitti käytännössä kuvan keskelle.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from itertools import pairwise
 
 import numpy as np
 
 from .decide import WIDE_LABEL
+from .model import HOP, Segment
 
 PROJECT_W = 1080
 PROJECT_H = 1920
@@ -78,6 +80,10 @@ class Look:
 
     zooms: dict[str, float] = field(default_factory=dict)  # median avain -> zoomi
     eyeline: float | None = None
+    # Lähikuvien suurin kasvojen mediaanikorkeus: laajan ja ryhmäkuvan
+    # puhuja zoomataan kohti tätä, jotta rajaus ei hypi kokoa leikkauksessa
+    # lähikuvasta laajaan.
+    target: float | None = None
 
 
 def _faces(table: dict, rows=None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -113,7 +119,7 @@ def look(tables: dict, timeline, roles) -> Look:
     target = max(heights.values())
     zooms = {k: float(min(MAX_ZOOM, max(1.0, target / h))) for k, h in heights.items()}
     reference = max(heights, key=heights.get)
-    return Look(zooms=zooms, eyeline=lines[reference])
+    return Look(zooms=zooms, eyeline=lines[reference], target=target)
 
 
 def plan_shot(fx: float, fy: float, width: int, height: int,
@@ -156,22 +162,35 @@ class Reframer:
     varoituksissa.
     """
 
-    def __init__(self, tables: dict, look: Look | None = None):
+    def __init__(self, tables: dict, look: Look | None = None,
+                 crowd: dict | None = None, crowd_tables: dict | None = None,
+                 names: list[str] | None = None):
         self.tables = tables
         self.look = look or Look()
+        # Laajat ja ryhmäkuvat: median avain -> ``seats.FileSeats`` ja
+        # joukkotaulukko, sekä puhujien nimet ruudukon järjestyksessä.
+        self.crowd = crowd or {}
+        self.crowd_tables = crowd_tables or {}
+        self.index = {name: i for i, name in enumerate(names or [])}
 
     def from_item(
         self,
         item,
         t0: float,
         t1: float,
+        focus: str = "",
     ) -> Reframe | None:
         """Kehys yhdelle klipille: mediaanikasvo klipin omilta riveiltä.
 
         ``t0``/``t1`` ovat aikajanan sekunteja; ne käännetään tiedoston
         sekunteiksi sijoituksen kautta (``file_time_at``), ja taulukon
         rivit otetaan kestosta pienellä toleranssilla molemmin puolin.
+
+        ``focus`` on laajan tai ryhmäkuvan puhuja: kehys hänen kasvoilleen,
+        jos hänet on tunnistettu tästä tiedostosta.
         """
+        if focus:
+            return self._crowd_shot(item, t0, t1, focus)
         table = self.tables.get(item.key)
         if table is None or "x" not in table or not item.width or not item.height:
             return None
@@ -191,6 +210,80 @@ class Reframer:
             float(np.median(x)), float(np.median(y)), item.width, item.height,
             zoom=self.look.zooms.get(item.key, 1.0), eyeline=self.look.eyeline,
         )
+
+
+    def _crowd_shot(self, item, t0: float, t1: float, focus: str) -> Reframe | None:
+        found = self.crowd.get(item.key)
+        table = self.crowd_tables.get(item.key)
+        speaker = self.index.get(focus)
+        if found is None or table is None or speaker not in found.seats:
+            return None
+        if not item.width or not item.height:
+            return None
+        seat = found.seats[speaker]
+        x, y, h = seat.x, seat.y, seat.h
+        f0, f1 = item.file_time_at(t0), item.file_time_at(t1)
+        if f0 is not None and f1 is not None:
+            times = table["times"][table["frame"][seat.rows]]
+            here = seat.rows[(times >= f0 - EPS_S) & (times < f1 + EPS_S)]
+            if len(here) >= MIN_SAMPLES:
+                x = float(np.median(table["x"][here] + table["w"][here] / 2))
+                y = float(np.median(1.0 - (table["y"][here] + table["h"][here] / 2)))
+                h = float(np.median(table["h"][here]))
+        target = self.look.target
+        zoom = min(MAX_ZOOM, max(1.0, target / h)) if target and h > 0 else 1.0
+        return plan_shot(x, y, item.width, item.height, zoom=zoom,
+                         eyeline=self.look.eyeline)
+
+
+def focus_segments(segments: list, grid, crowd: dict[str, list[int]],
+                   min_shot: float) -> list:
+    """Laajan ja ryhmäkuvan kuvat pilkottuna puhujan mukaan pystyvientiä varten.
+
+    ``crowd`` on raidan avain -> puhujat jotka kuvassa voivat olla.
+    Kussakin kohdassa rajataan siihen joka puhuu yksin; hiljaisuus ja
+    päällekkäispuhe pitävät edellisen, ja ennen ensimmäistä puhetta ollaan
+    ensimmäisessä puhujassa. Minimikestoa lyhyempi pätkä sulautuu
+    edelliseen — se olisi välähdys eikä kuva. Silmukka kulkee jaksojen eikä
+    näytteiden yli, kuten päätöskerroksessa.
+    """
+    need = max(1, int(round(min_shot / HOP)))
+    out: list = []
+    for seg in segments:
+        covered = crowd.get(seg.angle)
+        lo = max(0, int(round((seg.start - grid.program_start) / HOP)))
+        hi = min(grid.n, int(round((seg.end - grid.program_start) / HOP)))
+        if not covered or hi <= lo:
+            out.append(seg)
+            continue
+        on = np.stack([grid.speakers[p].on[lo:hi] for p in covered])
+        alone = on.sum(axis=0) == 1
+        who = np.where(alone, np.asarray(covered)[np.argmax(on, axis=0)], -1)
+        if not (who >= 0).any():
+            out.append(seg)
+            continue
+        index = np.where(who >= 0, np.arange(len(who)), 0)
+        np.maximum.accumulate(index, out=index)
+        who = who[index]
+        who[who < 0] = who[who >= 0][0]
+
+        runs: list[list[int]] = []  # [alku, loppu, puhuja]
+        edges = np.flatnonzero(np.diff(who)) + 1
+        bounds = [0, *edges.tolist(), len(who)]
+        for a, b in pairwise(bounds):
+            if runs and (b - a < need or runs[-1][2] == who[a]):
+                runs[-1][1] = b
+            else:
+                runs.append([a, b, int(who[a])])
+        if len(runs) > 1 and runs[0][1] - runs[0][0] < need:
+            runs[1][0] = runs[0][0]
+            runs.pop(0)
+        for index_run, (a, b, speaker) in enumerate(runs):
+            start = seg.start if index_run == 0 else grid.program_start + (lo + a) * HOP
+            end = seg.end if index_run == len(runs) - 1 else grid.program_start + (lo + b) * HOP
+            out.append(Segment(seg.angle, seg.label, start, end,
+                               focus=grid.speakers[speaker].name))
+    return out
 
 
 def close_up_tables(tables: dict, timeline, roles) -> dict:
@@ -229,12 +322,12 @@ def framed_count(reframer: Reframer, timeline, segments: list) -> int:
     """
     count = 0
     for seg in segments:
-        if seg.label == WIDE_LABEL or not seg.angle:
+        if (seg.label == WIDE_LABEL and not seg.focus) or not seg.angle:
             continue
         for item in items_for(timeline, seg.angle):
             if item.placement_at(seg.start) is None:
                 continue
-            if reframer.from_item(item, seg.start, seg.end) is not None:
+            if reframer.from_item(item, seg.start, seg.end, focus=seg.focus) is not None:
                 count += 1
                 break
     return count

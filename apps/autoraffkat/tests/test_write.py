@@ -1491,10 +1491,11 @@ class _StubReframer:
         self.scale = scale
         self.pos_x = pos_x
 
-    def from_item(self, item, t0, t1):
+    def from_item(self, item, t0, t1, focus=""):
         from autoraffkat import reframe
 
         self.calls.append((item.key, round(t0, 3), round(t1, 3)))
+        self.focus = [*getattr(self, "focus", []), focus]
         if not self.ok:
             return None
         return reframe.Reframe(scale=self.scale, pos_x=self.pos_x)
@@ -1603,6 +1604,30 @@ def test_vertical_sets_spatial_conform_fill_on_every_picture(fixture_dir):
 
     _, off = _multicam_cut(fixture_dir, segments=_MOVEMENT_SPANS)
     assert "adjust-conform" not in off
+
+
+def test_a_wide_split_by_speaker_stays_split_and_is_framed(fixture_dir):
+    """Pystyviennissä laaja pilkotaan puhujan mukaan ja rajataan hänen
+    kasvoilleen: peräkkäiset palat samasta kulmasta ovat eri kuvia.
+
+    Vientiin oli rakennettu päinvastainen sääntö — peräkkäiset samaan
+    kulmaan osuvat välit yhdistetään, jottei Smart Conform rajaisi samaa
+    kameraa kahdesti eri tavalla. Rajauksen tehdessämme itse se on juuri
+    se mitä halutaan.
+    """
+    stub = _StubReframer()
+    segments = [
+        Segment("WIDE", "Laaja", 0.0, 6.0, focus="Host"),
+        Segment("WIDE", "Laaja", 6.0, 14.0, focus="Guest"),
+        Segment("CLOSE_A", "Host", 14.0, 36.0),
+    ]
+    _, xml = _multicam_cut(fixture_dir, segments=segments,
+                           settings=_vertical_settings(), reframer=stub)
+    clips = _spine_mc_clips(xml)
+    assert len(clips) >= 3, [c.get("name") for c in clips]
+    for clip in clips[:2]:
+        assert clip.find('mc-source[@srcEnable="video"]/adjust-transform') is not None
+    assert stub.focus[:2] == ["Host", "Guest"]
 
 
 def test_vertical_off_keeps_the_source_geometry(fixture_dir):
@@ -1752,3 +1777,17 @@ def test_several_mics_synced_into_one_angle_all_play_once(tmp_path):
            if x.get("angleID") == "P1A1"
            for r in x.findall("audio-role-source") if r.get("active") == "0"]
     assert "dialogue.Mikko" in off
+
+
+def test_flat_export_keeps_speaker_pieces_apart(fixture_dir):
+    """Tasaviennissäkin puhujan mukaan pilkotut palat ovat eri kuvia."""
+    tl = read_fcpxml(str(fixture_dir / "sync.fcpxml"))
+    by_key = {m.key: m for m in tl.media}
+    segments = [
+        Segment("WIDE.mp4", "Laaja", 0.0, 10.0, focus="Host"),
+        Segment("WIDE.mp4", "Laaja", 10.0, 20.0, focus="Guest"),
+        Segment("CLOSE_A.mp4", "Host", 20.0, 35.0),
+    ]
+    xml = build_fcpxml(by_key, segments, [], tl.frame_duration, tl.start,
+                       tl.start + Fraction(35), "Palat", settings=_vertical_settings())
+    assert len(ET.fromstring(xml).find(".//sequence/spine")) == 3

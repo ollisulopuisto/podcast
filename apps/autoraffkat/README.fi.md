@@ -303,9 +303,16 @@ pysyy 100 %:ssa, muut zoomataan kunnes kasvot ovat samankokoiset (enintään
 125 %), ja zoomatut kasvot siirretään samalle korkeudelle kuin zoomaamattomat
 — joten kuva ja vastakuva peilaavat toisiaan kun leikkaus käy edestakaisin.
 Kehystys tulee samasta mittauksesta kuin reaktiokuvat (paina kerran «Mittaa
-kuva»; kytkin käynnistää mittauksen itse). Laajat, ryhmäkuvat ja
-mittaamattomat kuvat jäävät täytön keskelle arvaamisen sijaan, ja vienti
-varoittaa mittaamattomista lähikuvista. Yhdistettävissä mikroliikkeen
+kuva»; kytkin käynnistää mittauksen itse).
+
+Laajat ja ryhmäkuvat seuraavat puhujaa: pystyviennissä ne pilkotaan
+puhujan vaihtuessa, ja kukin pala rajataan hänen kasvoilleen. Kuka on kukin
+kasvo mitataan suusta — se joka aukeaa kun mikki puhuu — erikseen
+jokaisessa osassa, joten kamera joka näyttää yhdessä osassa kaksi ihmistä ja
+seuraavassa yhden toimii. Kamerakortti näyttää tuloksen vasemmalta
+oikealle; jos se on väärin, nimen klikkaus siirtää sitä vasemmalle ja sitä
+järjestystä käytetään. Mittaamattomat kuvat jäävät täytön keskelle
+arvaamisen sijaan, ja vienti varoittaa mittaamattomista lähikuvista. Yhdistettävissä mikroliikkeen
 kanssa, joka kertautuu kehystyksen päälle.
 
 ## Säätäminen

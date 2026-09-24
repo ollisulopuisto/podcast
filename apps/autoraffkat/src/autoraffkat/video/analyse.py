@@ -127,6 +127,43 @@ def tables(grid, roles, timeline, settings, progress=None) -> tuple[dict, dict]:
     tiedostoa eikä kertonut mitään — painallus on nimenomainen pyyntö, ja
     sellainen ei saa olla hiljainen tyhjäkäynti.
     """
+    files = close_up_files(grid, roles, timeline)
+    if not files:
+        # Ei ole mitä mitata: joko lähikuvia ei ole roolitettu tai kukaan ei
+        # ole kertaakaan vaiti. Kumpikin on kelvollinen tilanne mutta
+        # kumpikaan ei ole «valmis», ja ilman tätä painike näyttäisi
+        # onnistuneen tekemättä mitään.
+        return {}, {"files": "ei mitattavia lähikuvia"}
+    return measure_files([(key, path) for _speaker, key, path in files],
+                         settings, progress)
+
+
+def crowd_files(roles, timeline) -> list[tuple[str, str]]:
+    """(media-avain, polku) laajan ja ryhmäkuvien tiedostoista.
+
+    Pystyvienti rajaa ne puhujaan, ja siihen tarvitaan jokainen kasvo.
+    Lähikuvia ei mitata tässä: niiden taulukko on jo reaktiokerroksen.
+    """
+    keys = ([roles.wide_key] if roles.wide_key else []) + list(roles.groups)
+    out = []
+    for key in keys:
+        for item in timeline.track_media(key):
+            if item.path and item.has_video:
+                out.append((item.key, item.path))
+    return out
+
+
+def crowd_tables(roles, timeline, settings, progress=None) -> tuple[dict, dict]:
+    """Joukkotaulukot (kaikki kasvot) laajalle ja ryhmäkuville."""
+    files = crowd_files(roles, timeline)
+    if not files:
+        return {}, {}
+    return measure_files(files, settings, progress, crowd=True)
+
+
+def measure_files(files: list[tuple[str, str]], settings, progress=None,
+                  crowd: bool = False) -> tuple[dict, dict]:
+    """Mittaa tiedostot rinnakkain. ``files`` on (media-avain, polku)."""
     out: dict = {}
     errors: dict = {}
     try:
@@ -134,17 +171,8 @@ def tables(grid, roles, timeline, settings, progress=None) -> tuple[dict, dict]:
     except detect.DetectError as exc:
         errors["detector"] = str(exc)
         return out, errors
-
-    files = close_up_files(grid, roles, timeline)
-    if not files:
-        # Ei ole mitä mitata: joko lähikuvia ei ole roolitettu tai kukaan ei
-        # ole kertaakaan vaiti. Kumpikin on kelvollinen tilanne mutta
-        # kumpikaan ei ole «valmis», ja ilman tätä painike näyttäisi
-        # onnistuneen tekemättä mitään.
-        errors["files"] = "ei mitattavia lähikuvia"
-        return out, errors
     todo = []
-    for _speaker, key, path in files:
+    for key, path in files:
         if not os.path.exists(path):
             errors[key] = f"{os.path.basename(path)}: mediaa ei löydy"
         else:
@@ -177,7 +205,8 @@ def tables(grid, roles, timeline, settings, progress=None) -> tuple[dict, dict]:
             table = measure.table(
                 path, own,
                 progress=(lambda frac, i=index: report(i, frac))
-                if progress else None)
+                if progress else None,
+                crowd=crowd)
             report(index, 1.0)
             return key, table, None
         except (measure.MeasureError, OSError, RuntimeError) as exc:

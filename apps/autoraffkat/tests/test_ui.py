@@ -69,6 +69,12 @@ def test_interface_renders_without_errors(scratch_xml, tmp_path):
     }
     latest = client.post("/api/settings", json=payload).json()
     assert latest.get("ok"), latest.get("problems")
+    # Istujat tulevat vain mitatusta joukkotaulukosta, jota fixturessa ei
+    # ole; ilman tätä kortin istujarivi jäisi piirtämättä ja testaamatta.
+    latest["seats"] = {"WIDE": [
+        {"part": "WIDE 01.mp4", "order": ["Host", "Guest"], "margin": 0.1, "manual": False},
+        {"part": "WIDE 02.mp4", "order": ["Host"], "margin": 0.0, "manual": False},
+    ]}
 
     state_file = tmp_path / "state.json"
     latest_file = tmp_path / "latest.json"

@@ -204,7 +204,7 @@ def test_files_are_measured_in_parallel(monkeypatch):
     guard = threading.Lock()
     start = threading.Event()
 
-    def slow(path, det, progress=None):
+    def slow(path, det, progress=None, crowd=False):
         nonlocal live, peak
         with guard:
             live += 1
@@ -352,3 +352,42 @@ def test_progress_moves_through_frames_without_a_face(clip):
     reports = []
     measure.measure_file(str(clip), Stub(blind_every=1), progress=reports.append)
     assert any(0.5 < r < 1.0 for r in reports), reports
+
+
+class Crowd(Stub):
+    """Kaksi kasvoa joka ruudussa: vasen suu auki joka toisessa, oikea kiinni."""
+
+    name = "tynka-joukko"
+
+    def measure_all(self, path):
+        self.seen += 1
+        return [
+            {"x": 0.2, "y": 0.4, "w": 0.1, "h": 0.2, "mouth": 0.4 * (self.seen % 2)},
+            {"x": 0.7, "y": 0.4, "w": 0.1, "h": 0.2, "mouth": 0.0},
+        ]
+
+
+def test_a_crowd_table_keeps_every_face(clip):
+    """Laajassa ja ryhmäkuvassa kasvoja on useita, ja kaikki tarvitaan.
+
+    Lähikuvan taulukko pitää ruutua kohden suurimman kasvon; laajasta se
+    olisi se joka sattuu olemaan lähimpänä. Joukkotaulukossa jokainen
+    löytö on oma rivinsä ja ``frame`` kertoo mihin ruutuun se kuuluu.
+    """
+    table = measure.measure_file(str(clip), Crowd(), crowd=True)
+    frames = len(table["times"])
+    assert len(table["frame"]) == 2 * frames
+    assert sorted(set(table["x"].round(2))) == [0.2, 0.7]
+    assert set(table["frame"]) == set(range(frames))
+    assert table["mouth"][table["x"] < 0.5].max() > 0.3
+
+
+def test_crowd_and_close_up_tables_are_cached_apart(clip, monkeypatch, tmp_path):
+    """Sama kamera voi olla sekä lähikuva että ryhmäkuva eri jaksoissa;
+    kummankin mittaus on oma välimuistinsa eikä toinen korvaa toista."""
+    monkeypatch.setattr(measure, "cache_dir", lambda: tmp_path)
+    single = measure.table(str(clip), Stub())
+    crowd = measure.table(str(clip), Crowd(), crowd=True)
+    assert "frame" not in single and "frame" in crowd
+    assert measure.is_cached(str(clip), Stub())
+    assert measure.is_cached(str(clip), Crowd(), crowd=True)

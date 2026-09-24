@@ -239,3 +239,69 @@ def test_a_zoomed_face_lands_on_the_reference_eyeline():
     # Liikkumavaraa on vain (1,2 - 1) * 1920 / 2 = 192 px: ei reunaa näkyviin.
     far = reframe.plan_shot(0.5, 0.05, 1920, 1080, zoom=1.2, eyeline=0.6)
     assert abs(far.pos_y) * 19.2 <= 192 + 1e-6
+
+
+# ------------------------------------ laaja ja ryhmäkuva puhujan mukaan
+
+
+def _crowd_grid(seconds=40):
+    from autoraffkat.decide import Grid, SpeakerLanes
+    from autoraffkat.model import HOP
+
+    n = int(seconds / HOP)
+
+    def lane(name, spans):
+        on = np.zeros(n, dtype=bool)
+        for a, b in spans:
+            on[int(a / HOP):int(b / HOP)] = True
+        return SpeakerLanes(name, np.where(on, -30.0, -60.0).astype(np.float32), on, None)
+
+    return Grid(n=n, program_start=0.0, wide_key="W", speakers=[
+        lane("Tomi", [(0, 2)]),
+        lane("Mikko", [(3, 10), (10.2, 10.6), (20, 30)]),
+        lane("Vieras", [(10, 20)]),
+    ])
+
+
+def test_a_group_shot_is_split_where_the_speaker_changes():
+    """Pystyviennissä ryhmäkuva on uusi kuva kun puhuja vaihtuu.
+
+    Leikkauksessa kahden kuva on yksi kuva, koska se näyttää molemmat;
+    pystyrajaus näyttää vain yhden, joten vuoronvaihto on leikkaus.
+    Minimikestoa lyhyempi välähdys (Mikon 0,4 s myötäily) ei ole kuva, ja
+    hiljaisuus pitää edellisen.
+    """
+    from autoraffkat.model import Segment
+
+    cut = [Segment("W", "Laaja", 0.0, 2.0), Segment("CAM 3", "Mikko & Vieras", 2.0, 40.0)]
+    out = reframe.focus_segments(cut, _crowd_grid(), {"CAM 3": [1, 2]}, min_shot=1.5)
+    assert [(s.angle, round(s.start, 2), round(s.end, 2), s.focus) for s in out] == [
+        ("W", 0.0, 2.0, ""),
+        ("CAM 3", 2.0, 10.0, "Mikko"),
+        ("CAM 3", 10.0, 20.0, "Vieras"),
+        ("CAM 3", 20.0, 40.0, "Mikko"),
+    ]
+
+
+def test_a_crowd_shot_is_framed_on_its_speaker():
+    """Vierasta puhuessa rajaus on vieraassa, vaikka Mikko istuu oikealla."""
+    from autoraffkat.seats import FileSeats, Seat
+
+    item = _item("CAM 3 01.mp4")
+    table = {"times": np.arange(40, dtype=np.float32),
+             "frame": np.repeat(np.arange(40, dtype=np.int32), 2),
+             "x": np.tile(np.array([0.15, 0.65], np.float32), 40),
+             "w": np.full(80, 0.1, np.float32), "y": np.full(80, 0.4, np.float32),
+             "h": np.full(80, 0.2, np.float32), "mouth": np.zeros(80, np.float32)}
+    rows = np.arange(80)
+    found = FileSeats(seats={
+        1: Seat(1, 0.70, 0.5, 0.2, rows[1::2]),
+        2: Seat(2, 0.20, 0.5, 0.2, rows[0::2]),
+    })
+    framer = reframe.Reframer({}, crowd={item.key: found}, crowd_tables={item.key: table},
+                              names=["Tomi", "Mikko", "Vieras"])
+    guest = framer.from_item(item, 10.0, 20.0, focus="Vieras")
+    mikko = framer.from_item(item, 20.0, 30.0, focus="Mikko")
+    assert guest.pos_x > 0 > mikko.pos_x   # vieras vasemmalla -> kuva oikealle
+    assert abs(guest.pos_x - (0.30 * 3413.33 / 19.2)) < 0.5
+    assert framer.from_item(item, 0.0, 2.0, focus="Tomi") is None  # ei kuvassa

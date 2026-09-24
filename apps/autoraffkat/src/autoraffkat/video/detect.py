@@ -174,6 +174,38 @@ class VisionFaces:
         }
 
 
+    def measure_all(self, path: str) -> list[dict]:
+        """Jokainen kasvo: laatikko ja suun aukko. Laajalle ja ryhmäkuvalle.
+
+        Laatikko on kuvan normalisoiduissa koordinaateissa (origo alhaalla
+        vasemmalla). ``mouth`` on sisähuulten korkeus jaettuna leveydellä,
+        sama mitta kuin silmien aukolla: puhuessa suu on useammin auki, ja
+        sillä kasvot yhdistetään mikkiin. Kasvo ilman maamerkkejä on silti
+        paikka, suu nolla.
+        """
+        handler = self._handler.alloc().initWithURL_options_(
+            self._ns_url.fileURLWithPath_(path), {})
+        request = self._request.alloc().init()
+        handler.performRequests_error_([request], None)
+        out = []
+        for face in request.results() or []:
+            box = face.boundingBox()
+            mouth = 0.0
+            marks = face.landmarks()
+            lips = marks.innerLips() if marks is not None else None
+            if lips is not None:
+                pts = self._points(lips)
+                if len(pts) >= 3:
+                    width = float(np.ptp(pts[:, 0])) or 1e-6
+                    mouth = float(np.ptp(pts[:, 1]) / width)
+            out.append({
+                "x": float(box.origin.x), "y": float(box.origin.y),
+                "w": float(box.size.width), "h": float(box.size.height),
+                "mouth": mouth,
+            })
+        return out
+
+
 # ------------------------------------------------------------------ rekisteri
 
 DETECTORS: dict[str, type] = {"vision": VisionFaces}

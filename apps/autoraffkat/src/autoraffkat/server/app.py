@@ -115,6 +115,9 @@ class AppState:
     _marks: object = None
     _marks_key: tuple | None = None
     video_tables: dict = field(default_factory=dict)
+    # Laajojen ja ryhmäkuvien joukkotaulukot (kaikki kasvot), pystyvientiä
+    # varten. Erillään, koska lähikuvan taulukko pitää vain suurimman.
+    crowd_tables: dict = field(default_factory=dict)
     video_errors: dict = field(default_factory=dict)
     # Istumajärjestys kevyestä otoksesta. Erillään ``video_tables``ista,
     # koska se on eri kysymys eri hinnalla: yksi merkki puhujaa kohti
@@ -155,6 +158,7 @@ class AppState:
         self.audio_preview = {}
         self.audio_preview_running = False
         self.video_tables = {}
+        self.crowd_tables = {}
         self.video_errors = {}
         self._marks_key = None
         self.video_progress.update({"done": 0, "total": 0, "current": "",
@@ -265,7 +269,7 @@ class AppState:
         # sitä, ks. ``_wants_video_measurement``.
         if self.settings.globals.panning and not self.seating:
             self.start_seating()
-        elif self._wants_video_measurement() and not self.video_tables:
+        elif self.video_missing():
             self.start_measure_video()
         if self.settings.audio.enabled:
             self.start_audio_preview()
@@ -305,7 +309,7 @@ class AppState:
             self.video_errors["seating"] = str(exc)
         finally:
             self.seating_running = False
-            if self._wants_video_measurement() and not self.video_tables:
+            if self.video_missing():
                 self.start_measure_video()
 
     def start_audio_preview(self) -> bool:
@@ -365,6 +369,27 @@ class AppState:
         """
         return self.settings.globals.reactions or self.settings.globals.vertical
 
+    def video_missing(self) -> bool:
+        """Tarvitseeko jokin päällä oleva ominaisuus mittauksen jota ei ole.
+
+        Lähikuvat reaktioille ja pystyviennille, ja pystyvienti lisäksi
+        laajan ja ryhmäkuvien kaikki kasvot. Pelkkä «lähikuvat on mitattu»
+        jätti joukon mittaamatta: automaattinen käynnistys ei käynnistynyt,
+        ja laaja jäi rajaamatta hiljaa.
+        """
+        if not self._wants_video_measurement():
+            return False
+        if not self.video_tables:
+            return True
+        if not self.settings.globals.vertical or self.crowd_tables:
+            return False
+        from ..video import analyse as video_analyse
+
+        if self.timeline is None:
+            return False
+        roles = resolve_roles(self.timeline, self.settings.tracks)
+        return bool(video_analyse.crowd_files(roles, self.timeline))
+
     def start_measure_video(self) -> bool:
         """Käynnistää lähikuvien mittauksen taustalle, jos se ei ole jo menossa."""
         with self.lock:
@@ -394,8 +419,11 @@ class AppState:
             roles = resolve_roles(self.timeline, self.settings.tracks)
             grid, _, _ = build_grid(self.analysis, self.settings.tracks, roles)
             files = video_analyse.close_up_files(grid, roles, self.timeline)
+            crowd_files = (video_analyse.crowd_files(roles, self.timeline)
+                           if self.settings.globals.vertical else [])
+            whole = len(files) + len(crowd_files)
             with self.lock:
-                self.video_progress.update({"total": len(files), "done": 0,
+                self.video_progress.update({"total": whole, "done": 0,
                                             "fraction": 0.0, "running": True})
         except (AnalysisError, ValueError) as exc:
             with self.lock:
@@ -407,14 +435,26 @@ class AppState:
             with self.lock:
                 self.video_progress.update({
                     "fraction": round(float(fraction), 4),
-                    "done": int(fraction * max(1, len(files))),
+                    "done": int(fraction * max(1, whole)),
                 })
+
+        def part(offset: int, count: int):
+            """Lähikuvat ja joukko samaan palkkiin tiedostojen määrän suhteessa."""
+            return lambda fraction: report((offset + fraction * count) / max(1, whole))
 
         try:
             tables, errors = video_analyse.tables(
-                grid, roles, self.timeline, self.settings.globals, progress=report)
+                grid, roles, self.timeline, self.settings.globals,
+                progress=part(0, len(files)))
+            crowd: dict = {}
+            if crowd_files:
+                crowd, crowd_errors = video_analyse.crowd_tables(
+                    roles, self.timeline, self.settings.globals,
+                    progress=part(len(files), len(crowd_files)))
+                errors = {**errors, **crowd_errors}
             with self.lock:
                 self.video_tables = tables
+                self.crowd_tables = crowd
                 self.video_errors = errors
                 self._marks_key = None
         except Exception as exc:  # taustasäie ei saa kaatua hiljaa
@@ -424,7 +464,58 @@ class AppState:
         finally:
             with self.lock:
                 self.video_progress.update({"running": False, "fraction": 1.0,
-                                            "done": len(files)})
+                                            "done": whole})
+
+    def crowd_seats(self, grid, roles) -> tuple[dict, dict[str, list[int]]]:
+        """Laajojen ja ryhmäkuvien istujat tiedostoittain.
+
+        Palauttaa ``(median avain -> seats.FileSeats, raidan avain -> puhujat
+        joita kuvassa voi olla)``. Laaja voi näyttää kenet tahansa,
+        ryhmäkuva vain omansa. Käsin annettu järjestys (``TrackConfig.seats``)
+        ohittaa mittauksen niissä tiedostoissa joihin se sopii.
+        """
+        from .. import seats as seats_mod
+
+        names = [lane.name for lane in grid.speakers]
+        index = {name: i for i, name in enumerate(names)}
+        covered: dict[str, list[int]] = {}
+        if roles.wide_key:
+            covered[roles.wide_key] = list(range(len(names)))
+        for key, people in roles.groups.items():
+            covered[key] = [index[n] for n in people if n in index]
+        found: dict = {}
+        if not self.crowd_tables or self.timeline is None:
+            return found, covered
+        for key, speakers in covered.items():
+            cfg = self.settings.tracks.get(key)
+            order = [index[n] for n in (cfg.seats if cfg else []) if n in index] or None
+            for item in self.timeline.track_media(key):
+                result = seats_mod.seat_file(
+                    self.crowd_tables.get(item.key), item, grid, speakers, order=order)
+                if result is not None:
+                    found[item.key] = result
+        return found, covered
+
+    def seats_view(self, grid, roles) -> dict:
+        """Istujat käyttöliittymälle: raidan avain -> osittain vasemmalta oikealle."""
+        if not self.settings.globals.vertical or not self.crowd_tables:
+            return {}
+        found, covered = self.crowd_seats(grid, roles)
+        names = [lane.name for lane in grid.speakers]
+        out: dict = {}
+        for key in covered:
+            rows = []
+            for item in self.timeline.track_media(key):
+                seated = found.get(item.key)
+                if seated is None:
+                    continue
+                rows.append({"part": item.name,
+                             "order": [names[i] for i in seated.left_to_right()],
+                             "margin": round(float(seated.margin), 4),
+                             "manual": seated.manual})
+            if rows:
+                out[key] = rows
+        return out
 
     def reaction_marks(self, grid, roles, program_start):
         """Mitatut reaktiohetket taulukkona, välimuistitettuna.
@@ -540,9 +631,10 @@ class AppState:
                 cfg.role = role
             if "speaker" in values:
                 cfg.speaker = str(values["speaker"])[:60]
-            if isinstance(values.get("covers"), list):
-                cfg.covers = [str(name)[:60] for name in values["covers"]
-                              if str(name).strip()]
+            for name in ("covers", "seats"):
+                if isinstance(values.get(name), list):
+                    setattr(cfg, name, [str(n)[:60] for n in values[name]
+                                        if str(n).strip()])
             if "sensitivity_db" in values:
                 cfg.sensitivity_db = float(values["sensitivity_db"])
             if "gain_db" in values:
@@ -593,7 +685,7 @@ class AppState:
             # Sama sääntö: kytkin käynnistää mittauksen. Nappi jää, koska
             # ajo on minuutteja ja sen saa haluta uudestaan, mutta
             # ensimmäistä kertaa ei pidä joutua pyytämään erikseen.
-            if g.reactions and not was and not self.video_tables:
+            if g.reactions and not was and self.video_missing():
                 self.start_measure_video()
         if "panning" in raw:
             was = g.panning
@@ -612,7 +704,7 @@ class AppState:
             # mittauksensa. Ominaisuus joka vaatii toisen ominaisuuden
             # mittausnapin painamista ensin, on ominaisuus joka näyttää
             # rikkuneelta.
-            if g.vertical and not was and not self.video_tables:
+            if g.vertical and not was and self.video_missing():
                 self.start_measure_video()
         if raw.get("overlap_rule") in OVERLAP_RULES:
             g.overlap_rule = raw["overlap_rule"]
@@ -862,6 +954,7 @@ class AppState:
         decision = decide(grid, self.settings.globals, marks=marks)
         lane = self.reaction_lane(grid, roles, program_start, decision)
         names = [speaker.name for speaker in grid.speakers]
+        seats_view = self.seats_view(grid, roles)
         counts: dict[str, int] = {}
         for seg in decision.segments:
             counts[seg.label] = counts.get(seg.label, 0) + 1
@@ -903,6 +996,10 @@ class AppState:
             # hetkellä kuin tulos: asetuksen muutos tekee valmiista työstä
             # vanhentunutta, ja se on nähtävä kysymättä erikseen.
             "mix_fresh": self.mix_freshness(),
+            # Laajojen ja ryhmäkuvien istujat vasemmalta oikealle, osittain.
+            # Näkyviin, koska mitattu järjestys voi olla väärin ja pystyvienti
+            # rajaisi silloin väärän ihmisen — ja sen näkee vasta viennistä.
+            "seats": seats_view,
             "ms": round(elapsed, 1),
             "_grid": (grid, program_start, program_end, decision),
         }
@@ -1478,13 +1575,27 @@ def create_app(state: AppState) -> FastAPI:
                 # kerrotaan eri sanoin kuin tyhjä mittaus.
                 reframer = None
                 framed = 0
+                segments = decision.segments
                 if state.settings.globals.vertical:
                     closes = reframe.close_up_tables(
                         state.video_tables, state.timeline, roles)
+                    # Laaja ja ryhmäkuva rajataan puhujaan: kuva pilkotaan
+                    # puhujan mukaan ja kukin pala kehystetään hänen
+                    # kasvoilleen, jos hänet tunnistettiin siitä tiedostosta.
+                    found, covered = state.crowd_seats(_grid, roles)
+                    followed = {
+                        key: people for key, people in covered.items()
+                        if any(i.key in found for i in state.timeline.track_media(key))
+                    }
+                    segments = reframe.focus_segments(
+                        decision.segments, _grid, followed,
+                        state.settings.globals.min_shot)
                     reframer = reframe.Reframer(
-                        closes, reframe.look(closes, state.timeline, roles))
+                        closes, reframe.look(closes, state.timeline, roles),
+                        crowd=found, crowd_tables=state.crowd_tables,
+                        names=[lane.name for lane in _grid.speakers])
                     framed = reframe.framed_count(
-                        reframer, state.timeline, decision.segments)
+                        reframer, state.timeline, segments)
                     if not state.video_tables:
                         warnings.append(t("export.vertical_unmeasured"))
                     elif not framed:
@@ -1494,7 +1605,7 @@ def create_app(state: AppState) -> FastAPI:
                     # voi vaihtaa Final Cutissa jälkikäteen.
                     xml = build_multicam_fcpxml(
                         state.timeline,
-                        decision.segments,
+                        segments,
                         mic_tracks,
                         program_start,
                         program_end,
@@ -1517,7 +1628,7 @@ def create_app(state: AppState) -> FastAPI:
                     warnings.append(t("export.flat_no_multicam"))
                     xml = build_fcpxml(
                         {m.key: m for m in state.timeline.media},
-                        decision.segments,
+                        segments,
                         mic_tracks,
                         state.timeline.frame_duration,
                         program_start,

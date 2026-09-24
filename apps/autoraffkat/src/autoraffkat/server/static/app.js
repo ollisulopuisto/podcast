@@ -121,6 +121,7 @@ const OVERLAP_RULES = () => [
 
 let state = null;               // /api/state
 let latest = null;              // viimeisin laskettu tulos
+let lastSeats = '{}';           // viimeksi piirretyt istujat
 let pending = null;             // ajastin
 let inflight = null;            // AbortController
 let progressTimer = null;
@@ -562,6 +563,8 @@ function trackCard(media, dest) {
   }
 
   if (media.config.role === 'group') card.append(coverChips(media));
+  const seated = latest && latest.seats && latest.seats[media.key];
+  if (media.kind === 'video' && seated && seated.length) card.append(seatLine(media, seated));
   if (dest && dest.kind === 'group' && media.kind === 'audio') {
     /* Ryhmäkuvan rivillä ei ole yhtä puhujan väriä, joten kortti kantaa
        omansa: sama väri kuin palkissa ja selitteessä. */
@@ -665,6 +668,67 @@ function coverChips(media) {
     box.append(chip);
   });
   return box;
+}
+
+/* Laajan ja ryhmäkuvan istujat vasemmalta oikealle, osittain. Pystyvienti
+   rajaa puhujan kasvoille tämän mukaan, joten väärä järjestys on väärä
+   ihminen kuvassa — ja sen näkee vasta viennistä. Siksi se on kortilla ja
+   korjattavissa: nimen klikkaus siirtää sitä yhden paikan vasemmalle, mikä
+   riittää mihin tahansa järjestykseen. */
+function seatLine(media, parts) {
+  const box = document.createElement('div');
+  box.className = 'seats';
+  const manual = (media.config.seats || []).length > 0;
+  box.append(Object.assign(document.createElement('span'),
+    { className: 'muted small', textContent: T('seats.leftToRight') }));
+  parts.forEach((part) => {
+    const row = document.createElement('div');
+    row.className = 'seat-row';
+    row.title = `${part.part} · ${manual ? T('seats.manual') : T('seats.measured', { margin: part.margin })}`;
+    part.order.forEach((name, index) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip';
+      chip.setAttribute('aria-pressed', 'true');
+      chip.style.setProperty('--tint', colorFor(speakerIndex(name)));
+      chip.textContent = name;
+      chip.title = T('seats.hint');
+      chip.addEventListener('click', (e) => {
+        if (e.stopPropagation) e.stopPropagation();
+        moveSeat(media, part.order, index);
+      });
+      row.append(chip);
+    });
+    if (parts.length > 1) {
+      row.append(Object.assign(document.createElement('span'),
+        { className: 'muted small', textContent: part.part }));
+    }
+    box.append(row);
+  });
+  if (manual) {
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.className = 'ghost small';
+    reset.textContent = T('seats.reset');
+    reset.addEventListener('click', (e) => {
+      if (e.stopPropagation) e.stopPropagation();
+      media.config.seats = [];
+      schedule(0);
+    });
+    box.append(reset);
+  }
+  return box;
+}
+
+/* Istuja yhden paikan vasemmalle (ensimmäinen kiertää loppuun). Tallennetaan
+   koko järjestys käsin annetuksi; palvelin rajaa sen kuhunkin osaan niihin
+   jotka siinä ovat. */
+function moveSeat(media, order, index) {
+  const next = order.slice();
+  const [name] = next.splice(index, 1);
+  next.splice(index === 0 ? next.length : index - 1, 0, name);
+  media.config.seats = next;
+  schedule(0);
 }
 
 /* Ryhmäkuvan rivillä on useampi ihminen, joten nimi on mikin kortissa eikä
@@ -2539,6 +2603,14 @@ async function send() {
     });
     const data = await response.json();
     latest = data;
+    /* Istujat muuttuvat mittauksen valmistuttua tai kun järjestystä
+       korjataan; kortit piirretään uudestaan vain silloin, ettei kesken
+       kirjoitettu nimi katoa joka kierroksella. */
+    const seatsNow = JSON.stringify(data.seats || {});
+    if (seatsNow !== lastSeats) {
+      lastSeats = seatsNow;
+      renderTracks();
+    }
     if (data.output_path && data.output_path !== state.output_path) {
       state.output_path = data.output_path;
       renderHeader();

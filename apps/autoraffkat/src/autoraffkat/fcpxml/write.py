@@ -190,7 +190,8 @@ def _merge_spans(
     for seg, a, b in spans:
         if b <= a:
             continue
-        if merged and merged[-1][0].angle == seg.angle and merged[-1][2] == a:
+        if (merged and merged[-1][0].angle == seg.angle and merged[-1][2] == a
+                and merged[-1][0].focus == seg.focus):
             prev_seg, prev_a, _ = merged[-1]
             merged[-1] = (prev_seg, prev_a, b)
         else:
@@ -811,12 +812,14 @@ def _merge_multicam_spans(
                     (x for x in angles_of.get(prev_seg.angle, []) if x in prev_own), ""
                 )
 
-            if (mc is None and prev_mc is None) or (
+            # Pystyviennin puhujapalat ovat samaa kulmaa mutta eri rajaus:
+            # ne ovat eri kuvia eikä niitä yhdistetä.
+            if seg.focus == prev_seg.focus and ((mc is None and prev_mc is None) or (
                 mc is not None
                 and prev_mc is not None
                 and mc_id == prev_mc_id
                 and video_angle == prev_video_angle
-            ):
+            )):
                 merged[-1] = (prev_seg, prev_a, b)
                 continue
 
@@ -966,9 +969,9 @@ def _span_reframe(reframer, item, seg, t0: Fraction, t1: Fraction):
     jäi ilman (sama sääntö kuin reaktiokuvissa: hiljaisuus on tämän
     projektin toistuvin vika).
     """
-    if reframer is None or seg.label == WIDE_LABEL or item is None:
+    if reframer is None or (seg.label == WIDE_LABEL and not seg.focus) or item is None:
         return None
-    return reframer.from_item(item, float(t0), float(t1))
+    return reframer.from_item(item, float(t0), float(t1), focus=seg.focus)
 
 
 # Liikkeen identtisyys, kun kytkin on pois päältä: kehystys kysytään
@@ -1680,7 +1683,7 @@ def build_multicam_fcpxml(
         # Kehystys: spanin osa se media-alkio jonka sijoitus kattaa alun —
         # _split_spans on jo rajannut spanin yhteen osaan.
         shot = None
-        if reframer is not None and seg.label != WIDE_LABEL:
+        if reframer is not None and (seg.label != WIDE_LABEL or seg.focus):
             part = next(
                 (i for i in timeline.track_media(seg.angle)
                  if i.placement_at(at)),
@@ -1688,7 +1691,8 @@ def build_multicam_fcpxml(
             )
             if part is not None:
                 shot = reframer.from_item(
-                    part, float(at), float(program_start + frame_duration * b))
+                    part, float(at), float(program_start + frame_duration * b),
+                    focus=seg.focus)
 
         own = set(mc.angle_ids)
         video_angle = next((x for x in angles_of.get(seg.angle, []) if x in own), "")

@@ -189,11 +189,16 @@ def test_wants_video_measurement_covers_reactions_and_vertical():
 
 def test_analyze_and_seating_check_video_need_through_one_place():
     """Kolmas video_tables-kuluttaja ei saa unohtua taas kahdesta paikasta
-    erikseen: molempien on kutsuttava samaa ``_wants_video_measurement``ia."""
+    erikseen: molempien on kutsuttava samaa ``video_missing``ia, joka kysyy
+    ``_wants_video_measurement``ilta mitä tarvitaan ja lisäksi pystyviennin
+    joukkotaulukot — ne jäivät muuten mittaamatta kun lähikuvat oli jo
+    mitattu."""
     import inspect
 
     from autoraffkat.server import app as server_app
 
     for name in ("_analyze", "measure_seating"):
         source = inspect.getsource(getattr(server_app.AppState, name))
-        assert "_wants_video_measurement" in source, name
+        assert "video_missing" in source, name
+    helper = inspect.getsource(server_app.AppState.video_missing)
+    assert "_wants_video_measurement" in helper

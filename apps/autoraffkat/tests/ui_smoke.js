@@ -385,6 +385,16 @@ for (const lang of ['fi', 'en']) {
       /* Uusi puhuja mikistä saa nimen tiedostosta, ei «Puhuja N»:ää. */
       const guessed = context.guessName(first);
       if (!guessed) throw new Error('mikin nimestä ei tullut puhujaa');
+      /* Istujat: nimen klikkaus siirtää sitä vasemmalle, ja käsin annettu
+         järjestys menee asetuksiin palvelimelle. */
+      const wide = fresh.tracks.find((t) => t.key === 'WIDE');
+      if (wide) {
+        context.moveSeat(wide, ['Host', 'Guest'], 1);
+        if ((wide.config.seats || []).join() !== 'Guest,Host') {
+          throw new Error(`istujien siirto ei asettunut: ${wide.config.seats}`);
+        }
+        wide.config.seats = [];
+      }
       /* Tila takaisin: seuraava kierros piirtää saman tilan, ja
          varastoon jäänyt mikki piilottaisi äänipaneelin haarat. */
       context.assign(first, { kind: 'speaker', side: 'audio', name: guessed });

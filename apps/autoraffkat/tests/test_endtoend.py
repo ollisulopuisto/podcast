@@ -4,6 +4,7 @@ import os
 import pathlib
 import threading
 import time
+from fractions import Fraction
 from xml.etree import ElementTree as ET
 
 import pytest
@@ -310,6 +311,82 @@ def test_vertical_export_evens_out_face_sizes(scratch_xml):
                 round(float(transform.get("scale").split()[0]), 3))
     assert scales.get("Host") == {round(0.30 / 0.246, 3)}, scales
     assert scales.get("Guest") == {1.0}, scales
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("flip", [False, True], ids=["mitattu", "käsin"])
+def test_vertical_follows_the_speaker_inside_a_two_shot(scratch_xml, flip):
+    """Kahden kuva ilman lähikuvia: pystyrajaus seuraa puhujaa.
+
+    Hostin ja Guestin kasvot mitataan kuvasta (tässä annettuina), kumpi on
+    kumpi päätellään suun liikkeestä mikkien puheen aikana, ja vienti
+    pilkkoo kahden kuvan puhujan mukaan ja rajaa kunkin palan hänen
+    kasvoilleen. Host istuu vasemmalla: hänen palansa siirtyvät oikealle.
+    """
+    import numpy as np
+
+    state = AppState(xml_path=str(scratch_xml()))
+    state.load()
+    for _ in range(200):
+        if state.progress.get("ready"):
+            break
+        time.sleep(0.05)
+
+    def talking(spans, t):
+        return any(a <= t < b for a, b in spans)
+
+    rows = []
+    for t in range(35):
+        for x, spans in ((0.15, SPEECH_A), (0.65, SPEECH_B)):
+            rows.append((t, x, 0.4 * talking(spans, t) * (t % 2)))
+    n = len(rows)
+    state.crowd_tables = {"CLOSE_A.mp4": {
+        "times": np.arange(35, dtype=np.float32),
+        "frame": np.array([r[0] for r in rows], np.int32),
+        "x": np.array([r[1] for r in rows], np.float32),
+        "w": np.full(n, 0.1, np.float32), "y": np.full(n, 0.4, np.float32),
+        "h": np.full(n, 0.2, np.float32),
+        "mouth": np.array([r[2] for r in rows], np.float32)}}
+
+    tracks = {k: v.to_json() for k, v in _tracks().items()}
+    tracks["CLOSE_A.mp4"] = {"role": "group", "speaker": "", "covers": ["Host", "Guest"]}
+    tracks["CLOSE_B.mp4"] = {"role": "unused", "speaker": ""}
+    client = TestClient(create_app(state))
+    result = client.post("/api/settings", json={
+        "tracks": tracks,
+        "globals": Globals(min_shot=1.5, lead=0.15, confirm=0.3, min_overlap=0.4,
+                           vertical=True).to_json(),
+    }).json()
+    assert result["ok"], result.get("problems")
+    # Käyttöliittymä näkee mitä mitattiin, jotta väärän voi korjata.
+    assert result["seats"]["CLOSE_A.mp4"] == [
+        {"part": "CLOSE_A.mp4", "order": ["Host", "Guest"],
+         "margin": result["seats"]["CLOSE_A.mp4"][0]["margin"], "manual": False}]
+    assert result["seats"]["CLOSE_A.mp4"][0]["margin"] > 0
+    if flip:
+        tracks["CLOSE_A.mp4"]["seats"] = ["Guest", "Host"]
+        result = client.post("/api/settings", json={
+            "tracks": tracks,
+            "globals": Globals(min_shot=1.5, lead=0.15, confirm=0.3, min_overlap=0.4,
+                               vertical=True).to_json(),
+        }).json()
+        assert result["seats"]["CLOSE_A.mp4"][0]["order"] == ["Guest", "Host"]
+        assert result["seats"]["CLOSE_A.mp4"][0]["manual"]
+    exp = client.post("/api/export").json()
+    assert exp["ok"], exp.get("problems")
+    root = ET.fromstring(pathlib.Path(exp["path"]).read_text(encoding="utf-8"))
+    moves = []
+    for clip in root.find(".//sequence/spine"):
+        transform = clip.find("adjust-transform")
+        if transform is not None:
+            start = float(Fraction(clip.get("offset").rstrip("s")))
+            moves.append((start, float(transform.get("position").split()[0])))
+    host = [x for t, x in moves if talking(SPEECH_A, t + 0.5) and not talking(SPEECH_B, t + 0.5)]
+    guest = [x for t, x in moves if talking(SPEECH_B, t + 0.5) and not talking(SPEECH_A, t + 0.5)]
+    assert host and guest, moves
+    # Käsin käännetty järjestys voittaa mittauksen: Host rajataan oikealle.
+    sign = -1 if flip else 1
+    assert all(sign * x > 0 for x in host) and all(sign * x < 0 for x in guest), moves
 
 
 # ------------------------------------------------------------------ multicam
@@ -1453,3 +1530,38 @@ def test_vertical_export_without_measurements_warns(scratch_xml):
     # Ja nimi kertoo variantin.
     assert exported["path"].endswith("vertical.fcpxml") or \
         "vertical" in exported["path"]
+
+
+@needs_ffmpeg
+def test_measuring_for_vertical_also_measures_the_crowd_shots(scratch_xml, monkeypatch):
+    """Pystyvienti tarvitsee laajan ja ryhmäkuvien kaikki kasvot.
+
+    Mittausnappi mittasi vain lähikuvat, joten laajaa ja kahden kuvaa ei
+    voinut rajata puhujaan ilman erillistä pyyntöä — ja kun lähikuvat oli
+    jo mitattu, automaattinen käynnistys ei käynnistynyt lainkaan.
+    """
+    from autoraffkat.video import analyse
+
+    state = AppState(xml_path=str(scratch_xml()))
+    state.load()
+    for _ in range(200):
+        if state.progress.get("ready"):
+            break
+        time.sleep(0.05)
+    for key, cfg in _tracks().items():
+        state.settings.tracks[key] = cfg
+    asked = []
+    monkeypatch.setattr(analyse, "tables", lambda *a, **k: ({"CLOSE_A.mp4": {}}, {}))
+    monkeypatch.setattr(analyse, "crowd_tables",
+                        lambda roles, *a, **k: (asked.append(roles.wide_key)
+                                                or {"WIDE.mp4": {"frame": []}}, {}))
+
+    state.settings.globals.vertical = False
+    state.measure_video()
+    assert not asked and not state.crowd_tables
+
+    state.settings.globals.vertical = True
+    assert state.video_missing(), "lähikuvat mitattu, joukko ei: mittaus puuttuu"
+    state.measure_video()
+    assert asked == ["WIDE.mp4"] and "WIDE.mp4" in state.crowd_tables
+    assert not state.video_missing()

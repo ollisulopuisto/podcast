@@ -54,7 +54,12 @@ def cache_dir() -> Path:
     return root
 
 
-def cache_key(path: str, detector: detect.Detector) -> str:
+# Joukkotaulukko on oma mittauksensa samasta tiedostosta: eri sarakkeet,
+# eri merkitys, eli eri avain ja eri rivi polkuindeksissä.
+CROWD = "joukko"
+
+
+def cache_key(path: str, detector: detect.Detector, crowd: bool = False) -> str:
     """Polku, koko, muokkausaika, purkuleveys — ja tunnistimen nimi ja versio.
 
     Tunnistin on avaimessa siksi, että sen vaihtaminen tuottaa eri sarakkeet
@@ -63,7 +68,8 @@ def cache_key(path: str, detector: detect.Detector) -> str:
     """
     stat = os.stat(path)
     raw = (f"{os.path.abspath(path)}|{stat.st_size}|{stat.st_mtime_ns}"
-           f"|{WIDTH}|{CACHE_VERSION}|{detector.name}|{detector.version}")
+           f"|{WIDTH}|{CACHE_VERSION}|{detector.name}|{detector.version}"
+           + (f"|{CROWD}" if crowd else ""))
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
@@ -83,10 +89,14 @@ def _index() -> dict:
         return {}
 
 
-def remember(path: str, key: str) -> None:
+def _index_name(path: str, crowd: bool = False) -> str:
+    return os.path.abspath(path) + (f"#{CROWD}" if crowd else "")
+
+
+def remember(path: str, key: str, crowd: bool = False) -> None:
     """Merkitsee polun viimeisimmän avaimen muistiin."""
     index = _index()
-    index[os.path.abspath(path)] = key
+    index[_index_name(path, crowd)] = key
     tmp = cache_dir() / (INDEX_NAME + ".tmp")
     try:
         tmp.write_text(json.dumps(index, ensure_ascii=False), "utf-8")
@@ -95,7 +105,7 @@ def remember(path: str, key: str) -> None:
         tmp.unlink(missing_ok=True)
 
 
-def known_key(path: str, detector: "detect.Detector") -> str | None:
+def known_key(path: str, detector: "detect.Detector", crowd: bool = False) -> str | None:
     """Avain tälle polulle: tuore jos media on saatavilla, muuten viimeisin.
 
     Tuoreus tarkistetaan aina kun se **voidaan** tarkistaa. Vasta kun
@@ -103,9 +113,9 @@ def known_key(path: str, detector: "detect.Detector") -> str | None:
     tuoreempi mittaus vaan ei mittausta lainkaan.
     """
     try:
-        return cache_key(path, detector)
+        return cache_key(path, detector, crowd)
     except OSError:
-        return _index().get(os.path.abspath(path))
+        return _index().get(_index_name(path, crowd))
 
 
 def duration(path: str) -> float:
@@ -291,13 +301,18 @@ def _log(message: str) -> None:
     print(f"[kuva] {message}", flush=True)
 
 
-def measure_file(path: str, detector: detect.Detector, progress=None) -> dict:
+def measure_file(path: str, detector: detect.Detector, progress=None,
+                 crowd: bool = False) -> dict:
     """Mittaa yhden tiedoston avainruudut. Palauttaa taulukon sanakirjana.
 
     Avaimet: ``times`` ja yksi taulukko per tunnistimen kenttä, sekä
     ``found`` joka kertoo mistä ruuduista kasvot löytyivät. Ruudut joista ei
     löytynyt ovat mukana nollina — poistaminen siirtäisi indeksit eikä
     aikaleimoja voisi enää pariuttaa.
+
+    ``crowd``: jokainen kasvo omana rivinään (``frame``, ``x``, ``y``, ``w``,
+    ``h``, ``mouth``) eikä vain suurin. Laajassa ja ryhmäkuvassa suurin on
+    se joka sattuu olemaan lähimpänä, ja kehystys tarvitsee jokaisen.
     """
     span = duration(path)
     name = os.path.basename(path)
@@ -318,6 +333,22 @@ def measure_file(path: str, detector: detect.Detector, progress=None) -> dict:
         _log(f"{name}: {len(frames)} avainruutua, {time.monotonic() - started:.0f} s; "
              "kasvot alkaa")
 
+        if crowd:
+            rows: list[tuple[int, dict]] = []
+            for index, frame in enumerate(frames):
+                if progress is not None and (index % 50 == 0 or index == len(frames) - 1):
+                    progress(0.5 + 0.5 * ((index + 1) / len(frames)))
+                rows += [(index, face) for face in detector.measure_all(str(frame))]
+            _log(f"{name}: valmis, {len(rows)} kasvoa {len(frames)} ruudussa, "
+                 f"{time.monotonic() - started:.0f} s")
+            if progress is not None:
+                progress(1.0)
+            return {
+                "times": np.asarray(times, dtype=np.float32),
+                "frame": np.asarray([i for i, _ in rows], dtype=np.int32),
+                **{k: np.asarray([float(f.get(k, 0.0)) for _, f in rows], dtype=np.float32)
+                   for k in ("x", "y", "w", "h", "mouth")},
+            }
         columns = {name: np.zeros(len(frames), dtype=np.float32)
                    for name in detector.fields}
         found = np.zeros(len(frames), dtype=bool)
@@ -345,7 +376,8 @@ def measure_file(path: str, detector: detect.Detector, progress=None) -> dict:
             **columns}
 
 
-def table(path: str, detector: detect.Detector, progress=None) -> dict:
+def table(path: str, detector: detect.Detector, progress=None,
+          crowd: bool = False) -> dict:
     """Mittaukset välimuistista, tai lasketaan ja talletetaan.
 
     Kirjoitus tehdään auki olevaan tiedostokahvaan ja nimetään vasta sitten:
@@ -353,7 +385,7 @@ def table(path: str, detector: detect.Detector, progress=None) -> dict:
     väliaikaisnimeen tallennus loisi väärän tiedoston ja uudelleennimeäminen
     epäonnistuisi hiljaa. Sama ansa kuin verhokäyrällä, ks. audio/envelope.py.
     """
-    key = known_key(path, detector)
+    key = known_key(path, detector, crowd)
     target = cache_dir() / f"{key}.npz" if key else None
     if target is not None and target.exists():
         try:
@@ -362,12 +394,12 @@ def table(path: str, detector: detect.Detector, progress=None) -> dict:
                 # muuten vanhat mittaukset jäisivät ikuisesti indeksin
                 # ulkopuolelle, ja levyn irrottaminen veisi ne mukanaan.
                 # Yksi kytketty ajo riittää kirjaamaan koko välimuistin.
-                remember(path, target.stem)
+                remember(path, target.stem, crowd)
                 return {name: data[name] for name in data.files}
         except (OSError, ValueError):
             target.unlink(missing_ok=True)   # rikkinäinen välimuisti lasketaan uusiksi
 
-    result = measure_file(path, detector, progress)
+    result = measure_file(path, detector, progress, crowd=crowd)
     if target is None:
         # Mediaa ei ole eikä mittausta muistissa: tänne ei pitäisi päätyä,
         # koska `measure_file` on jo kaatunut. Varmistus siltä varalta.
@@ -377,13 +409,13 @@ def table(path: str, detector: detect.Detector, progress=None) -> dict:
         with open(tmp, "wb") as handle:
             np.savez(handle, **result)
         tmp.replace(target)
-        remember(path, target.stem)
+        remember(path, target.stem, crowd)
     except OSError:
         tmp.unlink(missing_ok=True)
     return result
 
 
-def is_cached(path: str, detector: detect.Detector) -> bool:
+def is_cached(path: str, detector: detect.Detector, crowd: bool = False) -> bool:
     """Onko tiedosto jo mitattu — halpa tarkistus käyttöliittymälle."""
-    key = known_key(path, detector)
+    key = known_key(path, detector, crowd)
     return bool(key) and (cache_dir() / f"{key}.npz").exists()
