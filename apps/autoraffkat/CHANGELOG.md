@@ -5,9 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
-## [Unreleased]
+## [autoraffkat-v2026.9.25.1] - 2026-09-25
 
 ### Fixed
+- **Video measurement no longer looks stuck through faceless stretches** (`video/measure.py`): progress was reported only on frames where a face was found, so a stretch where the speaker turned away froze the bar. Each file now also logs to the terminal — start, keyframes extracted, faces found, time taken — where before the measurement said nothing at all.
 - **The cut follows the new speaker sooner** (`decide.py`), from listening to pp 55:
   - Bleed is not speech: a microphone more than 12 dB below the loudest active one does not count as talking (`BLEED_DB`). Bleed measured 17–23 dB down, real overlap ±5 dB. It had kept the outgoing speaker "talking" (0:06 and 9:49 cut 0.7–0.8 s late) and made overlaps that were not there.
   - Confirmation measures a turn, not one burst: pauses under 0.3 s within a speaker's speech are part of the turn, and a turn under 0.8 s is a backchannel (`TURN_GAP`, `TURN_MIN`). A 0.4 s "joo" at 13:08 no longer takes the picture.

@@ -196,6 +196,25 @@ Raidan avain johdetaan tiedostonimien yhteisestä osasta
 ja `angleID`:t vaihtuvat viennistä toiseen mutta tiedostot eivät. Näin
 tallennetut roolit kelpaavat vielä uuden viennin jälkeenkin.
 
+Osien ei tarvitse olla samanlaisia. Vieras joka lähtee ensimmäisen osan
+jälkeen, keskimmäiseen osaan lisätty mikki: jokaisella osalla voi olla omat
+kameransa ja mikkinsä, ja leikkaus kattaa koko aikajanan — osasta puuttuva
+mikki tarkoittaa vain että puhuja on siellä hiljaa. Sama monikameraklippi voi
+myös olla spinellä useammin kuin kerran, välistä poistettuine kohtineen.
+
+**Tahdistetut kulmat.** Final Cutin tavallinen työnkulku tahdistaa ensin
+kunkin kameran mikkinsä kanssa (*Synchronize Clips*) ja tekee monikameran
+pareista, jolloin jokaisessa kulmassa on kamera *ja* mikki — joskus useampi,
+kun kamera on tahdistettu moniraitatallentimeen. autoraffkat jakaa tällaisen
+kulman kameraksi ja mikeiksi, jotta kukin saa oman roolinsa. Mikki seurataan
+osasta toiseen tiedostonimestä ilman osan laskuria — `Tomi_001`/`Tomi_002`,
+`Tomi 1`/`Tomi 2`, `Vieras-A`/`-B` ja `ZOOM0001_Tr2`/`ZOOM0002_Tr2` ovat
+kukin yksi raita — joten ei haittaa, että kulma 2 kantaa yhdessä osassa
+vieraan mikkiä ja seuraavassa jonkun muun. Jos kaksi saman osan tiedostoa
+sopii samaan kaavaan, ei arvata; kortteja tulee yksi enemmän. Viennissä
+kuvassa oleva kamera soittaa omat mikkinsä omasta kulmastaan, jokainen mikki
+soi täsmälleen kerran, ja kameroiden oma ääni pysyy pois.
+
 ### Etäpalvelinkäyttö
 
 autoraffkatia voi ajaa etäkoneella (esim. nopeammalla Macilla tai työasemalla), jolloin raskas äänenkäsittely ja verhokäyrien purku tapahtuvat etänä:

@@ -340,3 +340,15 @@ def test_seating_chains_to_measure_video_when_reactions_enabled(monkeypatch):
     assert state.seating_running is False
     assert state.video_progress["running"] is True
 
+
+
+def test_progress_moves_through_frames_without_a_face(clip):
+    """Kasvoton jakso ei pysäytä edistymistä.
+
+    Raportti tehtiin vain ruuduista joista kasvot löytyivät, joten jakso
+    jossa puhuja on käännähtänyt pois — tai kamera osoittaa muualle —
+    jäädytti palkin minuuteiksi, ja mittaus näytti jumittuneelta.
+    """
+    reports = []
+    measure.measure_file(str(clip), Stub(blind_every=1), progress=reports.append)
+    assert any(0.5 < r < 1.0 for r in reports), reports

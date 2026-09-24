@@ -196,6 +196,27 @@ The track key is derived from the common part of the filenames
 and `angleID`s change from one export to the next while the files do not.
 Saved roles therefore survive a re-export.
 
+Parts do not have to match. A guest who leaves after the first part, a mic
+added for the middle one: each part may have its own set of cameras and
+microphones, and the edit runs over the whole timeline — a microphone
+missing from a part only means that speaker is silent there. The same
+multicam clip can also appear on the spine more than once, with a section
+cut out between.
+
+**Synced angles.** The usual Final Cut workflow syncs each camera with its
+microphone first (*Synchronize Clips*) and builds the multicam from those
+pairs, so every angle holds a camera *and* a microphone — sometimes several
+microphones, when a camera was synced to a multitrack recorder. autoraffkat
+splits such an angle into its camera and its microphones, so each can take its
+own role. A microphone is followed across parts by its file name with the part
+counter dropped — `Tomi_001`/`Tomi_002`, `Tomi 1`/`Tomi 2`, `Vieras-A`/`-B`
+and `ZOOM0001_Tr2`/`ZOOM0002_Tr2` are one track each — so it does not matter
+that angle 2 carries the guest's microphone in one part and someone else's in
+the next. When two files of one part fit the same pattern it is not guessed;
+you get one card more. In the export the camera on screen plays its own
+microphones from its angle, every microphone plays exactly once, and the
+cameras' own sound stays off.
+
 ### Remote Host Execution
 
 You can run autoraffkat entirely on a faster remote host (e.g. a dedicated Mac or workstation) to offload envelope calculation and heavy VST audio processing:

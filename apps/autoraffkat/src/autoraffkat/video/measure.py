@@ -26,6 +26,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -280,6 +281,16 @@ def sample_file(path: str, detector: detect.Detector,
             "found": found, **columns}
 
 
+def _log(message: str) -> None:
+    """Mittauksen kulku terminaaliin, samoin kuin äänenkäsittelyllä.
+
+    Mittaus on minuutteja pitkä ja tapahtuu taustasäikeessä. Kun se näyttää
+    jumittuneelta, kysymys on minkä tiedoston kohdalla ja missä vaiheessa —
+    ja ilman tätä vastausta ei ollut missään.
+    """
+    print(f"[kuva] {message}", flush=True)
+
+
 def measure_file(path: str, detector: detect.Detector, progress=None) -> dict:
     """Mittaa yhden tiedoston avainruudut. Palauttaa taulukon sanakirjana.
 
@@ -289,7 +300,10 @@ def measure_file(path: str, detector: detect.Detector, progress=None) -> dict:
     aikaleimoja voisi enää pariuttaa.
     """
     span = duration(path)
+    name = os.path.basename(path)
+    started = time.monotonic()
     work = Path(tempfile.mkdtemp(prefix="autoraffkat-video-"))
+    _log(f"{name}: purku alkaa ({span / 60:.0f} min) -> {work}")
     try:
         def on_extract_progress(frac: float) -> None:
             if progress is not None:
@@ -301,22 +315,29 @@ def measure_file(path: str, detector: detect.Detector, progress=None) -> dict:
         )
         if not times:
             raise MeasureError(f"{os.path.basename(path)}: ei avainruutuja")
+        _log(f"{name}: {len(frames)} avainruutua, {time.monotonic() - started:.0f} s; "
+             "kasvot alkaa")
 
         columns = {name: np.zeros(len(frames), dtype=np.float32)
                    for name in detector.fields}
         found = np.zeros(len(frames), dtype=bool)
         for index, frame in enumerate(frames):
+            # Edistyminen ennen tulosta: kasvoton ruutu on sekin tehty työ,
+            # ja pitkä kasvoton jakso jäädytti palkin kun raportti tehtiin
+            # vain löydöistä.
+            if progress is not None and (index % 50 == 0 or index == len(frames) - 1):
+                progress(0.5 + 0.5 * ((index + 1) / len(frames)))
             row = detector.measure(str(frame))
             if row is None:
                 continue          # ei kasvoja on tulos, ei virhe
             found[index] = True
-            for name in detector.fields:
-                columns[name][index] = float(row.get(name, 0.0))
-            if progress is not None and (index % 50 == 0 or index == len(frames) - 1):
-                progress(0.5 + 0.5 * ((index + 1) / len(frames)))
+            for field in detector.fields:
+                columns[field][index] = float(row.get(field, 0.0))
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
+    _log(f"{name}: valmis, kasvot {int(found.sum())}/{len(frames)} ruudussa, "
+         f"{time.monotonic() - started:.0f} s")
     if progress is not None:
         progress(1.0)
 
