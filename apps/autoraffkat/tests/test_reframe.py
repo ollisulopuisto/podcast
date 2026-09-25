@@ -512,3 +512,44 @@ def test_the_base_shot_leaves_room_where_the_speaker_looks():
     mirrored = Reframer({item.key: table}).from_item(item, 0.0, 9.0, off_axis=True)
     mirrored_centre = 0.5 - mirrored.pos_x * 19.2 / 3413.33
     assert abs((0.55 - mirrored_centre) / crop - LEAD_ROOM) < 1e-6   # kasvot oikealla
+
+
+def test_the_off_axis_offset_shrinks_to_keep_a_margin_around_a_big_face():
+    """Sivuun siirto ei saa syödä kasvojen marginaalia.
+
+    Mikon kasvot ovat ~300 px ~580 px:n rajauksessa; 0,12:n siirto jätti
+    reunaan 15–30 px, ja hetkellinen liike leikkasi (video files cf82863:
+    CAM3 >10 %: 1 -> 8). Siirto rajataan niin että kasvojen ympärille jää
+    ``FACE_MARGIN`` kummallekin puolelle.
+    """
+    half = 1080 / 3413.33 / 2
+    face_w = 0.20                                   # iso kasvo: 384 px 1920:stä
+    shot = reframe.plan_shot(0.5, 0.5, 1920, 1080, face_w=face_w,
+                             lead=-reframe.LEAD_ROOM)
+    centre = 0.5 - shot.pos_x * 19.2 / 3413.33
+    margin = reframe.FACE_MARGIN * face_w
+    assert centre - half <= 0.5 - face_w / 2 - margin + 1e-9
+    assert centre > 0.5                             # yhä sivussa, oikealla puolella
+    small = reframe.plan_shot(0.5, 0.5, 1920, 1080, face_w=0.03,
+                              lead=-reframe.LEAD_ROOM)
+    assert abs((0.5 - small.pos_x * 19.2 / 3413.33 - 0.5) / (2 * half)
+               - reframe.LEAD_ROOM) < 1e-6          # pieni kasvo: täysi siirto
+
+
+def test_a_punch_piece_is_framed_on_its_own_face():
+    """Pilkotun kuvan pala kehystetään omien kasvojensa mukaan.
+
+    Punch keskitti kameran vakaan paikan, ei palan kasvoja: kun Mikko istui
+    tavallisesta sivussa, punch osui 93 px ohi (video files cf82863, Mikko
+    10). Sommittelu vaihtuu joka palassa joka tapauksessa.
+    """
+    from autoraffkat.reframe import Reframer
+
+    item = _item(dur=120)
+    table = _boxes(n=120, x=0.45, w=0.1)             # tavallisesti 0,50
+    table["times"] = np.arange(120, dtype=np.float32)
+    table["x"][60:66] = 0.52                         # tällä palalla 0,57
+    framer = Reframer({item.key: table})
+    punch = framer.from_item(item, 60.0, 66.0, extra=1.12, own=True)
+    shown = 3413.33 * punch.scale
+    assert abs(0.5 - punch.pos_x * 19.2 / shown - 0.57) < 1e-6

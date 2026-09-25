@@ -1518,12 +1518,14 @@ class _StubReframer:
         self.scale = scale
         self.pos_x = pos_x
 
-    def from_item(self, item, t0, t1, focus="", headroom=1.0, extra=1.0, off_axis=False):
+    def from_item(self, item, t0, t1, focus="", headroom=1.0, extra=1.0, off_axis=False,
+                  own=False):
         from autoraffkat import reframe
 
         self.calls.append((item.key, round(t0, 3), round(t1, 3)))
         self.focus = [*getattr(self, "focus", []), focus]
         self.asked = [*getattr(self, "asked", []), (round(extra, 4), off_axis)]
+        self.own = [*getattr(self, "own", []), own]
         if not self.ok:
             return None
         return reframe.Reframe(scale=self.scale * extra, pos_x=self.pos_x)
@@ -1844,5 +1846,7 @@ def test_shorts_style_punches_in_centred_and_frames_the_base_off_axis(fixture_di
     clips = _spine_mc_clips(xml)
     assert len(clips) == 5, [c.get("name") for c in clips]
     assert stub.asked[1:4] == [(1.0, True), (movement.PUNCH, False), (1.0, True)]
+    # Punchin palat kehystetään omien kasvojensa mukaan, laaja ei.
+    assert stub.own == [False, True, True, True, False]
     punched = clips[2].find('mc-source[@srcEnable="video"]/adjust-transform')
     assert abs(float(punched.get("scale").split()[0]) - movement.PUNCH) < 1e-9

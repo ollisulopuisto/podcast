@@ -201,9 +201,17 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
     half = PROJECT_W / shown_w / 2
     reach = slack_x / shown_w
     # ``lead``: kasvojen paikka rajauksessa keskeltä, rajauksen leveyksinä
-    # (negatiivinen = vasemmalle). Nolla keskittää.
-    centre = _clear_neighbours(fx, face_w, others, half, reach,
-                               start=fx - lead * 2 * half)
+    # (negatiivinen = vasemmalle). Nolla keskittää. Siirto ei saa viedä
+    # kasvojen marginaalia: iso kasvo kapeassa rajauksessa (Mikko: 300 px
+    # 580 px:ssä) jäi 15–30 px:n päähän reunasta, ja hetkellinen liike
+    # leikkasi (video files cf82863). Siirto pienenee kunnes marginaali mahtuu.
+    start = fx - lead * 2 * half
+    if lead and face_w:
+        room = FACE_MARGIN * face_w
+        low_c = fx + face_w / 2 + room - half
+        high_c = fx - face_w / 2 - room + half
+        start = min(high_c, max(low_c, start)) if low_c <= high_c else fx
+    centre = _clear_neighbours(fx, face_w, others, half, reach, start=start)
     if keep is not None:
         # Kuvan omat kasvot (mediaanilaatikko) eivät saa jäädä reunasta
         # ulos: vakaa kehys siirtyy juuri sen verran, ei enempää. Myös
@@ -327,6 +335,7 @@ class Reframer:
         headroom: float = 1.0,
         extra: float = 1.0,
         off_axis: bool = False,
+        own: bool = False,
     ) -> Reframe | None:
         """Kehys yhdelle klipille: mediaanikasvo klipin omilta riveiltä.
 
@@ -363,6 +372,18 @@ class Reframer:
         x, y, _h = _faces(table)
         xs, ys = self._levels(item.key, table["times"][found], x, y)
         middle = (float(f0) + float(f1)) / 2
+        fx, fy = level_at(xs, middle), level_at(ys, middle)
+        face_w = float(np.median(table["w"][found]))
+        if own:
+            # Pilkotun kuvan pala: sommittelu vaihtuu joka palassa joka
+            # tapauksessa, joten pala kehystetään omien kasvojensa mukaan eikä
+            # kameran vakaan paikan. Muuten punch osui ohi kun puhuja istui
+            # tavallisesta sivussa (Mikko 10: 93 px, video files cf82863).
+            here = found & (table["times"] >= float(f0) - EPS_S) & (table["times"] < float(f1) + EPS_S)
+            if np.any(here):
+                fx = float(np.median(table["x"][here] + table["w"][here] / 2))
+                fy = float(np.median(1.0 - (table["y"][here] + table["h"][here] / 2)))
+                face_w = float(np.median(table["w"][here]))
         lead = 0.0
         if off_axis and "turn" in table:
             # Katsoo oikealle (turn > 0) -> kasvot vasemmalle, tilaa oikealle.
@@ -370,9 +391,10 @@ class Reframer:
             if abs(turn) >= LEAD_TURN:
                 lead = -LEAD_ROOM if turn > 0 else LEAD_ROOM
         return plan_shot(
-            level_at(xs, middle), level_at(ys, middle), item.width, item.height,
+            fx, fy, item.width, item.height,
             zoom=self.look.zooms.get(item.key, 1.0) * extra, eyeline=self.look.eyeline,
             keep=_shot_box(table, found, f0, f1), headroom=headroom, lead=lead,
+            face_w=face_w,
         )
 
 

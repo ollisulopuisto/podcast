@@ -540,6 +540,7 @@ def build_fcpxml(
     body: list[str] = []
     first_clip_start_frames = 0
     moves = _movement_plan(spans, frame_duration, settings)
+    pieces = _pieces(spans)
     for index, (seg, a, b) in enumerate(spans):
         item = media_by_key[seg.angle]
         seg_start_tl = program_start + frame_duration * a
@@ -576,7 +577,7 @@ def build_fcpxml(
         move = moves[index] if moves else _NO_MOVE
         shot = _span_reframe(
             reframer, item, seg, seg_start_tl, program_start + frame_duration * b,
-            **_framing_request(move, seg, settings))
+            **_framing_request(move, seg, settings, pieces[index]))
         transform = _transform_lines(
             shot, _move_after(shot, move), b - a, frame_duration, "              ",
             conform=settings is not None and settings.globals.vertical,
@@ -898,14 +899,7 @@ def _movement_plan(
     if settings is None or not settings.globals.movement:
         return []
     segs = [seg for seg, _a, _b in spans]
-    # Pilkotun kuvan palat (punch ja sen naapurit samasta kamerasta):
-    # shorts-tyylissä ne eivät pusku, jottei koko hyppää punchin väliin.
-    split = [
-        seg.punch
-        or (i > 0 and segs[i - 1].angle == seg.angle and segs[i - 1].punch)
-        or (i + 1 < len(segs) and segs[i + 1].angle == seg.angle and segs[i + 1].punch)
-        for i, seg in enumerate(segs)
-    ]
+    split = _pieces(spans)
     return movement.plan(
         [float(frame_duration * (b - _a)) for _seg, _a, b in spans],
         [seg.label == WIDE_LABEL for seg in segs],
@@ -915,7 +909,22 @@ def _movement_plan(
     )
 
 
-def _framing_request(move: movement.Move, seg, settings) -> dict:
+def _pieces(spans: list) -> list[bool]:
+    """Pilkotun kuvan palat: punch ja sen naapurit samasta kamerasta.
+
+    Shorts-tyylissä ne eivät pusku (koko ei saa hypätä punchin väliin), ja
+    ne kehystetään omien kasvojensa mukaan eikä kameran vakaan paikan.
+    """
+    segs = [seg for seg, _a, _b in spans]
+    return [
+        seg.punch
+        or (i > 0 and segs[i - 1].angle == seg.angle and segs[i - 1].punch)
+        or (i + 1 < len(segs) and segs[i + 1].angle == seg.angle and segs[i + 1].punch)
+        for i, seg in enumerate(segs)
+    ]
+
+
+def _framing_request(move: movement.Move, seg, settings, piece: bool = False) -> dict:
     """Mitä kehystäjältä kysytään tälle kuvalle mikroliikkeen kanssa.
 
     Paikallaan pysyvä zoomi (``extra``) lasketaan kehykseen, jotta kasvot
@@ -930,6 +939,7 @@ def _framing_request(move: movement.Move, seg, settings) -> dict:
         "headroom": max(move.start_scale, move.end_scale) if move.animated else 1.0,
         "extra": move.start_scale if static else 1.0,
         "off_axis": bool(shorts and not seg.punch),
+        "own": bool(shorts and piece),
     }
 
 
@@ -1002,7 +1012,8 @@ def _transform_lines(
 
 
 def _span_reframe(reframer, item, seg, t0: Fraction, t1: Fraction,
-                  headroom: float = 1.0, extra: float = 1.0, off_axis: bool = False):
+                  headroom: float = 1.0, extra: float = 1.0, off_axis: bool = False,
+                  own: bool = False):
     """Pystyviennin kehystys yhdelle spanille, tai ``None``.
 
     Laajat jätetään kehyksittä: huoneen rajaus ei ole mittaus eikä
@@ -1014,7 +1025,8 @@ def _span_reframe(reframer, item, seg, t0: Fraction, t1: Fraction,
     if reframer is None or item is None:
         return None
     return reframer.from_item(item, float(t0), float(t1), focus=seg.focus,
-                              headroom=headroom, extra=extra, off_axis=off_axis)
+                              headroom=headroom, extra=extra, off_axis=off_axis,
+                              own=own)
 
 
 # Liikkeen identtisyys, kun kytkin on pois päältä: kehystys kysytään
@@ -1736,6 +1748,7 @@ def build_multicam_fcpxml(
     # tarvita. Tunnetut id:t poimitaan sieltä, jotta viittaus tuntemattomaan
     # assettiin jää tekemättä sen sijaan että se rikkoisi tuonnin.
     moves = _movement_plan(spans, frame_duration, settings)
+    pieces = _pieces(spans)
     for index, (seg, a, b) in enumerate(spans):
         at = program_start + frame_duration * a
         mc = timeline.multicam_at(at)
@@ -1761,7 +1774,8 @@ def build_multicam_fcpxml(
                 move = moves[index] if moves else _NO_MOVE
                 shot = reframer.from_item(
                     part, float(at), float(program_start + frame_duration * b),
-                    focus=seg.focus, **_framing_request(move, seg, settings))
+                    focus=seg.focus, **_framing_request(move, seg, settings,
+                                                        pieces[index]))
 
         own = set(mc.angle_ids)
         video_angle = next((x for x in angles_of.get(seg.angle, []) if x in own), "")
