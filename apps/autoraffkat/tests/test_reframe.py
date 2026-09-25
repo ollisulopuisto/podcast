@@ -553,3 +553,32 @@ def test_a_punch_piece_is_framed_on_its_own_face():
     punch = framer.from_item(item, 60.0, 66.0, extra=1.12, own=True)
     shown = 3413.33 * punch.scale
     assert abs(0.5 - punch.pos_x * 19.2 / shown - 0.57) < 1e-6
+
+
+def test_an_off_axis_zooming_shot_keeps_a_margin_at_its_end_scale():
+    """Pilkkomaton sivuun rajattu pusku: marginaali kuvan omista kasvoista,
+    puskun loppuzoomissa.
+
+    Video files a6d8732: Mikon pilkkomattomat puskukuvat (148, 51, 117, 180,
+    182) jäivät 15–29 px reunasta puskun lopussa, koska marginaali laskettiin
+    kameran vakaasta paikasta 100 %:ssa — kasvot istuivat vasemmalla siitä,
+    ja pusku keskipisteen ympäri söi vielä ~20 px.
+    """
+    from autoraffkat.reframe import FACE_MARGIN, Reframer
+
+    item = _item(dur=120)
+    table = _boxes(n=120, x=0.43, w=0.15)             # vakaa: kasvot 0,505
+    table["times"] = np.arange(120, dtype=np.float32)
+    table["turn"] = np.full(120, 0.3, dtype=np.float32)  # katsoo oikealle
+    table["x"][40:50] = 0.37                          # tällä kuvalla 0,445
+    framer = Reframer({item.key: table})
+    headroom = 1.08
+    shot = framer.from_item(item, 40.0, 50.0, off_axis=True, headroom=headroom)
+    a, b = 0.37, 0.52
+    room = FACE_MARGIN * (b - a)
+    for m in (1.0, headroom):
+        shown = 3413.33 * shot.scale * m
+        half = 1080 / shown / 2
+        centre = 0.5 - shot.pos_x * 19.2 / shown
+        assert centre - half <= a - room + 1e-6, m
+        assert b + room <= centre + half + 1e-6, m

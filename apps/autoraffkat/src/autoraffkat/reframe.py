@@ -179,7 +179,8 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
               zoom: float = 1.0, eyeline: float | None = None,
               face_w: float = 0.0, others=(),
               keep: tuple[float, float] | None = None,
-              headroom: float = 1.0, lead: float = 0.0) -> Reframe | None:
+              headroom: float = 1.0, lead: float = 0.0,
+              keep_pad: float | None = None) -> Reframe | None:
     """Yhden kuvan kehys kasvojen paikasta, täytön päälle.
 
     ``fx`` on kasvojen keskipiste lähteen leveydestä (0 = vasen reuna),
@@ -220,7 +221,7 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
         # zoomilla ikkunan keskipiste lähteessä on 0,5 + (c - 0,5) / m ja
         # puolikas half / m. Ilman tätä reuna jäi 17–19 px kasvojen sisään.
         a, b = keep
-        pad = KEEP_PAD * (b - a)
+        pad = (KEEP_PAD if keep_pad is None else keep_pad) * (b - a)
         a, b = a - pad, b + pad
         m = max(1.0, headroom)
         low = max(b - half, 0.5 + m * (b - 0.5) - half)
@@ -395,6 +396,13 @@ class Reframer:
             zoom=self.look.zooms.get(item.key, 1.0) * extra, eyeline=self.look.eyeline,
             keep=_shot_box(table, found, f0, f1), headroom=headroom, lead=lead,
             face_w=face_w,
+            # Sivuun rajattu kuva: kuvan omien kasvojen ympärille neljännes-
+            # kasvon marginaali puskun loppuzoomissa. Vakaan paikan mukaan
+            # laskettu marginaali ei riittänyt kun kasvot istuivat siitä
+            # sivussa, ja pusku keskipisteen ympäri söi vielä ~20 px
+            # (Mikko 148, 51, 117, 180, 182: 15–29 px reunasta, video files
+            # a6d8732).
+            keep_pad=FACE_MARGIN if lead else KEEP_PAD,
         )
 
 
