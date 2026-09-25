@@ -284,8 +284,9 @@ Kaikkia kolmea koskee lyhin päällekkäispuheen kesto: ohikiitävä myötäily 
 laukaise sääntöä.
 
 **Mikroliike** (oletuksena pois) on kahta tyyliä. **Shorts** on
-lyhytvideoiden leikkausta: pitkät lähikuvat pilkotaan saman kameran
-kuviksi puhujan painotuksissa (kovat lauseen alut), vuorotellen
+lyhytvideoiden leikkausta: lähikuvissa punch-in tulee puhujan vaihtuessa —
+kun puhuja jatkaa toisen välihuomautuksen jälkeen, ja aina kun kuva palaa
+puhujaan — vuorotellen
 perusrajaus — sivussa, tilaa katseen suuntaan — ja keskitetty 112 %:n
 punch-in, jolloin leikkaus vaihtaa sekä koon että sommittelun; jatkuva
 puhe saa puskun sisään. **Rauhallinen**, alla, on kameran vaihtelua.

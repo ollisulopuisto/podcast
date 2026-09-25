@@ -1150,10 +1150,17 @@ gigabytes. Pan follows FCP's balance for a mono clip in a stereo project
 `movement_style` picks between two editing languages, and the user asked
 for the second as an option, not a replacement (2026-09-25). **Calm** is
 camera variation: jumps under 3 %, slow random pushes. **Shorts** is
-short-form editing: a long close-up is cut into pieces on the same camera
-at loud sentence starts (`punch_segments`: speech after a ≥ 0.3 s pause
-whose peak is in that speaker's own top quartile — relative, so a quiet
-speaker emphasises too), alternating base and punch-in. The size between
+short-form editing: punch-ins come **on speaker changes** (`punch_segments`):
+inside a close-up where the speaker resumes after someone else spoke, and
+at every return to a speaker, whose framing alternates base/punch per
+camera. The first version punched in on loud onsets after a pause, and a
+full-episode transcript said that was wrong — of 540 onsets, pause length
+(precision 0.28 at 0.3 s, 0.34 at 1 s against a 0.26 base rate), onset
+peak, level fall and pitch fall all failed to separate sentence starts from
+the ½–1 s thinking pauses these speakers take mid-sentence; only a change of
+speaker did. Sentence boundaries would need a transcript, and the only
+acceptable transcriber is colab-transcribe (the user, 2026-09-25: local is
+too slow). The size between
 same-camera cuts either stays or jumps a full punch; a push is only for an
 unsplit long shot where the same speaker goes on, and always inward, since
 the release is the cut. The base framing sits off-axis with lead room

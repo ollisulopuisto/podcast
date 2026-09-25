@@ -285,8 +285,9 @@ All three respect a minimum overlap duration: a fleeting "mm-hm" doesn't
 trigger the rule.
 
 **Micro-movement** (off by default) comes in two styles. **Shorts** is
-short-form editing: long close-ups are cut into same-camera pieces at the
-speaker's emphasis (loud sentence starts), alternating a base framing —
+short-form editing: close-ups punch in when the speaker changes — where a
+speaker resumes after someone else spoke, and each time the picture
+returns to a speaker — alternating a base framing —
 off to the side, with room where the speaker looks — and a centred 112 %
 punch-in, so the cut changes both size and composition; a continuing
 speaker gets a push-in. **Calm**, described next, is camera variation.

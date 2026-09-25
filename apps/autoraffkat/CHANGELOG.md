@@ -16,6 +16,7 @@ and this project adheres to Calendar Versioning (CalVer).
 - **Reaction shots in a vertical export** were letterboxed 16:9 bands over the picture; they now get Fill and the listener's framing. A crowd shot with nobody talking frames the most prominent person instead of the gap between two, and a neighbour at the crop edge is pushed fully out or in.
 
 ### Changed
+- **Shorts punch-ins on speaker changes** (`movement.py`): no longer on loud onsets after a pause — a whole-episode transcript showed no cheap acoustic cue separates sentence starts from mid-sentence pauses. A close-up punches in where the speaker resumes after someone else spoke, and each return to a speaker alternates base and punch.
 - **Renders crop first, then scale** (`render.py`): a shot's region is cut from the source and only that is scaled, instead of scaling the whole picture to ~3,750×2,100 and cropping. A whole-episode render had run at about realtime; a 60 s shot now takes ~5 s and ~9 s of CPU, zoom or not.
 
 ### Added

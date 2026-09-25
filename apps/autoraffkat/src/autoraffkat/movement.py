@@ -90,15 +90,13 @@ PUNCH = 1.12
 # vaihtuu kun sana alkaa, ei sen jälkeen.
 PUNCH_LEAD = 0.1
 
-# Lauseen alku on puheen alku vähintään tämän tauon jälkeen; tavujen väliset
-# 0,14 s:n tauot (mediaani, ks. CLAUDE.md) eivät ole lauseen alkuja.
-PUNCH_PAUSE = 0.3
-
-# Painotus: alun huippu (PUNCH_PEAK sekunnin sisällä) on puhujan puheen
-# tasojen yläneljänneksessä. Suhteessa puhujaan itseensä, ei absoluuttisesti:
-# kovaääninen ja hiljainen puhuja painottavat kumpikin omalla tasollaan.
-PUNCH_PEAK = 0.6
-LOUD_QUANTILE = 0.75
+# Punch-in tulee puhujan vaihtuessa, ei tauosta eikä voimakkuudesta.
+# Koko jakson litteroinnista mitattuna (video files, 540 puheen alkua)
+# tauon pituus, alun huippu, tason lasku ennen taukoa eikä sävelkulku
+# erottanut lauseen alkua lauseen keskeltä: puhujat pitävät ½–1 s:n
+# ajattelutaukoja kesken lauseen, ja jatko on jopa hieman kovempi. Vain
+# puhujan vaihto erotti. Käyttäjä 2026-09-25: puhujan vaihto riittää, ja
+# litterointi on mahdollinen vain colab-transcribella.
 
 
 @dataclass
@@ -204,49 +202,54 @@ def _plan_shorts(rng, durations, wides, punches, split) -> list[Move]:
 
 
 def punch_segments(segments: list, grid, min_shot: float) -> list:
-    """Pitkät lähikuvat pilkottuna punch-ineiksi puhujan painotuksissa.
+    """Lähikuvat pilkottuna punch-ineiksi puhujan vaihtuessa.
 
-    Painotus on lauseen alku (puhetta vähintään ``PUNCH_PAUSE``n tauon
-    jälkeen), jonka huippu on puhujan omien tasojen yläneljänneksessä.
-    Leikkaukset valitaan järjestyksessä niin että jokainen pala on vähintään
-    ``min_shot``; palat vuorottelevat perus- ja punch-rajauksen välillä.
-    Vain lähikuvat: laajan ja ryhmäkuvan pystyrajaus on jo puhujan mukaan.
-    Silmukka kulkee lauseiden eikä näytteiden yli.
+    Kaksi kohtaa, molemmat puhujan vaihtoja:
+
+    * **Lähikuvan sisällä**: puhuja jatkaa sen jälkeen kun joku muu on
+      puhunut välissä (välihuomautus, lyhyt vastaus). Pelkkä tauko saman
+      puhujan puheessa ei ole vaihto.
+    * **Vuoron alussa**: kun kuva palaa puhujaan, rajaus vaihtuu edellisestä
+      kerrasta — perus ja punch vuorottelevat kameroittain, joten vuoron
+      ottaminen näkyy myös koon vaihtumisena.
+
+    Jokainen pala on vähintään ``min_shot``. Vain lähikuvat: laajan ja
+    ryhmäkuvan pystyrajaus on jo puhujan mukaan. Silmukka kulkee puheen
+    jaksojen eikä näytteiden yli.
     """
     by_camera = {lane.close_key: lane for lane in grid.speakers if lane.close_key}
-    pause = max(1, int(round(PUNCH_PAUSE / HOP)))
-    peak = max(1, int(round(PUNCH_PEAK / HOP)))
-    thresholds = {}
+    last: dict[str, bool] = {}
     out = []
     for seg in segments:
         lane = by_camera.get(seg.angle)
         lo = max(0, int(round((seg.start - grid.program_start) / HOP)))
         hi = min(grid.n, int(round((seg.end - grid.program_start) / HOP)))
-        if lane is None or hi - lo < 2 or not lane.on.any():
+        if lane is None or hi - lo < 2:
             out.append(seg)
             continue
-        if lane.name not in thresholds:
-            thresholds[lane.name] = float(np.quantile(lane.level[lane.on], LOUD_QUANTILE))
-        loud = thresholds[lane.name]
-        on = lane.on[lo:hi].astype(np.int8)
-        starts = np.flatnonzero(np.diff(on, prepend=0) == 1) + lo
+        punch = not last[seg.angle] if seg.angle in last else False
+        others = [other.on for other in grid.speakers if other is not lane]
+        edges = np.diff(lane.on.astype(np.int8), prepend=0)
+        starts = np.flatnonzero(edges == 1)
+        ends = np.flatnonzero(edges == -1)
         cuts = []
-        last = seg.start
-        for index in starts:
-            if lane.on[max(0, index - pause):index].any():
+        previous = seg.start
+        for index in starts[(starts > lo) & (starts < hi)]:
+            before = ends[ends <= index]
+            if not len(before):
                 continue
-            if float(lane.level[index:index + peak].max()) < loud:
+            gap = slice(int(before[-1]), int(index))
+            if not any(other[gap].any() for other in others):
                 continue
             at = grid.program_start + index * HOP - PUNCH_LEAD
-            if at - last >= min_shot and seg.end - at >= min_shot:
+            if at - previous >= min_shot and seg.end - at >= min_shot:
                 cuts.append(at)
-                last = at
-        if not cuts:
-            out.append(seg)
-            continue
+                previous = at
         bounds = [seg.start, *cuts, seg.end]
         for k in range(len(bounds) - 1):
-            out.append(replace(seg, start=bounds[k], end=bounds[k + 1], punch=k % 2 == 1))
+            state = punch if k % 2 == 0 else not punch
+            out.append(replace(seg, start=bounds[k], end=bounds[k + 1], punch=state))
+            last[seg.angle] = state
     return out
 
 

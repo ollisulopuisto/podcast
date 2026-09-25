@@ -64,7 +64,7 @@ const STRINGS = {
     'movement.calm': 'Rauhallinen',
     'movement.calmHint': 'Kameran vaihtelua: pienet kehykset ja hidas pusku, hypyt alle 3 %.',
     'movement.shorts': 'Shorts',
-    'movement.shortsHint': 'Punch-in painotuksissa (112 %, keskelle), perusrajaus sivussa katseen suuntaan, pusku kun sama puhuja jatkaa.',
+    'movement.shortsHint': 'Punch-in puhujan vaihtuessa (112 %, keskelle), perusrajaus sivussa katseen suuntaan, pusku kun sama puhuja jatkaa.',
     'movement.hint': 'Valekameraa pystyvientiin: kuvat saavat hienovaraisen, toistettavan skaalauksen jo tuontiin.',
     'why.movement': 'Liike on pelkkää skaalaa — paikkaa ei kosketeta, jotta '
       + 'Smart Confin kuvaajasijainti pysyy aitorivinä. Lyhyet kuvat jäävät '
@@ -448,7 +448,7 @@ const STRINGS = {
     'movement.calm': 'Calm',
     'movement.calmHint': 'Camera variation: small framings and slow pushes, jumps under 3 %.',
     'movement.shorts': 'Shorts',
-    'movement.shortsHint': 'Punch-ins on emphasis (112 %, centred), base framing off-axis toward the gaze, a push while the same speaker goes on.',
+    'movement.shortsHint': 'Punch-ins on speaker changes (112 %, centred), base framing off-axis toward the gaze, a push while the same speaker goes on.',
     'movement.hint': 'Virtual camera for vertical exports: clips get a subtle, repeatable scale treatment already on import.',
     'why.movement': 'The movement is scale only — position is never touched, so '
       + 'Smart Conform reframing stays authoritative. Short cuts stay put, '
