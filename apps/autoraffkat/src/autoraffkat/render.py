@@ -283,23 +283,24 @@ def _encode(shot: Shot, pw: int, ph: int, fps: str, target: str, stop=None) -> N
           "-an", *encoder()[1], "-r", fps, "-f", "mpegts", target], stop)
 
 
-def render_video(shots: list[Shot], pw: int, ph: int, frame_duration: Fraction,
-                 total_frames: int, out_path: str, progress=None, workers: int = 3,
-                 stop=None) -> None:
-    """Kuvat videoksi: jokainen kuva omaksi palakseen, palat peräkkäin.
+def draw_parts(shots: list[Shot], pw: int, ph: int, frame_duration: Fraction,
+               _total_frames: int, work: str, progress=None, workers: int = 3,
+               stop=None) -> list[str]:
+    """Kuvat paloiksi hakemistoon ``work``: jokainen kuva omaksi palakseen.
+
+    ``_total_frames`` on yhteisen rajapinnan vuoksi (AVFoundation tarvitsee
+    sen); täällä kesto tulee kuvista ja ``join`` rajaa sen.
 
     Kuva kerrallaan eikä yhtenä suodinverkkona: satojen kuvien verkko on
     hauras ja yksi virhe kaataa kaiken. Palat koodataan samoilla asetuksilla,
-    joten liitos on pelkkä kopio. Ruutumäärät tulevat kuvista, joten kesto
-    on täsmälleen ohjelman kesto.
+    joten liitos (``join``) on pelkkä kopio. Ruutumäärät tulevat kuvista,
+    joten kesto on täsmälleen ohjelman kesto.
     """
     import os
-    import tempfile
     from concurrent.futures import ThreadPoolExecutor
 
     flat = flatten(shots, frame_duration)
     fps = _fps(frame_duration)
-    work = tempfile.mkdtemp(prefix="autoraffkat-render-")
     names = [os.path.join(work, f"{i:05d}.ts") for i in range(len(flat))]
     done = [0]
 
@@ -311,17 +312,44 @@ def render_video(shots: list[Shot], pw: int, ph: int, frame_duration: Fraction,
         if progress is not None:
             progress(done[0] / max(1, len(flat)))
 
-    try:
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            list(pool.map(one, range(len(flat))))
-        listing = os.path.join(work, "list.txt")
-        with open(listing, "w", encoding="utf-8") as handle:
-            handle.writelines(f"file '{name}'\n" for name in names)
-        _run([_ffmpeg(), "-nostdin", "-v", "error", "-y", "-f", "concat", "-safe", "0",
-              "-i", listing, "-frames:v", str(total_frames), "-c", "copy", out_path], stop)
-    finally:
-        import shutil
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        list(pool.map(one, range(len(flat))))
+    return names
 
+
+def join(parts: list[str], total_frames: int, out_path: str, stop=None,
+         audio: str | None = None) -> None:
+    """Palat peräkkäin ja ääni mukaan yhdellä kopiolla, koodaamatta.
+
+    Ilman ``+faststart``ia: se kirjoittaa koko tiedoston vielä kerran
+    siirtääkseen hakemiston alkuun, mitä tarvitaan vain verkkotoistoon —
+    renderöinti menee paikalliselle leikkeenpoimijalle.
+    """
+    import os
+
+    listing = os.path.join(os.path.dirname(parts[0]), "list.txt")
+    with open(listing, "w", encoding="utf-8") as handle:
+        handle.writelines(f"file '{name}'\n" for name in parts)
+    command = [_ffmpeg(), "-nostdin", "-v", "error", "-y",
+               "-f", "concat", "-safe", "0", "-i", listing]
+    if audio:
+        command += ["-i", audio, "-map", "0:v:0", "-map", "1:a:0"]
+    _run([*command, "-frames:v", str(total_frames), "-c", "copy", out_path], stop)
+
+
+def render_video(shots: list[Shot], pw: int, ph: int, frame_duration: Fraction,
+                 total_frames: int, out_path: str, progress=None, workers: int = 3,
+                 stop=None) -> None:
+    """Kuvat videoksi ``out_path``iin: ``draw_parts`` ja ``join``."""
+    import shutil
+    import tempfile
+
+    work = tempfile.mkdtemp(prefix="autoraffkat-render-")
+    try:
+        parts = draw_parts(shots, pw, ph, frame_duration, total_frames, work,
+                           progress, workers, stop)
+        join(parts, total_frames, out_path, stop)
+    finally:
         shutil.rmtree(work, ignore_errors=True)
 
 
@@ -418,7 +446,10 @@ def render_audio(sources: list[AudioSource], program_start: float, seconds: floa
 
 
 def video_backend():
-    """``(nimi, renderöijä)``: AVFoundation macOS:llä, muuten ffmpeg.
+    """``(nimi, palat)``: AVFoundation macOS:llä, muuten ffmpeg.
+
+    Palat-funktio piirtää kuvan hakemistoon ja palauttaa palatiedostot,
+    jotka ``join`` liittää.
 
     AVFoundation tekee purun, muunnoksen ja koodauksen näytönohjaimella
     kuten Final Cut (``render_av.py``); ffmpeg on varapolku ja Windowsin
@@ -431,10 +462,10 @@ def video_backend():
         try:
             from . import render_av
 
-            return "avfoundation", render_av.render_video
+            return "avfoundation", render_av.draw_parts
         except ImportError:
             pass
-    return f"ffmpeg/{encoder()[0]}", render_video
+    return f"ffmpeg/{encoder()[0]}", draw_parts
 
 
 def render_program(shots: list[Shot], sources: list[AudioSource], pw: int, ph: int,
@@ -448,10 +479,16 @@ def render_program(shots: list[Shot], sources: list[AudioSource], pw: int, ph: i
 
     Kirjoitetaan ensin viereen väliaikaisena ja nimetään lopuksi, jottei
     kesken jäänyt ajo jätä puolikasta tiedostoa joka näyttää valmiilta.
-    Kuva on 85 % työstä, ääni 10 %, yhdistäminen loput.
+
+    Ääni ja sen AAC-koodaus tehdään omassa säikeessään kuvan aikana, ja
+    lopuksi kuvan palat ja ääni liitetään yhdellä kopiolla. Mitattuna 46
+    minuutin jaksolla M2:lla ennen tätä: kuvan jälkeen vielä 73 s, josta
+    suurin osa äänen koodausta ja kaksi koko kuvan kopiota.
     """
     import os
+    import shutil
     import tempfile
+    import threading
     import time
 
     def stage(low: float, high: float):
@@ -469,22 +506,52 @@ def render_program(shots: list[Shot], sources: list[AudioSource], pw: int, ph: i
         f"{backend} -> {out_path}")
 
     work = tempfile.mkdtemp(prefix="autoraffkat-render-")
-    video = os.path.join(work, "video.mp4")
-    audio = os.path.join(work, "audio.wav")
+    pictures = os.path.join(work, "kuva")
+    os.makedirs(pictures)
+    wav = os.path.join(work, "audio.wav")
+    aac = os.path.join(work, "audio.m4a")
     partial = out_path + ".partial.mp4"
+    halt = threading.Event()
+
+    class _Either:
+        """Pysäytys käyttöliittymästä tai kuvan kaatuessa."""
+
+        def is_set(self) -> bool:
+            return halt.is_set() or (stop is not None and stop.is_set())
+
+    failures: list = []
+    audio_time = [0.0]
+
+    def make_audio() -> None:
+        try:
+            mark = time.monotonic()
+            render_audio(sources, program_start, seconds, wav, stop=_Either())
+            _run([_ffmpeg(), "-nostdin", "-v", "error", "-y", "-i", wav,
+                  "-c:a", "aac", "-b:a", "256k", aac], _Either())
+            audio_time[0] = time.monotonic() - mark
+        except BaseException as exc:  # välitetään pääsäikeeseen
+            failures.append(exc)
+
+    sound = threading.Thread(target=make_audio, name="render-audio", daemon=True)
     try:
+        sound.start()
         mark = time.monotonic()
-        draw(shots, pw, ph, frame_duration, total_frames, video,
-             progress=stage(0.0, 0.85), stop=stop)
+        try:
+            parts = draw(shots, pw, ph, frame_duration, total_frames, pictures,
+                         progress=stage(0.0, 0.95), stop=stop)
+        except BaseException:
+            halt.set()
+            raise
+        finally:
+            if halt.is_set():
+                sound.join()
         log(f"kuva {time.monotonic() - mark:.0f} s")
+        sound.join()
+        if failures:
+            raise next((e for e in failures if isinstance(e, Stopped)), failures[0])
+        log(f"ääni {audio_time[0]:.0f} s (kuvan aikana)")
         mark = time.monotonic()
-        render_audio(sources, program_start, seconds,
-                     audio, progress=stage(0.85, 0.95), stop=stop)
-        log(f"ääni {time.monotonic() - mark:.0f} s")
-        mark = time.monotonic()
-        _run([_ffmpeg(), "-nostdin", "-v", "error", "-y", "-i", video, "-i", audio,
-              "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac",
-              "-b:a", "256k", "-movflags", "+faststart", partial], stop)
+        join(parts, total_frames, partial, stop, audio=aac)
         os.replace(partial, out_path)
         total = time.monotonic() - began
         log(f"yhdistäminen {time.monotonic() - mark:.0f} s; valmis {total:.0f} s "
@@ -492,8 +559,6 @@ def render_program(shots: list[Shot], sources: list[AudioSource], pw: int, ph: i
         if progress is not None:
             progress(1.0)
     finally:
-        import shutil
-
         shutil.rmtree(work, ignore_errors=True)
         if os.path.exists(partial):
             os.remove(partial)

@@ -100,19 +100,18 @@ def transform(shot: Shot, pw: int, ph: int, scale: float):
     return Quartz.CGAffineTransformMake(k, 0.0, 0.0, k, tx, ty)
 
 
-def render_video(shots: list[Shot], pw: int, ph: int, frame_duration: Fraction,
-                 total_frames: int, out_path: str, progress=None, stop=None) -> None:
-    """Kuvat videoksi AVFoundationilla. Sama rajapinta kuin ``render.render_video``.
+def draw_parts(shots: list[Shot], pw: int, ph: int, frame_duration: Fraction,
+               total_frames: int, work: str, progress=None, stop=None) -> list[str]:
+    """Kuvat AVFoundationilla hakemistoon ``work``; sama rajapinta kuin
+    ``render.draw_parts``.
 
-    Ohjelma jaetaan ``HALVES`` osaan kuvan rajalta, osat viedään rinnakkain
-    ja liitetään kopiona: sama koodain ja samat asetukset, joten liitos ei
-    koodaa mitään uudestaan.
+    Ohjelma jaetaan ``HALVES`` osaan kuvan rajalta ja osat viedään
+    rinnakkain. ``render.join`` liittää ne kopiona: sama koodain ja samat
+    asetukset, joten liitos ei koodaa mitään uudestaan.
     """
     import os
-    import tempfile
+    import threading
     from dataclasses import replace
-
-    from .render import _ffmpeg, _run
 
     _load()
     flat = flatten(shots, frame_duration)
@@ -121,14 +120,14 @@ def render_video(shots: list[Shot], pw: int, ph: int, frame_duration: Fraction,
     # hiljaa, ja liitoksesta puuttui 9 ruutua.
     choices = [i for i in range(1, len(flat)) if flat[i - 1].path and flat[i].path]
     if HALVES < 2 or not choices:
-        _render_part(flat, pw, ph, frame_duration, total_frames, out_path, progress, stop)
-        return
+        name = os.path.join(work, "osa0.mp4")
+        _render_part(flat, pw, ph, frame_duration, total_frames, name, progress, stop)
+        return [name]
     middle = min(choices, key=lambda i: abs(flat[i].start - total_frames / 2))
     split = flat[middle].start
     parts = [(flat[:middle], split),
              ([replace(s, start=s.start - split, end=s.end - split) for s in flat[middle:]],
               total_frames - split)]
-    work = tempfile.mkdtemp(prefix="autoraffkat-av-")
     names = [os.path.join(work, f"osa{i}.mp4") for i in range(len(parts))]
     shares = [0.0] * len(parts)
     errors: list = []
@@ -145,22 +144,30 @@ def render_video(shots: list[Shot], pw: int, ph: int, frame_duration: Fraction,
         except BaseException as exc:  # välitetään pääsäikeeseen
             errors.append(exc)
 
-    try:
-        threads = [threading.Thread(target=one, args=(i,)) for i in range(len(parts))]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-        if errors:
-            raise next((e for e in errors if isinstance(e, Stopped)), errors[0])
-        listing = os.path.join(work, "list.txt")
-        with open(listing, "w", encoding="utf-8") as handle:
-            handle.writelines(f"file '{name}'\n" for name in names)
-        _run([_ffmpeg(), "-nostdin", "-v", "error", "-y", "-f", "concat", "-safe", "0",
-              "-i", listing, "-c", "copy", out_path], stop)
-    finally:
-        import shutil
+    threads = [threading.Thread(target=one, args=(i,)) for i in range(len(parts))]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    if errors:
+        raise next((e for e in errors if isinstance(e, Stopped)), errors[0])
+    return names
 
+
+def render_video(shots: list[Shot], pw: int, ph: int, frame_duration: Fraction,
+                 total_frames: int, out_path: str, progress=None, stop=None) -> None:
+    """Kuvat videoksi AVFoundationilla. Sama rajapinta kuin ``render.render_video``."""
+    import shutil
+    import tempfile
+
+    from .render import join
+
+    work = tempfile.mkdtemp(prefix="autoraffkat-av-")
+    try:
+        parts = draw_parts(shots, pw, ph, frame_duration, total_frames, work,
+                           progress, stop)
+        join(parts, total_frames, out_path, stop)
+    finally:
         shutil.rmtree(work, ignore_errors=True)
 
 

@@ -1155,6 +1155,11 @@ of `crop`'s (first frame 3.5 px off), so the index comes from the timestamp
 (`round(t*fps)`), which both see alike. Each shot is its own segment, then
 a stream-copy concat: a filter graph of hundreds of shots is fragile, and
 frame counts per shot make the length exact by construction. Audio is
+made and AAC-encoded in its own thread while the picture draws, and the
+picture's parts and the audio are joined in **one** stream copy, without
+`+faststart` (it rewrites the whole file, needed only for web playback): on
+a 46-minute episode on an M2 the step after the picture took 73 s, mostly
+the audio encode and two extra copies of a multi-GB file. Audio is
 summed in one-minute blocks — an hour of two microphones in memory is
 gigabytes. Pan follows FCP's balance for a mono clip in a stereo project
 (full level both sides at centre), not constant power.

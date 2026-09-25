@@ -341,3 +341,65 @@ print(sorted(set(missing)))
     result = subprocess.run([sys.executable, "-c", script], capture_output=True,
                             text=True, check=True)
     assert result.stdout.strip().splitlines()[-1] == "[]"
+
+
+@needs_ffmpeg
+def test_the_audio_is_made_while_the_picture_is_drawn(tmp_path, monkeypatch):
+    """Ääni ja sen AAC-koodaus eivät odota kuvaa: 46 minuutin jaksossa
+    yhdistäminen vei 73 s kuvan jälkeen (M2, 2026-09-25), ja siitä suurin
+    osa oli äänen koodausta, jonka voi tehdä kuvan aikana."""
+    import threading
+
+    started = threading.Event()
+    waited = []
+    real_audio = render.render_audio
+
+    def audio(*args, **kwargs):
+        started.set()
+        return real_audio(*args, **kwargs)
+
+    name, real_draw = render.video_backend()
+
+    def draw(*args, **kwargs):
+        waited.append(started.wait(timeout=5))
+        return real_draw(*args, **kwargs)
+
+    monkeypatch.setattr(render, "render_audio", audio)
+    monkeypatch.setattr(render, "video_backend", lambda: (name, draw))
+    source = tmp_path / "bar.mp4"
+    _bar_source(source)
+    shot = Shot(0, 25, str(source), 0.0, 1920, 1080, fill=True)
+    render.render_program([shot], [], 1080, 1920, render.Fraction(1, 25), 25, 0.0,
+                          str(tmp_path / "out.mp4"))
+    assert waited == [True]
+
+
+@needs_ffmpeg
+def test_the_picture_is_copied_once_after_it_is_drawn(tmp_path, monkeypatch):
+    """Osat liitetään ja ääni lisätään samalla kopiolla. Ennen osat
+    liitettiin ensin yhdeksi tiedostoksi ja se kopioitiin vielä kerran
+    äänen kanssa (ja ``+faststart`` kirjoitti sen kolmannen kerran):
+    tunnin pystyvideo on gigatavuja, ja levy oli 98 % täynnä."""
+    commands = []
+    real_run = render._run
+
+    def run(command, stop=None):
+        commands.append(command)
+        return real_run(command, stop)
+
+    monkeypatch.setattr(render, "_run", run)
+    source = tmp_path / "bar.mp4"
+    _bar_source(source, seconds=4)
+    shots = [Shot(0, 40, str(source), 0.0, 1920, 1080, fill=True),
+             Shot(40, 80, str(source), 1.0, 1920, 1080, fill=True)]
+    out = tmp_path / "out.mp4"
+    render.render_program(shots, [], 1080, 1920, render.Fraction(1, 25), 80, 0.0, str(out))
+    copies = [c for c in commands
+              if "copy" in c and c[c.index("copy") - 1] in ("-c", "-c:v")]
+    assert len(copies) == 1, copies
+    assert "+faststart" not in copies[0]
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-count_frames", "-show_entries",
+         "stream=codec_type,nb_read_frames", "-of", "csv=p=0", str(out)],
+        check=True, capture_output=True, text=True).stdout.split()
+    assert "video,80" in probe and any(p.startswith("audio") for p in probe)
