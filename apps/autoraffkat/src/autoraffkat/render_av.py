@@ -21,6 +21,7 @@ vaihtuu. Ääni ja yhdistäminen ovat yhteiset.
 
 from __future__ import annotations
 
+import threading
 import time
 from fractions import Fraction
 
@@ -34,6 +35,39 @@ HALVES = 2
 # Tiedostoaikojen aikaskaala. 90 kHz on videon oma yleinen aikapohja, ja se
 # jakautuu tasan kaikille tavallisille kuvanopeuksille.
 TIMESCALE = 90000
+
+# Jokainen kehysten nimi, jota tämä moduuli käyttää. pyobjc hakee nimet
+# laiskasti ensimmäisellä käytöllä, eikä haku kestä kahta säiettä yhtä
+# aikaa: puolikkaat tuoreessa prosessissa kaatuivat ``'CMTimeMake'``-
+# virheeseen (käyttäjän M2, 2026-09-25), täällä kerran kuudesta
+# ``KeyError('CGAffineTransformMake')``. ``_load`` hakee ne ennen säikeitä;
+# testi pitää listan täydellisenä.
+_SYMBOLS = {
+    "CoreMedia": ("CMTimeMake", "CMTimeRangeMake", "kCMPersistentTrackID_Invalid",
+                  "kCMTimeZero"),
+    "Quartz": ("CGAffineTransformConcat", "CGAffineTransformMake"),
+    "Foundation": ("NSURL",),
+    "AVFoundation": (
+        "AVAssetExportPresetHighestQuality", "AVAssetExportSession",
+        "AVAssetExportSessionStatusCompleted", "AVAssetExportSessionStatusExporting",
+        "AVAssetExportSessionStatusUnknown", "AVAssetExportSessionStatusWaiting",
+        "AVFileTypeMPEG4", "AVMediaTypeVideo", "AVMutableComposition",
+        "AVMutableVideoComposition", "AVMutableVideoCompositionInstruction",
+        "AVMutableVideoCompositionLayerInstruction", "AVURLAsset",
+        "AVURLAssetPreferPreciseDurationAndTimingKey"),
+}
+_loading = threading.Lock()
+
+
+def _load() -> None:
+    """Hakee kaikki ``_SYMBOLS``-nimet yhdessä säikeessä kerrallaan."""
+    import importlib
+
+    with _loading:
+        for module, names in _SYMBOLS.items():
+            loaded = importlib.import_module(module)
+            for name in names:
+                getattr(loaded, name)
 
 
 def _time(seconds: float):
@@ -76,11 +110,11 @@ def render_video(shots: list[Shot], pw: int, ph: int, frame_duration: Fraction,
     """
     import os
     import tempfile
-    import threading
     from dataclasses import replace
 
     from .render import _ffmpeg, _run
 
+    _load()
     flat = flatten(shots, frame_duration)
     # Raja kuvan alkuun lähimpänä puoliväliä: kuvaa ei katkaista. Ei mustan
     # aukon viereen: AVFoundation jättää viennin lopusta tyhjän jakson pois

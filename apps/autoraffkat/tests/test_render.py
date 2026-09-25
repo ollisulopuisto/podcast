@@ -209,6 +209,7 @@ def test_a_render_reports_its_timings_in_the_terminal(tmp_path, capsys):
 def test_the_av_render_cuts_on_the_exact_frame_and_has_the_exact_length(tmp_path):
     """AVFoundation: kaksi kuvaa eri kohdista samaa tiedostoa ja musta aukko
     välissä — leikkaus osuu ruudulleen ja pituus on ruutujen summa."""
+    # Vain AVFoundation: ffmpeg-varapolku huojuu yhä (punainen tällä testillä).
     backend = _backend("av")
     source = tmp_path / "bar.mp4"
     _bar_source(source, x=900, seconds=4)      # keskitetty rajaus näyttää 656–1264
@@ -259,3 +260,84 @@ def test_the_av_render_in_two_halves_joins_on_the_exact_frame(tmp_path):
     # Liitos: viiva vaihtaa paikkaa täsmälleen ruudulla 90.
     assert abs(_bar_x(_frame(out, 89)) - _bar_x(_frame(out, 50))) < 3
     assert _bar_x(_frame(out, 90)) - _bar_x(_frame(out, 89)) > 300
+
+
+@needs_ffmpeg
+def test_a_slow_zoom_moves_smoothly_without_wobble(tmp_path):
+    """Hidas mikroliike: kuva liukuu tasaisesti eikä nyi pikselin edestakaisin.
+
+    ffmpeg-polku pyöristää sekä skaalatun koon että rajauksen kokonaisiin
+    (rajauksen x parillisiin) pikseleihin, ja kaksi eri tahtiin askeltavaa
+    pyöristystä saa kuvan nykimään: mitattuna 125 ruudun zoomissa poikkeama
+    tasaisesta rms 0,60 px, enimmillään 1,16 px ja suunnanvaihtoja 82 —
+    käyttäjä näki sen Mikon kuvassa sivuttaisena huojuntana. AVFoundation
+    siirtää alipikselitarkasti kuten Final Cut: 0,02 px, ei yhtään
+    suunnanvaihtoa. Ks. CLAUDE.md, renderöinti.
+    """
+    # Vain AVFoundation: ffmpeg-varapolku huojuu yhä (punainen tällä testillä).
+    backend = _backend("av")
+    source = tmp_path / "bar.mp4"
+    _bar_source(source, x=1000, seconds=6)
+    plan = reframe.plan_shot(1100 / 1920, 0.5, 1920, 1080, lead=-0.12, face_w=0.1)
+    shot = Shot(0, 125, str(source), 0.0, 1920, 1080, scale0=plan.scale,
+                scale1=plan.scale * 1.06, pos_x=plan.pos_x, fill=True)
+    out = tmp_path / "out.mp4"
+    backend([shot], 1080, 1920, render.Fraction(1, 25), 125, str(out))
+    raw = subprocess.run([FFMPEG, "-v", "error", "-i", str(out), "-f", "rawvideo",
+                          "-pix_fmt", "gray", "-"], capture_output=True, check=True).stdout
+    rows = np.frombuffer(raw, np.uint8).reshape(-1, 1920, 1080)[:, 960].astype(float)
+    xs = np.array([np.average(np.arange(1080), weights=r + 1e-9) for r in rows])
+    frames = np.arange(len(xs))
+    smooth = np.polyval(np.polyfit(frames, xs, 2), frames)
+    assert np.sqrt(np.mean((xs - smooth) ** 2)) < 0.1
+    assert int(np.sum(np.diff(np.sign(np.diff(xs))) != 0)) <= 2
+
+
+def test_every_framework_name_the_av_render_uses_is_preloaded():
+    """pyobjc hakee kehysten nimet laiskasti ensimmäisellä käytöllä, eikä
+    haku kestä kahta säiettä yhtä aikaa: kaksi puolikasta ensimmäistä kertaa
+    tuoreessa prosessissa kaatui käyttäjällä ``'CMTimeMake'``-virheeseen ja
+    toistui täällä kerran kuudesta (``KeyError('CGAffineTransformMake')``).
+    Jokainen käytetty nimi on siksi ``_SYMBOLS``-listassa."""
+    import re
+    from pathlib import Path
+
+    from autoraffkat import render_av
+
+    source = Path(render_av.__file__).read_text(encoding="utf-8")
+    used = set(re.findall(r"\b(AVFoundation|CoreMedia|Quartz|Foundation)\.(\w+)", source))
+    listed = {(module, name) for module, names in render_av._SYMBOLS.items()
+              for name in names}
+    assert used <= listed
+
+
+def test_the_av_render_resolves_framework_names_before_its_threads_start(tmp_path):
+    """Tuoreessa prosessissa: kun puolikkaiden säikeet käynnistyvät, kaikki
+    nimet on jo haettu pääsäikeessä."""
+    import sys
+
+    if sys.platform != "darwin":
+        pytest.skip("AVFoundation on macOS:n")
+    source = tmp_path / "bar.mp4"
+    _bar_source(source, x=900, seconds=4)
+    script = f"""
+import importlib, threading
+from fractions import Fraction
+from autoraffkat import render_av
+from autoraffkat.render import Shot
+missing = []
+start = threading.Thread.start
+def check(self):
+    for module, names in render_av._SYMBOLS.items():
+        loaded = vars(importlib.import_module(module))
+        missing.extend(f"{{module}}.{{n}}" for n in names if n not in loaded)
+    start(self)
+threading.Thread.start = check
+shots = [Shot(0, 40, {str(source)!r}, 0.0, 1920, 1080, fill=True),
+         Shot(40, 80, {str(source)!r}, 1.0, 1920, 1080, fill=True)]
+render_av.render_video(shots, 1080, 1920, Fraction(1, 25), 80, {str(tmp_path / "out.mp4")!r})
+print(sorted(set(missing)))
+"""
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True,
+                            text=True, check=True)
+    assert result.stdout.strip().splitlines()[-1] == "[]"

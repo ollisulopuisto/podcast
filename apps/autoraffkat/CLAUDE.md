@@ -1159,6 +1159,14 @@ summed in one-minute blocks — an hour of two microphones in memory is
 gigabytes. Pan follows FCP's balance for a mono clip in a stereo project
 (full level both sides at centre), not constant power.
 
+The ffmpeg path wobbles on a slow zoom and AVFoundation does not. Both the
+scaled size (even pixels) and the crop offset are integers, stepping at
+different moments, so a push ticks back and forth: measured on a 125-frame
+push, rms 0.60 px off the smooth path, max 1.16, 82 reversals — seen by the
+user as a side-to-side sway in a close-up. AVFoundation's transform is
+subpixel: 0.02 px, no reversals. `test_a_slow_zoom_moves_smoothly_without_wobble`
+holds the AV path; the ffmpeg path fails it and is not fixed yet.
+
 ## Two movement styles: calm and shorts
 
 `movement_style` picks between two editing languages, and the user asked
