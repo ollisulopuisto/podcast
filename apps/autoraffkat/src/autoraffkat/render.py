@@ -432,23 +432,42 @@ def render_program(shots: list[Shot], sources: list[AudioSource], pw: int, ph: i
     """
     import os
     import tempfile
+    import time
 
     def stage(low: float, high: float):
         return (lambda f: progress(low + (high - low) * f)) if progress else None
+
+    def log(message: str) -> None:
+        """Kulku terminaaliin, kuten mittauksella ja äänellä: kun ajo on
+        hidas, kysymys on mikä vaihe."""
+        print(f"[video] {message}", flush=True)
+
+    seconds = float(total_frames * frame_duration)
+    began = time.monotonic()
+    log(f"alkaa: {len(shots)} kuvaa, {seconds / 60:.1f} min, {pw}×{ph}, "
+        f"koodain {encoder()[0]} -> {out_path}")
 
     work = tempfile.mkdtemp(prefix="autoraffkat-render-")
     video = os.path.join(work, "video.mp4")
     audio = os.path.join(work, "audio.wav")
     partial = out_path + ".partial.mp4"
     try:
+        mark = time.monotonic()
         render_video(shots, pw, ph, frame_duration, total_frames, video,
                      progress=stage(0.0, 0.85), stop=stop)
-        render_audio(sources, program_start, float(total_frames * frame_duration),
+        log(f"kuva {time.monotonic() - mark:.0f} s")
+        mark = time.monotonic()
+        render_audio(sources, program_start, seconds,
                      audio, progress=stage(0.85, 0.95), stop=stop)
+        log(f"ääni {time.monotonic() - mark:.0f} s")
+        mark = time.monotonic()
         _run([_ffmpeg(), "-nostdin", "-v", "error", "-y", "-i", video, "-i", audio,
               "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac",
               "-b:a", "256k", "-movflags", "+faststart", partial], stop)
         os.replace(partial, out_path)
+        total = time.monotonic() - began
+        log(f"yhdistäminen {time.monotonic() - mark:.0f} s; valmis {total:.0f} s "
+            f"({seconds / max(total, 1e-6):.1f}× reaaliaika) -> {out_path}")
         if progress is not None:
             progress(1.0)
     finally:

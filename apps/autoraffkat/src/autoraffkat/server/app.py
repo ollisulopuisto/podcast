@@ -643,6 +643,8 @@ class AppState:
                                   stop=self.render_stop)
         except render.Stopped:
             self.render_progress["stopped"] = True
+            print(f"[video] pysäytetty {self.render_progress['fraction'] * 100:.0f} %:ssa, "
+                  "tiedostoa ei tehty", flush=True)
         except Exception as exc:  # taustasäie ei saa kaatua hiljaa
             self.render_progress["error"] = str(exc)
             traceback.print_exc()

@@ -167,3 +167,24 @@ def test_a_picture_smaller_than_the_frame_is_letterboxed(tmp_path):
     frame = _frame(out, 0, width=1920, height=1080)
     assert frame[:200].max() < 30            # yläreuna mustaa
     assert frame[540].max() > 200            # viiva näkyy keskellä
+
+
+@needs_ffmpeg
+def test_a_render_reports_its_timings_in_the_terminal(tmp_path, capsys):
+    """Renderöinti kertoo terminaaliin koodaimen, vaiheiden ajat ja kokonaisajan.
+
+    Käyttäjä kysyi ensimmäisen oikean renderöinnin aikana, näkyykö kesto
+    lopuksi — ei näkynyt, eikä hidasta ajoa voinut jälkikäteen purkaa
+    vaiheiksi.
+    """
+    source = tmp_path / "bar.mp4"
+    _bar_source(source)
+    shot = Shot(0, 25, str(source), 0.0, 1920, 1080, fill=True)
+    render.render_program([shot], [], 1080, 1920, render.Fraction(1, 25), 25, 0.0,
+                          str(tmp_path / "out.mp4"))
+    lines = [line for line in capsys.readouterr().out.splitlines()
+             if line.startswith("[video]")]
+    text = "\n".join(lines)
+    assert render.encoder()[0] in text
+    for word in ("kuva", "ääni", "valmis"):
+        assert word in text, text
