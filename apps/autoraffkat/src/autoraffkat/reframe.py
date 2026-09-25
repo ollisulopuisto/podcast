@@ -176,7 +176,8 @@ def level_at(steps: list[tuple[float, float]], at: float) -> float:
 
 def plan_shot(fx: float, fy: float, width: int, height: int,
               zoom: float = 1.0, eyeline: float | None = None,
-              face_w: float = 0.0, others=()) -> Reframe | None:
+              face_w: float = 0.0, others=(),
+              keep: tuple[float, float] | None = None) -> Reframe | None:
     """Yhden kuvan kehys kasvojen paikasta, täytön päälle.
 
     ``fx`` on kasvojen keskipiste lähteen leveydestä (0 = vasen reuna),
@@ -195,8 +196,19 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
         return None
     slack_x = max(0.0, (shown_w - PROJECT_W) / 2)
     slack_y = max(0.0, (shown_h - PROJECT_H) / 2)
-    centre = _clear_neighbours(fx, face_w, others, PROJECT_W / shown_w / 2,
-                               slack_x / shown_w)
+    half = PROJECT_W / shown_w / 2
+    reach = slack_x / shown_w
+    centre = _clear_neighbours(fx, face_w, others, half, reach)
+    if keep is not None:
+        # Kuvan omat kasvot (mediaanilaatikko) eivät saa jäädä reunasta
+        # ulos: vakaa kehys siirtyy juuri sen verran, ei enempää.
+        a, b = keep
+        if b - a <= 2 * half:
+            if a < centre - half:
+                centre = a + half
+            elif b > centre + half:
+                centre = b - half
+        centre = min(0.5 + reach, max(0.5 - reach, centre))
     move_x = min(slack_x, max(-slack_x, -(centre - 0.5) * shown_w))
     # Kuvan nosto ylös siirtää kasvoja ylös: kasvojen etäisyys keskeltä
     # (alas positiivinen) on ``(fy - 0,5) * korkeus - nosto``.
@@ -315,6 +327,7 @@ class Reframer:
         return plan_shot(
             level_at(xs, middle), level_at(ys, middle), item.width, item.height,
             zoom=self.look.zooms.get(item.key, 1.0), eyeline=self.look.eyeline,
+            keep=_shot_box(table, found, f0, f1),
         )
 
 
@@ -351,13 +364,20 @@ class Reframer:
         f0, f1 = item.file_time_at(t0), item.file_time_at(t1)
         middle = (float(f0) + float(f1)) / 2 if f0 is not None and f1 is not None else None
         x, y = self._seat_at(item, table, seat, middle)
+        keep = None
+        if f0 is not None and f1 is not None:
+            mine = np.zeros(len(table["frame"]), dtype=bool)
+            mine[seat.rows] = True
+            keep = _shot_box({**table, "times": table["times"][table["frame"]]},
+                             mine, f0, f1)
         others = [(self._seat_at(item, table, other, middle)[0], other.w)
                   for other in found.seats.values() if other.speaker != speaker]
         target = self.look.target
         h = seat.h
         zoom = min(MAX_ZOOM, max(1.0, target / h)) if target and h > 0 else 1.0
         return plan_shot(x, y, item.width, item.height, zoom=zoom,
-                         eyeline=self.look.eyeline, face_w=seat.w, others=others)
+                         eyeline=self.look.eyeline, face_w=seat.w, others=others,
+                         keep=keep)
 
 
 def focus_segments(segments: list, grid, crowd: dict[str, list[int]],
@@ -408,6 +428,19 @@ def focus_segments(segments: list, grid, crowd: dict[str, list[int]],
             out.append(Segment(seg.angle, seg.label, start, end,
                                focus=grid.speakers[speaker].name))
     return out
+
+
+def _shot_box(table: dict, rows: np.ndarray, f0, f1) -> tuple[float, float] | None:
+    """Kuvan omien löytöjen mediaanilaatikko vaakasuunnassa, tai ``None``.
+
+    Mediaani eikä ääripää: hetkellinen liike ei siirrä rajausta, mutta koko
+    kuvan kestävä nojaus siirtää.
+    """
+    here = rows & (table["times"] >= float(f0) - EPS_S) & (table["times"] < float(f1) + EPS_S)
+    if not np.any(here):
+        return None
+    left = table["x"][here]
+    return float(np.median(left)), float(np.median(left + table["w"][here]))
 
 
 def close_up_tables(tables: dict, timeline, roles) -> dict:

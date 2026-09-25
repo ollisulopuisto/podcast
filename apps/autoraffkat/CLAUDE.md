@@ -1156,7 +1156,11 @@ the middle one. The rules it lives by:
   stood up and sat down differently. Per-shot medians made every cut back
   to the same camera land a few pixels elsewhere. The user asked for it
   this way (2026-09-25), and a test holds both halves: 15 s elsewhere does
-  nothing, a permanent shift moves the frame once.
+  nothing, a permanent shift moves the frame once. One exception: when the
+  shot's own *median* face box would cross the crop edge, the crop moves
+  just enough to hold it (`keep`). Measured on the real episode, that was 2
+  of 594 clips — someone leaning for a whole short shot, 14 % of the face
+  cut — while momentary movement (median inside) still moves nothing.
 * **Vertical position exists only when there is zoom.** At 100 % the
   filled picture *is* the project height and any vertical offset reveals
   an edge. A zoomed camera's face moves to the 100 % camera's face height

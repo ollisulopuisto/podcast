@@ -107,7 +107,9 @@ def test_a_short_stretch_elsewhere_keeps_the_frame():
 
     item = _item()
     table = _table(10, cx=0.5)
-    table["x"][:5] = 0.2 - 0.05
+    # Liike rajauksen sisällä. Jos kasvot jäisivät reunasta ulos, kuva
+    # siirtyy kuitenkin — ks. test_a_shot_where_the_face_would_be_cut…
+    table["x"][:5] = 0.44 - 0.05
     framer = Reframer({item.key: table})
     first = framer.from_item(item, 0.0, 4.0)
     second = framer.from_item(item, 5.0, 9.0)
@@ -416,3 +418,28 @@ def test_a_short_close_up_is_framed_from_the_camera_position():
     short = framer.from_item(item, 2.2, 3.6)
     assert short is not None
     assert short.pos_x < -30
+
+
+def test_a_shot_where_the_face_would_be_cut_shifts_just_enough():
+    """Vakaa kehys, paitsi jos kuvan omat kasvot jäisivät reunasta ulos.
+
+    Oikealla jaksolla (video files -istunnon mittaus, 2026-09-25) kaksi
+    lyhyttä kuvaa leikkasi 14 % kasvoista: puhuja nojasi sivulle koko
+    kuvan ajan. Vakaa porras ei siirry lyhyestä nojauksesta, joten kuvan
+    oma mediaanilaatikko pitää rajauksen sisällä — pienimmällä siirrolla,
+    ja vain silloin. Hetkellinen liike (mediaani sisällä) ei siirrä mitään.
+    """
+    from autoraffkat.reframe import Reframer
+
+    item = _item(dur=120)
+    table = _boxes(n=120, x=0.45, w=0.1)      # kasvot 0,50:ssa koko jakson
+    table["times"] = np.arange(120, dtype=np.float32)
+    table["x"][60:64] = 0.57                  # 4 s nojaus: laatikko 0,57–0,67
+    framer = Reframer({item.key: table})
+    steady_shot = framer.from_item(item, 20.0, 30.0)
+    leaning = framer.from_item(item, 60.0, 64.0)
+    half = 1080 / 3413.33 / 2
+    centre = 0.5 - leaning.pos_x * 19.2 / 3413.33
+    assert centre + half >= 0.67 - 1e-6       # kasvot kokonaan sisällä
+    assert abs(centre - (0.67 - half)) < 1e-3  # pienin siirto
+    assert steady_shot.pos_x == framer.from_item(item, 70.0, 80.0).pos_x
