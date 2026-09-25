@@ -15,6 +15,9 @@ and this project adheres to Calendar Versioning (CalVer).
 - **Micro-movement keyframes were written from 0, not from the clip's start** (`fcpxml/write.py`): on a multicam clip both keyframes landed before the clip began and the push did nothing. They now use the host's local time base like the volume and pan keyframes (not yet confirmed by an import).
 - **Reaction shots in a vertical export** were letterboxed 16:9 bands over the picture; they now get Fill and the listener's framing. A crowd shot with nobody talking frames the most prominent person instead of the gap between two, and a neighbour at the crop edge is pushed fully out or in.
 
+### Changed
+- **Renders crop first, then scale** (`render.py`): a shot's region is cut from the source and only that is scaled, instead of scaling the whole picture to ~3,750×2,100 and cropping. A whole-episode render had run at about realtime; a 60 s shot now takes ~5 s and ~9 s of CPU, zoom or not.
+
 ### Added
 - **Hardware encoding and Stop buttons** (`render.py`, `server/app.py`): renders use Apple's VideoToolbox encoder when a one-frame trial succeeds (software fallback disabled, so it really is the hardware), otherwise x264; the render status names the encoder. Rendering and audio processing each get a Stop button: a stopped render kills its ffmpegs and leaves no file, stopped processing keeps the files already finished.
 - **Render video** (`render.py`, `server/app.py`): exports and renders an MP4 beside the XML without Final Cut — cuts, Fill framing, micro-movement, reaction shots, processed audio with ducking, pan and room tone. The writer hands over the shot list it writes into the XML, so the render decides nothing of its own.

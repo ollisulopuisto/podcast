@@ -80,51 +80,94 @@ def _even(value: float) -> int:
     return max(2, int(round(value / 2)) * 2)
 
 
+def _source_window(shot: Shot, pw: int, ph: int, scale: float) -> tuple[float, float, float, float]:
+    """Rajausikkuna lähteen pikseleinä: ``(x, y, leveys, korkeus)``."""
+    k = base_factor(shot, pw, ph) * scale
+    width, height = shot.width * k, shot.height * k
+    unit = ph / 100.0
+    x = min(max(width / 2 - pw / 2 - shot.pos_x * unit, 0), width - pw)
+    y = min(max(height / 2 - ph / 2 + shot.pos_y * unit, 0), height - ph)
+    return x / k, y / k, pw / k, ph / k
+
+
 def video_filter(shot: Shot, pw: int, ph: int, frames: int, fps: str) -> str:
     """ffmpeg-suodin yhdelle kuvalle: skaalaus ja rajaus Final Cutin tapaan.
 
-    Paikallaan pysyvä kuva on kiinteä skaalaus ja rajaus. Mikroliike
-    (``scale0 != scale1``) on lineaarinen skaala ruudusta toiseen, ja
-    rajausikkuna lasketaan joka ruudulle skaalatun kuvan koosta: sijainti on
-    kiinteä ja skaalaus keskipisteen ympäri, kuten Final Cutissa. Liian
-    pieni kuva (sovitus) täytetään mustalla keskelle.
+    **Rajaus ensin lähteestä, skaalaus vasta sitten.** Ensimmäinen versio
+    skaalasi koko kuvan täyttöön (3413×1920, zoomissa ~3750×2110) ja rajasi
+    siitä 1080×1920 — nelinkertainen skaalaustyö, ja koko jakson renderöinti
+    kulki reaaliajassa (video files, 46 min jakso ~40 min). Nyt lähteestä
+    rajataan kokonaislukuikkuna joka kattaa tarvittavan alueen, skaalataan
+    se, ja lopullinen rajaus on muutaman pikselin tarkennus.
+
+    Mikroliike (``scale0 != scale1``): lähteestä rajataan alkuzoomin ja
+    loppuzoomin ikkunoiden yhdiste — ikkuna liikkuu zoomin mukana
+    yksisuuntaisesti, joten yhdiste kattaa välin — ja se skaalataan joka
+    ruudulle. Ruudun numero aikaleimasta eikä ``n``istä: ``scale``n ``n``
+    on yhden edellä ``crop``in ``n``ää (mitattu: ensimmäinen ruutu 3,5 px
+    sivussa), ja ``crop`` ei konfiguroidu uudelleen kun kuvan koko muuttuu
+    kesken virran, joten koko lasketaan lausekkeesta molempiin.
+    Sovitus joka jää projektia pienemmäksi (ei pystyviennissä) käyttää
+    vanhaa polkua: skaalaus, mustat reunat, rajaus.
     """
     factor = base_factor(shot, pw, ph)
+    parts = [f"fps={fps}"]
+    small = min(shot.scale0, shot.scale1)
+    if shot.width * factor * small < pw or shot.height * factor * small < ph:
+        return _padded_filter(shot, pw, ph, fps)
+    windows = [_source_window(shot, pw, ph, shot.scale0),
+               _source_window(shot, pw, ph, shot.scale1)]
+    left = max(0, int(min(w[0] for w in windows)))
+    top = max(0, int(min(w[1] for w in windows)))
+    right = min(shot.width, int(-(-max(w[0] + w[2] for w in windows) // 1)) + 1)
+    bottom = min(shot.height, int(-(-max(w[1] + w[3] for w in windows) // 1)) + 1)
+    cw, ch = right - left, bottom - top
+    parts.append(f"crop=w={cw}:h={ch}:x={left}:y={top}")
     unit = ph / 100.0
     px, py = shot.pos_x * unit, shot.pos_y * unit
-    parts = [f"fps={fps}"]
     if abs(shot.scale1 - shot.scale0) < 1e-9:
-        width = _even(shot.width * factor * shot.scale0)
-        height = _even(shot.height * factor * shot.scale0)
-        parts.append(f"scale={width}:{height}:flags=lanczos")
-        parts.append(f"pad=w='max(iw,{pw})':h='max(ih,{ph})':x='(ow-iw)/2':y='(oh-ih)/2'")
-        width, height = max(width, pw), max(height, ph)
-        x = min(max(width / 2 - pw / 2 - px, 0), width - pw)
-        y = min(max(height / 2 - ph / 2 + py, 0), height - ph)
-        parts.append(f"crop=w={pw}:h={ph}:x={x:.3f}:y={y:.3f}")
+        k = factor * shot.scale0
+        sw, sh = _even(cw * k), _even(ch * k)
+        x0, y0, _w, _h = windows[0]
+        dx = min(max((x0 - left) * sw / cw, 0), sw - pw)
+        dy = min(max((y0 - top) * sh / ch, 0), sh - ph)
+        parts.append(f"scale={sw}:{sh}:flags=lanczos")
+        parts.append(f"crop=w={pw}:h={ph}:x={dx:.3f}:y={dy:.3f}")
     else:
-        # Mikroliike: skaalatun kuvan koko lasketaan ruudun numerosta sekä
-        # skaalaukseen että rajaukseen. ``crop`` ei konfiguroidu uudelleen
-        # kun kuvan koko muuttuu kesken virran: sen ``in_w`` jäi ensimmäisen
-        # ruudun leveydeksi, ja ikkuna jäi paikalleen kuvan kasvaessa —
-        # testissä merkki liukui 185 px, kun oikea liuku on 48.
-        #
-        # Ruudun numero aikaleimasta eikä ``n``istä: ``scale``n ``n`` on
-        # yhden edellä ``crop``in ``n``ää (mitattu: ensimmäinen ruutu 3,5 px
-        # sivussa, viimeinen yhden askeleen liian pitkällä), aikaleima on
-        # sama kummallekin.
         step = (shot.scale1 - shot.scale0) / max(1, frames - 1)
         rate = 1 / Fraction(fps)
         index = f"round(t*{float(1 / rate)})"
-        size = f"({shot.scale0}+{step}*{index})*{factor}"
-        wide = f"(2*trunc({shot.width}*{size}/2))"
-        tall = f"(2*trunc({shot.height}*{size}/2))"
-        parts.append(f"scale=w='{wide}':h='{tall}':eval=frame:flags=lanczos")
+        k = f"(({shot.scale0}+{step}*{index})*{factor})"
+        sw = f"(2*trunc({cw}*{k}/2))"
+        sh = f"(2*trunc({ch}*{k}/2))"
+        # Ikkunan vasen yläkulma lähteessä tällä zoomilla, rajatun alueen
+        # koordinaateissa, skaalattuna: sama kuin ``_source_window``.
+        wx = (f"(clip({shot.width}*{k}/2-{pw}/2-({px}),0,{shot.width}*{k}-{pw})"
+              f"/{k}-{left})*{sw}/{cw}")
+        wy = (f"(clip({shot.height}*{k}/2-{ph}/2+({py}),0,{shot.height}*{k}-{ph})"
+              f"/{k}-{top})*{sh}/{ch}")
+        parts.append(f"scale=w='{sw}':h='{sh}':eval=frame:flags=lanczos")
         parts.append(f"crop=w={pw}:h={ph}"
-                     f":x='clip({wide}/2-{pw}/2-({px}),0,{wide}-{pw})'"
-                     f":y='clip({tall}/2-{ph}/2+({py}),0,{tall}-{ph})'")
+                     f":x='clip({wx},0,{sw}-{pw})':y='clip({wy},0,{sh}-{ph})'")
     parts += ["setsar=1", "format=yuv420p"]
     return ",".join(parts)
+
+
+def _padded_filter(shot: Shot, pw: int, ph: int, fps: str) -> str:
+    """Sovitus joka jää projektia pienemmäksi: skaalaus, mustat reunat keskelle.
+
+    Ei pystyviennissä (täyttö peittää aina) eikä vaakaviennissä (lähde on
+    projektin kokoinen ja skaala vähintään 1), joten polku on varaventtiili:
+    skaala on kuvan alun, eikä sijaintia sovelleta mustan reunan päälle.
+    """
+    factor = base_factor(shot, pw, ph) * shot.scale0
+    sw = min(_even(shot.width * factor), pw)
+    sh = min(_even(shot.height * factor), ph)
+    return ",".join([
+        f"fps={fps}", f"scale={sw}:{sh}:flags=lanczos",
+        f"pad=w={pw}:h={ph}:x=(ow-iw)/2:y=(oh-ih)/2",
+        "setsar=1", "format=yuv420p",
+    ])
 
 
 def _fps(frame_duration: Fraction) -> str:

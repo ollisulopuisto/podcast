@@ -154,3 +154,16 @@ def test_a_render_can_be_stopped_and_leaves_no_file(tmp_path):
                               str(out), progress=lambda f: stop.set(), stop=stop)
     assert not out.exists()
     assert not list(tmp_path.glob("out.mp4*"))
+
+
+@needs_ffmpeg
+def test_a_picture_smaller_than_the_frame_is_letterboxed(tmp_path):
+    """Varapolku: kuva joka ei täytä projektia saa mustat reunat eikä kaadu."""
+    source = tmp_path / "bar.mp4"
+    _bar_source(source)
+    shot = Shot(0, 10, str(source), 0.0, 1920, 1080, scale0=0.5, scale1=0.5)
+    out = tmp_path / "out.mp4"
+    render.render_video([shot], 1920, 1080, render.Fraction(1, 25), 10, str(out))
+    frame = _frame(out, 0, width=1920, height=1080)
+    assert frame[:200].max() < 30            # yläreuna mustaa
+    assert frame[540].max() > 200            # viiva näkyy keskellä
