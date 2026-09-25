@@ -215,8 +215,10 @@ def test_faces_are_evened_out_by_zooming_the_smaller_ones():
     """Suurimmat kasvot pysyvät 100 %:ssa, muut zoomataan samankokoisiksi.
 
     Käsin tehdyssä pohjassa Tomin kamera oli zoomattu 1,22:een, jotta hänen
-    kasvonsa olivat Mikon kokoiset. Katto on 1,25: täyttö suurentaa jo
-    1080-lähteen 1920:een, ja jokainen lisäprosentti on pehmeämpi kuva.
+    kasvonsa olivat Mikon kokoiset. Katto on 1,10 (käyttäjä 2026-09-25:
+    1,25 ja mikroliike päälle teki 130 %:n kuvia, liikaa): täyttö suurentaa
+    jo 1080-lähteen 1920:een, ja jokainen lisäprosentti on pehmeämpi kuva.
+    Kasvot jäävät silloin hieman eri kokoisiksi, ja se on parempi.
     """
     from types import SimpleNamespace
 
@@ -226,8 +228,10 @@ def test_faces_are_evened_out_by_zooming_the_smaller_ones():
     tables = {"MIKKO": _boxes(h=0.30), "TOMI": _boxes(h=0.246), "KAUKANA": _boxes(h=0.10)}
     look = reframe.look(tables, timeline, roles)
     assert look.zooms["MIKKO"] == 1.0
-    assert abs(look.zooms["TOMI"] - 0.30 / 0.246) < 1e-3
-    assert look.zooms["KAUKANA"] == reframe.MAX_ZOOM == 1.25
+    assert look.zooms["TOMI"] == reframe.MAX_ZOOM == 1.10     # 1,22 katkaistu
+    assert look.zooms["KAUKANA"] == reframe.MAX_ZOOM
+    near = {"MIKKO": _boxes(h=0.30), "TOMI": _boxes(h=0.28)}
+    assert abs(reframe.look(near, timeline, roles).zooms["TOMI"] - 0.30 / 0.28) < 1e-3
 
 
 def test_a_zoomed_face_lands_on_the_reference_eyeline():

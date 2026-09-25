@@ -1080,7 +1080,7 @@ caching. This happened once already.
 
 ## Micro-movement is a transform on the angle, or nothing at all
 
-`movement.py` plans a subtle, deterministic scale treatment (100–106 %) for
+`movement.py` plans a subtle, deterministic scale treatment (100–110 %; pushes of 4–8 %, raised from 2–5 % on 2026-09-25 because the user could not see them) for
 the vertical workflow: import the export, run Smart Conform, and the zooms
 are already there. Four rules hold it together:
 
@@ -1143,9 +1143,10 @@ the middle one. The rules it lives by:
   score uses it for: head motion.
 * **Zoom evens out face size per camera, not per shot.** `look()` takes each
   close-up camera's median face height over the whole episode; the biggest
-  stays at 100 % and the rest zoom to match, capped at `MAX_ZOOM` 1.25 (the
-  template needed 1.22 for Tomi; the fill is already a 1.78× enlargement of
-  1080p). Per camera, because the same camera at two zooms in consecutive
+  stays at 100 % and the rest zoom to match, capped at `MAX_ZOOM` 1.10 (the
+  template needed 1.22 for Tomi, but 1.25 plus micro-movement made 130 %
+  shots, which the user found too much on 2026-09-25; the fill is already a
+  1.78× enlargement of 1080p). Faces stay slightly unequal rather than soft. Per camera, because the same camera at two zooms in consecutive
   shots looks like a jump; and matching matters most exactly where shot
   and reverse shot alternate quickly. With one close-up nothing zooms.
 * **The frame is steady, not per shot.** A shot is framed on the camera

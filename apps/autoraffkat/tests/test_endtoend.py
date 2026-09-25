@@ -309,7 +309,9 @@ def test_vertical_export_evens_out_face_sizes(scratch_xml):
         if transform is not None:
             scales.setdefault(name.split()[0], set()).add(
                 round(float(transform.get("scale").split()[0]), 3))
-    assert scales.get("Host") == {round(0.30 / 0.246, 3)}, scales
+    from autoraffkat.reframe import MAX_ZOOM
+
+    assert scales.get("Host") == {round(min(0.30 / 0.246, MAX_ZOOM), 3)}, scales
     assert scales.get("Guest") == {1.0}, scales
 
 

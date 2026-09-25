@@ -31,7 +31,7 @@ def test_different_seed_gives_a_different_plan():
 
 
 def test_scale_stays_between_100_and_106_percent():
-    """Koko alue on tarkoituksella 1.00–1.06: zoomin ei saa nähdä."""
+    """Koko alue on rajattu: liike näkyy, mutta ei laadun heikkenemisenä."""
     durs = _durations(300)
     for move in movement.plan(durs, [False] * len(durs)):
         for value in (move.start_scale, move.end_scale):
@@ -45,15 +45,18 @@ def test_short_clip_is_never_animated():
     assert all(not m.animated for m in movement.plan(durs, [False] * len(durs)))
 
 
-def test_long_clips_receive_a_slow_push():
-    """Pitkä puheenvuoro saa hitaan puskun 2–5 % — jos mitään ei koskaan
-    liiku, ominaisuus on olematta eikä mikään valita."""
+def test_long_clips_receive_a_noticeable_push():
+    """Pitkä puheenvuoro saa puskun joka huomataan: vähintään 4 %.
+
+    2–5 % oli käyttäjän mukaan liian hidas havaittavaksi (2026-09-25):
+    kokoero kuvan aikana on nähtävä, muuten liike on olematta.
+    """
     durs = [15.0] * 60
     animated = [m for m in movement.plan(durs, [False] * len(durs)) if m.animated]
     assert animated, "yksikään pitkä klippi ei liikkunut"
     for move in animated:
         push = abs(move.end_scale - move.start_scale)
-        assert movement.PUSH_MIN <= push <= movement.PUSH_MAX
+        assert 0.04 <= movement.PUSH_MIN <= push <= movement.PUSH_MAX
 
 
 def test_adjacent_scale_jump_is_bounded():

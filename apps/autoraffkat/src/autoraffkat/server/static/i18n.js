@@ -56,9 +56,9 @@ const STRINGS = {
     'movement.hint': 'Valekameraa pystyvientiin: kuvat saavat hienovaraisen, toistettavan skaalauksen jo tuontiin.',
     'why.movement': 'Liike on pelkkää skaalaa — paikkaa ei kosketeta, jotta '
       + 'Smart Confin kuvaajasijainti pysyy aitorivinä. Lyhyet kuvat jäävät '
-      + 'paikalleen, pitkät saavat hitaan 2–5 % puskun, ja skaala pysyy '
-      + '100–106 %:ssa: zoomin ei saa näkyä, sen on tuntua kameran '
-      + 'vaihtelulta. Laajat jäävät liikkeettömiksi, ja jokaisella kuvalla on '
+      + 'paikalleen, pitkät saavat 4–8 % puskun, ja skaala pysyy '
+      + '100–110 %:ssa: koon muutos kuvan aikana näkyy, mutta tuntuu kameralta '
+      + 'eikä tehosteelta. Laajat jäävät liikkeettömiksi, ja jokaisella kuvalla on '
       + 'avainsana (puhujan nimi tai «Laaja») jolla ne saa Final Cutin '
       + 'hakemistosta valittua.',
     'vertical.title': 'Pystyvienti',
@@ -66,7 +66,7 @@ const STRINGS = {
     'vertical.unmeasured': 'Kuvia ei mitattu',
     'why.vertical': 'Jokainen kuva asetetaan Spatial Conformiin «Fill», ja päälle kirjoitetaan '
       + 'mitattu kehystys. Lähikuvat tasataan: suurimmat kasvot 100 %, muut zoomataan samankokoisiksi '
-      + '(enintään 125 %), joten kuva ja vastakuva vastaavat toisiaan. Laajat ja ryhmäkuvat pilkotaan '
+      + '(enintään 110 %), joten kuva ja vastakuva vastaavat toisiaan. Laajat ja ryhmäkuvat pilkotaan '
       + 'puhujan mukaan ja rajataan hänen kasvoilleen; kuka on kukin kasvo mitataan suun liikkeestä, '
       + 'ja järjestyksen voi korjata kamerakortilta. Mittaamaton kuva jää täytön keskelle.',
     'vertical.measuring': 'Mitataan kasvoja, {percent} %. Lähikuvat ensin, sitten laajat ja ryhmäkuvat.',
@@ -428,8 +428,8 @@ const STRINGS = {
     'movement.hint': 'Virtual camera for vertical exports: clips get a subtle, repeatable scale treatment already on import.',
     'why.movement': 'The movement is scale only — position is never touched, so '
       + 'Smart Conform reframing stays authoritative. Short cuts stay put, '
-      + 'longer clips get a slow 2–5% push, and scale stays within 100–106%: '
-      + 'the zoom should never be seen, only felt as camera variation. Wide '
+      + 'longer clips get a 4–8% push, and scale stays within 100–110%: '
+      + 'the change in size shows, but reads as camera rather than effect. Wide '
       + 'shots stay still, and every clip carries a keyword (the speaker name '
       + 'or «Laaja») for selecting them in the Final Cut index.',
     'vertical.title': 'Vertical export',
@@ -437,7 +437,7 @@ const STRINGS = {
     'vertical.unmeasured': 'No video measured',
     'why.vertical': 'Every picture is set to Spatial Conform «Fill», with a measured framing on top. '
       + 'Close-ups are evened out: the biggest face stays at 100 %, the others zoom to match (at most '
-      + '125 %), so shot and reverse shot correspond. Wides and group shots are split by speaker and '
+      + '110 %), so shot and reverse shot correspond. Wides and group shots are split by speaker and '
       + 'framed on that person; who is which face is measured from mouth movement, and the order can '
       + 'be corrected on the camera card. An unmeasured clip stays centred in the fill.',
     'vertical.measuring': 'Measuring faces, {percent} %. Close-ups first, then wides and group shots.',

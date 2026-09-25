@@ -46,11 +46,12 @@ MIN_SAMPLES = 3
 # Keyframien aikaleimat horjuvat kehyksen verran GOP:n reunoilla.
 EPS_S = 0.05
 
-# Suurin zoomi täytön päälle. Käsin tehdyssä pohjassa Tomi tarvitsi 1,22
-# ollakseen Mikon kokoinen; täyttö suurentaa 1080-lähteen jo 1920:een, eli
-# 1,25 on 2,2-kertainen suurennus lähteestä, ja jokainen lisäprosentti on
-# pehmeämpi kuva. Pienemmät kasvot jäävät pienemmiksi eikä niitä pakoteta.
-MAX_ZOOM = 1.25
+# Suurin kasvojen tasauszoomi täytön päälle. Käsin tehdyssä pohjassa Tomi
+# tarvitsi 1,22 ollakseen Mikon kokoinen, mutta 1,25:n katto ja mikroliike
+# päälle teki 130 %:n kuvia, ja se oli käyttäjän mukaan liikaa
+# (2026-09-25). Täyttö suurentaa 1080-lähteen jo 1920:een; jokainen
+# lisäprosentti on pehmeämpi kuva. Pienemmät kasvot jäävät pienemmiksi.
+MAX_ZOOM = 1.10
 
 # Kehys pysyy paikallaan. Tuolissa huojuminen ei ole uusi kehys, joten
 # paikka on liukuva mediaani ``STEADY_WINDOW``in yli, ja kehys siirtyy vasta

@@ -16,6 +16,7 @@ and this project adheres to Calendar Versioning (CalVer).
 - **Reaction shots in a vertical export** were letterboxed 16:9 bands over the picture; they now get Fill and the listener's framing. A crowd shot with nobody talking frames the most prominent person instead of the gap between two, and a neighbour at the crop edge is pushed fully out or in.
 
 ### Changed
+- **Stronger micro-movement, gentler face matching** (`movement.py`, `reframe.py`): pushes are 4–8 % (were 2–5 %, too slow to notice) within 100–110 %; the face-matching zoom is capped at 110 % (was 125 %, which with the movement on top made 130 % shots). A short shot after a big zoom may sit slightly above its 104 % ceiling rather than jump more than 3 %.
 - **Steady vertical framing** (`reframe.py`): a camera keeps one position until the face stays elsewhere for 30 s (more than 0.04 of the width); fidgeting never reframes, and cutting back to the same camera lands on exactly the same frame.
 - **Crowd shots are sampled every ~5 s for faces** (`video/measure.py`): face detection on wide and group-shot cameras runs on every 5th keyframe, a fifth of the time; close-ups keep every keyframe for reaction shots.
 - **The Vertical panel has its own measure button** and describes the current behaviour.

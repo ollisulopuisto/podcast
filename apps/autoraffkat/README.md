@@ -285,7 +285,7 @@ All three respect a minimum overlap duration: a fleeting "mm-hm" doesn't
 trigger the rule.
 
 **Micro-movement** (off by default): for vertical exports. The plan writes
-each spine clip a subtle, deterministic scale treatment — 100–106 % total,
+each spine clip a subtle, deterministic scale treatment — 100–110 % total,
 short cuts static, longer clips a slow push/pull — so a 9:16 Smart Conform
 cut feels like camera variation instead of a static centre crop. Position
 is never touched (Smart Conform's framing stays authoritative), wide shots
@@ -301,7 +301,7 @@ every picture is set to Spatial Conform **Fill**, and each close-up gets a
 *measured* transform on top — so importing into Final Cut is the final step;
 no Smart Conform round-trip. The speaker's face lands on the centreline, and
 the close-ups are evened out: the camera with the biggest face stays at
-100 %, the others zoom in until the faces match (at most 125 %), and a
+100 %, the others zoom in until the faces match (at most 110 %), and a
 zoomed face is moved to the same height as the unzoomed one — so shot and
 reverse shot mirror each other when the cut goes back and forth. The
 framing comes from the same measurement the reaction shots use (turn on

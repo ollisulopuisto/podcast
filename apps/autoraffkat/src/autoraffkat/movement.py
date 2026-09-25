@@ -36,23 +36,24 @@ MIN_ANIM_S = 3.0
 # monologin tavallisesta vaihtokuvasta.
 LONG_S = 8.0
 
-# Kokonaisalue, suhteena: 1.06 = 106 %. Yli kuuden prosentin zoom alkaa
-# näkyä laadun heikkenemisenä (1080p-lähde rajattuna pystyyn) ja isompi
-# liike luetaan tyylikeinoksi eikä kameraksi.
+# Kokonaisalue, suhteena: 1.10 = 110 %. Alkuperäinen 1,06 piti puskun
+# liian pienenä nähtäväksi (käyttäjä 2026-09-25); kasvojen tasauszoomin
+# katto laskettiin samalla 1,25:stä 1,10:een, joten yhteensä kuva jää
+# alle entisen 1,25 × 1,06:n.
 SCALE_MIN = 1.00
-SCALE_MAX = 1.06
+SCALE_MAX = 1.10
 
 # Liikkumattoman lyhyen kuvan katto. Lyhyt kuva saa kehyksen joka
 # erottuu naapureistaan mutta ei aikaa animaatiolle.
 STATIC_MAX = 1.04
 
-# Puskun määrä, suhteena kuvan kestosta riippumatta: hitain juuri ja
-# juuri havaittava veto on kaksi prosenttia, ja yli viiden tyylikeino
-# alkaa näkyä. Keskipitkä kuva saa vain alkuosan — sen ajassa ei ole
-# tilaa syvyydelle.
-PUSH_MIN = 0.02
-PUSH_MAX = 0.05
-PUSH_MID_MAX = 0.03
+# Puskun määrä, suhteena kuvan kestosta riippumatta. 2–5 % oli käyttäjän
+# mukaan liian hidas huomattavaksi (2026-09-25): kokoero kuvan aikana on
+# nähtävä, muuten liike on olematta. Nyt 4–8 %; keskipitkä kuva saa
+# enintään 5 %, sen ajassa ei ole tilaa syvyydelle.
+PUSH_MIN = 0.04
+PUSH_MAX = 0.08
+PUSH_MID_MAX = 0.05
 
 # Suurin sallittu skaalero vierekkäisten kuvien välillä. Isompi hyppy
 # luetaan leikkaukseksi — tarkoitus on kameran vaihtelu, ei uusi leikkaus.
@@ -174,6 +175,10 @@ def _frame(rng: random.Random, prev: float, same_run: int, ceiling: float) -> fl
     """
     low = max(SCALE_MIN, prev - MAX_JUMP)
     high = min(ceiling, prev + MAX_JUMP)
+    # Edellinen kuva voi olla paikallaan pysyvän katon yläpuolella (pusku
+    # päättyi 110 %:iin). Silloin hyppyraja voittaa katon: näkyvä hyppy on
+    # pahempi kuin lyhyt kuva hieman katon yli.
+    high = max(high, low)
     value = _clamp(round(rng.uniform(low, high), 4), low, high)
     if same_run >= MAX_REPEAT and abs(value - prev) < SAME_EPSILON:
         away = MAX_JUMP if prev <= (low + high) / 2 else -MAX_JUMP

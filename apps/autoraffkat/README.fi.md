@@ -285,7 +285,7 @@ laukaise sääntöä.
 
 **Mikroliike** (oletuksena pois): pystyvientiä varten. Suunnitelma kirjoittaa
 jokaiselle kuvaklipille hienovaraisen, toistettavan skaalauksen — yhteensä
-100–106 %, lyhyet kuvat paikallaan, pidemmät hitaalla puskulla — jotta
+100–110 %, lyhyet kuvat paikallaan, pidemmät hitaalla puskulla — jotta
 Smart Confin pystyrajaus tuntuu kameran vaihtelulta eikä kuvaruudulta.
 Paikkaa ei kosketeta (Smart Confin rajaus pysyy aitorivinä), laajat jäävät
 liikkeettömiksi, eivätkä vierekkäiset kuvat hyppää niin että siitä tulisi
@@ -300,7 +300,7 @@ lähikuva saa sen päälle *mitatun* muunnoksen — joten Final Cutiin tuonti on
 viimeinen askel; Smart Conform -kierrettä ei tarvita. Puhujan kasvot osuvat
 keskiviivalle, ja lähikuvat tasataan: kamera jossa kasvot ovat suurimmat
 pysyy 100 %:ssa, muut zoomataan kunnes kasvot ovat samankokoiset (enintään
-125 %), ja zoomatut kasvot siirretään samalle korkeudelle kuin zoomaamattomat
+110 %), ja zoomatut kasvot siirretään samalle korkeudelle kuin zoomaamattomat
 — joten kuva ja vastakuva peilaavat toisiaan kun leikkaus käy edestakaisin.
 Kehystys tulee samasta mittauksesta kuin reaktiokuvat (paina kerran «Mittaa
 kuva»; kytkin käynnistää mittauksen itse).
