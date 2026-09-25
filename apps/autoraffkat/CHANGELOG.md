@@ -16,6 +16,7 @@ and this project adheres to Calendar Versioning (CalVer).
 - **Reaction shots in a vertical export** were letterboxed 16:9 bands over the picture; they now get Fill and the listener's framing. A crowd shot with nobody talking frames the most prominent person instead of the gap between two, and a neighbour at the crop edge is pushed fully out or in.
 
 ### Added
+- **Hardware encoding and Stop buttons** (`render.py`, `server/app.py`): renders use Apple's VideoToolbox encoder when a one-frame trial succeeds (software fallback disabled, so it really is the hardware), otherwise x264; the render status names the encoder. Rendering and audio processing each get a Stop button: a stopped render kills its ffmpegs and leaves no file, stopped processing keeps the files already finished.
 - **Render video** (`render.py`, `server/app.py`): exports and renders an MP4 beside the XML without Final Cut — cuts, Fill framing, micro-movement, reaction shots, processed audio with ducking, pan and room tone. The writer hands over the shot list it writes into the XML, so the render decides nothing of its own.
 - **Shorts movement style** (`movement.py`, `reframe.py`): an option next to the calm style. Long close-ups are cut into same-camera pieces at loud sentence starts, alternating a base framing — off-axis, with room toward where the speaker looks — and a centred 112 % punch-in; a push only while the same speaker goes on. Export names carry `shorts`.
 

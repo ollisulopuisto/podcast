@@ -131,8 +131,12 @@ class AppState:
     mix_result: mix.MixResult = field(default_factory=mix.MixResult)
     # Renderöinti (``render.py``): vienti videoksi ilman Final Cutia.
     render_progress: dict = field(
-        default_factory=lambda: {"running": False, "fraction": 0.0,
-                                 "path": "", "error": ""})
+        default_factory=lambda: {"running": False, "fraction": 0.0, "path": "",
+                                 "error": "", "stopped": False, "encoder": ""})
+    # Pysäytyspyynnöt: renderöinnille tapahtuma, äänenkäsittelylle lapsi-
+    # prosessi joka lopetetaan.
+    render_stop: threading.Event = field(default_factory=threading.Event)
+    _mix_child: object = None
     mix_progress: dict = field(
         default_factory=lambda: {
             "done": 0,
@@ -623,8 +627,11 @@ class AppState:
         """Taustasäie: renderöi MP4:n. Minuutteja; tila näkyy ``render_progress``issa."""
         from .. import render
 
+        self.render_stop.clear()
         self.render_progress.update({"running": True, "fraction": 0.0,
-                                     "path": job["path"], "error": ""})
+                                     "path": job["path"], "error": "",
+                                     "stopped": False,
+                                     "encoder": render.encoder()[0]})
 
         def report(fraction: float) -> None:
             self.render_progress["fraction"] = round(float(fraction), 4)
@@ -632,7 +639,10 @@ class AppState:
         try:
             render.render_program(job["shots"], job["sources"], job["width"],
                                   job["height"], job["frame_duration"], job["frames"],
-                                  job["program_start"], job["path"], progress=report)
+                                  job["program_start"], job["path"], progress=report,
+                                  stop=self.render_stop)
+        except render.Stopped:
+            self.render_progress["stopped"] = True
         except Exception as exc:  # taustasäie ei saa kaatua hiljaa
             self.render_progress["error"] = str(exc)
             traceback.print_exc()
@@ -902,6 +912,18 @@ class AppState:
                 self.mix_result.room.append((key, path))
                 self.mix_result.skipped += 1
 
+    def _mix_command(self) -> list[str]:
+        return [sys.executable, "-m", "autoraffkat.audio.worker"]
+
+    def stop_mix(self) -> bool:
+        """Lopettaa käsittelyn lapsiprosessin. Palauttaa oliko jotain lopetettavaa."""
+        child = self._mix_child
+        if child is None:
+            return False
+        self.mix_progress["stopped"] = True
+        child.kill()
+        return True
+
     def run_mix(self, force: bool = False) -> None:
         """Käsittelee äänet taustalla. Kestää minuutteja, ei kuulu silmukkaan.
 
@@ -930,7 +952,8 @@ class AppState:
             "settings": self.settings.to_json(),
             "force": bool(force),
         }
-        command = [sys.executable, "-m", "autoraffkat.audio.worker"]
+        command = self._mix_command()
+        self.mix_progress["stopped"] = False
         try:
             child = subprocess.Popen(
                 command,
@@ -939,6 +962,7 @@ class AppState:
                 text=True,
                 bufsize=1,
             )
+            self._mix_child = child
             assert child.stdin is not None and child.stdout is not None
             json.dump(spec, child.stdin)
             child.stdin.close()
@@ -962,7 +986,11 @@ class AppState:
                     payload = message
             child.wait()
 
-            if "error" in payload:
+            if self.mix_progress.get("stopped"):
+                # Pysäytetty: valmiiksi ehtineet tiedostot käyttöön kuten
+                # aina (``adopt``), keskeneräinen ei — sen leima puuttuu.
+                self.adopt_mix()
+            elif "error" in payload:
                 self.mix_result = mix.MixResult(errors={"mix": payload["error"]})
             elif payload:
                 result = mix.MixResult(
@@ -984,6 +1012,7 @@ class AppState:
             self.mix_result = mix.MixResult(errors={"mix": str(exc)})
             traceback.print_exc()
         finally:
+            self._mix_child = None
             self.mix_progress["running"] = False
             self.mix_progress["stage"] = ""
 
@@ -1743,6 +1772,11 @@ def create_app(state: AppState) -> FastAPI:
                 movie = os.path.splitext(out_path)[0] + ".mp4"
                 job = state.render_job(shot_list, mic_tracks, replacements, room,
                                        ducks, program_start, program_end, movie)
+                # Käynnissä heti eikä vasta säikeessä: muuten vastauksen jälkeen
+                # heti kysytty tila näyttäisi valmiilta, ja painike palaisi.
+                state.render_progress.update({"running": True, "fraction": 0.0,
+                                              "path": movie, "error": "",
+                                              "stopped": False})
                 threading.Thread(target=state.run_render, args=(job,), daemon=True).start()
                 rendering = {"path": movie, "running": True}
         # Seuraavan viennin nimi mukaan: ruudulla näkyvä polku on juuri
@@ -1781,6 +1815,17 @@ def create_app(state: AppState) -> FastAPI:
             project.save(state.xml_path, state.settings)
         threading.Thread(target=state.run_mix, args=(force,), daemon=True).start()
         return {"ok": True, "running": True}
+
+    @app.post("/api/render/stop")
+    def stop_render():
+        """Pysäyttää renderöinnin: ffmpegit lopetetaan, tiedostoa ei jää."""
+        state.render_stop.set()
+        return {"ok": True}
+
+    @app.post("/api/mix/stop")
+    def stop_mix():
+        """Pysäyttää äänenkäsittelyn. Valmiit tiedostot jäävät käyttöön."""
+        return {"ok": True, "stopped": state.stop_mix()}
 
     @app.post("/api/final-cut")
     def open_in_final_cut(payload: dict):

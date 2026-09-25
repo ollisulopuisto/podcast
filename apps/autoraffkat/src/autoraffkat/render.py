@@ -171,24 +171,78 @@ def _ffmpeg() -> str:
     return get_binary_path("ffmpeg")
 
 
-def _encode(shot: Shot, pw: int, ph: int, fps: str, target: str) -> None:
+class Stopped(Exception):
+    """Renderöinti pysäytettiin käyttöliittymästä."""
+
+
+# Koodain. VideoToolbox (Applen laitteistokoodain) kun se toimii, muuten
+# x264. Mitattuna 60 s:n 1080p-kuvalla pystyyn (skaalaus 3414×1920, rajaus):
+# x264 veryfast 5,0 s ja 30,6 s suoritinaikaa, VideoToolbox 4,4 s ja 14,9 s,
+# laitteistopurku lisäksi 6,1 s ja 12,0 s. Kello liikkuu vähän, koska
+# skaalaus on hitain osa, mutta suoritin puolittuu, ja kuvia koodataan
+# kolme rinnakkain; laitteistopurku oli hitaampi, joten purku jää
+# ohjelmalliseksi. 8 Mb/s on pystyvedokselle väljä.
+VIDEOTOOLBOX = ["-c:v", "h264_videotoolbox", "-b:v", "8M", "-allow_sw", "0"]
+X264 = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18"]
+_ENCODER: tuple[str, list[str]] | None = None
+
+
+def _trial(args: list[str]) -> bool:
+    """Koodaako tämä kone yhden ruudun näillä asetuksilla."""
+    done = subprocess.run(
+        [_ffmpeg(), "-nostdin", "-v", "error", "-f", "lavfi",
+         "-i", "color=black:s=1080x1920:r=25", "-frames:v", "1", *args,
+         "-f", "null", "-"],
+        capture_output=True, stdin=subprocess.DEVNULL, check=False)
+    return done.returncode == 0
+
+
+def encoder() -> tuple[str, list[str]]:
+    """``(nimi, ffmpeg-argumentit)``: laitteisto jos se toimii, kerran kysyttynä.
+
+    Kokeillaan eikä päätellä: koodain voi olla ffmpegin listalla mutta
+    puuttua koneesta (virtuaalikone, GitHubin ajurit), ja silloin ensimmäinen
+    kuva kaatuisi keskellä ajoa.
+    """
+    global _ENCODER
+    if _ENCODER is None:
+        _ENCODER = (("h264_videotoolbox", VIDEOTOOLBOX) if _trial(VIDEOTOOLBOX)
+                    else ("libx264", X264))
+    return _ENCODER
+
+
+def _run(command: list[str], stop=None) -> None:
+    """ffmpeg, joka lopetetaan heti kun ``stop`` asetetaan."""
+    child = subprocess.Popen(command, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    while True:
+        try:
+            _out, err = child.communicate(timeout=0.2)
+            break
+        except subprocess.TimeoutExpired:
+            if stop is not None and stop.is_set():
+                child.kill()
+                child.communicate()
+                raise Stopped() from None
+    if child.returncode != 0:
+        raise subprocess.CalledProcessError(child.returncode, command, stderr=err)
+
+
+def _encode(shot: Shot, pw: int, ph: int, fps: str, target: str, stop=None) -> None:
     frames = shot.end - shot.start
-    ffmpeg = _ffmpeg()
     if shot.path:
         inputs = ["-ss", f"{shot.file_start:.6f}", "-i", shot.path,
                   "-vf", video_filter(shot, pw, ph, frames, fps)]
     else:
         inputs = ["-f", "lavfi", "-i", f"color=black:s={pw}x{ph}:r={fps}",
                   "-vf", "format=yuv420p"]
-    subprocess.run(
-        [ffmpeg, "-nostdin", "-v", "error", "-y", *inputs, "-frames:v", str(frames),
-         "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-         "-r", fps, "-f", "mpegts", target],
-        check=True, capture_output=True, stdin=subprocess.DEVNULL)
+    _run([_ffmpeg(), "-nostdin", "-v", "error", "-y", *inputs, "-frames:v", str(frames),
+          "-an", *encoder()[1], "-r", fps, "-f", "mpegts", target], stop)
 
 
 def render_video(shots: list[Shot], pw: int, ph: int, frame_duration: Fraction,
-                 total_frames: int, out_path: str, progress=None, workers: int = 3) -> None:
+                 total_frames: int, out_path: str, progress=None, workers: int = 3,
+                 stop=None) -> None:
     """Kuvat videoksi: jokainen kuva omaksi palakseen, palat peräkkäin.
 
     Kuva kerrallaan eikä yhtenä suodinverkkona: satojen kuvien verkko on
@@ -207,7 +261,9 @@ def render_video(shots: list[Shot], pw: int, ph: int, frame_duration: Fraction,
     done = [0]
 
     def one(index: int) -> None:
-        _encode(flat[index], pw, ph, fps, names[index])
+        if stop is not None and stop.is_set():
+            raise Stopped()
+        _encode(flat[index], pw, ph, fps, names[index], stop)
         done[0] += 1
         if progress is not None:
             progress(done[0] / max(1, len(flat)))
@@ -218,10 +274,8 @@ def render_video(shots: list[Shot], pw: int, ph: int, frame_duration: Fraction,
         listing = os.path.join(work, "list.txt")
         with open(listing, "w", encoding="utf-8") as handle:
             handle.writelines(f"file '{name}'\n" for name in names)
-        subprocess.run(
-            [_ffmpeg(), "-nostdin", "-v", "error", "-y", "-f", "concat", "-safe", "0",
-             "-i", listing, "-frames:v", str(total_frames), "-c", "copy", out_path],
-            check=True, capture_output=True, stdin=subprocess.DEVNULL)
+        _run([_ffmpeg(), "-nostdin", "-v", "error", "-y", "-f", "concat", "-safe", "0",
+              "-i", listing, "-frames:v", str(total_frames), "-c", "copy", out_path], stop)
     finally:
         import shutil
 
@@ -260,7 +314,7 @@ def _pan_gains(pan: float) -> tuple[float, float]:
 
 def render_audio(sources: list[AudioSource], program_start: float, seconds: float,
                  out_path: str, rate: int = 48000, block: float = 60.0,
-                 progress=None) -> None:
+                 progress=None, stop=None) -> None:
     """Äänilähteet stereoksi minuutin paloissa, ohjelman pituisena.
 
     Paloittain, koska tunnin jakso kahdella mikillä olisi muistissa
@@ -276,6 +330,8 @@ def render_audio(sources: list[AudioSource], program_start: float, seconds: floa
     try:
         with AudioFile(out_path, "w", samplerate=rate, num_channels=2) as out:
             for first in range(0, total, step):
+                if stop is not None and stop.is_set():
+                    raise Stopped()
                 count = min(step, total - first)
                 t0 = program_start + first / rate
                 mix = np.zeros((2, count), dtype=np.float32)
@@ -320,8 +376,12 @@ def render_audio(sources: list[AudioSource], program_start: float, seconds: floa
 
 def render_program(shots: list[Shot], sources: list[AudioSource], pw: int, ph: int,
                    frame_duration: Fraction, total_frames: int, program_start: float,
-                   out_path: str, progress=None) -> None:
+                   out_path: str, progress=None, stop=None) -> None:
     """Kuva, ääni ja yhdistäminen: valmis MP4 ``out_path``iin.
+
+    ``stop`` (``threading.Event``) pysäyttää kesken: käynnissä olevat
+    ffmpegit lopetetaan ja ``Stopped`` nostetaan. Puolikasta tiedostoa ei
+    jää, koska lopullinen nimi annetaan vasta valmiille.
 
     Kirjoitetaan ensin viereen väliaikaisena ja nimetään lopuksi, jottei
     kesken jäänyt ajo jätä puolikasta tiedostoa joka näyttää valmiilta.
@@ -339,14 +399,12 @@ def render_program(shots: list[Shot], sources: list[AudioSource], pw: int, ph: i
     partial = out_path + ".partial.mp4"
     try:
         render_video(shots, pw, ph, frame_duration, total_frames, video,
-                     progress=stage(0.0, 0.85))
+                     progress=stage(0.0, 0.85), stop=stop)
         render_audio(sources, program_start, float(total_frames * frame_duration),
-                     audio, progress=stage(0.85, 0.95))
-        subprocess.run(
-            [_ffmpeg(), "-nostdin", "-v", "error", "-y", "-i", video, "-i", audio,
-             "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac",
-             "-b:a", "256k", "-movflags", "+faststart", partial],
-            check=True, capture_output=True, stdin=subprocess.DEVNULL)
+                     audio, progress=stage(0.85, 0.95), stop=stop)
+        _run([_ffmpeg(), "-nostdin", "-v", "error", "-y", "-i", video, "-i", audio,
+              "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac",
+              "-b:a", "256k", "-movflags", "+faststart", partial], stop)
         os.replace(partial, out_path)
         if progress is not None:
             progress(1.0)

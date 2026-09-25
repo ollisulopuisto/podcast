@@ -405,6 +405,12 @@ for (const lang of ['fi', 'en']) {
       if (radios.length !== 2) throw new Error(`tyylivalintoja ${radios.length}, ei 2`);
       /* Tila: shorts-valinta asettaa asetuksen. */
       vm.runInContext("state.globals.movement_style = 'calm';", context);
+      /* Käynnissä olevan käsittelyn painikkeessa on pysäytys. */
+      const running = context.mixButton({ progress: { running: true, fraction: 0.4 } });
+      if (!running.children.some((c) => c.tagName === 'BUTTON'
+          && c.textContent === context.T('app.stop'))) {
+        throw new Error('käsittelyä ei voi pysäyttää');
+      }
       /* Istujat: nimen klikkaus siirtää sitä vasemmalle, ja käsin annettu
          järjestys menee asetuksiin palvelimelle. */
       const wide = fresh.tracks.find((t) => t.key === 'WIDE');

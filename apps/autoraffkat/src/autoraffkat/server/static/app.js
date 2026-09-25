@@ -1940,6 +1940,13 @@ function mixButton(info) {
     const bar = progressBar(p.fraction);
     bar.title = run.title;
     wrap.append(bar);
+    /* Pysäytys: käsittely on minuutteja, ja väärillä asetuksilla aloitettu
+       ajo on voitava keskeyttää. Valmiiksi ehtineet tiedostot jäävät. */
+    const stop = document.createElement('button');
+    stop.className = 'ghost small';
+    stop.textContent = T('app.stop');
+    stop.addEventListener('click', () => stopJob('/api/mix/stop', stop));
+    wrap.append(stop);
     return wrap;
   }
   if (done && !mixConfirm) {
@@ -2829,19 +2836,35 @@ async function renderVideo() {
   }
 }
 
-/* Edistyminen tilasta sekunnin välein, kunnes valmis tai virhe. */
+/* Pysäytyspyyntö. Sama polku renderöinnille ja äänenkäsittelylle. */
+async function stopJob(url, button) {
+  if (button) setBusy(button, true, T('app.stopping'));
+  try {
+    await fetch(url, { method: 'POST' });
+  } catch (err) {
+    banner(err.message, true);
+  }
+}
+
+/* Edistyminen tilasta sekunnin välein, kunnes valmis, pysäytetty tai
+   virhe. Pysäytyspainike näkyy vain ajon aikana. */
 async function watchRender(button) {
+  const stop = $('render-stop');
   try {
     const response = await fetch('/api/state');
     const data = await response.json();
     const job = data.render || {};
     if (job.running) {
       button.textContent = T('app.rendering', { percent: Math.round((job.fraction || 0) * 100) });
+      button.title = job.encoder || '';
+      if (stop) stop.classList.remove('hidden');
       setTimeout(() => watchRender(button), 1000);
       return;
     }
+    if (stop) { stop.classList.add('hidden'); setBusy(stop, false); }
     setBusy(button, false);
     if (job.error) banner(T('app.renderFailed', { error: job.error }), true);
+    else if (job.stopped) $('status').textContent = T('app.renderStopped');
     else $('status').textContent = T('app.rendered', { path: job.path });
   } catch (err) {
     setBusy(button, false);
@@ -2960,6 +2983,7 @@ function renderStatic() {
   if (relinkBtn) relinkBtn.textContent = T('app.relink');
   $('export').innerHTML = `${T('app.export')} <kbd>⌘E</kbd>`;
   $('render').textContent = T('app.render');
+  $('render-stop').textContent = T('app.stop');
 }
 
 /* Tiedoston avaus. Valitsin on kahdessa paikassa, koska selaimessa ei ole
@@ -3087,6 +3111,7 @@ async function boot() {
 $('open').addEventListener('click', () => openXml());
 $('export').addEventListener('click', exportXml);
 $('render').addEventListener('click', renderVideo);
+$('render-stop').addEventListener('click', () => stopJob('/api/render/stop', $('render-stop')));
 const relinkBtnEl = $('relink');
 if (relinkBtnEl) relinkBtnEl.addEventListener('click', () => relinkFiles());
 /* Lukeminen jatkuu verhokäyrien laskentana taustalla, joten painike vapautuu

@@ -115,3 +115,42 @@ def test_the_audio_mix_places_ducks_and_pans_like_the_export(tmp_path):
     assert abs((loud - ducked) - 20) < 0.5
     assert _rms_db(left[:second]) > -30 and abs(_rms_db(left[:second]) - _rms_db(right[:second])) < 0.1
     assert _rms_db(mix[:, int(1.1 * second):int(1.9 * second)]) < -80   # hiljaisuus välissä
+
+
+def test_the_hardware_encoder_is_used_when_it_works(monkeypatch):
+    """VideoToolbox kun se toimii, muuten x264 — ja kumpi, se kerrotaan.
+
+    Mitattuna 60 s:n 1080p-kuvalla pystyyn: x264 5,0 s ja 30,6 s
+    suoritinaikaa, VideoToolbox 4,4 s ja 14,9 s. Kello liikkuu vähän
+    (skaalaus on hitain osa), mutta suoritin puolittuu, ja kolme kuvaa
+    koodataan rinnakkain.
+    """
+    monkeypatch.setattr(render, "_ENCODER", None)
+    monkeypatch.setattr(render, "_trial", lambda args: True)
+    assert render.encoder()[0] == "h264_videotoolbox"
+    monkeypatch.setattr(render, "_ENCODER", None)
+    monkeypatch.setattr(render, "_trial", lambda args: False)
+    name, args = render.encoder()
+    assert name == "libx264" and "libx264" in args
+
+
+@needs_ffmpeg
+def test_a_render_can_be_stopped_and_leaves_no_file(tmp_path):
+    """Pysäytys kesken: ffmpegit lopetetaan, eikä puolikasta videota jää.
+
+    Puolikas MP4 joka näyttää valmiilta olisi pahempi kuin ei mitään: se
+    menisi shortsien poimijalle ja puuttuva loppu huomattaisiin vasta siellä.
+    """
+    import threading
+
+    source = tmp_path / "bar.mp4"
+    _bar_source(source, seconds=4)
+    shots = [Shot(i * 20, (i + 1) * 20, str(source), 0.0, 1920, 1080, fill=True)
+             for i in range(5)]
+    stop = threading.Event()
+    out = tmp_path / "out.mp4"
+    with pytest.raises(render.Stopped):
+        render.render_program(shots, [], 1080, 1920, render.Fraction(1, 25), 100, 0.0,
+                              str(out), progress=lambda f: stop.set(), stop=stop)
+    assert not out.exists()
+    assert not list(tmp_path.glob("out.mp4*"))

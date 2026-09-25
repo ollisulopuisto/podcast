@@ -1701,3 +1701,55 @@ def test_render_draws_the_same_cut_as_the_export(scratch_xml):
     blocks = np.sqrt(np.mean(audio[: len(audio) // 40 * 40].reshape(-1, 40) ** 2, axis=1))
     onset = np.flatnonzero(blocks > 10 ** (-30 / 20))[0] * frame
     assert abs(onset - (talk_a - start)) < 0.04, onset
+
+
+@needs_ffmpeg
+def test_render_and_audio_processing_can_be_stopped(scratch_xml, monkeypatch):
+    """Kummankin minuuttien työn saa pysäytettyä käyttöliittymästä.
+
+    Renderöinti lopettaa ffmpegit eikä jätä tiedostoa; äänenkäsittelyn
+    lapsiprosessi lopetetaan, ja valmiiksi ehtineet tiedostot jäävät
+    käyttöön (``adopt``) kuten aina.
+    """
+    import sys
+    import threading
+
+    from autoraffkat import render
+
+    state = AppState(xml_path=str(scratch_xml("multicam.fcpxml")))
+    state.load()
+    for _ in range(200):
+        if state.progress.get("ready"):
+            break
+        time.sleep(0.05)
+    client = TestClient(create_app(state))
+
+    def slow(*args, stop=None, **kw):
+        stop.wait(10)
+        raise render.Stopped()
+
+    monkeypatch.setattr(render, "render_program", slow)
+    payload = {"tracks": {k: v.to_json() for k, v in _multicam_tracks().items()},
+               "globals": Globals(min_shot=1.5, lead=0.15, confirm=0.3,
+                                  min_overlap=0.4).to_json()}
+    exp = client.post("/api/export", json={**payload, "render": True}).json()
+    assert exp["ok"] and state.render_progress["running"]
+    assert client.post("/api/render/stop").json()["ok"]
+    for _ in range(100):
+        if not state.render_progress["running"]:
+            break
+        time.sleep(0.05)
+    assert state.render_progress["stopped"] and not state.render_progress["error"]
+
+    monkeypatch.setattr(state, "_mix_command", lambda: [
+        sys.executable, "-c", "import sys, time; sys.stdin.read(); time.sleep(30)"])
+    worker = threading.Thread(target=state.run_mix)
+    worker.start()
+    for _ in range(100):
+        if state._mix_child is not None:
+            break
+        time.sleep(0.05)
+    assert client.post("/api/mix/stop").json()["ok"]
+    worker.join(timeout=5)
+    assert not worker.is_alive()
+    assert not state.mix_progress["running"] and state.mix_progress["stopped"]
