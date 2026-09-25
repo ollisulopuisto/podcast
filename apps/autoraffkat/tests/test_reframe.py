@@ -440,8 +440,9 @@ def test_a_shot_where_the_face_would_be_cut_shifts_just_enough():
     leaning = framer.from_item(item, 60.0, 64.0)
     half = 1080 / 3413.33 / 2
     centre = 0.5 - leaning.pos_x * 19.2 / 3413.33
-    assert centre + half >= 0.67 - 1e-6       # kasvot kokonaan sisällä
-    assert abs(centre - (0.67 - half)) < 1e-3  # pienin siirto
+    pad = reframe.KEEP_PAD * 0.10
+    assert centre + half >= 0.67 + pad - 1e-6  # kasvot pehmusteineen sisällä
+    assert abs(centre - (0.67 + pad - half)) < 1e-3  # pienin siirto
     assert steady_shot.pos_x == framer.from_item(item, 70.0, 80.0).pos_x
 
 

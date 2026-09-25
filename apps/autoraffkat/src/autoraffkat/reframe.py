@@ -208,6 +208,8 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
         # zoomilla ikkunan keskipiste lähteessä on 0,5 + (c - 0,5) / m ja
         # puolikas half / m. Ilman tätä reuna jäi 17–19 px kasvojen sisään.
         a, b = keep
+        pad = KEEP_PAD * (b - a)
+        a, b = a - pad, b + pad
         m = max(1.0, headroom)
         low = max(b - half, 0.5 + m * (b - 0.5) - half)
         high = min(a + half, 0.5 + m * (a - 0.5) + half)
@@ -230,6 +232,12 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
 # Puhujan kasvojen ympärille jätettävä tila, kasvon leveydestä, kun rajausta
 # siirretään naapurin takia: kasvot eivät saa päätyä reunaan kiinni.
 FACE_MARGIN = 0.25
+
+# Pidettävän kasvolaatikon pehmuste, kasvon leveydestä. Mediaanireunaan
+# osuva rajaus leikkasi silti puolta ruuduista muutaman pikselin (Mikko 86:
+# 2,3 % mediaani, 4,6 % pahin, video files c849a5e); viisi prosenttia on
+# 15 px 300 px:n kasvoilla.
+KEEP_PAD = 0.05
 
 
 def _clear_neighbours(fx: float, face_w: float, others, half: float,
