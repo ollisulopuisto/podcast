@@ -47,10 +47,25 @@ def _expected(shot, source_x, scale):
     return source_x * width / shot.width - x
 
 
+def _backend(name):
+    """ffmpeg kaikkialla, AVFoundation macOS:llä (CI ajaa macOS:llä, joten
+    kumpikin testataan siellä; ohitus on alustan tosiasia, ei puuttuva työkalu)."""
+    if name == "ffmpeg":
+        return render.render_video
+    import sys
+
+    if sys.platform != "darwin":
+        pytest.skip("AVFoundation on macOS:n")
+    from autoraffkat import render_av
+
+    return render_av.render_video
+
+
 @needs_ffmpeg
+@pytest.mark.parametrize("backend", ["ffmpeg", "av"])
 @pytest.mark.parametrize("extra, scale1", [(1.0, 1.0), (1.12, 1.12), (1.0, 1.08)],
                          ids=["kehys", "punch", "pusku"])
-def test_the_bar_lands_where_the_framing_puts_it(tmp_path, extra, scale1):
+def test_the_bar_lands_where_the_framing_puts_it(tmp_path, extra, scale1, backend):
     """Kehys joka keskittää kohdan 1300 px: viiva ruudun keskelle (540 px)
     — ja zoomatessa sinne minne Final Cutin keskipisteskaalaus sen vie."""
     source = tmp_path / "bar.mp4"
@@ -60,7 +75,7 @@ def test_the_bar_lands_where_the_framing_puts_it(tmp_path, extra, scale1):
                 scale1=plan.scale * scale1 / extra if scale1 != extra else plan.scale,
                 pos_x=plan.pos_x, pos_y=plan.pos_y, fill=True)
     out = tmp_path / "out.mp4"
-    render.render_video([shot], 1080, 1920, render.Fraction(1, 25), 50, str(out))
+    _backend(backend)([shot], 1080, 1920, render.Fraction(1, 25), 50, str(out))
     first, last = _frame(out, 0), _frame(out, 49)
     assert abs(_bar_x(first) - _expected(shot, 1300, shot.scale0)) < 3
     assert abs(_bar_x(last) - _expected(shot, 1300, shot.scale1)) < 3
@@ -185,6 +200,62 @@ def test_a_render_reports_its_timings_in_the_terminal(tmp_path, capsys):
     lines = [line for line in capsys.readouterr().out.splitlines()
              if line.startswith("[video]")]
     text = "\n".join(lines)
-    assert render.encoder()[0] in text
+    assert render.video_backend()[0] in text
     for word in ("kuva", "ääni", "valmis"):
         assert word in text, text
+
+
+@needs_ffmpeg
+def test_the_av_render_cuts_on_the_exact_frame_and_has_the_exact_length(tmp_path):
+    """AVFoundation: kaksi kuvaa eri kohdista samaa tiedostoa ja musta aukko
+    välissä — leikkaus osuu ruudulleen ja pituus on ruutujen summa."""
+    backend = _backend("av")
+    source = tmp_path / "bar.mp4"
+    _bar_source(source, x=900, seconds=4)      # keskitetty rajaus näyttää 656–1264
+    other = tmp_path / "bar2.mp4"
+    _bar_source(other, x=1100, seconds=4)
+    shots = [Shot(0, 30, str(source), 0.0, 1920, 1080, fill=True),
+             Shot(30, 40, ""),
+             Shot(40, 75, str(other), 1.0, 1920, 1080, fill=True)]
+    out = tmp_path / "out.mp4"
+    backend(shots, 1080, 1920, render.Fraction(1, 25), 75, str(out))
+    frames = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_frames",
+         "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(out)],
+        check=True, capture_output=True, text=True).stdout.strip()
+    assert int(frames) == 75
+    assert _frame(out, 29).max() > 200 and _frame(out, 30).max() < 30   # aukko alkaa
+    assert _frame(out, 39).max() < 30 and _frame(out, 40).max() > 200
+
+
+@needs_ffmpeg
+def test_the_av_render_in_two_halves_joins_on_the_exact_frame(tmp_path):
+    """Kaksi vientiä rinnakkain (M1 Maxissa kaksi koodainta: 11× -> 16×
+    reaaliaika, neljä ei enää auta) ja liitos kopiona: pituus ja leikkaukset
+    pysyvät ruudun tarkkuudella myös liitoksen yli."""
+    from autoraffkat import render_av
+
+    if not hasattr(render_av, "HALVES"):
+        pytest.fail("ei jakoa")
+    source = tmp_path / "bar.mp4"
+    _bar_source(source, x=900, seconds=6)
+    other = tmp_path / "bar2.mp4"
+    _bar_source(other, x=1100, seconds=6)
+    # Jako osuu kahden oikean kuvan väliin (ruutu 90): mustan aukon viereen
+    # ei jaeta, koska AVFoundation pudottaa viennin lopun tyhjän jakson.
+    shots = [Shot(0, 40, str(source), 0.0, 1920, 1080, fill=True),
+             Shot(40, 50, ""),
+             Shot(50, 90, str(source), 2.0, 1920, 1080, fill=True),
+             Shot(90, 140, str(other), 1.0, 1920, 1080, fill=True)]
+    out = tmp_path / "out.mp4"
+    render_av.render_video(shots, 1080, 1920, render.Fraction(1, 25), 140, str(out))
+    frames = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_frames",
+         "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(out)],
+        check=True, capture_output=True, text=True).stdout.strip()
+    assert int(frames) == 140
+    assert _frame(out, 39).max() > 200 and _frame(out, 40).max() < 30
+    assert _frame(out, 49).max() < 30 and _frame(out, 50).max() > 200
+    # Liitos: viiva vaihtaa paikkaa täsmälleen ruudulla 90.
+    assert abs(_bar_x(_frame(out, 89)) - _bar_x(_frame(out, 50))) < 3
+    assert _bar_x(_frame(out, 90)) - _bar_x(_frame(out, 89)) > 300

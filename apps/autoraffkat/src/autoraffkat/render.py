@@ -417,6 +417,26 @@ def render_audio(sources: list[AudioSource], program_start: float, seconds: floa
 # ------------------------------------------------------------------ kokonaisuus
 
 
+def video_backend():
+    """``(nimi, renderöijä)``: AVFoundation macOS:llä, muuten ffmpeg.
+
+    AVFoundation tekee purun, muunnoksen ja koodauksen näytönohjaimella
+    kuten Final Cut (``render_av.py``); ffmpeg on varapolku ja Windowsin
+    polku. Sama ``Shot``-lista ja sama geometria kummassakin, ja samat
+    merkkitestit ajetaan kummallekin.
+    """
+    import sys
+
+    if sys.platform == "darwin":
+        try:
+            from . import render_av
+
+            return "avfoundation", render_av.render_video
+        except ImportError:
+            pass
+    return f"ffmpeg/{encoder()[0]}", render_video
+
+
 def render_program(shots: list[Shot], sources: list[AudioSource], pw: int, ph: int,
                    frame_duration: Fraction, total_frames: int, program_start: float,
                    out_path: str, progress=None, stop=None) -> None:
@@ -444,8 +464,9 @@ def render_program(shots: list[Shot], sources: list[AudioSource], pw: int, ph: i
 
     seconds = float(total_frames * frame_duration)
     began = time.monotonic()
+    backend, draw = video_backend()
     log(f"alkaa: {len(shots)} kuvaa, {seconds / 60:.1f} min, {pw}×{ph}, "
-        f"koodain {encoder()[0]} -> {out_path}")
+        f"{backend} -> {out_path}")
 
     work = tempfile.mkdtemp(prefix="autoraffkat-render-")
     video = os.path.join(work, "video.mp4")
@@ -453,8 +474,8 @@ def render_program(shots: list[Shot], sources: list[AudioSource], pw: int, ph: i
     partial = out_path + ".partial.mp4"
     try:
         mark = time.monotonic()
-        render_video(shots, pw, ph, frame_duration, total_frames, video,
-                     progress=stage(0.0, 0.85), stop=stop)
+        draw(shots, pw, ph, frame_duration, total_frames, video,
+             progress=stage(0.0, 0.85), stop=stop)
         log(f"kuva {time.monotonic() - mark:.0f} s")
         mark = time.monotonic()
         render_audio(sources, program_start, seconds,

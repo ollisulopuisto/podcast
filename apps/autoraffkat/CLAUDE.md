@@ -1132,6 +1132,20 @@ time, scale at start and end, position — built from the same numbers it
 writes (`_record`), and the audio is the same processed files, duck curves,
 pans and room tone as the export (`AppState.render_job`).
 
+On macOS the picture is drawn by **AVFoundation** (`render_av.py`), the
+engine Final Cut sits on: shots go onto one `AVMutableComposition` straight
+from the camera files, each with its transform (a ramp for micro-movement),
+and one export session decodes, transforms and encodes on the GPU — no
+per-shot processes, no frame on the CPU. Measured on an M1 Max with a 60 s
+zoom shot: ffmpeg 5.2 s and 10.0 s of CPU, AVFoundation 5.3 s and 2.0 s. One
+session is one hardware pipeline (~11× real time); two in parallel reach
+16×, four 15× — the machine has two encoders — so the programme is split in
+two at a shot boundary and joined by stream copy. Never next to a black
+gap: AVFoundation silently drops an empty stretch at the end of an export,
+and the join lost 9 frames. It also refuses to overwrite a file ("Cannot
+Save", -11823). ffmpeg stays as the fallback and the Windows path, and the
+same marker tests run against both.
+
 Two ffmpeg facts cost a measurement each. `crop` does not reconfigure when
 its input size changes mid-stream: under an animated `scale` its `in_w`
 stayed the first frame's width and a test marker slid 185 px where the real

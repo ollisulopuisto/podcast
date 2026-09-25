@@ -61,6 +61,12 @@ if sys.platform == "darwin":
         "AppKit",
         "WebKit",
         "Foundation",
+        # Renderöinti AVFoundationilla (render_av.py). Tuodaan funktion
+        # sisällä, joten PyInstaller ei näe niitä itse; ilman niitä
+        # renderöinti putoaa ffmpegiin ja loki kertoo sen.
+        "AVFoundation",
+        "CoreMedia",
+        "Quartz",
     ]
 elif sys.platform.startswith("win"):
     hiddenimports += [

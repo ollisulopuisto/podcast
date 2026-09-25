@@ -23,6 +23,11 @@ dependencies = [
     "pedalboard>=0.9.24",
     "pyloudnorm>=0.2.0",
     "pywebview>=6.0",  # FileDialog; OPEN_DIALOG on vanhentunut
+    # Renderöinti AVFoundationilla (``render_av.py``): purku, muunnos ja
+    # koodaus näytönohjaimella kuten Final Cutissa. Vain macOS; muualla
+    # renderöi ffmpeg.
+    "pyobjc-framework-AVFoundation>=12.2; sys_platform == 'darwin'",
+    "pyobjc-framework-CoreMedia>=12.2; sys_platform == 'darwin'",
 ]
 
 [project.scripts]

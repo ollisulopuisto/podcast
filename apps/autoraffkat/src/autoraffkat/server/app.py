@@ -631,7 +631,7 @@ class AppState:
         self.render_progress.update({"running": True, "fraction": 0.0,
                                      "path": job["path"], "error": "",
                                      "stopped": False,
-                                     "encoder": render.encoder()[0]})
+                                     "encoder": render.video_backend()[0]})
 
         def report(fraction: float) -> None:
             self.render_progress["fraction"] = round(float(fraction), 4)
