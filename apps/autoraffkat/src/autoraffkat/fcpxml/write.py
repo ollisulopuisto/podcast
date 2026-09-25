@@ -573,9 +573,10 @@ def build_fcpxml(
         # Kehystys ja liike menevät suoraan kuvalle, ennen kiinnitettyjä
         # mikkejä: DTD asettaa intrinsic-params-sisällön ennen ankkuroituja
         # klippejä.
-        shot = _span_reframe(
-            reframer, item, seg, seg_start_tl, program_start + frame_duration * b)
         move = moves[index] if moves else _NO_MOVE
+        shot = _span_reframe(
+            reframer, item, seg, seg_start_tl, program_start + frame_duration * b,
+            headroom=max(move.start_scale, move.end_scale))
         transform = _transform_lines(
             shot, move, b - a, frame_duration, "              ",
             conform=settings is not None and settings.globals.vertical,
@@ -962,7 +963,8 @@ def _transform_lines(
     ]
 
 
-def _span_reframe(reframer, item, seg, t0: Fraction, t1: Fraction):
+def _span_reframe(reframer, item, seg, t0: Fraction, t1: Fraction,
+                  headroom: float = 1.0):
     """Pystyviennin kehystys yhdelle spanille, tai ``None``.
 
     Laajat jätetään kehyksittä: huoneen rajaus ei ole mittaus eikä
@@ -973,7 +975,8 @@ def _span_reframe(reframer, item, seg, t0: Fraction, t1: Fraction):
     """
     if reframer is None or item is None:
         return None
-    return reframer.from_item(item, float(t0), float(t1), focus=seg.focus)
+    return reframer.from_item(item, float(t0), float(t1), focus=seg.focus,
+                              headroom=headroom)
 
 
 # Liikkeen identtisyys, kun kytkin on pois päältä: kehystys kysytään
@@ -1717,9 +1720,10 @@ def build_multicam_fcpxml(
                 None,
             )
             if part is not None:
+                move = moves[index] if moves else _NO_MOVE
                 shot = reframer.from_item(
                     part, float(at), float(program_start + frame_duration * b),
-                    focus=seg.focus)
+                    focus=seg.focus, headroom=max(move.start_scale, move.end_scale))
 
         own = set(mc.angle_ids)
         video_angle = next((x for x in angles_of.get(seg.angle, []) if x in own), "")

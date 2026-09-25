@@ -1518,7 +1518,7 @@ class _StubReframer:
         self.scale = scale
         self.pos_x = pos_x
 
-    def from_item(self, item, t0, t1, focus=""):
+    def from_item(self, item, t0, t1, focus="", headroom=1.0):
         from autoraffkat import reframe
 
         self.calls.append((item.key, round(t0, 3), round(t1, 3)))

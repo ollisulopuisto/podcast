@@ -443,3 +443,22 @@ def test_a_shot_where_the_face_would_be_cut_shifts_just_enough():
     assert centre + half >= 0.67 - 1e-6       # kasvot kokonaan sisällä
     assert abs(centre - (0.67 - half)) < 1e-3  # pienin siirto
     assert steady_shot.pos_x == framer.from_item(item, 70.0, 80.0).pos_x
+
+
+def test_the_kept_face_still_fits_at_the_movement_zoom():
+    """Mikroliike zoomaa kuvaa kehyksen päälle, ja se kaventaa rajausta.
+
+    Kehys laskettiin 100 %:lle, ja mikroliikkeen 3–7 %:n lisäzoomi vei
+    reunan 17–19 px kasvojen sisään (video files, eea265a: Mikko 86,
+    Tomi 536). Pidettävän laatikon on mahduttava koko zoomin ajan.
+    Final Cut skaalaa kuvan keskipisteen ympäri ja siirtää sitten, joten
+    ikkunan keskipiste lähteessä on 0,5 + (c - 0,5) / m ja puolikas h / m.
+    """
+    box = (0.57, 0.67)
+    headroom = 1.06
+    shot = reframe.plan_shot(0.5, 0.5, 1920, 1080, keep=box, headroom=headroom)
+    shown = 1920 * 1920 / 1080
+    for m in (1.0, headroom):
+        half = 1080 / (shown * m) / 2
+        centre = 0.5 - shot.pos_x * 19.2 / (shown * m)
+        assert centre - half <= box[0] + 1e-9 and box[1] <= centre + half + 1e-9, m

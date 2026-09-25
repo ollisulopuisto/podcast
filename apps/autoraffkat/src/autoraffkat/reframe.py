@@ -177,7 +177,8 @@ def level_at(steps: list[tuple[float, float]], at: float) -> float:
 def plan_shot(fx: float, fy: float, width: int, height: int,
               zoom: float = 1.0, eyeline: float | None = None,
               face_w: float = 0.0, others=(),
-              keep: tuple[float, float] | None = None) -> Reframe | None:
+              keep: tuple[float, float] | None = None,
+              headroom: float = 1.0) -> Reframe | None:
     """Yhden kuvan kehys kasvojen paikasta, täytön päälle.
 
     ``fx`` on kasvojen keskipiste lähteen leveydestä (0 = vasen reuna),
@@ -201,13 +202,20 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
     centre = _clear_neighbours(fx, face_w, others, half, reach)
     if keep is not None:
         # Kuvan omat kasvot (mediaanilaatikko) eivät saa jäädä reunasta
-        # ulos: vakaa kehys siirtyy juuri sen verran, ei enempää.
+        # ulos: vakaa kehys siirtyy juuri sen verran, ei enempää. Myös
+        # mikroliikkeen suurimmalla zoomilla ``headroom``: Final Cut skaalaa
+        # keskipisteen ympäri ja siirtää sitten, joten ``m``-kertaisella
+        # zoomilla ikkunan keskipiste lähteessä on 0,5 + (c - 0,5) / m ja
+        # puolikas half / m. Ilman tätä reuna jäi 17–19 px kasvojen sisään.
         a, b = keep
-        if b - a <= 2 * half:
-            if a < centre - half:
-                centre = a + half
-            elif b > centre + half:
-                centre = b - half
+        m = max(1.0, headroom)
+        low = max(b - half, 0.5 + m * (b - 0.5) - half)
+        high = min(a + half, 0.5 + m * (a - 0.5) + half)
+        if low <= high:
+            if centre < low:
+                centre = low
+            elif centre > high:
+                centre = high
         centre = min(0.5 + reach, max(0.5 - reach, centre))
     move_x = min(slack_x, max(-slack_x, -(centre - 0.5) * shown_w))
     # Kuvan nosto ylös siirtää kasvoja ylös: kasvojen etäisyys keskeltä
@@ -293,6 +301,7 @@ class Reframer:
         t0: float,
         t1: float,
         focus: str = "",
+        headroom: float = 1.0,
     ) -> Reframe | None:
         """Kehys yhdelle klipille: mediaanikasvo klipin omilta riveiltä.
 
@@ -304,7 +313,7 @@ class Reframer:
         jos hänet on tunnistettu tästä tiedostosta.
         """
         if item.key in self.crowd:
-            return self._crowd_shot(item, t0, t1, focus)
+            return self._crowd_shot(item, t0, t1, focus, headroom)
         table = self.tables.get(item.key)
         if table is None or "x" not in table or not item.width or not item.height:
             return None
@@ -327,7 +336,7 @@ class Reframer:
         return plan_shot(
             level_at(xs, middle), level_at(ys, middle), item.width, item.height,
             zoom=self.look.zooms.get(item.key, 1.0), eyeline=self.look.eyeline,
-            keep=_shot_box(table, found, f0, f1),
+            keep=_shot_box(table, found, f0, f1), headroom=headroom,
         )
 
 
@@ -342,7 +351,8 @@ class Reframer:
             1.0 - (table["y"][rows] + table["h"][rows] / 2))
         return level_at(xs, middle), level_at(ys, middle)
 
-    def _crowd_shot(self, item, t0: float, t1: float, focus: str) -> Reframe | None:
+    def _crowd_shot(self, item, t0: float, t1: float, focus: str,
+                    headroom: float = 1.0) -> Reframe | None:
         """Laaja tai ryhmäkuva: puhujan kasvoille, naapurit kokonaan sisään tai ulos.
 
         Ilman puhujaa (päätykuva, tauko) tai kun puhuja ei ole tässä
@@ -377,7 +387,7 @@ class Reframer:
         zoom = min(MAX_ZOOM, max(1.0, target / h)) if target and h > 0 else 1.0
         return plan_shot(x, y, item.width, item.height, zoom=zoom,
                          eyeline=self.look.eyeline, face_w=seat.w, others=others,
-                         keep=keep)
+                         keep=keep, headroom=headroom)
 
 
 def focus_segments(segments: list, grid, crowd: dict[str, list[int]],
