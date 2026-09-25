@@ -1119,6 +1119,29 @@ files session measuring an export, 2026-09-25). Not yet confirmed by an
 import — do that before trusting it. The keyframe overrides the attribute,
 so the attribute carries the static case.
 
+## Two movement styles: calm and shorts
+
+`movement_style` picks between two editing languages, and the user asked
+for the second as an option, not a replacement (2026-09-25). **Calm** is
+camera variation: jumps under 3 %, slow random pushes. **Shorts** is
+short-form editing: a long close-up is cut into pieces on the same camera
+at loud sentence starts (`punch_segments`: speech after a ≥ 0.3 s pause
+whose peak is in that speaker's own top quartile — relative, so a quiet
+speaker emphasises too), alternating base and punch-in. The size between
+same-camera cuts either stays or jumps a full punch; a push is only for an
+unsplit long shot where the same speaker goes on, and always inward, since
+the release is the cut. The base framing sits off-axis with lead room
+toward the gaze (`reframe.LEAD_ROOM`, from the measured `turn` sign) and
+the punch is centred — the user's idea: the cut then changes composition
+as well as size, so 112 % reads as intentional where a pure size jump would
+need ~15 %, and a Full HD source is spared (fill × punch = 1.99×).
+
+Any static zoom (a punch, a calm framing) is planned into the framing
+itself (`extra`), not multiplied on afterwards: Final Cut scales about the
+frame centre, so a zoom applied to a position computed at 100 % slides an
+off-centre face off the centre line. Calm-style positions moved a few px
+when this went in; that is the fix, not drift.
+
 ## Reframe is Spatial Conform «Fill» plus a measured transform
 
 `reframe.py` answers the vertical workflow: the export is already

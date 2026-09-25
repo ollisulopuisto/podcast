@@ -261,6 +261,9 @@ class Globals:
     # vienti on täsmälleen entisensä. Rajat eivät ole säätimiä — ks.
     # ``movement.py``n docstring.
     movement: bool = False
+    # Mikroliikkeen tyyli: «calm» (kameran vaihtelu) tai «shorts» (punch-in
+    # painotuksessa, pusku jatkuvassa puheessa). Ks. ``movement.py``.
+    movement_style: str = "calm"
     # Pystyvienti: projekti kirjoitetaan valmiiksi 1080×1920 ja lähikuville
     # kirjoitetaan mitattu kehystys (``reframe.py``), jotta Final Cutiin
     # tuonti on lopputulos eikä välietappi. Oletus pois: se on tyylivalinta
@@ -462,6 +465,8 @@ class Segment:
     # Pystyviennissä laaja ja ryhmäkuva rajataan puhujaan: kenen kasvoille
     # tämä kuva kehystetään. Tyhjä = ei kenenkään (täytön keskelle).
     focus: str = ""
+    # Shorts-tyylin punch-in: saman kameran pala painotuksessa, zoomattuna.
+    punch: bool = False
 
     @property
     def duration(self) -> float:

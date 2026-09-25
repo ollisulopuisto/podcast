@@ -91,3 +91,64 @@ def test_wide_shots_get_no_movement():
             assert not move.animated
             assert move.start_scale == 1.0
             assert move.end_scale == 1.0
+
+
+# ------------------------------------------------ shorts-tyyli (2026-09-25)
+
+
+def _talk_grid(seconds=40, loud=(5.0, 12.0, 20.0, 28.0), quiet=(8.0, 16.0, 24.0)):
+    """Yksi puhuja: kovat lauseen alut ``loud``, hiljaiset ``quiet``.
+
+    Jokainen lause on 2,5 s ja sitä edeltää tauko, jotta alku on alku.
+    """
+    import numpy as np
+
+    from autoraffkat.decide import Grid, SpeakerLanes
+    from autoraffkat.model import HOP
+
+    n = int(seconds / HOP)
+    on = np.zeros(n, dtype=bool)
+    level = np.full(n, -60.0, dtype=np.float32)
+    for starts, db in ((loud, -18.0), (quiet, -30.0)):
+        for t in starts:
+            a, b = int(t / HOP), int((t + 2.5) / HOP)
+            on[a:b] = True
+            level[a:b] = db
+    lane = SpeakerLanes("Host", level, on, "CAM A")
+    return Grid(n=n, program_start=0.0, speakers=[lane], wide_key="W")
+
+
+def test_punch_ins_land_on_loud_sentence_starts():
+    """Pitkä lähikuva pilkotaan saman kameran kuviksi kovissa lauseen
+    aluissa, ja palat vuorottelevat perus- ja punch-in-rajauksen välillä.
+    Hiljaiset alut eivät ole painotuksia."""
+    from autoraffkat.model import Segment
+
+    cut = [Segment("W", "Laaja", 0.0, 3.0), Segment("CAM A", "Host", 3.0, 40.0)]
+    out = movement.punch_segments(cut, _talk_grid(), min_shot=2.5)
+    assert out[0].angle == "W" and not out[0].punch
+    pieces = [s for s in out if s.angle == "CAM A"]
+    starts = [round(s.start, 1) for s in pieces]
+    assert starts[0] == 3.0
+    # Leikkaukset kovien alkujen kohdalla (hieman ennen), ei hiljaisten.
+    for t in starts[1:]:
+        assert any(abs(t - (loud - movement.PUNCH_LEAD)) < 0.05 for loud in (5, 12, 20, 28)), starts
+    assert [s.punch for s in pieces] == [i % 2 == 1 for i in range(len(pieces))]
+    assert all(b.start - a.start >= 2.5 - 1e-6 for a, b in pairwise(pieces))
+    assert pieces[-1].end == 40.0
+
+
+def test_shorts_plan_jumps_a_full_punch_or_not_at_all():
+    """Saman kameran leikkauksessa koko joko pysyy tai hyppää punchin
+    verran — välistä hyppy näyttää virheeltä. Punch on 112 %, pusku vain
+    pilkkomattomassa pitkässä kuvassa, ja laaja pysyy paikallaan."""
+    durs = [4.0, 5.0, 4.0, 12.0, 3.0]
+    wides = [False, False, False, False, True]
+    punches = [False, True, False, False, False]
+    moves = movement.plan(durs, wides, style="shorts", punches=punches,
+                          split=[True, True, True, False, False])
+    assert moves[0] == movement.Move(1.0, 1.0)
+    assert moves[1] == movement.Move(movement.PUNCH, movement.PUNCH) and movement.PUNCH == 1.12
+    assert moves[2] == movement.Move(1.0, 1.0)
+    assert moves[3].start_scale == 1.0 and moves[3].end_scale - 1.0 >= movement.PUSH_MIN
+    assert moves[4] == movement.Move(1.0, 1.0)

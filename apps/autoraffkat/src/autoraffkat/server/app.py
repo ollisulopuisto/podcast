@@ -697,6 +697,8 @@ class AppState:
                 self.start_seating()
         if "movement" in raw:
             g.movement = bool(raw["movement"])
+        if raw.get("movement_style") in movement_styles():
+            g.movement_style = raw["movement_style"]
         if "vertical" in raw:
             was = g.vertical
             g.vertical = bool(raw["vertical"])
@@ -1157,6 +1159,12 @@ def _track_json(state: AppState, track) -> dict:
     }
 
 
+def movement_styles() -> tuple[str, ...]:
+    from .. import movement as movement_mod
+
+    return movement_mod.STYLES
+
+
 def _state_json(state: AppState) -> dict:
     """Koko tila käyttöliittymälle: raidat, roolit, säätimet ja edistyminen."""
     timeline = state.timeline
@@ -1600,6 +1608,14 @@ def create_app(state: AppState) -> FastAPI:
                         warnings.append(t("export.vertical_unmeasured"))
                     elif not framed:
                         warnings.append(t("export.vertical_unframed"))
+                if (state.settings.globals.movement
+                        and state.settings.globals.movement_style == "shorts"):
+                    # Shorts: pitkät lähikuvat punch-ineiksi puhujan
+                    # painotuksissa, ks. movement.punch_segments.
+                    from .. import movement as movement_mod
+
+                    segments = movement_mod.punch_segments(
+                        segments, _grid, state.settings.globals.min_shot)
                 if state.timeline.multicams:
                     # Monikamerassa ulos tulee monikameraleikkaus: kuvakulman
                     # voi vaihtaa Final Cutissa jälkikäteen.

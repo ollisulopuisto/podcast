@@ -179,7 +179,7 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
               zoom: float = 1.0, eyeline: float | None = None,
               face_w: float = 0.0, others=(),
               keep: tuple[float, float] | None = None,
-              headroom: float = 1.0) -> Reframe | None:
+              headroom: float = 1.0, lead: float = 0.0) -> Reframe | None:
     """Yhden kuvan kehys kasvojen paikasta, täytön päälle.
 
     ``fx`` on kasvojen keskipiste lähteen leveydestä (0 = vasen reuna),
@@ -200,7 +200,10 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
     slack_y = max(0.0, (shown_h - PROJECT_H) / 2)
     half = PROJECT_W / shown_w / 2
     reach = slack_x / shown_w
-    centre = _clear_neighbours(fx, face_w, others, half, reach)
+    # ``lead``: kasvojen paikka rajauksessa keskeltä, rajauksen leveyksinä
+    # (negatiivinen = vasemmalle). Nolla keskittää.
+    centre = _clear_neighbours(fx, face_w, others, half, reach,
+                               start=fx - lead * 2 * half)
     if keep is not None:
         # Kuvan omat kasvot (mediaanilaatikko) eivät saa jäädä reunasta
         # ulos: vakaa kehys siirtyy juuri sen verran, ei enempää. Myös
@@ -240,9 +243,20 @@ FACE_MARGIN = 0.25
 # 15 px 300 px:n kasvoilla.
 KEEP_PAD = 0.05
 
+# Shorts-tyylin perusrajaus: kasvot sivuun, tilaa katseen suuntaan, ja
+# punch-in keskelle. Käyttäjän idea (2026-09-25): leikkaus vaihtaa silloin
+# sekä koon että sommittelun ja luetaan tarkoitukselliseksi pienemmälläkin
+# zoomilla, mikä säästää Full HD -lähdettä. 0,12 rajausikkunan leveydestä
+# on 130 px: selvästi sivussa, kaukana reunasta.
+LEAD_ROOM = 0.12
+
+# Pienempi pään käännös ei kerro katseen suuntaa (``turn``, ks. CLAUDE.md:
+# luokat asettuivat +0,46:een ja -0,28:aan).
+LEAD_TURN = 0.05
+
 
 def _clear_neighbours(fx: float, face_w: float, others, half: float,
-                      reach: float) -> float:
+                      reach: float, start: float | None = None) -> float:
     """Rajausikkunan keskipiste niin ettei yksikään naapuri jää puolikkaaksi.
 
     Oletus on puhujan kasvot keskellä. Jos naapurin kasvot osuvat reunaan,
@@ -254,7 +268,7 @@ def _clear_neighbours(fx: float, face_w: float, others, half: float,
     """
     margin = FACE_MARGIN * face_w
     low, high = 0.5 - reach, 0.5 + reach
-    centre = min(high, max(low, fx))
+    centre = min(high, max(low, fx if start is None else start))
 
     def fits(c: float) -> bool:
         return (low - 1e-9 <= c <= high + 1e-9
@@ -311,6 +325,8 @@ class Reframer:
         t1: float,
         focus: str = "",
         headroom: float = 1.0,
+        extra: float = 1.0,
+        off_axis: bool = False,
     ) -> Reframe | None:
         """Kehys yhdelle klipille: mediaanikasvo klipin omilta riveiltä.
 
@@ -320,9 +336,14 @@ class Reframer:
 
         ``focus`` on laajan tai ryhmäkuvan puhuja: kehys hänen kasvoilleen,
         jos hänet on tunnistettu tästä tiedostosta.
+
+        ``extra`` on paikallaan pysyvä lisäzoomi (punch-in, mikroliikkeen
+        kehys). Se lasketaan kehykseen mukaan: Final Cut skaalaa kuvan
+        keskipisteen ympäri, joten 100 %:lle laskettu sijainti veisi
+        sivussa olevat kasvot zoomatessa pois keskiviivalta.
         """
         if item.key in self.crowd:
-            return self._crowd_shot(item, t0, t1, focus, headroom)
+            return self._crowd_shot(item, t0, t1, focus, headroom, extra)
         table = self.tables.get(item.key)
         if table is None or "x" not in table or not item.width or not item.height:
             return None
@@ -342,10 +363,16 @@ class Reframer:
         x, y, _h = _faces(table)
         xs, ys = self._levels(item.key, table["times"][found], x, y)
         middle = (float(f0) + float(f1)) / 2
+        lead = 0.0
+        if off_axis and "turn" in table:
+            # Katsoo oikealle (turn > 0) -> kasvot vasemmalle, tilaa oikealle.
+            turn = float(np.median(table["turn"][found]))
+            if abs(turn) >= LEAD_TURN:
+                lead = -LEAD_ROOM if turn > 0 else LEAD_ROOM
         return plan_shot(
             level_at(xs, middle), level_at(ys, middle), item.width, item.height,
-            zoom=self.look.zooms.get(item.key, 1.0), eyeline=self.look.eyeline,
-            keep=_shot_box(table, found, f0, f1), headroom=headroom,
+            zoom=self.look.zooms.get(item.key, 1.0) * extra, eyeline=self.look.eyeline,
+            keep=_shot_box(table, found, f0, f1), headroom=headroom, lead=lead,
         )
 
 
@@ -361,7 +388,7 @@ class Reframer:
         return level_at(xs, middle), level_at(ys, middle)
 
     def _crowd_shot(self, item, t0: float, t1: float, focus: str,
-                    headroom: float = 1.0) -> Reframe | None:
+                    headroom: float = 1.0, extra: float = 1.0) -> Reframe | None:
         """Laaja tai ryhmäkuva: puhujan kasvoille, naapurit kokonaan sisään tai ulos.
 
         Ilman puhujaa (päätykuva, tauko) tai kun puhuja ei ole tässä
@@ -394,6 +421,7 @@ class Reframer:
         target = self.look.target
         h = seat.h
         zoom = min(MAX_ZOOM, max(1.0, target / h)) if target and h > 0 else 1.0
+        zoom *= extra
         return plan_shot(x, y, item.width, item.height, zoom=zoom,
                          eyeline=self.look.eyeline, face_w=seat.w, others=others,
                          keep=keep, headroom=headroom)

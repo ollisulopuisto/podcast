@@ -284,7 +284,14 @@ Zero disables the rule. The wide never falls below the shortest shot, even if
 All three respect a minimum overlap duration: a fleeting "mm-hm" doesn't
 trigger the rule.
 
-**Micro-movement** (off by default): for vertical exports. The plan writes
+**Micro-movement** (off by default) comes in two styles. **Shorts** is
+short-form editing: long close-ups are cut into same-camera pieces at the
+speaker's emphasis (loud sentence starts), alternating a base framing —
+off to the side, with room where the speaker looks — and a centred 112 %
+punch-in, so the cut changes both size and composition; a continuing
+speaker gets a push-in. **Calm**, described next, is camera variation.
+
+In the calm style, for vertical exports, the plan writes
 each spine clip a subtle, deterministic scale treatment — 100–110 % total,
 short cuts static, longer clips a slow push/pull — so a 9:16 Smart Conform
 cut feels like camera variation instead of a static centre crop. Position

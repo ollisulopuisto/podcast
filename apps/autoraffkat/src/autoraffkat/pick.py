@@ -49,7 +49,7 @@ def resolve(path: str) -> str:
 # "haastattelu-cut down.fcpxml" katoaisi lähdevalikosta.
 _TAG_WORDS = (
     *RHYTHM_PRESETS, *OVERLAP_RULES, *LONGTAKE_RULES,
-    "audio", "move", "vertical",
+    "audio", "move", "shorts", "vertical",
 )
 
 # Oma vienti tunnuksineen: "jakso-cut.fcpxml", "jakso-cut hectic audio.fcpxml",

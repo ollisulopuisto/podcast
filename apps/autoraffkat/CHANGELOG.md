@@ -15,7 +15,11 @@ and this project adheres to Calendar Versioning (CalVer).
 - **Micro-movement keyframes were written from 0, not from the clip's start** (`fcpxml/write.py`): on a multicam clip both keyframes landed before the clip began and the push did nothing. They now use the host's local time base like the volume and pan keyframes (not yet confirmed by an import).
 - **Reaction shots in a vertical export** were letterboxed 16:9 bands over the picture; they now get Fill and the listener's framing. A crowd shot with nobody talking frames the most prominent person instead of the gap between two, and a neighbour at the crop edge is pushed fully out or in.
 
+### Added
+- **Shorts movement style** (`movement.py`, `reframe.py`): an option next to the calm style. Long close-ups are cut into same-camera pieces at loud sentence starts, alternating a base framing — off-axis, with room toward where the speaker looks — and a centred 112 % punch-in; a push only while the same speaker goes on. Export names carry `shorts`.
+
 ### Changed
+- **Static zooms are planned into the framing** (`fcpxml/write.py`, `reframe.py`): Final Cut scales about the frame centre, so a punch or calm framing multiplied onto a 100 % position slid off-centre faces sideways. Calm-style positions move by a few px.
 - **Stronger micro-movement, gentler face matching** (`movement.py`, `reframe.py`): pushes are 4–8 % (were 2–5 %, too slow to notice) within 100–110 %; the face-matching zoom is capped at 110 % (was 125 %, which with the movement on top made 130 % shots). A short shot after a big zoom may sit slightly above its 104 % ceiling rather than jump more than 3 %.
 - **Steady vertical framing** (`reframe.py`): a camera keeps one position until the face stays elsewhere for 30 s (more than 0.04 of the width); fidgeting never reframes, and cutting back to the same camera lands on exactly the same frame.
 - **Crowd shots are sampled every ~5 s for faces** (`video/measure.py`): face detection on wide and group-shot cameras runs on every 5th keyframe, a fifth of the time; close-ups keep every keyframe for reaction shots.

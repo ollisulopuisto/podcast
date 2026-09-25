@@ -392,6 +392,19 @@ for (const lang of ['fi', 'en']) {
       if (!host.children.some((c) => c.tagName === 'BUTTON')) {
         throw new Error('pystyviennin osiosta puuttuu mittauspainike');
       }
+      /* Mikroliikkeen tyyli: rauhallinen tai shorts, ja valinta menee
+         asetuksiin palvelimelle. */
+      const style = context.document.createElement('div');
+      context.movementBody(style);
+      const radios = [];
+      const walk = (el) => { (el.children || []).forEach((c) => {
+        if (c.tagName === 'INPUT' && c.type === 'radio') radios.push(c);
+        walk(c);
+      }); };
+      walk(style);
+      if (radios.length !== 2) throw new Error(`tyylivalintoja ${radios.length}, ei 2`);
+      /* Tila: shorts-valinta asettaa asetuksen. */
+      vm.runInContext("state.globals.movement_style = 'calm';", context);
       /* Istujat: nimen klikkaus siirtää sitä vasemmalle, ja käsin annettu
          järjestys menee asetuksiin palvelimelle. */
       const wide = fresh.tracks.find((t) => t.key === 'WIDE');

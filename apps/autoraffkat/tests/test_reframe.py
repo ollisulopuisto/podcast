@@ -467,3 +467,48 @@ def test_the_kept_face_still_fits_at_the_movement_zoom():
         half = 1080 / (shown * m) / 2
         centre = 0.5 - shot.pos_x * 19.2 / (shown * m)
         assert centre - half <= box[0] + 1e-9 and box[1] <= centre + half + 1e-9, m
+
+
+def test_a_static_zoom_keeps_the_face_on_the_centre_line():
+    """Final Cut skaalaa kuvan keskipisteen ympäri: sivussa olevat kasvot
+    liukuvat zoomatessa pois keskiviivalta, jos sijainti on laskettu
+    100 %:lle. Paikallaan pysyvä lisäzoomi (punch-in, mikroliikkeen
+    kehys) lasketaan siksi mukaan kehykseen, ja kasvot pysyvät keskellä."""
+    from autoraffkat.reframe import Reframer
+
+    item = _item()
+    framer = Reframer({item.key: _table(10, cx=0.64)})
+    punched = framer.from_item(item, 0.0, 9.0, extra=1.15)
+    assert abs(punched.scale - 1.15) < 1e-9
+    shown = 1920 * 1920 / 1080 * punched.scale
+    centre = 0.5 - punched.pos_x * 19.2 / shown
+    assert abs(centre - 0.64) < 1e-6
+
+
+def test_the_base_shot_leaves_room_where_the_speaker_looks():
+    """Shorts: perusrajaus sivuun katseen suuntaan, punch-in keskelle.
+
+    Käyttäjän idea (2026-09-25): leikkaus vaihtaa silloin sekä koon että
+    sommittelun, ja se luetaan tarkoitukselliseksi toiseksi kuvaksi
+    pienemmälläkin zoomilla. Katseen suunta on ``turn``: vasemmalla
+    istuva katsoo oikealle ja sen merkki on positiivinen (ks. CLAUDE.md,
+    istumajärjestys) — kasvot vasemmalle, tilaa oikealle.
+    """
+    from autoraffkat.reframe import LEAD_ROOM, Reframer
+
+    item = _item()
+    table = _table(10, cx=0.55)
+    table["turn"] = np.full(10, 0.4, dtype=np.float32)   # katsoo oikealle
+    framer = Reframer({item.key: table})
+    crop = 1080 / 3413.33
+    base = framer.from_item(item, 0.0, 9.0, off_axis=True)
+    punch = framer.from_item(item, 0.0, 9.0, extra=1.12)
+    base_centre = 0.5 - base.pos_x * 19.2 / 3413.33
+    assert abs((0.55 - base_centre) / crop - (-LEAD_ROOM)) < 1e-6   # kasvot vasemmalla
+    shown = 3413.33 * punch.scale
+    assert abs(0.5 - punch.pos_x * 19.2 / shown - 0.55) < 1e-6      # punch keskellä
+
+    table["turn"][:] = -0.3                                          # katsoo vasemmalle
+    mirrored = Reframer({item.key: table}).from_item(item, 0.0, 9.0, off_axis=True)
+    mirrored_centre = 0.5 - mirrored.pos_x * 19.2 / 3413.33
+    assert abs((0.55 - mirrored_centre) / crop - LEAD_ROOM) < 1e-6   # kasvot oikealla

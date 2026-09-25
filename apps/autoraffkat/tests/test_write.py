@@ -1518,14 +1518,15 @@ class _StubReframer:
         self.scale = scale
         self.pos_x = pos_x
 
-    def from_item(self, item, t0, t1, focus="", headroom=1.0):
+    def from_item(self, item, t0, t1, focus="", headroom=1.0, extra=1.0, off_axis=False):
         from autoraffkat import reframe
 
         self.calls.append((item.key, round(t0, 3), round(t1, 3)))
         self.focus = [*getattr(self, "focus", []), focus]
+        self.asked = [*getattr(self, "asked", []), (round(extra, 4), off_axis)]
         if not self.ok:
             return None
-        return reframe.Reframe(scale=self.scale, pos_x=self.pos_x)
+        return reframe.Reframe(scale=self.scale * extra, pos_x=self.pos_x)
 
 
 def test_vertical_export_has_a_vertical_sequence(fixture_dir):
@@ -1818,3 +1819,30 @@ def test_flat_export_keeps_speaker_pieces_apart(fixture_dir):
     xml = build_fcpxml(by_key, segments, [], tl.frame_duration, tl.start,
                        tl.start + Fraction(35), "Palat", settings=_vertical_settings())
     assert len(ET.fromstring(xml).find(".//sequence/spine")) == 3
+
+
+def test_shorts_style_punches_in_centred_and_frames_the_base_off_axis(fixture_dir):
+    """Shorts: punch-pala zoomataan 112 %:iin ja kehystetään keskelle, perus-
+    pala sivuun. Paikallaan pysyvä zoomi on kehyksessä mukana (ei kerrota
+    toiseen kertaan), ja saman kameran punch-palat pysyvät erillisinä."""
+    from autoraffkat import movement
+    from autoraffkat.model import Globals
+    from autoraffkat.project import ProjectSettings
+
+    settings = ProjectSettings(globals=Globals(
+        vertical=True, movement=True, movement_style="shorts"))
+    segments = [
+        Segment("WIDE", "Laaja", 0.0, 4.0),
+        Segment("CLOSE_A", "Host", 4.0, 9.0),
+        Segment("CLOSE_A", "Host", 9.0, 13.0, punch=True),
+        Segment("CLOSE_A", "Host", 13.0, 18.0),
+        Segment("WIDE", "Laaja", 18.0, 36.0),
+    ]
+    stub = _StubReframer(scale=1.0)
+    _, xml = _multicam_cut(fixture_dir, segments=segments, settings=settings,
+                           reframer=stub)
+    clips = _spine_mc_clips(xml)
+    assert len(clips) == 5, [c.get("name") for c in clips]
+    assert stub.asked[1:4] == [(1.0, True), (movement.PUNCH, False), (1.0, True)]
+    punched = clips[2].find('mc-source[@srcEnable="video"]/adjust-transform')
+    assert abs(float(punched.get("scale").split()[0]) - movement.PUNCH) < 1e-9

@@ -1044,7 +1044,9 @@ function renderGlobals() {
     key: 'movement',
     label: T('movement.title'),
     hint: T('movement.hint'),
-    value: state.globals.movement ? T('panning.on') : T('audio.off'),
+    value: state.globals.movement
+      ? (state.globals.movement_style === 'shorts' ? T('movement.shorts') : T('movement.calm'))
+      : T('audio.off'),
     toggle: {
       checked: state.globals.movement,
       onChange: (on) => { state.globals.movement = on; renderGlobals(); schedule(0); },
@@ -1205,6 +1207,27 @@ function movementBody(host) {
   note.className = 'why';
   note.textContent = T('why.movement');
   host.append(note);
+  /* Tyyli: rauhallinen kameran vaihtelu tai lyhytvideoiden punch-in.
+     Valinta eikä säädin — kummankin luvut ovat movement.py:ssä
+     perusteluineen, ja kysymys on tyylistä, ei määrästä. */
+  const choices = document.createElement('div');
+  choices.className = 'choices';
+  [['calm', T('movement.calm'), T('movement.calmHint')],
+   ['shorts', T('movement.shorts'), T('movement.shortsHint')]].forEach(([value, title, hint]) => {
+    const label = document.createElement('label');
+    const radio = document.createElement('input');
+    radio.type = 'radio'; radio.name = 'movement_style'; radio.value = value;
+    radio.checked = (state.globals.movement_style || 'calm') === value;
+    radio.addEventListener('change', () => {
+      state.globals.movement_style = value;
+      renderGlobals();
+      schedule(0);
+    });
+    label.append(radio, Object.assign(document.createElement('b'), { textContent: ` ${title} ` }),
+      Object.assign(document.createElement('span'), { className: 'muted small', textContent: hint }));
+    choices.append(label);
+  });
+  host.append(choices);
 }
 
 

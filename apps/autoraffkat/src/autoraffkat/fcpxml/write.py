@@ -191,7 +191,7 @@ def _merge_spans(
         if b <= a:
             continue
         if (merged and merged[-1][0].angle == seg.angle and merged[-1][2] == a
-                and merged[-1][0].focus == seg.focus):
+                and (merged[-1][0].focus, merged[-1][0].punch) == (seg.focus, seg.punch)):
             prev_seg, prev_a, _ = merged[-1]
             merged[-1] = (prev_seg, prev_a, b)
         else:
@@ -576,9 +576,9 @@ def build_fcpxml(
         move = moves[index] if moves else _NO_MOVE
         shot = _span_reframe(
             reframer, item, seg, seg_start_tl, program_start + frame_duration * b,
-            headroom=max(move.start_scale, move.end_scale))
+            **_framing_request(move, seg, settings))
         transform = _transform_lines(
-            shot, move, b - a, frame_duration, "              ",
+            shot, _move_after(shot, move), b - a, frame_duration, "              ",
             conform=settings is not None and settings.globals.vertical,
             origin=src_frames)
 
@@ -816,7 +816,8 @@ def _merge_multicam_spans(
 
             # Pystyviennin puhujapalat ovat samaa kulmaa mutta eri rajaus:
             # ne ovat eri kuvia eikä niitä yhdistetä.
-            if seg.focus == prev_seg.focus and ((mc is None and prev_mc is None) or (
+            if (seg.focus, seg.punch) == (prev_seg.focus, prev_seg.punch) and (
+                    (mc is None and prev_mc is None) or (
                 mc is not None
                 and prev_mc is not None
                 and mc_id == prev_mc_id
@@ -896,10 +897,47 @@ def _movement_plan(
     """
     if settings is None or not settings.globals.movement:
         return []
+    segs = [seg for seg, _a, _b in spans]
+    # Pilkotun kuvan palat (punch ja sen naapurit samasta kamerasta):
+    # shorts-tyylissä ne eivät pusku, jottei koko hyppää punchin väliin.
+    split = [
+        seg.punch
+        or (i > 0 and segs[i - 1].angle == seg.angle and segs[i - 1].punch)
+        or (i + 1 < len(segs) and segs[i + 1].angle == seg.angle and segs[i + 1].punch)
+        for i, seg in enumerate(segs)
+    ]
     return movement.plan(
         [float(frame_duration * (b - _a)) for _seg, _a, b in spans],
-        [seg.label == WIDE_LABEL for seg, _a, _b in spans],
+        [seg.label == WIDE_LABEL for seg in segs],
+        style=settings.globals.movement_style,
+        punches=[seg.punch for seg in segs],
+        split=split,
     )
+
+
+def _framing_request(move: movement.Move, seg, settings) -> dict:
+    """Mitä kehystäjältä kysytään tälle kuvalle mikroliikkeen kanssa.
+
+    Paikallaan pysyvä zoomi (``extra``) lasketaan kehykseen, jotta kasvot
+    pysyvät keskiviivalla; liikkuvalle kuvalle vain sen suurin zoomi
+    (``headroom``) pidettävien kasvojen varaksi. Shorts-tyylissä perus-
+    pala sivuun ja punch keskelle (``off_axis``).
+    """
+    static = not move.animated and not move.identity
+    shorts = (settings is not None and settings.globals.movement
+              and settings.globals.movement_style == movement.STYLE_SHORTS)
+    return {
+        "headroom": max(move.start_scale, move.end_scale) if move.animated else 1.0,
+        "extra": move.start_scale if static else 1.0,
+        "off_axis": bool(shorts and not seg.punch),
+    }
+
+
+def _move_after(shot, move: movement.Move) -> movement.Move:
+    """Paikallaan pysyvä zoomi on jo kehyksessä; sitä ei kerrota toiseen kertaan."""
+    if shot is not None and not move.animated:
+        return _NO_MOVE
+    return move
 
 
 def _transform_lines(
@@ -964,7 +1002,7 @@ def _transform_lines(
 
 
 def _span_reframe(reframer, item, seg, t0: Fraction, t1: Fraction,
-                  headroom: float = 1.0):
+                  headroom: float = 1.0, extra: float = 1.0, off_axis: bool = False):
     """Pystyviennin kehystys yhdelle spanille, tai ``None``.
 
     Laajat jätetään kehyksittä: huoneen rajaus ei ole mittaus eikä
@@ -976,7 +1014,7 @@ def _span_reframe(reframer, item, seg, t0: Fraction, t1: Fraction,
     if reframer is None or item is None:
         return None
     return reframer.from_item(item, float(t0), float(t1), focus=seg.focus,
-                              headroom=headroom)
+                              headroom=headroom, extra=extra, off_axis=off_axis)
 
 
 # Liikkeen identtisyys, kun kytkin on pois päältä: kehystys kysytään
@@ -1723,7 +1761,7 @@ def build_multicam_fcpxml(
                 move = moves[index] if moves else _NO_MOVE
                 shot = reframer.from_item(
                     part, float(at), float(program_start + frame_duration * b),
-                    focus=seg.focus, headroom=max(move.start_scale, move.end_scale))
+                    focus=seg.focus, **_framing_request(move, seg, settings))
 
         own = set(mc.angle_ids)
         video_angle = next((x for x in angles_of.get(seg.angle, []) if x in own), "")
@@ -1765,7 +1803,7 @@ def build_multicam_fcpxml(
             video_angle, audio_angles, mc.angle_roles, raw_angles, pans,
             ducks, (at, program_start + frame_duration * b), mc, frame_duration,
             transform=_transform_lines(
-                shot, moves[index] if moves else _NO_MOVE,
+                shot, _move_after(shot, moves[index] if moves else _NO_MOVE),
                 b - a, frame_duration, "                ",
                 conform=settings is not None and settings.globals.vertical,
                 origin=start_frames),

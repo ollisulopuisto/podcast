@@ -283,7 +283,14 @@ keston, vaikka «Laajan kesto» olisi pienempi.
 Kaikkia kolmea koskee lyhin päällekkäispuheen kesto: ohikiitävä myötäily ei
 laukaise sääntöä.
 
-**Mikroliike** (oletuksena pois): pystyvientiä varten. Suunnitelma kirjoittaa
+**Mikroliike** (oletuksena pois) on kahta tyyliä. **Shorts** on
+lyhytvideoiden leikkausta: pitkät lähikuvat pilkotaan saman kameran
+kuviksi puhujan painotuksissa (kovat lauseen alut), vuorotellen
+perusrajaus — sivussa, tilaa katseen suuntaan — ja keskitetty 112 %:n
+punch-in, jolloin leikkaus vaihtaa sekä koon että sommittelun; jatkuva
+puhe saa puskun sisään. **Rauhallinen**, alla, on kameran vaihtelua.
+
+Rauhallisessa tyylissä, pystyvientiä varten, suunnitelma kirjoittaa
 jokaiselle kuvaklipille hienovaraisen, toistettavan skaalauksen — yhteensä
 100–110 %, lyhyet kuvat paikallaan, pidemmät hitaalla puskulla — jotta
 Smart Confin pystyrajaus tuntuu kameran vaihtelulta eikä kuvaruudulta.

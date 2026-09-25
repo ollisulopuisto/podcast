@@ -102,7 +102,7 @@ def name_tag(settings: ProjectSettings) -> str:
     # samasta jaksosta syntyy nyt kaksi tiedostoa, eikä Final Cutin
     # selaimessa saa jäädä epäselväksi kumpi niistä liikkuu.
     if g.movement:
-        parts.append("move")
+        parts.append("shorts" if g.movement_style == "shorts" else "move")
     # Pystyvienti vaihtaa projektin muodon: tuonti on lopputulos eikä
     # välietappi, ja selaimessa saa jäädä epäselväksi kumpi variantti
     # tämä on.

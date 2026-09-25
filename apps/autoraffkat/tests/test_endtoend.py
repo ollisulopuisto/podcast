@@ -391,6 +391,66 @@ def test_vertical_follows_the_speaker_inside_a_two_shot(scratch_xml, flip):
     assert all(sign * x > 0 for x in host) and all(sign * x < 0 for x in guest), moves
 
 
+@needs_ffmpeg
+def test_shorts_style_punches_in_on_the_same_camera(scratch_xml, monkeypatch):
+    """Shorts-tyyli rajapinnan kautta: vientiin tulee punch-inejä, eli
+    saman kameran peräkkäisiä kuvia 112 %:ssa, ja nimeen «shorts».
+
+    Fixturen «puhe» on yhtenäisiä siniääniä ilman lauseiden välisiä
+    taukoja, joten painotuksia ei synny; niiden tunnistus on testattu
+    ``test_movement``issa. Tässä pilkkoja lyö punchin ensimmäisen
+    lähikuvan keskelle, ja testi katsoo että vienti kantaa sen perille.
+    """
+    from dataclasses import replace
+    from itertools import pairwise
+
+    from autoraffkat import movement
+
+    def punch_middle(segments, grid, min_shot):
+        out, done = [], False
+        for seg in segments:
+            if not done and seg.label != "Laaja" and seg.end - seg.start >= 3 * min_shot:
+                third = (seg.end - seg.start) / 3
+                out += [replace(seg, end=seg.start + third),
+                        replace(seg, start=seg.start + third, end=seg.end - third, punch=True),
+                        replace(seg, start=seg.end - third)]
+                done = True
+            else:
+                out.append(seg)
+        return out
+
+    monkeypatch.setattr(movement, "punch_segments", punch_middle)
+    state = AppState(xml_path=str(scratch_xml()))
+    state.load()
+    for _ in range(200):
+        if state.progress.get("ready"):
+            break
+        time.sleep(0.05)
+    client = TestClient(create_app(state))
+    result = client.post("/api/settings", json={
+        "tracks": {k: v.to_json() for k, v in _tracks().items()},
+        "globals": {**Globals(min_shot=1.5, lead=0.15, confirm=0.3, min_overlap=0.4,
+                              movement=True).to_json(),
+                    "movement_style": "shorts", "wide_every": 0},
+    }).json()
+    assert result["ok"], result.get("problems")
+    assert state.settings.globals.movement_style == "shorts"
+    exp = client.post("/api/export").json()
+    assert exp["ok"], exp.get("problems")
+    assert "shorts" in pathlib.Path(exp["path"]).name
+    root = ET.fromstring(pathlib.Path(exp["path"]).read_text(encoding="utf-8"))
+    clips = list(root.find(".//sequence/spine"))
+    punched = []
+    for before, clip in pairwise(clips):
+        transform = clip.find("adjust-transform")
+        if transform is None or transform.get("scale") is None:
+            continue
+        if abs(float(transform.get("scale").split()[0]) - movement.PUNCH) < 1e-6:
+            punched.append((before.get("ref"), clip.get("ref")))
+    assert punched, "ei yhtään punch-iniä"
+    assert all(a == b for a, b in punched), punched   # sama kamera ennen punchia
+
+
 # ------------------------------------------------------------------ multicam
 
 
