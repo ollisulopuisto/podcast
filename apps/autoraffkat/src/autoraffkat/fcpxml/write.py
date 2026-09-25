@@ -416,6 +416,7 @@ def build_fcpxml(
     source: str = "",
     reframer=None,
     tc_start: Fraction = ZERO,
+    shots: list | None = None,
 ) -> str:
     """Rakentaa FCPXML-merkkijonon.
 
@@ -578,6 +579,8 @@ def build_fcpxml(
         shot = _span_reframe(
             reframer, item, seg, seg_start_tl, program_start + frame_duration * b,
             **_framing_request(move, seg, settings, pieces[index]))
+        _record(shots, a, b, item, src_start - item.asset_start, shot,
+                _move_after(shot, move), settings)
         transform = _transform_lines(
             shot, _move_after(shot, move), b - a, frame_duration, "              ",
             conform=settings is not None and settings.globals.vertical,
@@ -941,6 +944,27 @@ def _framing_request(move: movement.Move, seg, settings, piece: bool = False) ->
         "off_axis": bool(shorts and not seg.punch),
         "own": bool(shorts and piece),
     }
+
+
+def _record(shots, a: int, b: int, item, file_start, shot, move: movement.Move,
+            settings, lane: int = 0) -> None:
+    """Kuva renderöinnin listaan: samat luvut jotka ``_transform_lines``
+    kirjoittaa XML:ään, ks. ``render.py``."""
+    if shots is None:
+        return
+    from ..render import Shot
+
+    if item is None:
+        shots.append(Shot(a, b, lane=lane))
+        return
+    base = shot.scale if shot else 1.0
+    shots.append(Shot(
+        start=a, end=b, path=item.path or "", file_start=float(file_start),
+        width=item.width, height=item.height,
+        scale0=base * move.start_scale, scale1=base * move.end_scale,
+        pos_x=shot.pos_x if shot else 0.0, pos_y=shot.pos_y if shot else 0.0,
+        fill=settings is not None and settings.globals.vertical, lane=lane,
+    ))
 
 
 def _move_after(shot, move: movement.Move) -> movement.Move:
@@ -1552,7 +1576,7 @@ REACTION_LANE = 1
 
 def _reaction_clips(
     reactions, roles, angles_of, mc, frame_duration, program_start, program_end,
-    timeline=None, reframer=None, vertical: bool = False,
+    timeline=None, reframer=None, vertical: bool = False, settings=None, shots=None,
 ):
     """Reaktiokuvat sisäkkäisinä ``mc-clip``einä omalle lanelleen.
 
@@ -1627,6 +1651,13 @@ def _reaction_clips(
             transform = _transform_lines(shot, _NO_MOVE, dur, frame_duration,
                                          "                  ", conform=True,
                                          origin=source)
+        if shots is not None:
+            part = next((i for i in (timeline.track_media(key) if timeline else [])
+                         if i.placement_at(start)), None)
+            if part is not None:
+                first = to_frames(start - program_start, frame_duration)
+                _record(shots, first, first + dur, part, part.file_time_at(start),
+                        shot if vertical else None, _NO_MOVE, settings, lane=1)
         if transform:
             lines += [
                 f'                <mc-source angleID={quoteattr(angle_id)} '
@@ -1668,6 +1699,7 @@ def build_multicam_fcpxml(
     pans: dict[str, float] | None = None,
     ducks: dict[str, list] | None = None,
     reframer=None,
+    shots: list | None = None,
 ) -> str:
     """Rakentaa monikameraleikkauksen: yksi ``<mc-clip>`` per kuva.
 
@@ -1754,6 +1786,7 @@ def build_multicam_fcpxml(
         mc = timeline.multicam_at(at)
         if mc is None:
             # Osien välinen aukko: sisältöä ei ole, mutta spine ei saa katketa.
+            _record(shots, a, b, None, 0, None, _NO_MOVE, settings)
             body.append(
                 f'            <gap name="Gap" '
                 f'offset="{frames_str(a + tc_frames, frame_duration)}" start="0s" '
@@ -1764,18 +1797,16 @@ def build_multicam_fcpxml(
         # Kehystys: spanin osa se media-alkio jonka sijoitus kattaa alun —
         # _split_spans on jo rajannut spanin yhteen osaan.
         shot = None
-        if reframer is not None:
-            part = next(
-                (i for i in timeline.track_media(seg.angle)
-                 if i.placement_at(at)),
-                None,
-            )
-            if part is not None:
-                move = moves[index] if moves else _NO_MOVE
-                shot = reframer.from_item(
-                    part, float(at), float(program_start + frame_duration * b),
-                    focus=seg.focus, **_framing_request(move, seg, settings,
-                                                        pieces[index]))
+        part = next(
+            (i for i in timeline.track_media(seg.angle) if i.placement_at(at)),
+            None,
+        )
+        if reframer is not None and part is not None:
+            move = moves[index] if moves else _NO_MOVE
+            shot = reframer.from_item(
+                part, float(at), float(program_start + frame_duration * b),
+                focus=seg.focus, **_framing_request(move, seg, settings,
+                                                    pieces[index]))
 
         own = set(mc.angle_ids)
         video_angle = next((x for x in angles_of.get(seg.angle, []) if x in own), "")
@@ -1813,6 +1844,8 @@ def build_multicam_fcpxml(
             f'start="{frames_str(start_frames, frame_duration)}"',
             f'duration="{frames_str(b - a, frame_duration)}"',
         ]
+        _record(shots, a, b, part, part.file_time_at(at) if part else 0, shot,
+                _move_after(shot, moves[index] if moves else _NO_MOVE), settings)
         sources = _mc_sources(
             video_angle, audio_angles, mc.angle_roles, raw_angles, pans,
             ducks, (at, program_start + frame_duration * b), mc, frame_duration,
@@ -1846,6 +1879,7 @@ def build_multicam_fcpxml(
                 frame_duration, program_start, program_end,
                 timeline=timeline, reframer=reframer,
                 vertical=settings is not None and settings.globals.vertical,
+                settings=settings, shots=shots,
             )
         if not attached_room and room_ids:
             attached_room = True

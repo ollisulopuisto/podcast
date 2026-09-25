@@ -301,6 +301,14 @@ tiedoston. Viennin nimeen tulee `move`, jotta saman jaksoksi kaksi versiota
 erotuvat selaimessa, ja jokaisella klipillä on avainsana — puhujan nimi tai
 laajalla «Laaja» — jolla kuvajoukon valitsee Final Cutin hakemistosta.
 
+**Renderöi video** (Vie XML -painikkeen vieressä): kirjoittaa viennin
+tavalliseen tapaan ja renderöi sen viereen MP4:n — samat leikkaukset,
+kehystys, mikroliike, reaktiokuvat ja miksattu ääni kuin Final Cut
+näyttäisi samasta XML:stä, avaamatta Final Cutia. Tarkoitettu koko jakson
+pystyvideoksi, josta shortsien kohdat poimiva sovellus etsii paikat; kun
+leikkausta muokkaa käsin, vie Final Cutista. Renderöinti on moninkertaisesti
+reaaliaikaa nopeampi.
+
 **Pystyvienti** (oletuksena pois): projekti kirjoitetaan valmiiksi
 1080×1920, jokainen kuva asetetaan Spatial Conformiin **Fill**, ja jokainen
 lähikuva saa sen päälle *mitatun* muunnoksen — joten Final Cutiin tuonti on

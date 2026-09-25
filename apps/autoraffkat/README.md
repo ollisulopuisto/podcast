@@ -303,6 +303,13 @@ browser, and every clip carries a keyword — the speaker's name, or «Laaja»
 for the wide — which is how a batch of clips is selected in Final Cut's
 timeline index.
 
+**Render video** (next to Export): writes the export as usual and renders
+an MP4 beside it — the same cuts, framing, micro-movement, reaction shots
+and mixed audio as Final Cut would show from that XML, without opening
+Final Cut. Meant for the whole-episode vertical video that a clip-picking
+app scans for shorts; when you adjust the edit by hand, export from Final
+Cut instead. Renders run at several times real time.
+
 **Vertical export** (off by default): the project is written as 1080×1920,
 every picture is set to Spatial Conform **Fill**, and each close-up gets a
 *measured* transform on top — so importing into Final Cut is the final step;

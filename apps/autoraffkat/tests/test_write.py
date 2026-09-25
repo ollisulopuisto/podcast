@@ -148,7 +148,7 @@ def test_role_sanitizing():
 
 
 def _multicam_cut(fixture_dir, segments=None, settings=None, pans=None,
-                  ducks=None, reframer=None):
+                  ducks=None, reframer=None, shots=None):
     """Monikameraleikkaus fixturesta. Kolmas kuva ylittää osien rajan 18 s."""
     tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
     segments = segments or [
@@ -169,6 +169,7 @@ def _multicam_cut(fixture_dir, segments=None, settings=None, pans=None,
         pans=pans,
         ducks=ducks,
         reframer=reframer,
+        shots=shots,
     )
     return tl, xml
 
@@ -1850,3 +1851,34 @@ def test_shorts_style_punches_in_centred_and_frames_the_base_off_axis(fixture_di
     assert stub.own == [False, True, True, True, False]
     punched = clips[2].find('mc-source[@srcEnable="video"]/adjust-transform')
     assert abs(float(punched.get("scale").split()[0]) - movement.PUNCH) < 1e-9
+
+
+def test_the_writer_hands_over_a_shot_list_matching_the_xml(fixture_dir):
+    """Renderöinti piirtää saman kuin Final Cut: kirjoittaja antaa jokaisesta
+    spinen klipistä kameratiedoston, kohdan tiedostossa ja muunnoksen —
+    samat luvut jotka se kirjoittaa XML:ään, jottei kaksi päätöstä ajaudu
+    erilleen."""
+    from autoraffkat.render import Shot
+
+    shots: list = []
+    stub = _StubReframer(scale=1.1, pos_x=12.5)
+    tl, xml = _multicam_cut(fixture_dir, segments=_MOVEMENT_SPANS,
+                            settings=_vertical_settings(), reframer=stub, shots=shots)
+    clips = _spine_mc_clips(xml)
+    base = [s for s in shots if s.lane == 0]
+    assert len(base) == len(clips)
+    assert all(isinstance(s, Shot) for s in shots)
+    fd = tl.frame_duration
+    for shot, clip in zip(base, clips, strict=True):
+        assert shot.start * fd == parse_time(clip.get("offset"))
+        assert (shot.end - shot.start) * fd == parse_time(clip.get("duration"))
+        transform = clip.find('mc-source[@srcEnable="video"]/adjust-transform')
+        assert abs(shot.scale0 - float(transform.get("scale").split()[0])) < 1e-9
+        assert abs(shot.pos_x - float(transform.get("position").split()[0])) < 1e-9
+        assert shot.fill
+        # Kamera ja kohta tiedostossa: monikamerassa aikajanan hetki on
+        # fixturessa tiedoston hetki, ja osa 2 on oma tiedostonsa.
+        at = float(parse_time(clip.get("offset")))
+        assert abs(shot.file_start - at) < 1e-6
+        part = "01" if at < 18 else "02"
+        assert shot.path.endswith(f"{part}.mp4"), (shot.path, at)

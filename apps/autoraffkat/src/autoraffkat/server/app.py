@@ -129,6 +129,10 @@ class AppState:
                                  "fraction": 0.0, "running": False}
     )
     mix_result: mix.MixResult = field(default_factory=mix.MixResult)
+    # Renderöinti (``render.py``): vienti videoksi ilman Final Cutia.
+    render_progress: dict = field(
+        default_factory=lambda: {"running": False, "fraction": 0.0,
+                                 "path": "", "error": ""})
     mix_progress: dict = field(
         default_factory=lambda: {
             "done": 0,
@@ -568,6 +572,72 @@ class AppState:
                  -2 if r.shot and r.shot == grid.wide_key
                  else names.index(r.speaker))
                 for r in found if r.speaker in names]
+
+    def render_job(self, shots, mic_tracks, replacements, room, ducks,
+                   program_start, program_end, movie: str) -> dict:
+        """Renderöinnin syöte samoista päätöksistä joilla XML juuri kirjoitettiin.
+
+        Kuvat tulevat kirjoittajalta (``shots``), ääni samoista käsitellyistä
+        tiedostoista, vaimennus- ja panorointikäyristä ja tilaäänestä kuin
+        viennissä — mitään ei päätetä uudestaan.
+        """
+        from .. import render
+
+        assert self.timeline is not None
+        by_key = self.timeline.media_by_key()
+        pans = self.pans_now()
+        gain = (self.settings.globals.master_db
+                if self.settings.globals.compound_audio else 0.0)
+
+        def placements(item):
+            return [(float(p.offset), float(p.end),
+                     float(p.source_at(p.offset) - item.asset_start))
+                    for p in item.placements]
+
+        sources = []
+        for key, speaker in mic_tracks:
+            for item in self.timeline.track_media(key):
+                sources.append(render.AudioSource(
+                    replacements.get(item.key, item.path), placements(item),
+                    duck=(ducks or {}).get(speaker) or [],
+                    pan=float(pans.get(speaker, 0.0)), gain_db=gain))
+        for key, path in room:
+            item = by_key.get(key)
+            if item is not None:
+                sources.append(render.AudioSource(path, placements(item), gain_db=gain))
+        if self.settings.globals.vertical:
+            from .. import reframe
+
+            width, height = reframe.PROJECT_W, reframe.PROJECT_H
+        else:
+            video = next((m for m in self.timeline.media if m.has_video), None)
+            width = video.width if video and video.width else 1920
+            height = video.height if video and video.height else 1080
+        frame = self.timeline.frame_duration
+        return {"shots": shots, "sources": sources, "width": width, "height": height,
+                "frame_duration": frame, "program_start": float(program_start),
+                "frames": int(round((program_end - program_start) / frame)),
+                "path": movie}
+
+    def run_render(self, job: dict) -> None:
+        """Taustasäie: renderöi MP4:n. Minuutteja; tila näkyy ``render_progress``issa."""
+        from .. import render
+
+        self.render_progress.update({"running": True, "fraction": 0.0,
+                                     "path": job["path"], "error": ""})
+
+        def report(fraction: float) -> None:
+            self.render_progress["fraction"] = round(float(fraction), 4)
+
+        try:
+            render.render_program(job["shots"], job["sources"], job["width"],
+                                  job["height"], job["frame_duration"], job["frames"],
+                                  job["program_start"], job["path"], progress=report)
+        except Exception as exc:  # taustasäie ei saa kaatua hiljaa
+            self.render_progress["error"] = str(exc)
+            traceback.print_exc()
+        finally:
+            self.render_progress["running"] = False
 
     def pans_now(self) -> dict:
         """Vientiin menevä panorointi: mitattu paikka, jos kytkin on päällä.
@@ -1201,6 +1271,7 @@ def _state_json(state: AppState) -> dict:
         "loudness_targets": LOUDNESS_TARGETS,
         "cores": os.cpu_count() or 1,
         "workers_auto": chain.worker_count(),
+        "render": dict(state.render_progress),
         "mix": {
             "progress": state.mix_progress,
             "ready": len(state.mix_result.replacements),
@@ -1491,6 +1562,10 @@ def create_app(state: AppState) -> FastAPI:
         Ottaa säätimet vastaan samassa pyynnössä, jotta vienti käyttää varmasti
         sitä mitä ruudulla näkyy eikä edellistä tallennettua tilaa.
         """
+        want_render = bool((payload or {}).get("render"))
+        if want_render and state.render_progress.get("running"):
+            raise HTTPException(409, t("render.busy"))
+        shot_list: list | None = [] if want_render else None
         with state.lock:
             if payload:
                 state.apply(payload)
@@ -1635,6 +1710,7 @@ def create_app(state: AppState) -> FastAPI:
                         pans=state.pans_now(),
                         ducks=ducks,
                         reframer=reframer,
+                        shots=shot_list,
                     )
                 else:
                     # Hiljainen pudotus littanaan vientiin ei saa jäädä
@@ -1656,14 +1732,23 @@ def create_app(state: AppState) -> FastAPI:
                         source=state.xml_path,
                         reframer=reframer,
                         tc_start=state.timeline.tc_start,
+                        shots=shot_list,
                     )
                 write_fcpxml(out_path, xml)
             except (WriteError, OSError) as exc:
                 raise HTTPException(400, str(exc)) from exc
             project.save(state.xml_path, state.settings)
+            rendering = None
+            if want_render:
+                movie = os.path.splitext(out_path)[0] + ".mp4"
+                job = state.render_job(shot_list, mic_tracks, replacements, room,
+                                       ducks, program_start, program_end, movie)
+                threading.Thread(target=state.run_render, args=(job,), daemon=True).start()
+                rendering = {"path": movie, "running": True}
         # Seuraavan viennin nimi mukaan: ruudulla näkyvä polku on juuri
         # kirjoitettu, ja ilman tätä se jäisi lupaamaan väärää tiedostoa.
         return {
+            "render": rendering,
             "ok": True,
             "path": out_path,
             "cuts": len(decision.segments),

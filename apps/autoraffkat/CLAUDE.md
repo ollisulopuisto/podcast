@@ -1119,6 +1119,32 @@ files session measuring an export, 2026-09-25). Not yet confirmed by an
 import — do that before trusting it. The keyframe overrides the attribute,
 so the attribute carries the static case.
 
+## Rendering draws the export, it does not decide anything
+
+**Render video** writes the export and an MP4 beside it (`render.py`). The
+user's workflow (2026-09-25): the whole episode as a vertical video goes to
+a separate app that picks short-clip spots, and those are cut from the
+render without reopening Final Cut; Final Cut stays for when the edit is
+adjusted by hand. So the render must look like Final Cut's export of the
+same XML, and the only way to guarantee that is to decide nothing here: the
+writer hands over a `Shot` for every spine and reaction clip — file, file
+time, scale at start and end, position — built from the same numbers it
+writes (`_record`), and the audio is the same processed files, duck curves,
+pans and room tone as the export (`AppState.render_job`).
+
+Two ffmpeg facts cost a measurement each. `crop` does not reconfigure when
+its input size changes mid-stream: under an animated `scale` its `in_w`
+stayed the first frame's width and a test marker slid 185 px where the real
+move is 48 — so the scaled size is computed from the frame index in both
+filters. And the two filters do not agree on `n`: `scale`'s runs one ahead
+of `crop`'s (first frame 3.5 px off), so the index comes from the timestamp
+(`round(t*fps)`), which both see alike. Each shot is its own segment, then
+a stream-copy concat: a filter graph of hundreds of shots is fragile, and
+frame counts per shot make the length exact by construction. Audio is
+summed in one-minute blocks — an hour of two microphones in memory is
+gigabytes. Pan follows FCP's balance for a mono clip in a stereo project
+(full level both sides at centre), not constant power.
+
 ## Two movement styles: calm and shorts
 
 `movement_style` picks between two editing languages, and the user asked

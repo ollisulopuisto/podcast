@@ -62,6 +62,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "fi": "Valitse ainakin yksi mikki ja anna sille puhuja.",
         "en": "Choose at least one microphone and name its speaker.",
     },
+    "render.busy": {
+        "fi": "Edellinen renderöinti on vielä kesken.",
+        "en": "The previous render is still running.",
+    },
     "roles.group_without_speakers": {
         "fi": "Ryhmäkuvasta «{name}» ei ole valittu ketään. Valitse kortista "
         "ketkä kuvassa näkyvät.",

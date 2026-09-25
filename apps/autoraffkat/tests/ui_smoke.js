@@ -474,6 +474,8 @@ for (const lang of ['fi', 'en']) {
 async function asyncPaths() {
   await step('send', () => context.send());
   await step('exportXml', () => context.exportXml());
+  /* Renderöinti: vienti renderöintipyynnöllä ja edistymisen seuranta. */
+  await step('renderVideo', () => context.renderVideo());
   await step('openXml', () => context.openXml('/x/test.fcpxml'));
   /* Ilman polkua: selaimen haara, jossa valitsin on palvelimella. */
   await step('openXml (valitsin)', () => context.openXml());

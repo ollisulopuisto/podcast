@@ -1627,3 +1627,77 @@ def test_measuring_for_vertical_also_measures_the_crowd_shots(scratch_xml, monke
     state.measure_video()
     assert asked == ["WIDE.mp4"] and "WIDE.mp4" in state.crowd_tables
     assert not state.video_missing()
+
+
+@needs_ffmpeg
+def test_render_draws_the_same_cut_as_the_export(scratch_xml):
+    """«Renderöi video»: sama vienti, ja sen viereen MP4 joka näyttää sen.
+
+    Kamerat ovat fixturessa eri värisiä (laaja harmaa, Host laivastonsininen,
+    Guest viininpunainen), joten jokaisen kuvan keskiruudun väri kertoo
+    näkyykö oikea kamera. Kesto on ohjelman ruutuina täsmälleen, ja Hostin
+    puhe kuuluu siellä missä se aikajanalla on.
+    """
+    import subprocess
+
+    import numpy as np
+
+    state = AppState(xml_path=str(scratch_xml("multicam.fcpxml")))
+    state.load()
+    for _ in range(200):
+        if state.progress.get("ready"):
+            break
+        time.sleep(0.05)
+    client = TestClient(create_app(state))
+    payload = {
+        "tracks": {k: v.to_json() for k, v in _multicam_tracks().items()},
+        "globals": Globals(min_shot=1.5, lead=0.15, confirm=0.3,
+                           min_overlap=0.4, vertical=True).to_json(),
+    }
+    result = client.post("/api/settings", json=payload).json()
+    assert result["ok"], result.get("problems")
+    exp = client.post("/api/export", json={**payload, "render": True}).json()
+    assert exp["ok"], exp.get("problems")
+    movie = exp["render"]["path"]
+    assert movie.endswith(".mp4") and movie[:-4] == exp["path"][:-7]
+    for _ in range(1200):
+        if not state.render_progress.get("running"):
+            break
+        time.sleep(0.1)
+    assert not state.render_progress.get("error"), state.render_progress
+    assert pathlib.Path(movie).exists()
+
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_frames",
+         "-show_entries", "stream=nb_read_frames,width,height", "-of", "csv=p=0", movie],
+        check=True, capture_output=True, text=True).stdout.strip().split(",")
+    width, height, frames = map(int, probe)
+    assert (width, height) == (1080, 1920)
+    program = result["program"]["duration"]
+    assert frames == round(program * 25)
+
+    colours = {"Laaja": (128, 128, 128), "Host": (0, 0, 128), "Guest": (128, 0, 0)}
+    start = result["program"]["start"]
+    for seg in result["segments"]:
+        middle = (seg["start"] + seg["end"]) / 2 - start
+        raw = subprocess.run(
+            ["ffmpeg", "-v", "error", "-ss", f"{middle:.3f}", "-i", movie,
+             "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+            check=True, capture_output=True).stdout
+        pixel = np.frombuffer(raw, np.uint8).reshape(1920, 1080, 3)[960, 540]
+        want = colours[seg["label"]]
+        assert np.abs(pixel.astype(int) - want).max() < 40, (seg, pixel)
+
+    pcm = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", movie, "-ac", "1", "-ar", "8000",
+         "-f", "f32le", "-"], check=True, capture_output=True).stdout
+    audio = np.frombuffer(pcm, np.float32)
+    level = lambda a, b: 20 * np.log10(np.sqrt(np.mean(audio[int(a * 8000):int(b * 8000)] ** 2)) + 1e-9)  # noqa: E731
+    talk_a, talk_b = SPEECH_A[0]
+    assert level(talk_a - start + 0.5, talk_b - start - 0.5) > level(0.2 - start + 0.2, 0.8) + 20
+    # Tahdissa ruudun tarkkuudella: puheen alku kuuluu siinä kohdassa missä
+    # se aikajanalla on (±1 ruutu = 40 ms).
+    frame = 0.005
+    blocks = np.sqrt(np.mean(audio[: len(audio) // 40 * 40].reshape(-1, 40) ** 2, axis=1))
+    onset = np.flatnonzero(blocks > 10 ** (-30 / 20))[0] * frame
+    assert abs(onset - (talk_a - start)) < 0.04, onset

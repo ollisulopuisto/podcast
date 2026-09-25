@@ -2800,6 +2800,55 @@ async function exportXml() {
   }
 }
 
+/* Renderöinti: sama vienti, ja sen viereen MP4 joka näyttää sen. Koko jakso
+   pystyvideona, josta erillinen sovellus poimii shortsit — Final Cutia ei
+   tarvitse avata. Minuutteja, joten tausta ja edistyminen painikkeessa. */
+async function renderVideo() {
+  const button = $('render');
+  if (button.disabled) return;
+  setBusy(button, true, T('app.renderStarting'));
+  try {
+    const response = await fetch('/api/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payload(), render: true }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      banner((data.problems || [data.detail || T('app.renderFailed', { error: '' })]).join('\n'), true);
+      setBusy(button, false);
+      return;
+    }
+    renderExported(data.path, T('app.exportedCuts', { cuts: data.cuts }));
+    if (data.next_path) { state.output_path = data.next_path; renderHeader(); }
+    banner((data.warnings || []).join('\n'));
+    watchRender(button);
+  } catch (err) {
+    banner(T('app.renderFailed', { error: err.message }), true);
+    setBusy(button, false);
+  }
+}
+
+/* Edistyminen tilasta sekunnin välein, kunnes valmis tai virhe. */
+async function watchRender(button) {
+  try {
+    const response = await fetch('/api/state');
+    const data = await response.json();
+    const job = data.render || {};
+    if (job.running) {
+      button.textContent = T('app.rendering', { percent: Math.round((job.fraction || 0) * 100) });
+      setTimeout(() => watchRender(button), 1000);
+      return;
+    }
+    setBusy(button, false);
+    if (job.error) banner(T('app.renderFailed', { error: job.error }), true);
+    else $('status').textContent = T('app.rendered', { path: job.path });
+  } catch (err) {
+    setBusy(button, false);
+    banner(T('app.renderFailed', { error: err.message }), true);
+  }
+}
+
 /* ------------------------------------------------------------ käynnistys */
 
 function renderHeader() {
@@ -2910,6 +2959,7 @@ function renderStatic() {
   const relinkBtn = $('relink');
   if (relinkBtn) relinkBtn.textContent = T('app.relink');
   $('export').innerHTML = `${T('app.export')} <kbd>⌘E</kbd>`;
+  $('render').textContent = T('app.render');
 }
 
 /* Tiedoston avaus. Valitsin on kahdessa paikassa, koska selaimessa ei ole
@@ -3036,6 +3086,7 @@ async function boot() {
 
 $('open').addEventListener('click', () => openXml());
 $('export').addEventListener('click', exportXml);
+$('render').addEventListener('click', renderVideo);
 const relinkBtnEl = $('relink');
 if (relinkBtnEl) relinkBtnEl.addEventListener('click', () => relinkFiles());
 /* Lukeminen jatkuu verhokäyrien laskentana taustalla, joten painike vapautuu
