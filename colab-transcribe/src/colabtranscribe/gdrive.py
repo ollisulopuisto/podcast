@@ -113,6 +113,9 @@ def create_input_archive(input_dir: Path, archive_path: Path) -> Path:
     archive_path.parent.mkdir(parents=True, exist_ok=True)
 
     with tarfile.open(archive_path, "w") as tar:
+        if root.is_file():
+            tar.add(root, arcname=root.name)
+            return archive_path
         for dirpath, dirnames, filenames in root.walk(follow_symlinks=False):
             dirnames[:] = [d for d in dirnames if not d.startswith(".")]
             for name in filenames:
@@ -129,6 +132,7 @@ def create_input_archive(input_dir: Path, archive_path: Path) -> Path:
                 tar.add(file_path, arcname=rel_name)
 
     return archive_path
+
 
 
 @functools.lru_cache(maxsize=32)

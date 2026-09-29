@@ -526,3 +526,71 @@ def test_plan_commands_resolves_relative_output_dir(tmp_path: Path):
     cmds = driver.plan_commands(options, [])
     download_cmd = next(c for c in cmds if c[1] == "download")
     assert download_cmd[-1] == str(tmp_path / "output")
+
+
+def test_list_input_files_single_file(tmp_path: Path):
+    audio = tmp_path / "puhe.wav"
+    audio.write_bytes(b"data")
+    assert driver.list_input_files(audio) == ["puhe.wav"]
+
+
+def test_has_nhsx_files(tmp_path: Path):
+    assert driver.has_nhsx_files(tmp_path) is False
+
+    nhsx_file = tmp_path / "jakso.nhsx"
+    nhsx_file.write_text("<Session/>", encoding="utf-8")
+    assert driver.has_nhsx_files(tmp_path) is True
+    assert driver.has_nhsx_files(nhsx_file) is True
+
+    audio_file = tmp_path / "puhe.wav"
+    audio_file.write_bytes(b"data")
+    assert driver.has_nhsx_files(audio_file) is False
+
+
+def test_plan_commands_single_audio_file_direct(tmp_path: Path):
+    audio = tmp_path / "haastattelu.mp3"
+    audio.write_bytes(b"data")
+    options = RunOptions(input_dir=str(audio), output_dir="out", transfer="direct")
+    commands = driver.plan_commands(options, ["haastattelu.mp3"])
+
+    upload_cmds = [c for c in commands if c[0] == "colab" and c[1] == "upload"]
+    audio_uploads = [c for c in upload_cmds if c[-1] == "/content/input/haastattelu.mp3"]
+    assert len(audio_uploads) == 1
+    assert audio_uploads[0][4] == str(audio)
+
+
+def test_plan_commands_single_audio_file_drive(tmp_path: Path):
+    audio = tmp_path / "haastattelu.mp3"
+    audio.write_bytes(b"data")
+    options = RunOptions(input_dir=str(audio), output_dir="out", transfer="drive")
+    commands = driver.plan_commands(options, ["haastattelu.mp3"])
+
+    drive_upload = next(c for c in commands if c[0] == "drive" and c[1] == "upload")
+    assert drive_upload[2] == str(audio)
+
+
+def test_parse_generated_transcripts():
+    output = (
+        "Litteroidaan tiedostoa: /content/input/haastattelu.mp3\n"
+        "Litterointi luotu: /content/output/transcripts/haastattelu.json\n"
+        "Koko putki suoritettu onnistuneesti.\n"
+    )
+    assert driver.parse_generated_transcripts(output) == [
+        "/content/output/transcripts/haastattelu.json"
+    ]
+
+
+def test_get_transcript_files(tmp_path: Path):
+    out_dir = tmp_path / "out"
+    transcripts_dir = out_dir / "transcripts"
+    transcripts_dir.mkdir(parents=True)
+    json_f = transcripts_dir / "audio.json"
+    json_f.write_text("{}", encoding="utf-8")
+    txt_f = transcripts_dir / "audio.txt"
+    txt_f.write_text("puhe", encoding="utf-8")
+    other_f = transcripts_dir / "ignore.bin"
+    other_f.write_bytes(b"")
+
+    found = driver.get_transcript_files(out_dir)
+    assert found == [json_f, txt_f]
+

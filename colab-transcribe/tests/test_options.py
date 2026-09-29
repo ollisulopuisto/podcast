@@ -121,3 +121,12 @@ def test_resolved_output_dir_no_input():
 
     options = RunOptions(input_dir="", output_dir="output")
     assert options.resolved_output_dir() == Path("output")
+
+
+def test_resolved_output_dir_when_input_is_file(tmp_path):
+    audio_file = tmp_path / "puhe.wav"
+    audio_file.write_bytes(b"")
+    options = RunOptions(input_dir=str(audio_file), output_dir="output")
+    assert options.resolved_output_dir() == tmp_path / "output"
+
+

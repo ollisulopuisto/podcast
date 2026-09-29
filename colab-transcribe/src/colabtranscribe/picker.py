@@ -24,6 +24,18 @@ on error number -128
 end try
 """
 
+_CHOOSE_FILE = """
+try
+    set f to choose file with prompt {prompt} {start} {type_clause}
+    return POSIX path of f
+on error number -128
+    return ""
+end try
+"""
+
+AUDIO_EXTENSIONS = (".wav", ".aiff", ".flac", ".m4a", ".mp4", ".mp3")
+
+
 
 def _load_appkit():
     """AppKit tuodaan tässä, jotta testi voi ohittaa tai korvata sen."""
@@ -206,3 +218,164 @@ def pick_folder(directory: str = "", prompt: str = "") -> str | None:
             return cleaned
         return os.path.abspath(cleaned)
     return None
+
+
+def _pick_file_macos(
+    directory: str = "",
+    prompt: str = "",
+    file_types: list[str] | tuple[str, ...] | None = None,
+) -> str | None:
+    prompt_text = f'"{prompt}"' if prompt else '"Valitse tiedosto"'
+    start = (
+        f'default location POSIX file "{directory}"'
+        if directory and os.path.exists(directory)
+        else ""
+    )
+    type_clause = ""
+    if file_types:
+        formatted = ", ".join(f'"{t.lstrip(".")}"' for t in file_types)
+        type_clause = f"of type {{{formatted}}}"
+    _ensure_foreground()
+    result = _osascript(
+        _CHOOSE_FILE.format(prompt=prompt_text, start=start, type_clause=type_clause)
+    )
+    if result:
+        return result.strip()
+    return None
+
+
+def _pick_file_tk(
+    directory: str = "",
+    prompt: str = "",
+    file_types: list[str] | tuple[str, ...] | None = None,
+) -> str | None:
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        with contextlib.suppress(Exception):
+            root.attributes("-topmost", True)
+            root.focus_force()
+        tk_types = []
+        if file_types:
+            patterns = " ".join(f"*.{t.lstrip('.')}" for t in file_types)
+            tk_types.append(("Tuetut tiedostot", patterns))
+        tk_types.append(("Kaikki tiedostot", "*.*"))
+        res = filedialog.askopenfilename(
+            initialdir=directory or None,
+            title=prompt or "Valitse tiedosto",
+            filetypes=tk_types,
+        )
+        root.destroy()
+        return res or None
+    except Exception:
+        return None
+
+
+def _pick_file_windows(
+    directory: str = "",
+    prompt: str = "",
+    file_types: list[str] | tuple[str, ...] | None = None,
+) -> str | None:
+    escaped_dir = (
+        directory.replace("'", "''") if directory and os.path.exists(directory) else ""
+    )
+    init_part = f"$f.InitialDirectory = '{escaped_dir}';" if escaped_dir else ""
+    title = prompt or "Valitse tiedosto"
+    filter_part = ""
+    if file_types:
+        patterns = ";".join(f"*.{t.lstrip('.')}" for t in file_types)
+        filter_part = f"$f.Filter = 'Tuetut tiedostot|{patterns}|Kaikki tiedostot|*.*';"
+    script = (
+        "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;"
+        "$f = New-Object System.Windows.Forms.OpenFileDialog;"
+        f"$f.Title = '{title}';"
+        f"{init_part}"
+        f"{filter_part}"
+        "$top = New-Object System.Windows.Forms.Form;"
+        "$top.TopMost = $true;"
+        "if ($f.ShowDialog($top) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.FileName }"
+    )
+    if shutil.which("powershell"):
+        try:
+            done = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            if done.returncode == 0 and done.stdout.strip():
+                return done.stdout.strip()
+            if done.returncode == 0 and not done.stdout.strip():
+                return None
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return _pick_file_tk(directory, prompt, file_types)
+
+
+def _pick_file_linux(
+    directory: str = "",
+    prompt: str = "",
+    file_types: list[str] | tuple[str, ...] | None = None,
+) -> str | None:
+    if shutil.which("zenity"):
+        title = prompt or "Valitse tiedosto"
+        cmd = ["zenity", "--file-selection", f"--title={title}"]
+        if directory and os.path.exists(directory):
+            cmd.append(f"--filename={os.path.abspath(directory)}/")
+        if file_types:
+            patterns = " ".join(f"*.{t.lstrip('.')}" for t in file_types)
+            cmd.append(f"--file-filter=Tuetut tiedostot | {patterns}")
+        try:
+            done = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if done.returncode == 0 and done.stdout.strip():
+                return done.stdout.strip()
+            if done.returncode == 1:
+                return None
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    if shutil.which("kdialog"):
+        filter_str = (
+            " ".join(f"*.{t.lstrip('.')}" for t in file_types) if file_types else "*"
+        )
+        cmd = ["kdialog", "--getopenfilename", directory or ".", filter_str]
+        try:
+            done = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if done.returncode == 0 and done.stdout.strip():
+                return done.stdout.strip()
+            if done.returncode == 1:
+                return None
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    return _pick_file_tk(directory, prompt, file_types)
+
+
+def pick_file(
+    directory: str = "",
+    prompt: str = "",
+    file_types: list[str] | tuple[str, ...] | None = None,
+) -> str | None:
+    """Avaa järjestelmän natiivin tiedostonvalintaikkunan.
+
+    Palauttaa valitun tiedoston polun tai None jos käyttäjä peruutti.
+    """
+    if sys.platform == "darwin":
+        path = _pick_file_macos(directory, prompt, file_types)
+    elif sys.platform == "win32":
+        path = _pick_file_windows(directory, prompt, file_types)
+    elif sys.platform.startswith("linux"):
+        path = _pick_file_linux(directory, prompt, file_types)
+    else:
+        path = _pick_file_tk(directory, prompt, file_types)
+
+    if path:
+        cleaned = path.strip()
+        if re.match(r"^[a-zA-Z]:[\\/]", cleaned):
+            return cleaned
+        return os.path.abspath(cleaned)
+    return None
+

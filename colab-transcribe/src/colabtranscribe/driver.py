@@ -38,6 +38,7 @@ COMMAND_TIMEOUT = 3 * 3600
 def list_input_files(input_dir: Path) -> list[str]:
     """Kaikki tiedostot suhteellisina polkuina, syvyydestä riippumatta.
 
+    Jos input_dir on yksittäinen tiedosto, palautetaan vain sen nimi.
     Ei suodateta ääneen: skripti tarvitsee myös `.nhsx`-istunnot, ja sen
     tarvitsema se itse. Piilotetut tiedostot ja hakemistot (alkavat
     pisteellä) suljetaan pois, koska ne ovat metadataa, ei käyttötietoa.
@@ -46,6 +47,10 @@ def list_input_files(input_dir: Path) -> list[str]:
     Järjestys on polun järjestys, jotta suunnitelma on sama joka ajolla.
     """
     root = input_dir.resolve()
+    if root.is_file():
+        return [root.name]
+    if not root.is_dir():
+        return []
     found: list[str] = []
     for dirpath, dirnames, filenames in root.walk(follow_symlinks=False):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
@@ -61,6 +66,24 @@ def list_input_files(input_dir: Path) -> list[str]:
                 continue
             found.append(path.relative_to(root).as_posix())
     return sorted(found)
+
+
+def has_nhsx_files(path: Path | str) -> bool:
+    """Tarkistaa onko polku .nhsx-tiedosto tai kansio jossa on .nhsx-tiedostoja."""
+    p = Path(path).resolve()
+    if not p.exists():
+        return False
+    if p.is_file():
+        return p.suffix.lower() == ".nhsx"
+    try:
+        return any(
+            item.suffix.lower() == ".nhsx"
+            for item in p.iterdir()
+            if item.is_file() and not item.name.startswith(".")
+        )
+    except OSError:
+        return False
+
 
 
 def plan_commands(
@@ -158,7 +181,8 @@ def plan_commands(
         # miten se suoritetaan.
         source = Path(f)
         if options.input_dir and not source.is_absolute():
-            source = Path(options.input_dir) / source
+            inp = Path(options.input_dir)
+            source = inp if inp.is_file() else inp / source
         commands.append(
             [
                 "colab",
@@ -200,6 +224,31 @@ def parse_generated(output: str) -> list[str]:
     return [
         line.split(marker, 1)[1].strip() for line in output.splitlines() if marker in line
     ]
+
+
+def parse_generated_transcripts(output: str) -> list[str]:
+    """Skriptin tulosteesta ne litterointitiedostot jotka se kirjoitti."""
+    marker = "Litterointi luotu:"
+    return [
+        line.split(marker, 1)[1].strip() for line in output.splitlines() if marker in line
+    ]
+
+
+def get_transcript_files(output_dir: Path | str) -> list[Path]:
+    """Palauttaa kaikki tulostehakemiston transcripts-kansion litteroinnit (.json, .txt jne.)."""
+    t_dir = Path(output_dir) / "transcripts"
+    if not t_dir.is_dir():
+        t_dir = Path(output_dir)
+        if not t_dir.is_dir():
+            return []
+    return sorted(
+        p
+        for p in t_dir.iterdir()
+        if p.is_file()
+        and p.suffix.lower() in (".json", ".txt", ".srt", ".vtt", ".tsv")
+        and not p.name.startswith(".")
+    )
+
 
 
 def _execute_single(

@@ -23,11 +23,13 @@ def build_parser() -> argparse.ArgumentParser:
         description="Litterointi ja Auto-Silence Colabin näytönohjaimella.",
     )
     parser.add_argument(
-        "--input", help="syötekansio (.nhsx + äänet). Ilman tätä avataan TUI."
+        "--input",
+        help="syötekansio tai äänitiedosto (.nhsx + äänet tai pelkkä ääni). Ilman tätä avataan TUI.",
     )
     parser.add_argument(
         "--output", default="output", help="tulostekansio (oletus: output)"
     )
+
     parser.add_argument("--session", default="vst-pipeline", help="Colab-istunnon nimi")
     parser.add_argument(
         "--gpu", choices=GPUS, default="T4", help="Colabin GPU (oletus: T4)"
@@ -122,12 +124,18 @@ def options_from_args(args: argparse.Namespace) -> RunOptions:
 
 def run_headless(options: RunOptions, dry_run: bool) -> int:
     """Skriptattava ajo: suunnitelma, joko tulosteena tai totuutena."""
-    input_dir = Path(options.input_dir)
-    if not input_dir.is_dir():
-        print(f"Syötekansio ei ole hakemisto: {options.input_dir}", file=sys.stderr)
+    input_path = Path(options.input_dir)
+    if not input_path.exists():
+        print(f"Syötepolkua ei löydy: {options.input_dir}", file=sys.stderr)
+        return 1
+    if not input_path.is_dir() and not input_path.is_file():
+        print(
+            f"Syöte ei ole tiedosto eikä hakemisto: {options.input_dir}",
+            file=sys.stderr,
+        )
         return 1
 
-    files = driver.list_input_files(input_dir)
+    files = driver.list_input_files(input_path)
 
     reuse_session = False
     if session.is_session_alive(options.session):
@@ -162,10 +170,17 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
     code = driver.run(commands, log, timeout=driver.COMMAND_TIMEOUT)
     if code == 0:
         generated = driver.parse_generated("\n".join(lines))
-        print(f"\nValmiit istunnot ({len(generated)}):")
-        for path in generated:
-            print(f"  {path}")
+        transcripts = driver.parse_generated_transcripts("\n".join(lines))
+        if generated:
+            print(f"\nValmiit istunnot ({len(generated)}):")
+            for path in generated:
+                print(f"  {path}")
+        if transcripts:
+            print(f"\nValmiit litteroinnit ({len(transcripts)}):")
+            for path in transcripts:
+                print(f"  {path}")
     return code
+
 
 
 def main(argv: list[str] | None = None) -> int:

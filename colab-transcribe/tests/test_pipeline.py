@@ -6,10 +6,13 @@ ovat testattavissa erillään ilman Colabia.
 
 from __future__ import annotations
 
+import subprocess
+
 import pytest
 
 from colabtranscribe.colab.pipeline import (
     merge_intervals_with_gap,
+    run_transcription,
     seconds_to_time,
     time_to_seconds,
 )
@@ -397,3 +400,25 @@ def test_auto_silence_rms_finds_audio_with_name_and_pool_path(tmp_path, monkeypa
     )
     assert intervals == [(1.0, 1.5)]
     mock_pydub.AudioSegment.from_file.assert_called_once_with(str(audio_file))
+
+
+def test_run_transcription_logs_litterointi_luotu(tmp_path, capsys, monkeypatch):
+    in_dir = tmp_path / "in"
+    in_dir.mkdir()
+
+    (in_dir / "haastattelu.wav").write_bytes(b"data")
+    out_dir = tmp_path / "out"
+
+    def fake_run(cmd, check, timeout):
+        # Whisper luo json-tiedoston
+        transcripts_dir = out_dir / "transcripts"
+        transcripts_dir.mkdir(parents=True, exist_ok=True)
+        (transcripts_dir / "haastattelu.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    run_transcription(str(in_dir), str(out_dir), "prompt")
+
+    captured = capsys.readouterr().out
+    assert "Litterointi luotu:" in captured
+    assert "haastattelu.json" in captured
+

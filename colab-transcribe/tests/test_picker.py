@@ -75,3 +75,59 @@ def test_pick_folder_resolves_symlinks_or_spaces(monkeypatch, tmp_path):
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     assert picker.pick_folder() == str(target)
+
+
+def test_pick_file_macos_success(monkeypatch, tmp_path):
+    target = tmp_path / "audio.wav"
+    target.write_bytes(b"")
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr(picker, "_ensure_foreground", lambda: True)
+
+    def fake_run(args, capture_output, text, timeout):
+        class Result:
+            returncode = 0
+            stdout = f"{target}\n"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    chosen = picker.pick_file(prompt="Valitse äänitiedosto")
+    assert chosen == str(target)
+
+
+def test_pick_file_macos_user_cancel(monkeypatch):
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr(picker, "_ensure_foreground", lambda: True)
+
+    def fake_run(args, capture_output, text, timeout):
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert picker.pick_file() is None
+
+
+def test_pick_file_passes_type_clause_to_applescript(monkeypatch, tmp_path):
+    recorded_script = []
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr(picker, "_ensure_foreground", lambda: True)
+
+    def fake_run(args, capture_output, text, timeout):
+        recorded_script.append(args[2])
+        class Result:
+            returncode = 0
+            stdout = f"{tmp_path}/audio.wav\n"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    picker.pick_file(file_types=[".wav", "mp3"])
+    assert len(recorded_script) == 1
+    assert 'of type {"wav", "mp3"}' in recorded_script[0]
+

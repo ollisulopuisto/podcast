@@ -66,8 +66,11 @@ class RunOptions:
         """Palauttaa tulostehakemiston polun. Jos polku on suhteellinen, se ratkaistaan suhteessa input_diriin."""
         out = Path(self.output_dir) if self.output_dir else Path("output")
         if self.input_dir and not out.is_absolute():
-            return Path(self.input_dir) / out
+            inp = Path(self.input_dir)
+            base = inp.parent if inp.is_file() else inp
+            return base / out
         return out
+
 
     @classmethod
     def from_env(cls) -> RunOptions:

@@ -75,6 +75,19 @@ def test_create_input_archive_excludes_hidden(tmp_path: Path):
         assert ".DS_Store" not in names
 
 
+def test_create_input_archive_single_file(tmp_path: Path):
+    audio_file = tmp_path / "puhe.wav"
+    audio_file.write_bytes(b"RIFFtest")
+    archive_path = tmp_path / "input.tar"
+    gdrive.create_input_archive(audio_file, archive_path)
+
+    assert archive_path.is_file()
+    with tarfile.open(archive_path, "r") as tar:
+        names = tar.getnames()
+        assert names == ["puhe.wav"]
+
+
+
 def test_ensure_folder_finds_existing():
     token = "test-token"
     mock_urlopen = MagicMock()

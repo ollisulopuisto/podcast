@@ -97,7 +97,68 @@ class DirectoryPickerModal(ModalScreen[str | None]):
             self.dismiss(None)
 
 
+class FilePickerModal(ModalScreen[str | None]):
+    """Interaktiivinen tiedostonvalintaikkuna TUI:n sisällä."""
+
+    CSS = """
+    FilePickerModal {
+        align: center middle;
+    }
+    #file-picker-dialog {
+        width: 80%;
+        height: 80%;
+        border: solid $accent;
+        background: $surface;
+        padding: 1;
+    }
+    #file-picker-tree {
+        height: 1fr;
+        border: solid $primary;
+    }
+    #file-picker-buttons {
+        height: auto;
+        margin-top: 1;
+        align: right middle;
+    }
+    #file-picker-buttons Button {
+        margin-left: 1;
+    }
+    """
+
+    def __init__(self, start_dir: str = "", prompt: str = "") -> None:
+        super().__init__()
+        self._start_dir = (
+            start_dir if start_dir and Path(start_dir).is_dir() else str(Path.home())
+        )
+        self._prompt = prompt or "Valitse tiedosto"
+        self._selected: str | None = None
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="file-picker-dialog"):
+            yield Label(self._prompt)
+            yield Label(f"Valittu: {self._start_dir}", id="file-picker-selected-label")
+            yield DirectoryTree(self._start_dir, id="file-picker-tree")
+            with Horizontal(id="file-picker-buttons"):
+                yield Button("Valitse", id="file-picker-select", variant="primary")
+                yield Button("Peruuta", id="file-picker-cancel")
+
+    def on_directory_tree_file_selected(
+        self, event: DirectoryTree.FileSelected
+    ) -> None:
+        self._selected = str(event.path)
+        self.query_one("#file-picker-selected-label", Label).update(
+            f"Valittu: {self._selected}"
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "file-picker-select":
+            self.dismiss(self._selected)
+        elif event.button.id == "file-picker-cancel":
+            self.dismiss(None)
+
+
 class OnboardingModal(ModalScreen[None]):
+
     """Alkuasetusten opastus ja tarkistusikkuna."""
 
     CSS = """
@@ -221,6 +282,9 @@ class TranscribeApp(App):
         options: RunOptions | None = None,
         runner: Runner | None = None,
         folder_picker: Callable[[str, str], str | None] | None = None,
+        file_picker: (
+            Callable[[str, str, list[str] | tuple[str, ...] | None], str | None] | None
+        ) = None,
         onboarding_checker: Callable[[], OnboardingReport] | None = None,
         auto_onboard: bool | None = None,
     ) -> None:
@@ -232,6 +296,7 @@ class TranscribeApp(App):
         # komentorivillä ajaa.
         self._runner: Runner = runner or driver.run
         self._folder_picker = folder_picker
+        self._file_picker = file_picker
         if onboarding_checker is not None:
             self._onboarding_checker = onboarding_checker
         elif runner is not None:
@@ -256,10 +321,11 @@ class TranscribeApp(App):
                         "Pysäytä istunto", id="stop_session_btn", variant="error"
                     )
 
-                yield Label("Syötekansio")
+                yield Label("Syötekansio tai äänitiedosto")
                 with Horizontal(classes="path-row"):
                     yield Input(value=self._initial.input_dir, id="input")
                     yield Button("Valitse…", id="browse_input")
+
 
                 yield Label("Tulostekansio")
                 with Horizontal(classes="path-row"):
@@ -347,7 +413,7 @@ class TranscribeApp(App):
         if event.button.id == "run":
             self.start_job()
         elif event.button.id == "browse_input":
-            self.browse_folder("#input", "Valitse syötekansio (.nhsx ja äänitiedostot)")
+            self.browse_folder("#input", "Valitse syöte (.nhsx, kansio tai äänitiedosto)")
         elif event.button.id == "browse_output":
             self.browse_folder("#output", "Valitse tulostekansio")
         elif event.button.id == "stop_session_btn":
@@ -376,10 +442,24 @@ class TranscribeApp(App):
 
         if self._folder_picker is not None or picker.has_native_picker():
             picker_fn = self._folder_picker or picker.pick_folder
+            file_picker_fn = self._file_picker or picker.pick_file
 
             def _worker() -> None:
                 chosen = picker_fn(initial, prompt)
                 if chosen:
+                    chosen_path = Path(chosen)
+                    if (
+                        target_input_id == "#input"
+                        and chosen_path.is_dir()
+                        and not driver.has_nhsx_files(chosen_path)
+                    ):
+                        audio_chosen = file_picker_fn(
+                            chosen,
+                            "Ei .nhsx-istuntoa löytynyt. Valitse äänitiedosto",
+                            picker.AUDIO_EXTENSIONS,
+                        )
+                        if audio_chosen:
+                            chosen = audio_chosen
                     self.call_from_thread(self._set_input_value, target_input_id, chosen)
 
             self.run_worker(_worker, thread=True, exclusive=False)
@@ -387,7 +467,27 @@ class TranscribeApp(App):
 
             def on_dismiss(chosen: str | None) -> None:
                 if chosen:
-                    self._set_input_value(target_input_id, chosen)
+                    chosen_path = Path(chosen)
+                    if (
+                        target_input_id == "#input"
+                        and chosen_path.is_dir()
+                        and not driver.has_nhsx_files(chosen_path)
+                    ):
+
+                        def on_file_dismiss(audio_chosen: str | None) -> None:
+                            self._set_input_value(
+                                target_input_id, audio_chosen or chosen
+                            )
+
+                        self.push_screen(
+                            FilePickerModal(
+                                start_dir=chosen,
+                                prompt="Ei .nhsx-istuntoa löytynyt. Valitse äänitiedosto",
+                            ),
+                            on_file_dismiss,
+                        )
+                    else:
+                        self._set_input_value(target_input_id, chosen)
 
             self.push_screen(
                 DirectoryPickerModal(start_dir=initial, prompt=prompt), on_dismiss
@@ -398,7 +498,9 @@ class TranscribeApp(App):
             out_input = self.query_one("#output", Input)
             cur_out = out_input.value.strip()
             if not cur_out or cur_out == "output" or cur_out.endswith("/output"):
-                out_input.value = str(Path(event.value.strip()) / "output")
+                val_path = Path(event.value.strip())
+                base_dir = val_path.parent if val_path.is_file() else val_path
+                out_input.value = str(base_dir / "output")
 
     def _set_input_value(self, target_input_id: str, value: str) -> None:
         self.query_one(target_input_id, Input).value = value
@@ -406,7 +508,10 @@ class TranscribeApp(App):
             out_input = self.query_one("#output", Input)
             cur_out = out_input.value.strip()
             if not cur_out or cur_out == "output" or cur_out.endswith("/output"):
-                out_input.value = str(Path(value) / "output")
+                val_path = Path(value)
+                base_dir = val_path.parent if val_path.is_file() else val_path
+                out_input.value = str(base_dir / "output")
+
 
     def start_job(self) -> None:
         """Asetukset kentistä, suunnitelma komennoiksi, ajo taustalle."""
@@ -452,12 +557,22 @@ class TranscribeApp(App):
 
             plan = driver.plan_commands(options, files, reuse_session=reuse_session)
 
+            recorded_lines: list[str] = []
+
             def log(line: str) -> None:
+                recorded_lines.append(line)
                 self.call_from_thread(self._write_log, line)
 
             code = self._runner(plan, log, timeout=driver.COMMAND_TIMEOUT)
-            summary = "ajo valmis" if code == 0 else f"ajo pysähtyi koodiin {code}"
+            if code == 0:
+                summary = "ajo valmis"
+                transcripts = driver.parse_generated_transcripts("\n".join(recorded_lines))
+                for t in transcripts:
+                    self.call_from_thread(self._write_log, f"Litterointi valmis: {t}")
+            else:
+                summary = f"ajo pysähtyi koodiin {code}"
             self.call_from_thread(self._write_log, summary)
+
         finally:
 
             def _reset_btn() -> None:

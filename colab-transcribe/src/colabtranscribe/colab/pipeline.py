@@ -176,8 +176,11 @@ def run_transcription(input_dir, output_dir, initial_prompt):
                         "False",
                     ]
                     subprocess.run(cmd, check=True, timeout=WHISPER_TIMEOUT)
+                    print(f"Litterointi luotu: {output_path}")
                 else:
                     print(f"Ohitetaan '{output_path}', se on jo litteroitu.")
+                    print(f"Litterointi luotu: {output_path}")
+
 
 
 # 4. Injektoidaan litteroinnit .nhsx-rakenteeseen

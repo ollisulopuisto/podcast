@@ -103,6 +103,7 @@ def test_run_button_with_direct_transfer(tmp_path: Path):
 def test_browse_button_updates_input_path(tmp_path: Path):
     target_dir = tmp_path / "valittu_kansio"
     target_dir.mkdir()
+    (target_dir / "projekti.nhsx").write_text("<Session/>", encoding="utf-8")
 
     async def scenario():
         def fake_picker(initial="", prompt=""):
@@ -118,6 +119,76 @@ def test_browse_button_updates_input_path(tmp_path: Path):
             assert app.query_one("#output").value == str(target_dir / "output")
 
     run_scenario(scenario)
+
+
+def test_browse_button_without_nhsx_prompts_file_picker(tmp_path: Path):
+    target_dir = tmp_path / "vain_aania"
+    target_dir.mkdir()
+    audio_file = target_dir / "haastattelu.wav"
+    audio_file.write_bytes(b"")
+
+    file_picker_called = []
+
+    async def scenario():
+        def fake_folder_picker(initial="", prompt=""):
+            return str(target_dir)
+
+        def fake_file_picker(directory="", prompt="", file_types=None):
+            file_picker_called.append((directory, prompt, file_types))
+            return str(audio_file)
+
+        app = TranscribeApp(
+            folder_picker=fake_folder_picker, file_picker=fake_file_picker
+        )
+        async with app.run_test() as pilot:
+            app.query_one("#browse_input").press()
+            await pilot.pause()
+            await asyncio.sleep(0.05)
+            # Syöte päivittyy valittuun äänitiedostoon
+            assert app.query_one("#input").value == str(audio_file)
+            assert app.query_one("#output").value == str(target_dir / "output")
+
+    run_scenario(scenario)
+    assert len(file_picker_called) == 1
+    assert file_picker_called[0][0] == str(target_dir)
+
+
+def test_tui_runs_job_with_single_audio_file_and_logs_transcript(tmp_path: Path):
+    audio_file = tmp_path / "haastattelu.mp3"
+    audio_file.write_bytes(b"data")
+
+    class FakeAudioRunner:
+        def __init__(self):
+            self.calls = []
+
+        def __call__(self, commands, log, timeout=None):
+            self.calls.append(commands)
+            log("Litteroidaan tiedostoa: /content/input/haastattelu.mp3")
+            log("Litterointi luotu: /content/output/transcripts/haastattelu.json")
+            return 0
+
+    fake = FakeAudioRunner()
+
+    async def scenario():
+        app = TranscribeApp(runner=fake)
+        async with app.run_test() as pilot:
+            app.query_one("#input").value = str(audio_file)
+            app.query_one("#output").value = str(tmp_path / "out")
+            await pilot.press("r")
+            deadline = asyncio.get_event_loop().time() + 5
+            while not fake.calls and asyncio.get_event_loop().time() < deadline:
+                await pilot.pause()
+                await asyncio.sleep(0.02)
+            await pilot.pause()
+
+            # Tarkistetaan että lokissa näkyy valmistunut litterointi
+            log_lines = app.query_one("#log").lines
+            log_text = "\n".join(str(line) for line in log_lines)
+            assert "Litterointi valmis:" in log_text or "haastattelu.json" in log_text
+
+
+    run_scenario(scenario)
+    assert len(fake.calls) == 1
 
 
 def test_browse_button_updates_output_path(tmp_path: Path):
@@ -136,6 +207,7 @@ def test_browse_button_updates_output_path(tmp_path: Path):
             assert app.query_one("#output").value == str(out_dir)
 
     run_scenario(scenario)
+
 
 
 def test_onboarding_modal_opens_when_not_ready():

@@ -91,6 +91,44 @@ def test_real_run_streams_output_and_reports_results(tmp_path, capsys, monkeypat
     assert "litteroitu.nhsx" in capsys.readouterr().out
 
 
+def test_dry_run_with_single_audio_file(tmp_path, capsys):
+    audio = tmp_path / "haastattelu.wav"
+    audio.write_bytes(b"data")
+    code = cli.main(
+        [
+            "--input",
+            str(audio),
+            "--output",
+            str(tmp_path / "out"),
+            "--dry-run",
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "colab new" in out
+    assert "input.tar" in out
+
+
+def test_real_run_single_audio_file_reports_transcripts(tmp_path, capsys, monkeypatch):
+    from colabtranscribe.onboarding import OnboardingReport
+
+    audio = tmp_path / "haastattelu.mp3"
+    audio.write_bytes(b"data")
+
+    def fake_run(commands, log, timeout=None):
+        log("Litterointi luotu: /content/output/transcripts/haastattelu.json")
+        return 0
+
+    monkeypatch.setattr(cli, "check_environment", lambda: OnboardingReport(items=[]))
+    monkeypatch.setattr(cli.driver, "run", fake_run)
+    code = cli.main(["--input", str(audio), "--output", str(tmp_path / "out")])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Valmiit litteroinnit (1):" in out
+    assert "haastattelu.json" in out
+
+
+
 def test_failing_remote_run_returns_its_code(tmp_path, monkeypatch):
     from colabtranscribe.onboarding import OnboardingReport
 
