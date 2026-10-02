@@ -90,6 +90,16 @@ a development checkout, in the same environment (`uv sync --all-packages`). If
 it is missing the mix stage is greyed out, and a chain that includes it is
 refused before anything runs, not after an hour of transcription.
 
+The same chain without the window, as one command:
+
+```
+uv run podcast-magic ~/Podcast/episode8/episode\ 8.nhsx --chain
+uv run podcast-magic episode\ 8.nhsx --chain --steps silence,mix --lufs -18
+```
+
+`--steps` takes any of `transcribe,silence,mix` (default: all three). The
+settings are the ones last saved in the tabs, same as the button.
+
 ## Which Whisper
 
 | Engine | Where it runs | When |

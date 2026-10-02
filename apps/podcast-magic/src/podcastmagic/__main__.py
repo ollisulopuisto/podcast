@@ -57,6 +57,22 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="tulosta litteroinnin tarkistus ja lopeta (ei avaa ikkunaa)",
     )
+    parser.add_argument(
+        "--chain",
+        action="store_true",
+        help="aja litterointi, vaimennus ja miksaus yhdellä komennolla ja lopeta",
+    )
+    parser.add_argument(
+        "--steps",
+        default="transcribe,silence,mix",
+        help="ketjun vaiheet pilkulla erotettuna (oletus: kaikki kolme)",
+    )
+    parser.add_argument("--lufs", type=float, default=None,
+                        help="miksauksen voimakkuus, LUFS (oletus: -16)")
+    parser.add_argument("--audio-dir", default="",
+                        help="kansio josta ääni haetaan, jos polut eivät löydy")
+    parser.add_argument("--force", action="store_true",
+                        help="litteroi uudestaan myös valmiit tiedostot")
     parser.add_argument("--debug", action="store_true", help="kehitystyökalut käyttöön")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--host", default="127.0.0.1")
@@ -87,6 +103,21 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(verify.as_text(verify.inspect(nhsx.read(session))))
         return 0
+
+    if args.chain:
+        from .chain import cli as chain_cli
+
+        if not session:
+            print("Anna istuntotiedosto: podcast-magic jakso.nhsx --chain", file=sys.stderr)
+            return 1
+        try:
+            steps = chain_cli.parse_steps(args.steps)
+        except ValueError as exc:
+            parser.error(str(exc))
+        extra = {} if args.lufs is None else {"target_lufs": args.lufs}
+        return chain_cli.execute(
+            session, steps, audio_dir=args.audio_dir, force=args.force, **extra
+        )
 
     if use_gui:
         from .gui import launch

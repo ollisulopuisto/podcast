@@ -11,9 +11,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .. import settings as saved
 from ..jobs import Progress
 from ..silence import run as silence_run
-from ..silence.presets import Settings
+from ..silence.presets import DEFAULT_PRESET, PRESETS, Settings
 from ..transcribe import run as transcribe_run
 from ..transcribe.options import Options
 from . import mixer
@@ -41,6 +42,20 @@ class Steps:
     @property
     def chosen(self) -> list[str]:
         return [name for name in LABELS if getattr(self, name)]
+
+
+def saved_settings() -> tuple[Options, Settings]:
+    """Vaiheiden asetukset sellaisina kuin välilehdillä on viimeksi tallennettu.
+
+    Ketjulla ei ole omia asetuksia, joten «litteroi ja vaimenna» tekee
+    täsmälleen saman kuin kaksi painallusta. Napin ja komentorivin pitää
+    lukea ne samasta paikasta, ettei toinen ajaudu eri asetuksille.
+    """
+    options = Options.from_dict(saved.section("transcribe"))
+    settings = Settings.from_dict(
+        {**PRESETS[DEFAULT_PRESET].to_dict(), **saved.section("silence")}
+    )
+    return options, settings
 
 
 class StageProgress:

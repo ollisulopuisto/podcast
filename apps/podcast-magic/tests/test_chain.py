@@ -371,3 +371,105 @@ def test_the_mixer_is_not_a_dependency_of_this_app():
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     deps = tomllib.loads(pyproject.read_text())["project"]["dependencies"]
     assert not any(d.split("[")[0].strip().lower().startswith("automixer") for d in deps)
+
+
+# ---- komentorivi --------------------------------------------------------
+
+
+@pytest.fixture
+def cli(monkeypatch, tmp_path):
+    """Komentorivin ajo ilman oikeita vaiheita; ``seen`` kertoo mitä ketju sai."""
+    from podcastmagic import __main__ as entry
+    from podcastmagic.chain import cli as chain_cli
+
+    monkeypatch.setattr("podcastmagic.settings.state_dir", lambda: tmp_path / "state")
+    (tmp_path / "state").mkdir()
+    seen: dict = {}
+
+    def fake(session, steps, options, settings, progress, **kw):
+        seen.update(session=session, steps=steps, kw=kw)
+        return {"written": str(tmp_path / "ulos.wav"), "stages": []}
+
+    monkeypatch.setattr(chain_cli.runner, "run", fake)
+    return entry.main, seen
+
+
+def test_one_command_runs_the_whole_chain(cli, session_file):
+    main, seen = cli
+
+    assert main([str(session_file), "--chain"]) == 0
+
+    assert seen["session"] == str(session_file)
+    assert seen["steps"] == chain.Steps(True, True, True)
+
+
+def test_the_command_line_picks_stages_by_name(cli, session_file):
+    main, seen = cli
+
+    assert main([str(session_file), "--chain", "--steps", "silence,mix"]) == 0
+
+    assert seen["steps"] == chain.Steps(transcribe=False, silence=True, mix=True)
+
+
+def test_the_command_line_takes_loudness_and_audio_folder(cli, session_file, tmp_path):
+    main, seen = cli
+
+    main([str(session_file), "--chain", "--lufs", "-18", "--audio-dir", str(tmp_path)])
+
+    assert seen["kw"]["target_lufs"] == -18.0
+    assert seen["kw"]["audio_dir"] == str(tmp_path)
+
+
+def test_an_unknown_stage_name_is_refused_before_anything_runs(cli, session_file, capsys):
+    main, seen = cli
+
+    with pytest.raises(SystemExit) as stopped:
+        main([str(session_file), "--chain", "--steps", "silence,masterointi"])
+
+    assert stopped.value.code == 2
+    assert "masterointi" in capsys.readouterr().err
+    assert seen == {}
+
+
+def test_a_failing_chain_is_exit_one_with_the_reason(cli, session_file, capsys, monkeypatch):
+    from podcastmagic.chain import cli as chain_cli
+
+    main, _ = cli
+
+    def broken(*a, **k):
+        raise RuntimeError("Istunnossa ei ole litterointia.")
+
+    monkeypatch.setattr(chain_cli.runner, "run", broken)
+
+    assert main([str(session_file), "--chain"]) == 1
+    assert "litterointia" in capsys.readouterr().err
+
+
+def test_the_chain_needs_a_session(cli, tmp_path, monkeypatch, capsys):
+    main, seen = cli
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["--chain"]) == 1
+    assert seen == {}
+    assert "istunto" in capsys.readouterr().err.lower()
+
+
+def test_the_command_line_uses_the_settings_saved_in_the_tabs(cli, session_file, monkeypatch):
+    """Sama sääntö kuin napilla: ketjulla ei ole omia asetuksia."""
+    from podcastmagic import settings as saved
+    from podcastmagic.chain import cli as chain_cli
+
+    main, _ = cli
+    saved.save("silence", {"tail": 1.5, "gap": 0.3, "rms": False})
+    saved.save("transcribe", {"language": "sv"})
+    got: dict = {}
+
+    def capture(session, steps, options, settings, progress, **kw):
+        got.update(options=options, settings=settings)
+        return {"written": ""}
+
+    monkeypatch.setattr(chain_cli.runner, "run", capture)
+    main([str(session_file), "--chain"])
+
+    assert got["settings"].tail == 1.5 and got["settings"].rms is False
+    assert got["options"].language == "sv"

@@ -6,8 +6,6 @@ from fastapi import APIRouter, HTTPException
 
 from .. import settings as saved
 from ..jobs import RUNNER
-from ..silence.presets import DEFAULT_PRESET, PRESETS, Settings
-from ..transcribe.options import Options
 from . import mixer
 from . import run as runner
 
@@ -60,10 +58,7 @@ def start(body: dict) -> dict:
     force = bool(body.get("force"))
     saved.save(SECTION, {"steps": steps.to_dict(), "targetLufs": target})
 
-    # Vaiheiden asetukset ovat välilehtien: ketjulla ei ole omia, joten
-    # «litteroi ja vaimenna» tekee täsmälleen saman kuin kaksi painallusta.
-    options = Options.from_dict(saved.section("transcribe"))
-    settings = Settings.from_dict({**PRESETS[DEFAULT_PRESET].to_dict(), **saved.section("silence")})
+    options, settings = runner.saved_settings()
 
     def work(progress):
         return runner.run(
