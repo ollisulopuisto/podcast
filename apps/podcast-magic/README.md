@@ -75,6 +75,21 @@ The loop:
 4. **Silence** — writes `episode 8 litteroitu vaimennettu.nhsx`.
 5. Open it in Hindenburg. Every gap is a muted region you can un-mute.
 
+**Or one button.** The *Whole chain* tab runs transcribe, silence and
+[automixer](../automixer/README.md) in order, each reading the session the
+previous one wrote, and ends with `episode 8 litteroitu vaimennettu automixer.wav`.
+Each stage is a checkbox and the choice is remembered, so a rough cut you have
+already transcribed can start from silence, and a session you only want mixed
+can skip both. The stages use the settings last saved in the Transcribe and
+Silence tabs; the chain has no knobs of its own, apart from the loudness
+target.
+
+Automixer is run as a command, not imported: it brings mlx and pedalboard
+along, and the packaged app does not need them. It is found on `PATH` or, in
+a development checkout, in the same environment (`uv sync --all-packages`). If
+it is missing the mix stage is greyed out, and a chain that includes it is
+refused before anything runs, not after an hour of transcription.
+
 ## Which Whisper
 
 | Engine | Where it runs | When |
