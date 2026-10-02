@@ -91,6 +91,16 @@ kehitysasennuksessa samasta ympäristöstä (`uv sync --all-packages`). Jos sit�
 ei ole, miksausvaihe on harmaana, ja ketju jossa se on mukana hylätään heti
 eikä vasta tunnin litteroinnin jälkeen.
 
+Sama ketju ilman ikkunaa yhtenä komentona:
+
+```
+uv run podcast-magic ~/Podcast/jakso8/jakso\ 8.nhsx --chain
+uv run podcast-magic jakso\ 8.nhsx --chain --steps silence,mix --lufs -18
+```
+
+`--steps` ottaa minkä tahansa vaiheista `transcribe,silence,mix` (oletus: kaikki
+kolme). Asetukset ovat välilehdille viimeksi tallennetut, kuten napillakin.
+
 Kaksi työkalua nauhoituksen ympärillä, ei itse äänen:
 
 * **Käsikirjoitus** — litteroinnista luettava markdown puhujineen ja
