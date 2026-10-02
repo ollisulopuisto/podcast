@@ -46,6 +46,9 @@ def test_interface_runs_without_errors(tmp_path, session_file):
                                   params={"dir": str(session_file.parent)}).json(),
         "/api/exists": {"path": str(session_file), "file": True, "dir": False},
         "/api/reveal": {"ok": True},
+        "/api/chain/info": client.get("/api/chain/info").json(),
+        "/api/chain/run": {"id": 9, "module": "chain", "running": True,
+                           "log": [], "result": {}, "elapsed": 0},
         "/api/transcribe/info": client.get("/api/transcribe/info").json(),
         "/api/transcribe/plan": client.post(
             "/api/transcribe/plan", json={"session": str(session_file)}
@@ -104,3 +107,17 @@ def test_every_data_t_key_is_translated():
     used = set(re.findall(r'data-t="([\w.]+)"', html))
     known = set(re.findall(r"'([\w.]+)':", strings))
     assert used <= known, used - known
+
+
+def test_index_loads_every_registered_module_script():
+    """Rekisterin skripti, jota index.html ei lataa, on tyhjä välilehti.
+
+    Savutesti lataa skriptit omasta listastaan, joten se ei huomaa puutetta:
+    `mod_script.js` ja `mod_merge.js` olivat rekisterissä ja tiedostoina,
+    mutta eivät sivulla, ja niiden välilehdet jäivät tyhjiksi.
+    """
+    from podcastmagic.modules import MODULES
+
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    for module in MODULES:
+        assert f'src="/static/{module.script}"' in html, module.script

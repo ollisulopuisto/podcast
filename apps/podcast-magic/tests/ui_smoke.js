@@ -164,8 +164,8 @@ const sandbox = {
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 
-for (const file of ['i18n.js', 'app.js', 'mod_transcribe.js', 'mod_silence.js',
-                    'mod_script.js', 'mod_merge.js']) {
+for (const file of ['i18n.js', 'app.js', 'mod_chain.js', 'mod_transcribe.js',
+                    'mod_silence.js', 'mod_script.js', 'mod_merge.js']) {
   vm.runInContext(fs.readFileSync(path.join(staticDir, file), 'utf8'), sandbox, { filename: file });
 }
 
@@ -270,7 +270,7 @@ async function settle() {
   if (byId.get('tabs').children.length !== keys.length) {
     throw new Error('välilehtiä ei piirretty');
   }
-  for (const needed of ['/api/transcribe/info', '/api/silence/info',
+  for (const needed of ['/api/chain/info', '/api/chain/run', '/api/transcribe/info', '/api/silence/info',
                         '/api/transcribe/plan', '/api/silence/preview',
                         '/api/script/preview', '/api/merge/info',
                         '/api/merge/preview']) {

@@ -76,6 +76,21 @@ Työjärjestys:
 5. Avaa se Hindenburgissa. Jokainen tauko on vaimennettu alue, jonka saa
    takaisin kuuluviin.
 
+**Tai yksi nappi.** *Koko ketju* -välilehti ajaa litteroinnin, vaimennuksen ja
+[automixerin](../automixer/README.md) peräkkäin, ja jokainen lukee edellisen
+kirjoittaman istunnon. Lopuksi tulee `jakso 8 litteroitu vaimennettu automixer.wav`.
+Jokainen vaihe on valintaruutu ja valinta muistetaan: valmiiksi litteroidun
+raakaleikkauksen voi aloittaa vaimennuksesta, ja istunnon jonka haluaa vain
+miksata voi ajaa ilman kahta ensimmäistä. Vaiheet käyttävät Litterointi- ja
+Vaimennus-välilehdillä viimeksi tallennettuja asetuksia; ketjulla ei ole omia
+säätimiä lukuun ottamatta voimakkuuden tavoitetta.
+
+Automixer ajetaan komentona eikä tuoda: se vetää mukanaan mlx:n ja
+pedalboardin, joita pakattu sovellus ei tarvitse. Se löytyy `PATH`ista tai
+kehitysasennuksessa samasta ympäristöstä (`uv sync --all-packages`). Jos sitä
+ei ole, miksausvaihe on harmaana, ja ketju jossa se on mukana hylätään heti
+eikä vasta tunnin litteroinnin jälkeen.
+
 Kaksi työkalua nauhoituksen ympärillä, ei itse äänen:
 
 * **Käsikirjoitus** — litteroinnista luettava markdown puhujineen ja

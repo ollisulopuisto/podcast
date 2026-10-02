@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .chain import api as chain_api
 from .merge import api as merge_api
 from .script import api as script_api
 from .silence import api as silence_api
@@ -39,6 +40,15 @@ class ModuleSpec:
 
 
 MODULES: tuple[ModuleSpec, ...] = (
+    ModuleSpec(
+        key="chain",
+        title_fi="Koko ketju",
+        title_en="Whole chain",
+        blurb_fi="Litterointi, vaimennus ja miksaus yhdellä napilla. Vaiheet valitaan.",
+        blurb_en="Transcribe, silence and mix with one button. You choose the stages.",
+        script="mod_chain.js",
+        router=chain_api.router,
+    ),
     ModuleSpec(
         key="transcribe",
         title_fi="Litterointi",
