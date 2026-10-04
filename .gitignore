@@ -34,6 +34,8 @@ output/
 *.swp
 *.swo
 *.tmp
+*.state
+temp/
 
 .DS_Store
 
