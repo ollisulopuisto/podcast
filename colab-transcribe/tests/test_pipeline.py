@@ -300,8 +300,8 @@ def test_install_dependencies_does_not_require_libcublas11(monkeypatch):
         assert "ffmpeg" in cmd
 
 
-def test_install_dependencies_pins_av_below_19(monkeypatch):
-    """PyAV 19+ poisti metadata_errors-parametrin, joka rikkoo faster-whisperin."""
+def test_install_dependencies_pins_locked_versions(monkeypatch):
+    """Riippuvuudet on lukittu toimiviin versioihin eikä käytetä -U -valitsinta."""
     from colabtranscribe.colab.pipeline import install_dependencies
 
     commands = []
@@ -314,7 +314,12 @@ def test_install_dependencies_pins_av_below_19(monkeypatch):
 
     pip_installs = [cmd for cmd in commands if cmd[:2] == ["pip", "install"]]
     assert pip_installs
-    assert any("av<19" in str(arg) for cmd in pip_installs for arg in cmd)
+    pip_cmd = pip_installs[0]
+    assert "-U" not in pip_cmd
+    assert any("av==" in str(arg) or "av<19" in str(arg) for arg in pip_cmd)
+    assert any("CTranslate2==" in str(arg) for arg in pip_cmd)
+    assert any("faster-whisper==" in str(arg) for arg in pip_cmd)
+    assert any("whisper-ctranslate2==" in str(arg) for arg in pip_cmd)
 
 
 def test_configure_cuda_libs(tmp_path, monkeypatch):

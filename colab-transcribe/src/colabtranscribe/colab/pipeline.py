@@ -105,13 +105,20 @@ def configure_cuda_libs():
 
 # 1. Asennetaan tarvittavat kirjastot pilviympäristössä
 def install_dependencies():
-    packages = ["CTranslate2", "whisper-ctranslate2", "lxml", "pydub", "av<19"]
+    packages = [
+        "CTranslate2==4.8.2",
+        "faster-whisper==1.2.1",
+        "whisper-ctranslate2==0.5.7",
+        "av==18.1.0",
+        "lxml==6.1.3",
+        "pydub==0.25.1",
+    ]
     subprocess.run(["apt-get", "update", "-qq"], check=True, timeout=APT_TIMEOUT)
     subprocess.run(
         ["apt-get", "install", "-y", "-qq", "ffmpeg"], check=True, timeout=APT_TIMEOUT
     )
     subprocess.run(
-        ["pip", "install", "-q", "-U", *packages], check=True, timeout=PIP_TIMEOUT
+        ["pip", "install", "-q", *packages], check=True, timeout=PIP_TIMEOUT
     )
     configure_cuda_libs()
 
