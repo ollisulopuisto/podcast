@@ -83,6 +83,26 @@ def _swap_suffix(path, old, new):
     return path + new
 
 
+LD_SO_CONF_PATH = "/etc/ld.so.conf.d/00-nvidia-pip.conf"
+
+
+def configure_cuda_libs():
+    """Varmistaa että pipin asentamat nvidia-kirjastot (libcublas ym.) löytyvät."""
+    import glob
+
+    nvidia_dirs = glob.glob("/usr/local/lib/python*/dist-packages/nvidia/*/lib")
+    if nvidia_dirs:
+        try:
+            with open(LD_SO_CONF_PATH, "w") as f:
+                f.write("\n".join(nvidia_dirs) + "\n")
+            subprocess.run(["ldconfig"], check=False)
+        except Exception:
+            pass
+        existing = os.environ.get("LD_LIBRARY_PATH", "")
+        paths = nvidia_dirs + ([existing] if existing else [])
+        os.environ["LD_LIBRARY_PATH"] = ":".join(paths)
+
+
 # 1. Asennetaan tarvittavat kirjastot pilviympäristössä
 def install_dependencies():
     packages = ["CTranslate2", "whisper-ctranslate2", "lxml", "pydub", "av<19"]
@@ -93,6 +113,7 @@ def install_dependencies():
     subprocess.run(
         ["pip", "install", "-q", "-U", *packages], check=True, timeout=PIP_TIMEOUT
     )
+    configure_cuda_libs()
 
 
 # 2. Aikaleimojen apufunktiot

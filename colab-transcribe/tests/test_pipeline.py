@@ -6,6 +6,7 @@ ovat testattavissa erillään ilman Colabia.
 
 from __future__ import annotations
 
+import os
 import subprocess
 
 import pytest
@@ -314,6 +315,47 @@ def test_install_dependencies_pins_av_below_19(monkeypatch):
     pip_installs = [cmd for cmd in commands if cmd[:2] == ["pip", "install"]]
     assert pip_installs
     assert any("av<19" in str(arg) for cmd in pip_installs for arg in cmd)
+
+
+def test_configure_cuda_libs(tmp_path, monkeypatch):
+    from colabtranscribe.colab.pipeline import configure_cuda_libs
+
+    fake_nvidia_lib = (
+        tmp_path
+        / "usr"
+        / "local"
+        / "lib"
+        / "python3.13"
+        / "dist-packages"
+        / "nvidia"
+        / "cublas"
+        / "lib"
+    )
+    fake_nvidia_lib.mkdir(parents=True)
+    fake_ld_conf = tmp_path / "00-nvidia-pip.conf"
+
+    monkeypatch.setattr(
+        "glob.glob",
+        lambda pat: [str(fake_nvidia_lib)] if "nvidia" in pat else [],
+    )
+    commands = []
+
+    def mock_run(cmd, *args, **kwargs):
+        commands.append(cmd)
+
+    monkeypatch.setattr("subprocess.run", mock_run)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/old/path")
+    monkeypatch.setattr(
+        "colabtranscribe.colab.pipeline.LD_SO_CONF_PATH",
+        str(fake_ld_conf),
+        raising=False,
+    )
+
+    configure_cuda_libs()
+    assert str(fake_nvidia_lib) in os.environ.get("LD_LIBRARY_PATH", "")
+    assert ["ldconfig"] in commands
+    assert fake_ld_conf.is_file()
+    assert str(fake_nvidia_lib) in fake_ld_conf.read_text()
 
 
 def test_run_auto_silence_processes_all_tracks(tmp_path):
