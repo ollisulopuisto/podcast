@@ -85,7 +85,7 @@ def _swap_suffix(path, old, new):
 
 # 1. Asennetaan tarvittavat kirjastot pilviympäristössä
 def install_dependencies():
-    packages = ["CTranslate2", "whisper-ctranslate2", "lxml", "pydub"]
+    packages = ["CTranslate2", "whisper-ctranslate2", "lxml", "pydub", "av<19"]
     subprocess.run(["apt-get", "update", "-qq"], check=True, timeout=APT_TIMEOUT)
     subprocess.run(
         ["apt-get", "install", "-y", "-qq", "ffmpeg"], check=True, timeout=APT_TIMEOUT

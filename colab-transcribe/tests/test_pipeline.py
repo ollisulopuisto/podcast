@@ -299,6 +299,23 @@ def test_install_dependencies_does_not_require_libcublas11(monkeypatch):
         assert "ffmpeg" in cmd
 
 
+def test_install_dependencies_pins_av_below_19(monkeypatch):
+    """PyAV 19+ poisti metadata_errors-parametrin, joka rikkoo faster-whisperin."""
+    from colabtranscribe.colab.pipeline import install_dependencies
+
+    commands = []
+
+    def mock_run(cmd, *args, **kwargs):
+        commands.append(cmd)
+
+    monkeypatch.setattr("subprocess.run", mock_run)
+    install_dependencies()
+
+    pip_installs = [cmd for cmd in commands if cmd[:2] == ["pip", "install"]]
+    assert pip_installs
+    assert any("av<19" in str(arg) for cmd in pip_installs for arg in cmd)
+
+
 def test_run_auto_silence_processes_all_tracks(tmp_path):
     """Auto-Silence käsittelee kaikki istunnon raidat, ei vain ensimmäistä.
 
