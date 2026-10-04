@@ -594,3 +594,50 @@ def test_get_transcript_files(tmp_path: Path):
     found = driver.get_transcript_files(out_dir)
     assert found == [json_f, txt_f]
 
+
+def test_describe_command():
+    assert "GPU-istuntoa" in driver.describe_command(["colab", "new", "-s", "vst"])
+    assert "Google Drive" in driver.describe_command(["colab", "drivemount", "-s", "vst"])
+    assert "pipeline.py" in driver.describe_command(
+        ["colab", "upload", "-s", "vst", "path/to/pipeline.py", "/content/pipeline.py"]
+    )
+    assert "litterointi" in driver.describe_command(
+        ["colab", "exec", "-s", "vst", "python3 /content/pipeline.py"]
+    )
+    assert "tulokset" in driver.describe_command(["colab", "download", "-s", "vst", "out/"])
+    assert "Suljetaan" in driver.describe_command(["colab", "stop", "-s", "vst"])
+
+
+def test_run_calls_on_progress(monkeypatch):
+    import io
+
+    class FakeProcess:
+        def __init__(self, cmd, **kwargs):
+            self.stdin = io.StringIO()
+            self.stdout = ["[vaihe 1/4] Asennetaan riippuvuudet...\n"]
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", FakeProcess)
+
+    progress_events = []
+    commands = [
+        ["colab", "new", "-s", "vst"],
+        ["colab", "exec", "-s", "vst", "python3 /content/pipeline.py"],
+    ]
+    code = driver.run(
+        commands,
+        log=lambda _: None,
+        on_progress=lambda pct, msg: progress_events.append((pct, msg)),
+    )
+    assert code == 0
+    assert len(progress_events) >= 3
+    # First command at 0%
+    assert progress_events[0][0] == 0.0
+    # Second command base at 50%
+    assert any(pct >= 50.0 for pct, _ in progress_events)
+    # End reaches 100%
+    assert progress_events[-1][0] == 100.0
+
+

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 import shlex
 import subprocess
 import tarfile
@@ -250,6 +251,41 @@ def get_transcript_files(output_dir: Path | str) -> list[Path]:
     )
 
 
+def describe_command(command: list[str]) -> str:
+    """Muuntaa ajettavan komennon selkeäksi suomenkieliseksi kuvaukseksi."""
+    if not command:
+        return "Suoritetaan komentoa..."
+    cmd0 = command[0]
+    if cmd0 == "drive" and len(command) > 1 and command[1] == "upload":
+        return "Ladataan syötteet Google Driveen..."
+    if cmd0 == "colab" and len(command) > 1:
+        sub = command[1]
+        if sub == "new":
+            return "Käynnistetään Colab-GPU-istuntoa..."
+        if sub == "drivemount":
+            return "Liitetään Google Drive..."
+        if sub == "upload":
+            target = command[-1] if len(command) > 2 else ""
+            if "pipeline.py" in target:
+                return "Siirretään pipeline.py Colabiin..."
+            return f"Siirretään tiedostoa {Path(target).name}..."
+        if sub == "download":
+            return "Ladataan tulokset Colabista..."
+        if sub == "stop":
+            return "Suljetaan Colab-istunto..."
+        if sub == "exec" and len(command) > 4:
+            action = command[4]
+            if "rm -rf" in action and "mkdir" in action:
+                return "Valmistellaan etähakemistoja..."
+            if "tar -xf" in action:
+                return "Puretaan syötetiedostoja Colabissa..."
+            if "pipeline.py" in action:
+                return "Suoritetaan litterointi ja Auto-Silence..."
+            if "rm -rf" in action and "ColabTranscribe" in action:
+                return "Siivotaan Google Driven väliaikaistiedostoja..."
+    return f"Suoritetaan: {shlex.join(command)}"
+
+
 
 def _execute_single(
     command: list[str],
@@ -257,6 +293,7 @@ def _execute_single(
     timeout: float | None = None,
     opened_auth_urls: set[str] | None = None,
     max_retries: int = 2,
+    on_line: Callable[[str], None] | None = None,
 ) -> int:
     log(shlex.join(command))
     cmd_to_run = list(command)
@@ -324,6 +361,8 @@ def _execute_single(
         try:
             for line in process.stdout:
                 stripped = line.rstrip("\n")
+                if on_line is not None:
+                    on_line(stripped)
                 if is_colab_exec and stripped.startswith(
                     (
                         "---------------------------------------------------------------------------",
@@ -411,7 +450,10 @@ def upload_input_to_drive(
 
 
 def run(
-    commands: list[list[str]], log: Callable[[str], None], timeout: float | None = None
+    commands: list[list[str]],
+    log: Callable[[str], None],
+    timeout: float | None = None,
+    on_progress: Callable[[float, str], None] | None = None,
 ) -> int:
     """Aja suunnitelma peräkkäin ja syötä jokainen rivi lokiin.
 
@@ -423,10 +465,52 @@ def run(
         commands: Suoritettavat komennot listana.
         log: Funktio joka saa jokaisen tulosterivin.
         timeout: Yksittäisen komennon aikaraja sekunteina. None = ei rajaa.
+        on_progress: Valinnainen takaisinkutsu edistymiselle (prosentti, kuvaus).
     """
     opened_auth_urls: set[str] = set()
+    total = len(commands)
     try:
-        for command in commands:
+        for i, command in enumerate(commands):
+            base_pct = (i / max(total, 1)) * 100.0
+            step_span = (1.0 / max(total, 1)) * 100.0
+            desc = describe_command(command)
+            if on_progress:
+                on_progress(base_pct, f"[{i + 1}/{total}] {desc}")
+
+            def _subline(line: str) -> None:
+                if not on_progress:
+                    return
+                line_s = line.strip()
+                if "[vaihe 1/4]" in line_s:
+                    on_progress(
+                        base_pct + 0.1 * step_span,
+                        f"[{i + 1}/{total}] Asennetaan riippuvuudet...",
+                    )
+                elif "[vaihe 2/4" in line_s:
+                    m = re.search(r"\((\d+)/(\d+)\)", line_s)
+                    if m:
+                        idx, tot_items = int(m.group(1)), int(m.group(2))
+                        fraction = idx / max(tot_items, 1)
+                        on_progress(
+                            base_pct + (0.2 + 0.5 * fraction) * step_span,
+                            f"[{i + 1}/{total}] Litteroidaan ({idx}/{tot_items})...",
+                        )
+                    else:
+                        on_progress(
+                            base_pct + 0.2 * step_span,
+                            f"[{i + 1}/{total}] Litteroidaan ääntä...",
+                        )
+                elif "[vaihe 3/4]" in line_s:
+                    on_progress(
+                        base_pct + 0.75 * step_span,
+                        f"[{i + 1}/{total}] Injektoidaan litteroinnit...",
+                    )
+                elif "[vaihe 4/4" in line_s:
+                    on_progress(
+                        base_pct + 0.85 * step_span,
+                        f"[{i + 1}/{total}] Auto-Silence...",
+                    )
+
             if len(command) >= 3 and command[0] == "drive" and command[1] == "upload":
                 log(shlex.join(command))
                 input_dir = command[2]
@@ -474,6 +558,7 @@ def run(
                         log,
                         timeout=timeout,
                         opened_auth_urls=opened_auth_urls,
+                        on_line=_subline,
                     )
                     if code != 0:
                         return code
@@ -483,6 +568,7 @@ def run(
                         log,
                         timeout=timeout,
                         opened_auth_urls=opened_auth_urls,
+                        on_line=_subline,
                     )
                     if code != 0:
                         return code
@@ -499,14 +585,21 @@ def run(
                         log,
                         timeout=timeout,
                         opened_auth_urls=opened_auth_urls,
+                        on_line=_subline,
                     )
                 continue
 
             code = _execute_single(
-                command, log, timeout=timeout, opened_auth_urls=opened_auth_urls
+                command,
+                log,
+                timeout=timeout,
+                opened_auth_urls=opened_auth_urls,
+                on_line=_subline,
             )
             if code != 0:
                 return code
+        if on_progress:
+            on_progress(100.0, "Ajo valmis! Kaikki vaiheet suoritettu.")
         return 0
     except KeyboardInterrupt:
         log("Ajo keskeytetty käyttäjän toimesta (Ctrl+C).")

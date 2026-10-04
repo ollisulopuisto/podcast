@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from textual.widgets import Button, Input, Select
+from textual.widgets import Button, Input, Label, ProgressBar, Select
 
 from colabtranscribe.tui import TranscribeApp
 
@@ -356,3 +356,50 @@ def test_tui_disables_run_button_and_prevents_duplicate_runs(tmp_path: Path):
             finish_run.set()
 
     run_scenario(scenario)
+
+
+def test_progress_bar_is_present_in_tui():
+    async def scenario():
+        app = TranscribeApp()
+        async with app.run_test() as pilot:
+            bar = app.query_one("#progress-bar", ProgressBar)
+            lbl = app.query_one("#progress-status", Label)
+            assert bar.total == 100.0
+            assert bar.progress == 0.0
+            assert "odot" in str(lbl.render()).lower() or "valmis" in str(lbl.render()).lower()
+            await pilot.pause()
+
+    run_scenario(scenario)
+
+
+def test_progress_bar_updates_on_run(tmp_path: Path):
+    (tmp_path / "puhe.wav").write_bytes(b"")
+
+    def runner_with_progress(commands, log, timeout=None):
+        log("colab new -s vst-pipeline --gpu T4")
+        log("[vaihe 1/4] Asennetaan riippuvuudet...")
+        log("[vaihe 2/4 (1/1)] Litteroidaan: puhe.wav")
+        log("Litterointi luotu: /content/output/transcripts/puhe.json")
+        log("Koko putki suoritettu onnistuneesti.")
+        return 0
+
+    async def scenario():
+        app = TranscribeApp(runner=runner_with_progress)
+        async with app.run_test() as pilot:
+            app.query_one("#input").value = str(tmp_path)
+            app.query_one("#output").value = str(tmp_path / "out")
+            await pilot.press("r")
+
+            for _ in range(100):
+                await asyncio.sleep(0.05)
+                await pilot.pause()
+                if not app._is_running:
+                    break
+
+            bar = app.query_one("#progress-bar", ProgressBar)
+            lbl = app.query_one("#progress-status", Label)
+            assert bar.progress == 100.0
+            assert "valmis" in str(lbl.render()).lower()
+
+    run_scenario(scenario)
+

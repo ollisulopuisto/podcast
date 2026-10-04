@@ -163,51 +163,63 @@ def merge_intervals_with_gap(intervals, max_gap=0.0):
 def run_transcription(input_dir, output_dir, initial_prompt):
     transcripts_dir = os.path.join(output_dir, "transcripts")
     os.makedirs(transcripts_dir, exist_ok=True)
+    audio_items = []
     for dirpath, _, filenames in os.walk(input_dir):
         for filename in filenames:
             if filename.lower().endswith(AUDIO_EXTENSIONS):
-                full_path = os.path.join(dirpath, filename)
-                output_path = os.path.join(
-                    transcripts_dir, _swap_audio_ext(filename, ".json")
-                )
+                audio_items.append((dirpath, filename))
 
-                if not os.path.isfile(output_path):
-                    print(f"Litteroidaan tiedostoa: {full_path}")
-                    cmd = [
-                        "whisper-ctranslate2",
-                        full_path,
-                        "--batched",
-                        "True",
-                        "--compute_type",
-                        "auto",
-                        "--word_timestamps",
-                        "True",
-                        "--max_line_width",
-                        "33",
-                        "--max_line_count",
-                        "2",
-                        "--vad_filter",
-                        "True",
-                        "--model",
-                        "turbo",
-                        "--language",
-                        "fi",
-                        "--initial_prompt",
-                        initial_prompt,
-                        "--output_dir",
-                        transcripts_dir,
-                        "--suppress_tokens",
-                        "",
-                        "--suppress_blank",
-                        "False",
-                        "--condition_on_previous_text",
-                        "False",
-                    ]
-                    subprocess.run(cmd, check=True, timeout=WHISPER_TIMEOUT)
-                    print(f"Litterointi luotu: {output_path}")
-                else:
-                    print(f"Ohitetaan '{output_path}', se on jo litteroitu.")
-                    print(f"Litterointi luotu: {output_path}")
+    total = len(audio_items)
+    print(f"[vaihe 2/4] Litteroidaan äänitiedostot ({total} kpl)...", flush=True)
+
+    for idx, (dirpath, filename) in enumerate(audio_items, 1):
+        full_path = os.path.join(dirpath, filename)
+        output_path = os.path.join(
+            transcripts_dir, _swap_audio_ext(filename, ".json")
+        )
+
+        if not os.path.isfile(output_path):
+            print(f"[vaihe 2/4 ({idx}/{total})] Litteroidaan: {filename}", flush=True)
+            print(f"Litteroidaan tiedostoa: {full_path}", flush=True)
+            cmd = [
+                "whisper-ctranslate2",
+                full_path,
+                "--batched",
+                "True",
+                "--compute_type",
+                "auto",
+                "--word_timestamps",
+                "True",
+                "--max_line_width",
+                "33",
+                "--max_line_count",
+                "2",
+                "--vad_filter",
+                "True",
+                "--model",
+                "turbo",
+                "--language",
+                "fi",
+                "--initial_prompt",
+                initial_prompt,
+                "--output_dir",
+                transcripts_dir,
+                "--suppress_tokens",
+                "",
+                "--suppress_blank",
+                "False",
+                "--condition_on_previous_text",
+                "False",
+            ]
+            subprocess.run(cmd, check=True, timeout=WHISPER_TIMEOUT)
+            print(f"Litterointi luotu: {output_path}", flush=True)
+        else:
+            print(
+                f"[vaihe 2/4 ({idx}/{total})] Ohitetaan '{filename}', se on jo litteroitu.",
+                flush=True,
+            )
+            print(f"Ohitetaan '{output_path}', se on jo litteroitu.", flush=True)
+            print(f"Litterointi luotu: {output_path}", flush=True)
 
 
 
@@ -454,14 +466,21 @@ def main():
     os.makedirs(input_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 
+    print("[vaihe 1/4] Asennetaan riippuvuudet (apt ja pip)...", flush=True)
     install_dependencies()
+    print("[vaihe 1/4] Riippuvuudet asennettu.", flush=True)
     run_transcription(input_dir, output_dir, args.prompt)
+    print("[vaihe 3/4] Injektoidaan litteroinnit .nhsx-rakenteeseen...", flush=True)
     generated_files = inject_transcriptions_to_nhsx(input_dir, output_dir)
 
-    for nhsx_file in generated_files:
+    for idx, nhsx_file in enumerate(generated_files, 1):
+        print(
+            f"[vaihe 4/4 ({idx}/{len(generated_files)})] Suoritetaan Auto-Silence: {os.path.basename(nhsx_file)}...",
+            flush=True,
+        )
         run_auto_silence(nhsx_file, input_dir, rms_enabled, thr, tail, gap)
 
-    print("\nKoko putki suoritettu onnistuneesti.")
+    print("\nKoko putki suoritettu onnistuneesti.", flush=True)
 
 
 if __name__ == "__main__":

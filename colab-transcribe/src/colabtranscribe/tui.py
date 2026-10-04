@@ -8,6 +8,8 @@ Textualin käyttöliittymä ei ole säieturvallinen.
 
 from __future__ import annotations
 
+import inspect
+import re
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
@@ -24,6 +26,7 @@ from textual.widgets import (
     Header,
     Input,
     Label,
+    ProgressBar,
     RichLog,
     Select,
     Switch,
@@ -266,6 +269,19 @@ class TranscribeApp(App):
     #runrow Button {
         margin-right: 1;
     }
+    #progress-pane {
+        height: auto;
+        margin-top: 1;
+        margin-bottom: 1;
+    }
+    #progress-status {
+        color: $text-muted;
+        text-style: bold;
+    }
+    #progress-bar {
+        width: 1fr;
+        margin-top: 1;
+    }
     #log {
         height: 1fr;
         border: solid $accent;
@@ -371,6 +387,9 @@ class TranscribeApp(App):
                 yield Button("Aja", id="run", variant="primary")
                 yield Button("Alkuasetukset", id="onboarding_btn")
                 yield Label("q = lopeta, r = aja", id="hint")
+            with Vertical(id="progress-pane"):
+                yield Label("Odottaa ajoa...", id="progress-status")
+                yield ProgressBar(id="progress-bar", total=100.0, show_eta=False)
         yield RichLog(id="log", markup=False, highlight=False, wrap=True)
         yield Footer()
 
@@ -537,8 +556,25 @@ class TranscribeApp(App):
         run_btn.label = "Ajetaan..."
         self.run_worker(partial(self._job, options), thread=True, exclusive=True)
 
+    def _set_progress(self, progress: float, status: str) -> None:
+        try:
+            bar = self.query_one("#progress-bar", ProgressBar)
+            bar.update(progress=min(max(float(progress), 0.0), 100.0))
+            lbl = self.query_one("#progress-status", Label)
+            lbl.update(status)
+        except Exception:
+            pass
+
+    def _set_progress_status(self, status: str) -> None:
+        try:
+            lbl = self.query_one("#progress-status", Label)
+            lbl.update(status)
+        except Exception:
+            pass
+
     def _job(self, options: RunOptions) -> None:
         try:
+            self.call_from_thread(self._set_progress, 0.0, "Valmistellaan ajoa...")
             files = driver.list_input_files(Path(options.input_dir))
             reuse_session = False
             if session.is_session_alive(options.session):
@@ -559,18 +595,52 @@ class TranscribeApp(App):
 
             recorded_lines: list[str] = []
 
+            def _parse_progress_from_line(line: str) -> None:
+                line_s = line.strip()
+                if "Koko putki suoritettu onnistuneesti" in line_s or line_s == "valmis":
+                    self._set_progress(100.0, "Valmis! Kaikki vaiheet suoritettu.")
+                elif "[vaihe 1/4]" in line_s:
+                    self._set_progress(35.0, line_s)
+                elif "[vaihe 2/4" in line_s:
+                    m = re.search(r"\((\d+)/(\d+)\)", line_s)
+                    if m:
+                        idx, tot = int(m.group(1)), int(m.group(2))
+                        pct = 40.0 + (idx / max(tot, 1)) * 35.0
+                        self._set_progress(pct, line_s)
+                    else:
+                        self._set_progress(40.0, line_s)
+                elif "[vaihe 3/4]" in line_s:
+                    self._set_progress(80.0, line_s)
+                elif "[vaihe 4/4" in line_s:
+                    self._set_progress(90.0, line_s)
+
             def log(line: str) -> None:
                 recorded_lines.append(line)
                 self.call_from_thread(self._write_log, line)
+                self.call_from_thread(_parse_progress_from_line, line)
 
-            code = self._runner(plan, log, timeout=driver.COMMAND_TIMEOUT)
+            def on_progress(pct: float, status: str) -> None:
+                self.call_from_thread(self._set_progress, pct, status)
+
+            sig = inspect.signature(self._runner)
+            kwargs = {}
+            if "on_progress" in sig.parameters:
+                kwargs["on_progress"] = on_progress
+
+            code = self._runner(plan, log, timeout=driver.COMMAND_TIMEOUT, **kwargs)
             if code == 0:
                 summary = "ajo valmis"
+                self.call_from_thread(
+                    self._set_progress, 100.0, "Valmis! Ajo onnistui."
+                )
                 transcripts = driver.parse_generated_transcripts("\n".join(recorded_lines))
                 for t in transcripts:
                     self.call_from_thread(self._write_log, f"Litterointi valmis: {t}")
             else:
                 summary = f"ajo pysähtyi koodiin {code}"
+                self.call_from_thread(
+                    self._set_progress_status, f"Ajo pysähtyi koodiin {code}"
+                )
             self.call_from_thread(self._write_log, summary)
 
         finally:
