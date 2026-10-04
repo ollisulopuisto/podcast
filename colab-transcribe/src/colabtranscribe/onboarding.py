@@ -58,14 +58,11 @@ def patch_colab_cli_automation(colab_path: str | None = None) -> bool:
             return True
 
         pattern = re.compile(
-            r"([ \t]*)try:\s*\n"
-            r"[ \t]*webbrowser\.open\(uri\)\s*\n"
-            r'[ \t]*typer\.echo\("[^"]*"\)\s*\n'
-            r"[ \t]*except Exception:\s*\n"
-            r"[ \t]*pass\s*\n"
-            r'[ \t]*sys\.stdout\.write\("Press Enter after you have granted access\.\.\. "\)\s*\n'
+            r"([ \t]*)"
+            r"(?:try:\s*\n[ \t]*webbrowser\.open\(uri\)\s*\n[ \t]*typer\.echo\([^)]*\)\s*\n[ \t]*except Exception:\s*\n[ \t]*pass\s*\n[ \t]*)?"
+            r'sys\.stdout\.write\(["\']Press Enter after you have granted access\.\.\. ["\']\)\s*\n'
             r"[ \t]*sys\.stdout\.flush\(\)\s*\n"
-            r'[ \t]*with open\("/dev/tty"\) as tty:\s*\n'
+            r'[ \t]*with open\(["\']/dev/tty["\']\) as tty:\s*\n'
             r"[ \t]*tty\.readline\(\)",
             re.MULTILINE,
         )
@@ -75,6 +72,7 @@ def patch_colab_cli_automation(colab_path: str | None = None) -> bool:
             return (
                 f'{indent}if not os.environ.get("COLAB_CLI_NO_BROWSER"):\n'
                 f"{indent}    try:\n"
+                f"{indent}        import webbrowser\n"
                 f"{indent}        webbrowser.open(uri)\n"
                 f'{indent}        typer.echo("[colab] Opening authorization URL automatically in your default browser...")\n'
                 f"{indent}    except Exception:\n"
@@ -112,11 +110,12 @@ def patch_colab_cli_automation(colab_path: str | None = None) -> bool:
                 f"{indent}    )"
             )
 
-        if 'with open("/dev/tty")' in content:
+        if "/dev/tty" in content:
             new_content = pattern.sub(_repl, content)
             if new_content != content:
                 automation_path.write_text(new_content, encoding="utf-8")
                 return True
+            return False
         return True
     except Exception:
         return False

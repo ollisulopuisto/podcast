@@ -195,6 +195,61 @@ def test_patch_colab_cli_automation(tmp_path: Path, monkeypatch):
     assert "COLAB_CLI_NO_BROWSER" in patched_content
 
 
+def test_patch_colab_cli_automation_upstream_content(tmp_path: Path, monkeypatch):
+    from colabtranscribe.onboarding import patch_colab_cli_automation
+
+    fake_py = tmp_path / "python3"
+    fake_py.write_text("#!/bin/sh\nexit 0\n")
+    fake_py.chmod(0o755)
+
+    fake_colab = tmp_path / "colab"
+    fake_colab.write_text(f"#!{fake_py}\n# fake colab\n")
+    fake_colab.chmod(0o755)
+
+    fake_automation = tmp_path / "automation.py"
+    upstream_content = (
+        "            if not data.get('success'):\n"
+        "                uri = data.get('unauthorized_redirect_uri')\n"
+        "                typer.echo(\n"
+        "                    f'\\n[colab] REQUIRED: Google Drive Authorization needed.\\nPlease visit:\\n\\n{uri}\\n'\n"
+        "                )\n"
+        "                state.history.log_event(s.name, 'drive_auth_needed', {'uri': uri})\n"
+        "                sys.stdout.write('Press Enter after you have granted access... ')\n"
+        "                sys.stdout.flush()\n"
+        "                with open('/dev/tty') as tty:\n"
+        "                    tty.readline()\n"
+        "\n"
+        "            typer.echo('[colab] Authorizing VM...')\n"
+        "            params['dryrun'] = 'false'\n"
+    )
+    fake_automation.write_text(upstream_content, encoding="utf-8")
+
+    import subprocess
+
+    orig_run = subprocess.run
+
+    def fake_subprocess_run(cmd, *args, **kwargs):
+        if len(cmd) >= 3 and "colab_cli.commands.automation" in cmd[2]:
+
+            class FakeResult:
+                returncode = 0
+                stdout = str(fake_automation)
+                stderr = ""
+
+            return FakeResult()
+        return orig_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fake_subprocess_run)
+
+    res = patch_colab_cli_automation(str(fake_colab))
+    assert res is True
+
+    patched_content = fake_automation.read_text(encoding="utf-8")
+    assert 'with open("/dev/tty")' not in patched_content
+    assert "Waiting for authorization in browser" in patched_content
+    assert "COLAB_CLI_NO_BROWSER" in patched_content
+
+
 def test_patch_colab_cli_runtime(tmp_path: Path, monkeypatch):
     from colabtranscribe.onboarding import patch_colab_cli_runtime
 
