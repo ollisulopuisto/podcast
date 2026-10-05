@@ -5,6 +5,11 @@ All notable changes to automixer are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.5.2] - 2026-10-05
+
+### Fixed
+- **`automixer-beds`: a long bed kept playing quietly after its fade-out.** On vst s13e03 the intro bed's fall ended at about −43 dB and the remaining 71 s of the region ramped slowly to silence, so the music sat at −43…−52 dB under the whole conversation. Silence now arrives within a fraction of a second.
+
 ## [2026.10.5.1] - 2026-10-05
 
 ### Added
