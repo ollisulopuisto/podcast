@@ -207,7 +207,7 @@ wheels = [
 
 [[package]]
 name = "automixer"
-version = "2026.10.5.3"
+version = "2026.10.5.4"
 source = { editable = "apps/automixer" }
 dependencies = [
     { name = "mlx" },
@@ -1875,7 +1875,7 @@ wheels = [
 
 [[package]]
 name = "nhsx"
-version = "2026.10.5.2"
+version = "2026.10.5.3"
 source = { editable = "packages/nhsx" }
 dependencies = [
     { name = "lxml" },

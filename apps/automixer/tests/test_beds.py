@@ -11,7 +11,7 @@ import pyloudnorm as pyln
 import soundfile as sf
 
 from automixer import cli_beds
-from nhsx import read
+from nhsx import fades, read
 from nhsx.mix import level_at, plan
 
 RATE = 48000
@@ -69,8 +69,9 @@ def test_bed_gets_the_measured_shape_in_a_new_session(tmp_path, monkeypatch):
     assert path.read_bytes() == before
     out = tmp_path / "jakso beds.nhsx"
     clip = _music_clip(out)
-    # Vanhat häivytykset pois: ne kertautuisivat uuden käyrän kanssa.
-    assert clip.fade_in == 0.0 and clip.fade_out == 0.0
+    # Vanhat häivytykset pois: ne kertautuisivat uuden käyrän kanssa. Tilalle
+    # vain lyhyt alun häivytys, joka peittää ensimmäisen luiskan.
+    assert clip.fade_in == fades.START_FADE_IN_S and clip.fade_out == 0.0
     assert clip.ramps
 
     def db(timeline):
