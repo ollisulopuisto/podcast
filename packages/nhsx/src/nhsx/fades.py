@@ -47,6 +47,13 @@ SILENCE_DB = -90.0
 #: ensimmäinen luiska vie sinne näin nopeasti. **Varmistettava
 #: Hindenburgissa**: soiko tämä 10 ms naksahduksena alueen alussa.
 FIRST_RAMP_S = 0.010
+#: ... ja siksi alue alkaa häivytyksellä hiljaisuudesta (``FadeIn``), joka
+#: peittää sen 10 ms:n luiskan. Ilman sitä vst s13e03:n END-pohja alkoi
+#: 10 ms purskeella −11 dBFS:ssä, ja käyttäjä kuuli sen. Luiskan huippu
+#: −56,66 dB:iin kulkevalla luiskalla: ilman häivytystä 0 dB, 100 ms:llä
+#: −50, 200 ms:llä −62 dB. Sen jälkeen käyrä on jo kuulumaton, joten
+#: häivytys ei muuta mitään kuuluvaa.
+START_FADE_IN_S = 0.200
 
 
 @dataclass(frozen=True)
@@ -130,6 +137,8 @@ def write(region_elem, segs: list[Segment]) -> None:
         if localname(child) == FADE_ELEMENT:
             region_elem.remove(child)
     tail = region_elem.text
+    if segs and segs[0].gain_db < 0.0:
+        region_elem.set("FadeIn", seconds_to_time(START_FADE_IN_S))
     for seg in segs:
         child = region_elem.makeelement(FADE_ELEMENT, {})
         if seg.start > 0:

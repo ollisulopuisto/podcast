@@ -137,3 +137,26 @@ def test_silence_after_a_fall_arrives_promptly(tmp_path):
     ramps = _read_back(tmp_path, segments, length=length)
     for t in (14.0, 20.0, 40.0, 79.0):
         assert _db(level_at(ramps, t)) <= -80.0, t
+
+
+def test_a_bed_starting_below_unity_does_not_click(tmp_path):
+    """Alueen taso on 0 dB ensimmäiseen luiskaan asti, joten ensimmäiset
+    10 ms soivat lähes täysillä. vst s13e03 v2: END-pohjan alussa 10 ms
+    purske −11 dBFS:ssä, käyttäjä näki ja kuuli sen. Häivytys hiljaisuudesta
+    (alueen ``FadeIn``) peittää luiskan."""
+    from nhsx.mix import envelope
+
+    segments = fades.segments(_points(lambda t: -56.66))
+    (tmp_path / "m.wav").write_bytes(b"")
+    path = tmp_path / "s.nhsx"
+    path.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Session><AudioPool Path="" Location="{tmp_path}"><File Id="1" Name="m.wav"/></AudioPool>
+<Tracks><Track Name="musa"><Region Ref="1" Length="20.000"/></Track></Tracks></Session>""",
+                    encoding="utf-8")
+    tree = etree.parse(str(path))
+    fades.write(next(tree.getroot().iter("Region")), segments)
+    tree.write(str(path), encoding="UTF-8", xml_declaration=True)
+    (clip,) = plan(read(path)).clips
+    rate = 48000
+    env = envelope(clip.length, rate, clip.ramps, clip.fade_in, clip.fade_out)
+    assert 20 * math.log10(float(np.max(env[: int(0.02 * rate)]))) <= -45.0
