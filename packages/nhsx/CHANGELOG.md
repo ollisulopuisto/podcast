@@ -5,6 +5,11 @@ All notable changes to the nhsx package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.5.2] - 2026-10-05
+
+### Fixed
+- `nhsx.fades`: below the audible line the written curve may now differ from the target by at most 12 dB (it was unbounded), so a fall into silence is no longer written as one minute-long ramp.
+
 ## [2026.10.5.1] - 2026-10-05
 
 ### Added

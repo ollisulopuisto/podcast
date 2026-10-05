@@ -117,3 +117,23 @@ def test_silence_is_written_as_a_number():
     segments = fades.segments(_points(lambda t: float("-inf")))
     assert all(np.isfinite(s.gain_db) for s in segments)
     assert segments[0].gain_db == fades.SILENCE_DB
+
+
+def test_silence_after_a_fall_arrives_promptly(tmp_path):
+    """vst s13e03 INTRO: lasku päättyi −42,6 dB:iin, ja loput 71,75 s
+    hiljaisuudesta kirjoitettiin yhdeksi raised-cosine-luiskaksi −90:een.
+    Musiikki soi −43…−52 dB:ssä koko keskustelun alla. Kuulumattoman rajan
+    alla «riittää että pysyy alhaalla» ei riitä, kun alhaalla on minuutti."""
+
+    def fall_then_silence(t):
+        if t < 10.0:
+            return 0.0
+        if t < 13.0:
+            return -50.0 * (t - 10.0) / 3.0
+        return float("-inf")
+
+    length = 80.0
+    segments = fades.segments(_points(fall_then_silence, length=length))
+    ramps = _read_back(tmp_path, segments, length=length)
+    for t in (14.0, 20.0, 40.0, 79.0):
+        assert _db(level_at(ramps, t)) <= -80.0, t

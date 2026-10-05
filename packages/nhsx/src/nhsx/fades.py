@@ -34,6 +34,12 @@ FIT_DB = 0.4
 #: täällä alhaalla. Ilman rajaa −68 dB:n hännän seuraaminen puolen desibelin
 #: tarkkuudella vaatisi kymmeniä luiskia joita kukaan ei kuule.
 AUDIBLE_DB = -40.0
+#: Kuulumattoman alla käyrä saa poiketa näin paljon. Ilman rajaa kaikki
+#: −40 dB:n alla kelpasi, ja vst s13e03:n INTRO-pohjan lasku −42,6 dB:stä
+#: hiljaisuuteen kirjoitettiin yhdeksi 71,75 s luiskaksi: musiikki soi
+#: −43…−52 dB:ssä koko keskustelun alla. Kahdentoista desibelin rajalla
+#: hiljaisuus (−90) tulee sekunnin murto-osassa.
+QUIET_TOLERANCE_DB = 12.0
 #: Hiljaisuus kirjoitetaan lukuna. ``-inf`` ei ole attribuuttiarvo jonka
 #: Hindenburgin tiedetään hyväksyvän.
 SILENCE_DB = -90.0
@@ -71,7 +77,8 @@ def _fits(points, i: int, j: int) -> bool:
         t, want = points[k]
         got = 20.0 * math.log10(max(g0 + (g1 - g0) * _share((t - t0) / (t1 - t0)), 1e-12))
         audible = want >= AUDIBLE_DB or got >= AUDIBLE_DB
-        if audible and abs(got - want) > FIT_DB:
+        allowed = FIT_DB if audible else QUIET_TOLERANCE_DB
+        if abs(got - want) > allowed:
             return False
     return True
 
