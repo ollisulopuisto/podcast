@@ -56,6 +56,10 @@ def _is_music(track, session) -> bool:
     Puheraidan alueilla lippu on ``IsMusic="False"``, musiikkiraidalla sitä
     ei aina ole lainkaan (pikis 2026-09-11), joten lippu yksin ei riitä.
     Mikki on monolähde; raita jonka jokainen lähde on stereo on musiikkia.
+
+    Stereoarvaus on viimeinen keino: jos alue sanoo ``IsMusic="False"``,
+    raita on puhetta vaikka mikki olisi tallennettu stereona (vst s13e03,
+    Olli). Muuten se ohitti puheketjun ja sai musiikin tason.
     """
     flags = [(r.elem.get("IsMusic") or "").lower() for r in track.regions
              if r.elem is not None]
@@ -63,6 +67,8 @@ def _is_music(track, session) -> bool:
         return True
     if any(word in track.name.upper() for word in MUSIC_WORDS):
         return True
+    if "false" in flags:
+        return False
     channels = []
     for region in track.regions:
         info = session.file_by_id(region.ref)
