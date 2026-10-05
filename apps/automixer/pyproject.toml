@@ -1,6 +1,6 @@
 [project]
 name = "automixer"
-version = "2026.8.28.1"
+version = "2026.10.5.1"
 description = "Automatic podcast mixing on Apple Silicon: session config in, rendered mix out"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -25,6 +25,7 @@ automixer = "automixer.cli_mix:main"
 autoanalyze = "automixer.cli_analyze:main"
 autotui = "automixer.app:main"
 autovideo = "automixer.cli_video:main"
+automixer-beds = "automixer.cli_beds:main"
 
 # The importable package is `automixer`, living under src/.  Spelling the build
 # out rather than relying on setuptools' auto-discovery keeps the installed
