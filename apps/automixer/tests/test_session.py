@@ -139,3 +139,48 @@ def test_a_stereo_microphone_is_speech_when_hindenburg_says_so(tmp_path):
     assert [(t["name"], t["type"]) for t in loaded.tracks] == [("Olli", "speech")]
     audio, _ = sf.read(loaded.tracks[0]["path"])
     assert audio.ndim == 1
+
+
+def _write_faded_session(tmp_path):
+    """A bed with automixer-beds' shape: held low, then a full plateau, then a
+    fall. The plateau is 12 dB over the hold, so the whole-clip loudness is
+    not the plateau's."""
+    sf.write(tmp_path / "olli.wav", _tone(20, 150, 0.3), RATE)
+    sf.write(tmp_path / "tunnari.wav", _tone(20, 440, 0.05, channels=2), RATE)
+    path = tmp_path / "jakso.nhsx"
+    path.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Session Samplerate="48000">
+  <AudioPool Path="" Location="{tmp_path}">
+    <File Id="1" Name="olli.wav"/>
+    <File Id="2" Name="tunnari.wav" Channels="2"/>
+  </AudioPool>
+  <Tracks>
+    <Track Name="olli">
+      <Region Ref="1" Start="00.000" Length="20.000" Offset="00.000"/>
+    </Track>
+    <Track Name="musa" Volume="-7.5">
+      <Region Ref="2" Start="00.000" Length="20.000" Offset="00.000">
+        <Fade Length="0.010" Gain="-12"/>
+        <Fade Start="8.000" Length="1.000" Gain="-2"/>
+        <Fade Start="14.000" Length="1.000" Gain="-30"/>
+      </Region>
+    </Track>
+  </Tracks>
+</Session>""", encoding="utf-8")
+    return path
+
+
+def test_a_faded_bed_is_matched_at_its_plateau_over_the_speech(tmp_path):
+    """The bed's plateau, not its whole-clip loudness, sits at the speech
+    reference plus the measured offset. vst s13e03: matching the whole raw clip
+    to the speech level put the plateau 11 dB UNDER the processed speech
+    (-26.9 vs -16.0 LUFS rendered), where the user's Hindenburg mix has it 7 dB
+    OVER (+8.2, +7.1, +7.0 for INTRO, MID, END)."""
+    loaded = session.load(_write_faded_session(tmp_path), tmp_path / "work")
+    music = next(t for t in loaded.tracks if t["type"] == "music")
+    audio, _ = sf.read(music["path"])
+    plateau = audio[int(9.5 * RATE):int(13.5 * RATE)]
+    lufs = pyln.Meter(RATE).integrated_loudness(plateau)
+    assert abs(lufs - (session.MUSIC_LUFS + session.MUSIC_PLATEAU_OVER_SPEECH_DB)) < 0.5
+    hold = audio[int(2 * RATE):int(6 * RATE)]
+    assert abs(_rms_db(hold) - _rms_db(plateau) - (-12 - -2)) < 0.3
