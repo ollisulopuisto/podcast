@@ -28,6 +28,7 @@ from pathlib import Path
 import numpy as np
 import pyloudnorm as pyln
 import soundfile as sf
+from scipy.ndimage import minimum_filter1d
 
 from nhsx import read
 from nhsx.mix import envelope, plan
@@ -36,6 +37,14 @@ from nhsx.mix import envelope, plan
 #: luku kuin `cli_mix`in `SPEECH_REFERENCE_LUFS`; musiikki sovitetaan
 #: siihen, jotta tunnari ja puhe ovat samalla tasolla ennen masterointia.
 MUSIC_LUFS = -23.0
+
+#: Häivytetyn musiikkipohjan tasanne puheen viitetason **yläpuolella**, dB.
+#: vst s13e03: käyttäjän käsin tekemät tasanteet olivat INTRO +8,2, MID +7,1
+#: ja END +7,0 dB puheen mediaanin yläpuolella (tasanne raidan faderin kanssa
+#: −26,2…−25,1 LUFS, puhe faderin kanssa −33,3 LUFS). Koko raakapohjan
+#: sovitus puheen tasoon pani tasanteen kuunnellussa renderissä 10,9 dB
+#: *alle* puheen (−26,9 vs −16,0 LUFS), eli noin 18 dB väärään suuntaan.
+MUSIC_PLATEAU_OVER_SPEECH_DB = 7.0
 
 #: Musiikkiraidan tunnistavat nimet, samat kuin tiedostonimien arvauksessa.
 MUSIC_WORDS = ("MUSIC", "THEME", "TUNNARI", "MUSA", "MUSIIKKI", "TUNNUS", "JINGLE")
@@ -89,6 +98,42 @@ def _slice(path: str, offset: float, length: float, rate: int) -> np.ndarray:
                            always_2d=True)
 
 
+#: Tasanne = hetket joilla häivytyskäyrä on enintään tämän verran (dB) oman
+#: huippunsa alapuolella. Sama 1 dB kuin tasanteen mittauksessa (vst s13e03).
+PLATEAU_WINDOW_DB = 1.0
+#: pyloudnormin lyhin mitattava pätkä on yksi 400 ms lohko.
+_MIN_PLATEAU_S = 0.4
+
+
+def _music_scale(audio: np.ndarray, env: np.ndarray, rate: int, meter) -> float:
+    """Kerroin joka vie musiikkialueen sen viitetasolle.
+
+    Häivytetty pohja (``automixer-beds`` tai käsin tehty) sovitetaan
+    **tasanteestaan**: tasanne on ``MUSIC_LUFS + MUSIC_PLATEAU_OVER_SPEECH_DB``.
+    Koko raakapohjan sovitus ei kelpaa, koska häivytys vie pohjan puheen
+    alle ja tasanteen taso riippuisi siitä kuinka paljon pohjassa on hiljaista
+    tai matalaa. Häivyttämätön pohja sovitetaan kokonaan puheen tasoon.
+    """
+    window = int(_MIN_PLATEAU_S * rate)
+    if len(env) > window:
+        # Vain pitkään kestänyt taso lasketaan huipuksi: automixer-beds kirjoittaa
+        # alun 10 ms:n luiskan, ja ennen sitä käyrä on 1,0, joka ei ole tasanne.
+        peak = float(minimum_filter1d(env, size=window).max())
+        band = 10 ** (PLATEAU_WINDOW_DB / 20)
+        if peak > 0.0 and float(env.min()) < peak / band:
+            mask = (env >= peak / band) & (env <= peak * band)
+            if mask.sum() >= window:
+                heard = audio[mask] * env[mask, None]
+                level = meter.integrated_loudness(heard)
+                if np.isfinite(level):
+                    target = MUSIC_LUFS + MUSIC_PLATEAU_OVER_SPEECH_DB
+                    return 10 ** ((target - level) / 20)
+    level = meter.integrated_loudness(audio) if len(audio) >= rate else None
+    if level is not None and np.isfinite(level):
+        return 10 ** ((MUSIC_LUFS - level) / 20)
+    return 1.0
+
+
 def load(path, workdir, rate: int = 48000) -> Loaded:
     """Kokoaa istunnon raidat WAVeiksi ``workdir``iin ohjelma-aikajanalle."""
     session = read(path)
@@ -113,18 +158,16 @@ def load(path, workdir, rate: int = 48000) -> Loaded:
             except (OSError, ValueError, RuntimeError) as exc:
                 loaded.notes.append(f"{track.name}: {exc}")
                 continue
+            env = envelope(len(audio) / rate, rate, clip.ramps, clip.fade_in,
+                           clip.fade_out)[: len(audio)]
             if music:
                 audio = audio if audio.shape[1] == 2 else np.repeat(audio[:, :1], 2, axis=1)
-                level = meter.integrated_loudness(audio) if len(audio) >= rate else None
-                if level is not None and np.isfinite(level):
-                    audio = audio * np.float32(10 ** ((MUSIC_LUFS - level) / 20))
+                audio = audio * np.float32(_music_scale(audio, env, rate, meter))
                 gain = 1.0
             else:
                 audio = audio.mean(axis=1, keepdims=True)
                 # Alueen oma taso ilman raidan faderia.
                 gain = clip.gain / clip.track_gain if clip.track_gain else clip.gain
-            env = envelope(len(audio) / rate, rate, clip.ramps, clip.fade_in,
-                           clip.fade_out)[: len(audio)]
             start = int(round(clip.start * rate))
             end = min(n, start + len(audio))
             out[start:end] += audio[: end - start] * (env[: end - start, None] * gain)

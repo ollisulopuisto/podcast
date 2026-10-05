@@ -5,6 +5,11 @@ All notable changes to automixer are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.5.3] - 2026-10-05
+
+### Fixed
+- **Music beds in a Hindenburg session were mixed about 11 dB under the processed speech.** The loader matched each bed's whole raw clip to the speech level and then applied its fades, which put the bed's full-level section at −10.9 dB re the speech on a 2-minute dxRevive render of vst s13e03 (−26.9 vs −16.0 LUFS). A bed with fades is now matched at its plateau instead: the plateau sits +7 dB over the speech, measured from the editor's own beds on that episode (+8.2 / +7.1 / +7.0 for INTRO / MID / END). The same render now measures the plateau at +6.7 dB over the speech. Beds without fades are unchanged. Speech comes out about 1.4 dB lower in a mix with a loud bed, because the master normalises the sum. The +7 dB is measured from one episode.
+
 ## [2026.10.5.2] - 2026-10-05
 
 ### Fixed
