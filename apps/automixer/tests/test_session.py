@@ -116,3 +116,26 @@ def test_music_is_matched_to_the_speech_reference():
     from automixer import cli_mix
 
     assert session.MUSIC_LUFS == cli_mix.SPEECH_REFERENCE_LUFS
+
+
+def test_a_stereo_microphone_is_speech_when_hindenburg_says_so(tmp_path):
+    """Stereona tallennettu mikki on puhetta, jos Hindenburg merkitsee sen
+    alueet ``IsMusic="False"``. Pelkkä stereoarvaus teki siitä musiikkia:
+    se ohitti puheketjun ja sai musiikin tason (vst s13e03, Olli)."""
+    sf.write(tmp_path / "olli.wav", _tone(4, 150, 0.3, channels=2), RATE)
+    path = tmp_path / "jakso.nhsx"
+    path.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Session Samplerate="48000">
+  <AudioPool Path="" Location="{tmp_path}">
+    <File Id="1" Name="olli.wav" Channels="2"/>
+  </AudioPool>
+  <Tracks>
+    <Track Name="Olli">
+      <Region Ref="1" Start="00.000" Length="04.000" IsMusic="False"/>
+    </Track>
+  </Tracks>
+</Session>""", encoding="utf-8")
+    loaded = session.load(path, tmp_path / "work")
+    assert [(t["name"], t["type"]) for t in loaded.tracks] == [("Olli", "speech")]
+    audio, _ = sf.read(loaded.tracks[0]["path"])
+    assert audio.ndim == 1
