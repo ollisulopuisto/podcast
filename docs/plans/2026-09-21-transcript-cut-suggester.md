@@ -1,6 +1,11 @@
 # Roadmap idea: transcript-driven removal suggester
 
-**Status:** punted, not started. Written down so it isn't lost. Rules for
+**Status:** superseded by
+[`2026-10-05-edit-diff.md`](2026-10-05-edit-diff.md) and
+[`2026-10-05-rough-cut.md`](2026-10-05-rough-cut.md) — the rules are
+learned from the editor's own raw/edited pairs. Original note kept below.
+
+**Original status:** punted, not started. Written down so it isn't lost. Rules for
 what counts as "removable" are TBD — need a conversation before this
 becomes an execution plan in this directory's usual format.
 
