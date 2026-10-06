@@ -35,6 +35,27 @@ FALLBACK: dict[str, str] = {
     ),
     "audio.editor_failed": "The plug-in's window could not be opened.",
     "audio.editor_behind": "The plug-in's window did not come to the front.",
+    "audio.program_short": "Mastering fell short: target {target} LUFS, got {got}.",
+    "audio.empty_file": "Empty audio file: {name}",
+    "audio.plugin_shifted": (
+        "The plug-in shifted the audio by {samples} samples ({ms:.0f} ms): {name}. "
+        "Picture and sound would drift apart, so the result is not used."
+    ),
+    "audio.would_overwrite": "Processing would have written over the original: {name}",
+    "audio.written_length": (
+        "The written file has a different length ({before} → {after}): {name}."
+    ),
+    "audio.debleed_too_little": (
+        "{name}'s bleed was not removed: too little material where they speak alone."
+    ),
+    "audio.debleed_no_path": (
+        "{name}'s bleed was not removed: the leakage path could not be solved."
+    ),
+    "audio.debleed_ate_speech": (
+        "{name}'s bleed was not removed: the subtraction would have eaten this "
+        "microphone's own speech."
+    ),
+    "audio.debleed_no_gain": "{name}'s bleed was not removed: there was nothing to remove.",
 }
 
 _translate: Callable[..., str] | None = None

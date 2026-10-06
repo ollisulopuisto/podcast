@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.6.2] - 2026-10-06
+
+### Added
+- **`speechmix.stems`: the stems-on-disk pipeline, moved from autoraffkat.** Processing one file at a time into a stem (`process_stem`, with de-bleed), the programme's shared peak ceiling and loudness mastering streamed over the stems in 60 s chunks (`program_ceiling`, `program_deliver`), the programme trim (`program_trim`), and block-wise summing to a stereo file (`sum_to_file`, which now keeps a stereo music source in stereo). The behaviour is unchanged: autoraffkat's 478 tests pass against it. automixer will use the same pipeline, so a full episode no longer has to fit in memory.
+
 ## [2026.10.6.1] - 2026-10-06
 
 ### Fixed
