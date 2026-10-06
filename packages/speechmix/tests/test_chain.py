@@ -946,3 +946,61 @@ def test_the_chain_gives_up_level_before_it_gives_up_crest():
     assert info.backed_off_db < 0.0, "tasosta ei otettu mitään"
     measured = chain.loudness(out.mean(axis=0), RATE)
     assert measured < -14.0, measured
+
+
+def _needed_gain_whole(audio, ceiling_db):
+    """Vanha toteutus vertailuksi: koko signaali ylinäytteistetään kerralla."""
+    from scipy import signal as _sig
+
+    ceiling = 10.0 ** (ceiling_db / 20.0)
+    up = chain.LIMITER_OVERSAMPLE
+    dense = _sig.resample_poly(audio, up, 1, axis=-1)
+    dense_gain = np.minimum(1.0, ceiling / np.maximum(np.abs(dense).max(axis=0), 1e-9))
+    usable = (dense_gain.shape[0] // up) * up
+    return dense_gain[:usable].reshape(-1, up).min(axis=1)[: audio.shape[1]]
+
+
+def test_true_peak_gain_in_chunks_matches_the_whole_signal():
+    rng = np.random.default_rng(3)
+    audio = rng.normal(0, 0.4, (2, RATE * 7 + 123))
+    want = _needed_gain_whole(audio, chain.CEILING_DB)
+    got = chain._needed_gain(audio, chain.CEILING_DB)
+    assert got.shape == (audio.shape[1],)
+    assert np.max(np.abs(got[: want.size] - want)) < 1e-9
+
+
+def test_true_peak_gain_memory_does_not_grow_with_the_episode():
+    """Koko jakson 4× ylinäytteistys float64:nä oli masteroinnin huippu:
+    5 min stereo 0,9 GB yksin, 47 min jakso ~21 GB — mikki ei mahtunut
+    32 GB:n koneeseen (vst s13e03, 2026-10-06). Paloittain huippu on
+    vakio plus tulos."""
+    import tracemalloc
+
+    audio = np.random.default_rng(4).normal(0, 0.3, (2, RATE * 60))
+    tracemalloc.start()
+    chain._needed_gain(audio, chain.CEILING_DB)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    # Tulos on yksi kanava float64 = puolet syötteestä, palat ~0,25 lisää
+    # (mitattu 0,75). Koko signaali kerralla oli yli nelinkertainen.
+    assert peak < 1.0 * audio.nbytes, peak / audio.nbytes
+
+
+def test_peak_to_short_term_in_chunks_matches_and_stays_small():
+    """Sama 4× ylinäytteistys kokonaisena oli puheväylän seuraava
+    muistihuippu (memray, 5 min synteettinen istunto, 2026-10-06)."""
+    import tracemalloc
+
+    from scipy import signal as _sig
+
+    rng = np.random.default_rng(5)
+    mono = rng.normal(0, 0.1, RATE * 60)
+    mono[RATE * 31 + 7] = 0.97
+    whole = 20.0 * np.log10(np.abs(_sig.resample_poly(mono, 4, 1)).max() + 1e-12)
+    assert abs(20.0 * np.log10(chain.true_peak(mono) + 1e-12) - whole) < 1e-9
+
+    tracemalloc.start()
+    chain.peak_to_short_term(mono, RATE)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert peak < 1.0 * mono.nbytes, peak / mono.nbytes

@@ -188,6 +188,10 @@ CEILING_DB = -1.5
 LIMITER_OVERSAMPLE = 4
 LIMITER_LOOKAHEAD_MS = 5.0
 LIMITER_RELEASE_MS = 120.0
+#: True peak lasketaan paloittain: palan pituus ja reunojen päällekkäisyys,
+#: näytteinä. Sekunti 48 kHz:llä on 4× float64:nä stereona 3 MB.
+_TRUE_PEAK_CHUNK = 48000
+_TRUE_PEAK_PAD = 1024
 
 
 # Mistä liitännäisiä etsitään. Vakiopaikat käyttöjärjestelmän mukaan.
@@ -1026,6 +1030,28 @@ def limiter_gain(
     return np.minimum(smooth, ahead)
 
 
+def true_peak(audio: np.ndarray) -> float:
+    """Ylinäytteistetty (4×) huippu lineaarisena, paloittain.
+
+    Kokonaisena tämä oli puheväylän muistihuippu: jokaisen raidan koko
+    jakso 4× float64:nä, kolme raitaa rinnakkain.
+    """
+    from scipy import signal as _sig
+
+    x = np.atleast_2d(np.asarray(audio))
+    total = x.shape[1]
+    best = 0.0
+    for start in range(0, total, _TRUE_PEAK_CHUNK):
+        stop = min(total, start + _TRUE_PEAK_CHUNK)
+        lo = max(0, start - _TRUE_PEAK_PAD)
+        hi = min(total, stop + _TRUE_PEAK_PAD)
+        dense = _sig.resample_poly(x[:, lo:hi], LIMITER_OVERSAMPLE, 1, axis=-1)
+        a = (start - lo) * LIMITER_OVERSAMPLE
+        b = (stop - lo) * LIMITER_OVERSAMPLE
+        best = max(best, float(np.abs(dense[:, a:b]).max()))
+    return best
+
+
 def _needed_gain(audio: np.ndarray, ceiling_db: float) -> np.ndarray:
     """Näytteittäin vaadittu vahvistus, jotta true peak pysyy katon alla.
 
@@ -1036,14 +1062,26 @@ def _needed_gain(audio: np.ndarray, ceiling_db: float) -> np.ndarray:
 
     ceiling = 10.0 ** (ceiling_db / 20.0)
     up = LIMITER_OVERSAMPLE
-    dense = _sig.resample_poly(audio, up, 1, axis=-1)
-    dense_peak = np.abs(dense).max(axis=0)
-    dense_gain = np.minimum(1.0, ceiling / np.maximum(dense_peak, 1e-9))
-    usable = (dense_gain.shape[0] // up) * up
-    needed = dense_gain[:usable].reshape(-1, up).min(axis=1)
-    if needed.shape[0] < audio.shape[1]:
-        needed = np.pad(needed, (0, audio.shape[1] - needed.shape[0]), mode="edge")
-    return needed[: audio.shape[1]]
+    total = audio.shape[1]
+    needed = np.empty(total, dtype=np.float64)
+    # Paloittain, reunoille päällekkäisyyttä: ylinäytteistyssuotimen vaste on
+    # pidempi kuin ``_TRUE_PEAK_PAD`` näytettä vain jos se olisi yli 50 kertaa
+    # scipyn oletus (2·10·up + 1 tappia ylinäytteistettynä = 20 näytettä).
+    # Koko jakso kerralla oli masteroinnin muistihuippu: 47 minuutin stereo
+    # 4× float64:nä ~21 GB, eikä jakso mahtunut 32 GB:n koneeseen.
+    for start in range(0, total, _TRUE_PEAK_CHUNK):
+        stop = min(total, start + _TRUE_PEAK_CHUNK)
+        lo = max(0, start - _TRUE_PEAK_PAD)
+        hi = min(total, stop + _TRUE_PEAK_PAD)
+        dense = _sig.resample_poly(audio[:, lo:hi], up, 1, axis=-1)
+        dense_peak = np.abs(dense).max(axis=0)
+        dense_gain = np.minimum(1.0, ceiling / np.maximum(dense_peak, 1e-9))
+        usable = (dense_gain.shape[0] // up) * up
+        piece = dense_gain[:usable].reshape(-1, up).min(axis=1)
+        if piece.shape[0] < hi - lo:
+            piece = np.pad(piece, (0, hi - lo - piece.shape[0]), mode="edge")
+        needed[start:stop] = piece[start - lo: stop - lo]
+    return needed
 
 
 #: Huippuvaihe: rajoittimen edessä oleva hidas käyrä, joka vie huiput katolle
@@ -1277,12 +1315,10 @@ def peak_to_short_term(audio: np.ndarray, rate: int) -> float:
     Alle kuuden tarkoittaa että tiivistys on mennyt pidemmälle kuin oli
     tarpeen. Palauttaa ``nan`` jos ei ole mitattavaa.
     """
-    from scipy import signal as _sig
-
     mono = np.asarray(audio).mean(axis=0) if audio.ndim > 1 else np.asarray(audio)
     if mono.size < rate * 3:
         return float("nan")
-    peak = 20.0 * np.log10(np.abs(_sig.resample_poly(mono, 4, 1)).max() + 1e-12)
+    peak = 20.0 * np.log10(true_peak(mono) + 1e-12)
     window = int(3 * rate)
     step = max(1, int(0.5 * rate))
     best = -np.inf
