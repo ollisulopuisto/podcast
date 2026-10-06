@@ -847,13 +847,26 @@ class Source:
     pan: float = 0.0
     gain_db: float = 0.0
     stereo: bool = False
+    #: ``"balance"`` (Final Cut) tai ``"power"`` (vakioteho, keskellä −3 dB
+    #: kumpaankin). Ks. ``pan_gains``.
+    pan_law: str = "balance"
 
 
-def pan_gains(pan: float) -> tuple[float, float]:
-    """Monoraita stereoksi: keskellä täysi taso kumpaankin, sivussa toinen
-    kanava hiljenee. Tasapaino eikä vakiotehon laki: Final Cutin monoklippi
-    stereoprojektissa soi keskellä täydellä tasolla molemmista."""
+def pan_gains(pan: float, law: str = "balance") -> tuple[float, float]:
+    """Monoraita stereoksi.
+
+    ``balance``: keskellä täysi taso kumpaankin, sivussa toinen kanava
+    hiljenee. Final Cutin monoklippi stereoprojektissa soi niin, ja
+    autoraffkatin render toistaa Final Cutia.
+
+    ``power``: vakioteho, keskellä −3 dB kumpaankin, joten stereon äänekkyys
+    (BS.1770) on sama kuin monon. automixer tasaa musiikin puheen
+    **mono**tasoon; täydellä tasolla keskitetty puhe nousi stereossa 3 dB
+    ja pohja jäi +3,3…+4,9 dB:iin kun piti olla +7 (vst s13e03).
+    """
     amount = max(-1.0, min(1.0, pan / 100.0))
+    if law == "power":
+        return float(np.sqrt(0.5 * (1.0 - amount))), float(np.sqrt(0.5 * (1.0 + amount)))
     return min(1.0, 1.0 - amount), min(1.0, 1.0 + amount)
 
 
@@ -882,7 +895,7 @@ def sum_to_file(sources: list[Source], program_start: float, seconds: float,
                 t0 = program_start + first / rate
                 mix = np.zeros((2, count), dtype=np.float32)
                 for source in sources:
-                    left, right = pan_gains(source.pan)
+                    left, right = pan_gains(source.pan, source.pan_law)
                     for start, end, file_start in source.placements:
                         low, high = max(start, t0), min(end, t0 + count / rate)
                         if high <= low:
