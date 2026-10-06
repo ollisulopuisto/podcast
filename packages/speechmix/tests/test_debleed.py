@@ -227,3 +227,31 @@ def test_the_filter_reaches_past_the_early_reflections():
         f"myöhäinen heijastus jäi: vain {info['reduction_db']:.2f} dB"
     )
     assert info["kept"] > 0.999, "kohteen oma puhe muuttui"
+
+
+def test_leak_convolution_in_chunks_matches_and_stays_small():
+    """Vuodon suodatus koko raidalle yhtenä FFT:nä oli de-bleedin
+    muistihuippu (memray, 2026-10-06: 0,7 GB viiden minuutin raidalle).
+    Lohkoittain summattuna (overlap-add) tulos on sama."""
+    import tracemalloc
+
+    from scipy import signal as sig
+
+    from speechmix import debleed
+
+    rng = np.random.default_rng(11)
+    rate = 48000
+    source = rng.normal(0, 0.1, rate * 60)
+    filt = rng.normal(0, 0.01, debleed.TAPS)
+    n = source.size
+    want = sig.fftconvolve(source, filt)[:n]
+    got = debleed.leak(source, filt, n)
+    assert np.max(np.abs(got - want)) < 1e-10
+
+    tracemalloc.start()
+    debleed.leak(source, filt, n)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    # Tulos (1×) ja vakio lohkon verran — ei kerrannaista raidan pituudesta.
+    # Mitattu 1,85× 60 s:n raidalla, kokonaisena FFT:nä ~6×.
+    assert peak < source.nbytes + 32 * 2**20, peak / source.nbytes

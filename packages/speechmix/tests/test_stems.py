@@ -35,3 +35,21 @@ def test_sum_keeps_stereo_music_and_pans_mono_speech(tmp_path):
     assert np.allclose(mix[int(0.5 * RATE)], [0.2, -0.1], atol=1e-4)
     # Puhe täysin vasemmalla: vasen +0,3, oikea ei mitään.
     assert np.allclose(mix[int(1.5 * RATE)], [0.5, -0.1], atol=1e-4)
+
+
+def test_meter_reads_stereo_as_the_standard_does():
+    """BS.1770: kanavien tehot summataan. Kaksoismono on 3 dB monoa
+    kovempi, ja pyloudnorm lukee saman. Keskiarvo kanavista luki monon
+    lukeman stereolle, ja automixerin miksaus jäi tavoitteen yli 3,7 dB."""
+    import pyloudnorm as pyln
+
+    from speechmix.meter import IntegratedMeter
+
+    rng = np.random.default_rng(1)
+    mono = rng.normal(0, 0.05, RATE * 10)
+    stereo = np.stack([mono, rng.normal(0, 0.03, RATE * 10)])
+    meter = IntegratedMeter(RATE)
+    for i in range(0, stereo.shape[1], RATE):
+        meter.add(stereo[:, i:i + RATE])
+    want = pyln.Meter(RATE).integrated_loudness(stereo.T)
+    assert abs(meter.value() - want) < 0.1

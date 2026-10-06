@@ -1,0 +1,224 @@
+"""Hindenburgin istunto miksaukseksi stemeinä levyllä.
+
+Sama putki kuin autoraffkatissa (``speechmix.stems``): jokainen puheraita
+käsitellään kerrallaan omaksi stemikseen levylle, ohjelman katto ja
+masterointi virtaavat stemien läpi minuutin paloissa, ja lopullinen
+stereotiedosto kootaan paloittain. Koko ohjelma ei ole muistissa
+missään vaiheessa.
+
+Syy: muistissa koottu miksaus tarvitsi 47 minuutin jaksolle ~40 GB eikä
+mahtunut 32 GB:n koneeseen (vst s13e03, 2026-10-06). Mitattuna synteettisellä
+istunnolla 0,6 GB minuutissa; autoraffkat käsittelee 64 minuutin jaksoja
+samalla koneella tällä tavalla.
+
+Musiikki ei kulje puheketjun läpi. ``session.load`` on jo sovittanut sen
+tason ja kirjoittanut häivytykset, ja se kulkee katon ja masteroinnin läpi
+samana stemien joukossa kuin puhe — summa on ohjelma, ja katto on summan.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import tempfile
+from dataclasses import asdict
+from types import SimpleNamespace
+
+from speechmix import chain, envelopes, masks, panning, programme, stems
+from speechmix.timeline import Span, Track
+
+from . import session as hindenburg
+from .domain import shared
+from .domain.processor import SpeechSettings
+
+#: Puhestemien taso ennen masterointia: sama viite kuin muistissa
+#: miksatessa (``cli_mix.SPEECH_REFERENCE_LUFS``), jotta kynnykset ja
+#: musiikin sovitus (``session.MUSIC_LUFS``) pysyvät samassa suhteessa.
+SPEECH_REFERENCE_LUFS = hindenburg.MUSIC_LUFS
+
+
+def _log(message: str) -> None:
+    print(f"[automixer] {message}", flush=True)
+
+
+def _duration(path: str) -> float:
+    import soundfile as sf
+
+    info = sf.info(path)
+    return info.frames / info.samplerate
+
+
+def stereo_layout(members, blocks):
+    """Miten stemit soivat ulostulossa: sama laki kuin ``stems.sum_to_file``.
+
+    Mittari mittaa tämän eikä stemien monosummaa. Keskelle panoroitu
+    monopuhe soi täysillä kummastakin kanavasta, ja se on BS.1770:llä 3 dB
+    kovempi kuin sama mono — ilman tätä miksaus jäi tavoitteen yli.
+    """
+    import numpy as np
+
+    n = np.atleast_2d(blocks[0]).shape[-1]
+    out = np.zeros((2, n), dtype=np.float64)
+    for job, block in zip(members, blocks, strict=True):
+        block = np.atleast_2d(block)
+        if job.get("stereo") and block.shape[0] == 2:
+            pair = block
+        else:
+            mono = block.mean(axis=0)
+            pair = np.stack([mono, mono])
+        left, right = stems.pan_gains(job.get("pan", 0.0))
+        out[0] += pair[0] * left
+        out[1] += pair[1] * right
+    return out
+
+
+def mix(
+    session_path: str,
+    output: str,
+    target_lufs: float = -16.0,
+    plugin_path: str = "",
+    plugin_params: dict | None = None,
+    plugin_state: str = "",
+    track_params: dict | None = None,
+    high_pass: bool = True,
+    declick: bool = True,
+    declick_sensitivity: float = 0.5,
+    rider: bool = True,
+    debleed: bool = True,
+    mic_duck: bool = False,
+    mic_duck_db: float | None = None,
+) -> stems.StemResult:
+    """Miksaa istunnon ``output``iin. Palauttaa ohjelman tason tulokset."""
+    result = stems.StemResult()
+    workdir = tempfile.mkdtemp(
+        prefix="automixer-", dir=os.path.dirname(os.path.abspath(output)) or None
+    )
+    try:
+        loaded = hindenburg.load(session_path, workdir)
+        for note in loaded.notes:
+            _log(f"! {note}")
+        speech = [t for t in loaded.tracks if t["type"] == "speech"]
+        music = [t for t in loaded.tracks if t["type"] == "music"]
+        if not speech and not music:
+            raise stems.StemError("no audio tracks in the session")
+        seconds = loaded.duration
+
+        def placed(path: str, name: str) -> Track:
+            # Kaikki stemit ovat aikajanan mittaisia ja alkavat nollasta:
+            # ``session.load`` kokosi ne niin.
+            return Track(path=path, speaker=name, spans=[Span(0.0, _duration(path), 0.0)])
+
+        settings = SimpleNamespace(
+            **asdict(SpeechSettings(
+                high_pass_hz=shared.HIGH_PASS_HZ if high_pass else 0.0,
+                declick=declick,
+                declick_sensitivity=declick_sensitivity,
+                rider=rider,
+            )),
+            debleed=debleed,
+        )
+
+        # Puheruudukko raa'oista stemeistä, verhokäyristä — ei näytteinä.
+        grid = None
+        if len(speech) > 1:
+            grid = stems.grid_from_files({t["name"]: t["path"] for t in speech})
+            _log(f"speech grid: {len(grid.speakers)} microphones")
+        solos = masks.solo_masks(grid) if (grid is not None and debleed) else {}
+        speaking = masks.speech_masks(grid) if grid is not None else None
+
+        pans = panning.spread(len(speech))
+        jobs = []
+        for number, t in enumerate(speech):
+            target = os.path.join(workdir, f"{number:02d} {t['name']} [mix].wav")
+            jobs.append({
+                "key": t["name"], "name": t["name"], "speaker": t["name"],
+                "track": placed(t["path"], t["name"]),
+                "source": t["path"], "target": target,
+                "target_lufs": SPEECH_REFERENCE_LUFS, "gain_db": 0.0,
+                "speech": True, "mono": True, "pan": pans[number],
+            })
+
+        pools: dict = {}
+
+        def plugin_for(name: str):
+            if not plugin_path:
+                return None
+            params = dict(plugin_params or {})
+            for track, per_plugin in (track_params or {}).items():
+                if track and track in name.lower():
+                    for key, values in per_plugin.items():
+                        if key in os.path.basename(plugin_path).lower():
+                            params.update(values)
+            key = tuple(sorted(params.items()))
+            if key not in pools:
+                pools[key] = chain.load_pool(
+                    plugin_path, params, chain.worker_count(0), plugin_state or None
+                )
+            return pools[key]
+
+        try:
+            for job in jobs:
+                _log(f"{job['name']}: processing")
+                partners = [o for o in jobs if o is not job]
+                result.gains[job["key"]] = stems.process_stem(
+                    job, settings, plugin_for(job["name"]), 0.0,
+                    lambda name, _share, who=job["name"]: _log(f"  {who}: {name}"),
+                    0.0, solos, partners, result, speaking,
+                )
+        finally:
+            for pool in pools.values():
+                if hasattr(pool, "close"):
+                    pool.close()
+
+        for t in music:
+            # Musiikki on jo tasollaan ja häivytetty (``session.load``); se
+            # kulkee katon ja masteroinnin läpi summan osana.
+            jobs.append({
+                "key": t["name"], "name": t["name"], "speaker": "",
+                "track": placed(t["path"], t["name"]),
+                "source": t["path"], "target": t["path"],
+                "speech": False, "programme": True, "stereo": True,
+                "bit_depth": 32,
+            })
+
+        ducks = {}
+        if mic_duck and grid is not None:
+            duck = SimpleNamespace(**{
+                name: getattr(masks, f"DUCK_{name.upper()}")
+                for name in ("db", "fade", "release", "hold", "lookahead",
+                             "min_open", "min_closed", "dominance_db")
+            }, duck=True)
+            if mic_duck_db is not None:
+                duck.db = float(mic_duck_db)
+            duck.duck_db = duck.db
+            for name in ("fade", "release", "hold", "lookahead", "min_open",
+                         "min_closed", "dominance_db"):
+                setattr(duck, f"duck_{name}", getattr(duck, name))
+            ducks = envelopes.duck_envelopes(grid, duck, 0.0)
+
+        deliver = SimpleNamespace(
+            target_lufs=target_lufs,
+            program_peak_db=programme.PROGRAM_PEAK_DB,
+            program_limit_budget_db=programme.PROGRAM_LIMIT_BUDGET_LU,
+        )
+        extra = programme.shared_backoff(result.backoffs)
+        stems.program_deliver(jobs, result, ducks, extra, deliver,
+                              stems.anyone_speaking(grid, 0.0),
+                              layout=stereo_layout)
+
+        sources = [
+            stems.Source(job["target"], [(0.0, seconds, 0.0)],
+                         duck=ducks.get(job["speaker"]), pan=job["pan"])
+            for job in jobs[: len(speech)]
+        ] + [
+            stems.Source(job["target"], [(0.0, seconds, 0.0)], stereo=True)
+            for job in jobs[len(speech):]
+        ]
+        _log("writing the mix")
+        stems.sum_to_file(sources, 0.0, seconds, output)
+        _log(f"mastered: {result.program_lufs:.1f} LUFS, "
+             f"lift {result.program_boost:+.1f} dB, "
+             f"limiting {result.program_limit_cost:.1f} LU → {output}")
+        return result
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)

@@ -11,7 +11,6 @@ import glob
 import json
 import os
 import shutil
-import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -21,7 +20,6 @@ import psutil
 import soundfile as sf
 import yaml
 
-from automixer import session as hindenburg
 from automixer.domain import room, shared
 from automixer.domain.bus import Bus
 from automixer.domain.processor import (
@@ -742,21 +740,14 @@ def main():
     sessions = [p for p in args.tracks if p.lower().endswith(".nhsx")]
     workdir = None
     if sessions:
-        # Hindenburgin istunto: editointi sieltä, miksaus täältä. Raidat
-        # kootaan väliaikaisiksi WAVeiksi ja siivotaan ajon jälkeen.
+        # Hindenburgin istunto: editointi sieltä, miksaus täältä — stemeinä
+        # levyllä kuten autoraffkatissa (``stems_mix``), koska muistissa
+        # koottu 47 minuutin jakso ei mahtunut 32 GB:n koneeseen.
         if len(args.tracks) > 1 or args.speech or args.music:
             print("A Hindenburg session is mixed on its own: give one .nhsx.")
             return
-        workdir = tempfile.mkdtemp(prefix="automixer-")
-        loaded = hindenburg.load(sessions[0], workdir)
-        for note in loaded.notes:
-            print(f"  ! {note}")
-        config_tracks = loaded.tracks
-        if args.output is None:
-            args.output = os.path.splitext(sessions[0])[0] + " automixer.wav"
-        # Musiikin häivytykset tehtiin Hindenburgissa ja taso on sovitettu.
-        args.music_carve = False
-        args.music_duck = False
+        _mix_session(args, sessions[0])
+        return
     if args.output is None:
         args.output = "final_mix.wav"
 
@@ -850,6 +841,41 @@ def main():
     finally:
         if workdir is not None:
             shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _mix_session(args, path: str) -> None:
+    """Istunto ``stems_mix``in kautta, CLI:n asetuksilla."""
+    from . import stems_mix
+
+    output = args.output or os.path.splitext(path)[0] + " automixer.wav"
+    plugins = list(args.speech_plugins or [])
+    if len(plugins) > 1:
+        print(f"  ! one speech plug-in per session: using {os.path.basename(plugins[0])}")
+    if args.ad_spot:
+        print("  ! --ad-spot is not used for a Hindenburg session: edit the gap there")
+    params: dict = {}
+    if plugins:
+        name = os.path.basename(plugins[0]).lower()
+        for key, val in parse_plugin_params(args.plugin_params).items():
+            if key in name:
+                params = val
+                break
+    stems_mix.mix(
+        path,
+        output,
+        target_lufs=args.target_lufs,
+        plugin_path=plugins[0] if plugins else "",
+        plugin_params=params,
+        plugin_state=load_plugin_state(args.plugin_state) if args.plugin_state else "",
+        track_params=parse_track_params(args.track_params),
+        high_pass=args.speech_hp,
+        declick=args.speech_desmack,
+        declick_sensitivity=args.speech_desmack_sensitivity,
+        rider=args.speech_rider,
+        debleed=args.speech_debleed,
+        mic_duck=args.speech_mic_duck,
+        mic_duck_db=args.mic_duck_db,
+    )
 
 
 if __name__ == "__main__":

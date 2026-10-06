@@ -172,6 +172,30 @@ def _level(x: np.ndarray, keep: np.ndarray) -> float:
     return 10.0 * np.log10(float(np.mean(np.asarray(picked, np.float64) ** 2)) + 1e-30)
 
 
+#: Vuotosuodatuksen lohko näytteinä (overlap-add). Kymmenen sekuntia
+#: 48 kHz:llä: FFT:n hinta pysyy pienenä suhteessa lohkoon, muisti vakiona.
+LEAK_CHUNK = 480000
+
+
+def leak(source, filt: np.ndarray, frames: int) -> np.ndarray:
+    """``source`` suodatettuna vuotopolulla, ``frames`` näytettä.
+
+    Sama kuin ``fftconvolve(source, filt)[:frames]``, mutta lohkoittain ja
+    summaten (overlap-add). Koko raita yhtenä FFT:nä oli de-bleedin
+    muistihuippu: viiden minuutin raidalle 0,7 GB, 47 minuutin jaksolle
+    gigatavuja (memray, 2026-10-06).
+    """
+    from scipy import signal as sig
+
+    x = np.asarray(source, dtype=np.float64)
+    out = np.zeros(frames, dtype=np.float64)
+    for start in range(0, min(len(x), frames), LEAK_CHUNK):
+        piece = sig.fftconvolve(x[start:start + LEAK_CHUNK], filt)
+        end = min(frames, start + len(piece))
+        out[start:end] += piece[: end - start]
+    return out
+
+
 def remove(
     target: np.ndarray,
     source: np.ndarray,
@@ -190,7 +214,6 @@ def remove(
     alkuperäinen ja ``tiedot["reason"]`` kertoo miksi — vähennystä ei
     tehdä puolittain eikä hiljaa.
     """
-    from scipy import signal as sig
 
     info: dict = {"reduction_db": 0.0, "kept": 1.0, "reason": ""}
     solo_source = np.asarray(solo_source, dtype=bool)
@@ -205,10 +228,7 @@ def remove(
         info["reason"] = "no_path"
         return target, info
 
-    leak = sig.fftconvolve(np.asarray(source, dtype=np.float64), filt)[: len(target)]
-    if len(leak) < len(target):
-        leak = np.pad(leak, (0, len(target) - len(leak)))
-    cleaned = np.asarray(target, dtype=np.float64) - leak
+    cleaned = np.asarray(target, dtype=np.float64) - leak(source, filt, len(target))
 
     before = _level(target, solo_source)
     after = _level(cleaned, solo_source)

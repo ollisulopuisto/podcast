@@ -83,33 +83,19 @@ def test_music_is_found_and_its_level_is_matched_to_speech(tmp_path):
 
 
 def test_the_cli_mixes_a_session_to_the_target(tmp_path, monkeypatch):
-    """`automixer jakso.nhsx`: raidat istunnosta, musiikin taso jo
-    sovitettu (ei uutta normalisointia -30:een eikä automaattista
-    duckingia — häivytykset tehtiin Hindenburgissa), tulos istunnon
-    viereen."""
+    """`automixer jakso.nhsx`: istunto stemeinä levyllä (``stems_mix``),
+    tulos istunnon viereen tavoitetasolla, työhakemisto siivottuna."""
     from automixer import cli_mix
 
     path = _write_session(tmp_path)
-    seen = []
-    original = cli_mix.Mixer
-
-    class Spy(original):
-        def __init__(self, config):
-            seen.append(config)
-            super().__init__(config)
-
-    monkeypatch.setattr(cli_mix, "Mixer", Spy)
     monkeypatch.setattr("sys.argv", ["automixer", str(path)])
     cli_mix.main()
 
-    music = seen[0]["buses"]["music"]
-    assert music["level_lufs"] is None
-    assert not music["carve_enabled"] and not music["duck_enabled"]
     out = tmp_path / "jakso automixer.wav"
     mix, rate = sf.read(out)
     lufs = pyln.Meter(rate).integrated_loudness(mix)
     assert abs(lufs - -16.0) < 0.6
-    assert not (tmp_path / "work").exists()
+    assert not list(tmp_path.glob("automixer-*"))
 
 
 def test_music_is_matched_to_the_speech_reference():

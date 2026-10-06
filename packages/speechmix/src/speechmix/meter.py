@@ -69,7 +69,12 @@ def _k_weighting(rate: int):
 
 
 class IntegratedMeter:
-    """Kerää ohjelman äänekkyyden paloista. Mono sisään.
+    """Kerää ohjelman äänekkyyden paloista. Mono tai ``(kanavat, n)``.
+
+    Monikanavainen pala mitataan kuten BS.1770 sen määrää: jokainen kanava
+    painotetaan erikseen ja kanavien tehot **summataan**. Keskiarvo kanavista
+    luki kaksoismonon 3 dB liian hiljaiseksi, ja automixerin stereomiksaus
+    jäi siksi tavoitteen yli (−12,3 LUFS kun pyydettiin −16).
 
     ``add`` saa palan mitä tahansa pituutta; ``value`` antaa integroidun
     lukeman LUFS:eina tai ``None`` jos portin yli ei jäänyt mitään.
@@ -78,8 +83,8 @@ class IntegratedMeter:
     def __init__(self, rate: int):
         self.rate = int(rate)
         (self._b1, self._a1), (self._b2, self._a2), self._sig = _k_weighting(rate)
-        self._z1 = np.zeros(2)
-        self._z2 = np.zeros(2)
+        self._z1: np.ndarray | None = None
+        self._z2: np.ndarray | None = None
         self.step = max(1, int(round(BLOCK_SEC * rate / OVERLAP)))
         self._tail = np.zeros(0, dtype=np.float64)
         self._tail_speech = np.zeros(0, dtype=np.float64)
@@ -95,17 +100,23 @@ class IntegratedMeter:
         järjestyksessä kuin isäntä ne lukee, ja jokainen yritys kohdistaa
         maski jälkikäteen olisi arvaus siitä järjestyksestä.
         """
-        x = np.asarray(block, dtype=np.float64)
-        if x.ndim > 1:
-            x = x.mean(axis=0)
-        if not x.size:
+        x = np.atleast_2d(np.asarray(block, dtype=np.float64))
+        if not x.shape[1]:
             return
-        y, self._z1 = self._sig.lfilter(self._b1, self._a1, x, zi=self._z1)
-        y, self._z2 = self._sig.lfilter(self._b2, self._a2, y, zi=self._z2)
-        flag = (np.ones(x.size) if speech is None
-                else np.asarray(speech, dtype=float)[: x.size])
-        if flag.size < x.size:
-            flag = np.pad(flag, (0, x.size - flag.size))
+        if self._z1 is None:
+            self._z1 = np.zeros((x.shape[0], 2))
+            self._z2 = np.zeros((x.shape[0], 2))
+        y, self._z1 = self._sig.lfilter(self._b1, self._a1, x, axis=-1, zi=self._z1)
+        y, self._z2 = self._sig.lfilter(self._b2, self._a2, y, axis=-1, zi=self._z2)
+        n = x.shape[1]
+        flag = (np.ones(n) if speech is None
+                else np.asarray(speech, dtype=float)[:n])
+        if flag.size < n:
+            flag = np.pad(flag, (0, n - flag.size))
+        # Kanavien tehot summaan: ``sqrt(Σ y²)`` on näytteittäin se signaali
+        # jonka teho on kanavien tehojen summa, joten lohkojen keskiarvo
+        # alla on BS.1770:n summa. Monolle se on itse signaali.
+        y = y[0] if y.shape[0] == 1 else np.sqrt(np.sum(y * y, axis=0))
         data = np.concatenate((self._tail, y)) if self._tail.size else y
         marks = (np.concatenate((self._tail_speech, flag))
                  if self._tail_speech.size else flag)

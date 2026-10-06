@@ -5,6 +5,16 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.6.3] - 2026-10-06
+
+### Changed
+- **The loudness meter reads stereo the way BS.1770 does:** each channel is K-weighted and the powers are summed. It used to average the channels, which read dual-mono 3 dB low. Mono input reads as before.
+- **The programme passes accept a `layout`** describing how the stems land in the host's own stereo output, so mastering measures what is actually written. autoraffkat passes none (Final Cut plays the stems), so its results are unchanged.
+- **Lower memory, identical results:** the multiband compressor, the other compressor stages, the de-esser and the de-bleed subtraction now run in chunks with their filter state carried across. Measured on 60 s of speech: multiband 22× → 2.3× the input, de-bleed's convolution ~6× → the output plus a fixed 10 s chunk.
+
+### Added
+- `stems.grid_from_files`: a speech grid from cached level curves of timeline-length stems, never holding the audio itself.
+
 ## [2026.10.6.2] - 2026-10-06
 
 ### Added
