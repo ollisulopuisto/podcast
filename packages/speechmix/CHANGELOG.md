@@ -5,10 +5,15 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.6.6] - 2026-10-06
+
+### Fixed
+- **Block-level gain measured how much of a block was quiet, not how loud it was.** The median of 20 ms frames, checked against vst s13e03's raw audio, would have boosted a 27 s block of Olli's by +5.9 dB that the editor left alone, cut Olli's +12.8 dB intro by only 3.4 dB (editor: −12.2), and given Kari's intro the wrong sign. A block's level is now its energy over 3 s windows, median of the windows: it follows loudness like LUFS, and a burst shorter than half the block still does not move it. Blocks under 3 s of own voice are no longer corrected (1–2 s breaths and bleed at −51…−61 dB were being raised 12 dB), and boosts are capped at +6 dB (cuts stay at 12).
+
 ## [2026.10.6.5] - 2026-10-06
 
 ### Added
-- **`speechmix.blocks`: block-level gain.** A speaker's own-voice blocks (pauses under 1.5 s closed) are each measured by their median level, so one emphatic or shouted burst does not move them. A block more than 3 dB from the speaker's own level is brought 80 % of the way back, capped at 12 dB, with the change made mid-pause over 50 ms. The constants are fitted to the editor's by-ear clip gains on vst s13e03 (Olli's intro +12.8/+10.0/+7.8 dB hot, set to −12.2/−7.5/−5.3; the blocks at 26:18 and 36:41 left alone); a check against that episode's raw audio is pending.
+- **`speechmix.blocks`: block-level gain.** A speaker's own-voice blocks (pauses under 1.5 s closed) are each measured by their median level, so one emphatic or shouted burst does not move them. A block more than 3 dB from the speaker's own level is brought 80 % of the way back, capped at 12 dB, with the change made mid-pause over 50 ms. The constants were fitted to the editor's by-ear clip gains on vst s13e03 (Olli's intro +12.8/+10.0/+7.8 dB hot, set to −12.2/−7.5/−5.3; the blocks at 26:18 and 36:41 left alone); a check against that episode's raw audio is pending.
 
 ## [2026.10.6.4] - 2026-10-06
 
