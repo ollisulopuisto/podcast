@@ -131,3 +131,20 @@ def test_the_hop_is_one_number_for_the_whole_workspace():
     from autoraffkat.model import HOP
 
     assert HOP is masks.HOP
+
+
+def test_the_stem_pipeline_comes_from_the_library():
+    """Stemien käsittely ja ohjelman tason vaiheet ovat ``speechmix.stems``issä.
+
+    automixer ajaa saman putken (2026-10-06): tunnin jakso ei mahdu muistiin
+    kokonaisena, ja tämä sovellus on jo kertaalleen ratkaissut sen virtaamalla
+    stemit levyltä. Toinen toteutus olisi toinen ratkaisu samaan ongelmaan.
+    """
+    from autoraffkat import render
+    from speechmix import stems
+
+    assert mix.MixError is stems.StemError
+    assert mix._anyone_speaking is stems.anyone_speaking
+    assert mix.delivery_lufs is stems.delivery_lufs
+    assert mix.READABLE is stems.READABLE
+    assert render.AudioSource is stems.Source

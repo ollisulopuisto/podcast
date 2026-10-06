@@ -7,6 +7,9 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+### Changed
+- **The audio processing pipeline now lives in the shared `speechmix` library** (`speechmix.stems`): per-file processing, the programme ceiling, mastering and the programme trim. Nothing changes for the user; automixer now uses the same code.
+
 ### Added
 - **Vertical wides and group shots follow the speaker** (`seats.py`, `reframe.py`, `video/measure.py`): wide and group-shot cameras are measured for every face (their own cache), each face is matched to a microphone by mouth movement — per file, so a camera with two people in one part and one in the next works — and in the vertical export those shots are split where the speaker changes and each piece framed on that speaker. The camera card shows who sits where, left to right; clicking a name moves it left and that order overrides the measurement.
 

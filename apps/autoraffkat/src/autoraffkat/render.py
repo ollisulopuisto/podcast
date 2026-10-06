@@ -355,91 +355,22 @@ def render_video(shots: list[Shot], pw: int, ph: int, frame_duration: Fraction,
 
 # ------------------------------------------------------------------ ääni
 
-import numpy as np  # noqa: E402
-
-
-@dataclass
-class AudioSource:
-    """Yksi äänitiedosto ohjelmassa.
-
-    ``placements`` on ``(aikajanan alku, aikajanan loppu, tiedoston alku)``
-    sekunteina. ``duck`` on vaimennus- ja häivytyskäyrä aikajanan aikaa
-    (``(t, dB)``, sama joka menee vientiin keyframeiksi), ``pan`` Final Cutin
-    «Stereo Left/Right» -määrä -100…100 ja ``gain_db`` kiinteä taso.
-    """
-
-    path: str
-    placements: list
-    duck: list = None  # type: ignore[assignment]
-    pan: float = 0.0
-    gain_db: float = 0.0
-
-
-def _pan_gains(pan: float) -> tuple[float, float]:
-    """Monoraita stereoksi: keskellä täysi taso kumpaankin, sivussa toinen
-    kanava hiljenee. Tasapaino eikä vakiotehon laki: Final Cutin monoklippi
-    stereoprojektissa soi keskellä täydellä tasolla molemmista."""
-    amount = max(-1.0, min(1.0, pan / 100.0))
-    return min(1.0, 1.0 - amount), min(1.0, 1.0 + amount)
+# Äänilähde ja summa ovat kirjastossa (``speechmix.stems``): automixer
+# kirjoittaa koko jakson samalla summalla ilman että se on muistissa.
+from speechmix.stems import Source as AudioSource  # noqa: E402
+from speechmix.stems import pan_gains as _pan_gains  # noqa: E402,F401
 
 
 def render_audio(sources: list[AudioSource], program_start: float, seconds: float,
                  out_path: str, rate: int = 48000, block: float = 60.0,
                  progress=None, stop=None) -> None:
-    """Äänilähteet stereoksi minuutin paloissa, ohjelman pituisena.
+    """Äänilähteet stereoksi minuutin paloissa. Kirjastossa:
+    ``speechmix.stems.sum_to_file``; keskeytys nostaa tämän moduulin
+    ``Stopped``in kuten kuvan piirto."""
+    from speechmix import stems
 
-    Paloittain, koska tunnin jakso kahdella mikillä olisi muistissa
-    gigatavuja. Vaimennuskäyrä luetaan aikajanan ajassa kuten vienti sen
-    kirjoittaa; tiedostojen taso on jo käsittelyn, joten muuta tasoa ei
-    tehdä.
-    """
-    from pedalboard.io import AudioFile
-
-    total = int(round(seconds * rate))
-    step = int(block * rate)
-    opened: dict = {}
-    try:
-        with AudioFile(out_path, "w", samplerate=rate, num_channels=2) as out:
-            for first in range(0, total, step):
-                if stop is not None and stop.is_set():
-                    raise Stopped()
-                count = min(step, total - first)
-                t0 = program_start + first / rate
-                mix = np.zeros((2, count), dtype=np.float32)
-                for source in sources:
-                    left, right = _pan_gains(source.pan)
-                    for start, end, file_start in source.placements:
-                        low, high = max(start, t0), min(end, t0 + count / rate)
-                        if high <= low:
-                            continue
-                        a = int(round((low - t0) * rate))
-                        n = min(count - a, int(round((high - low) * rate)))
-                        if n <= 0:
-                            continue
-                        handle = opened.get(source.path)
-                        if handle is None:
-                            handle = AudioFile(source.path).resampled_to(rate)
-                            opened[source.path] = handle
-                        handle.seek(int(round((file_start + low - start) * rate)))
-                        chunk = handle.read(n)
-                        mono = chunk.mean(axis=0) if chunk.ndim == 2 else chunk
-                        mono = mono[:n].astype(np.float32)
-                        if len(mono) < n:
-                            mono = np.pad(mono, (0, n - len(mono)))
-                        gain = 10 ** (source.gain_db / 20.0)
-                        if source.duck:
-                            times = low + np.arange(n) / rate
-                            db = np.interp(times, [p[0] for p in source.duck],
-                                           [p[1] for p in source.duck])
-                            mono = mono * (10 ** (db / 20.0)).astype(np.float32)
-                        mix[0, a:a + n] += mono * gain * left
-                        mix[1, a:a + n] += mono * gain * right
-                out.write(mix)
-                if progress is not None:
-                    progress(min(1.0, (first + count) / max(1, total)))
-    finally:
-        for handle in opened.values():
-            handle.close()
+    stems.sum_to_file(sources, program_start, seconds, out_path, rate, block,
+                      progress, stop, stopped=Stopped)
 
 
 # ------------------------------------------------------------------ kokonaisuus

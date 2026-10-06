@@ -242,7 +242,7 @@ requires-dist = [
 
 [[package]]
 name = "autoraffkat"
-version = "2026.9.25.2"
+version = "2026.10.6.1"
 source = { editable = "apps/autoraffkat" }
 dependencies = [
     { name = "fastapi" },
@@ -3536,7 +3536,7 @@ wheels = [
 
 [[package]]
 name = "speechmix"
-version = "2026.8.28.1"
+version = "2026.10.6.1"
 source = { editable = "packages/speechmix" }
 dependencies = [
     { name = "numpy" },

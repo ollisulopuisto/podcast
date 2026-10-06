@@ -34,7 +34,7 @@ from pathlib import Path
 
 import numpy as np
 
-from speechmix import chain, envelopes, programme
+from speechmix import chain, envelopes, programme, stems
 from speechmix import timeline as timeline_lib
 from speechmix.binaries import get_binary_path
 from speechmix.chain import ChainError
@@ -49,7 +49,6 @@ from speechmix.masks import (
     solo_masks,
     speech_masks,
 )
-from speechmix.meter import BLOCK_SEC, OVERLAP, IntegratedMeter
 
 # Trimmin katto luetaan tämän moduulin kautta (`tests/test_mix.py` vertaa
 # siihen), joten nimi on osa mix.py:n rajapintaa vaikka moduuli itse lukee sen
@@ -60,33 +59,19 @@ from speechmix.timeline import Span, Track
 from ..i18n import t
 from ..model import HOP, AudioSettings
 
-# Formaatit jotka luetaan suoraan. Muut puretaan ffmpegillä: kameran ääni on
-# mp4:n sisällä, eikä pedalboardin lukija avaa sitä.
-READABLE = {
-    ".wav",
-    ".wave",
-    ".aif",
-    ".aiff",
-    ".aifc",
-    ".flac",
-    ".w64",
-    ".caf",
-    ".ogg",
-    ".mp3",
-}
+# Formaatit jotka luetaan suoraan: kirjaston lista, ks. ``stems.READABLE``.
+READABLE = stems.READABLE
 
 MIX_SUFFIX = " [mix]"
 ROOM_SUFFIX = " [room]"
 ROOM_ROLE = "effects.Tilaääni"
 
-# Suurin sallittu siirtymä. Yksi millisekunti on jo kuultavissa kammalla,
-# jos tilaääni ja mikki soivat päällekkäin.
-MAX_LAG_MS = 1.0
+MAX_LAG_MS = stems.MAX_LAG_MS
 TIMEOUT = 3600
 
 
-class MixError(Exception):
-    """Ääntä ei voitu käsitellä."""
+# Ääntä ei voitu käsitellä. Kirjaston virhe: stemin käsittely on siellä.
+MixError = stems.StemError
 
 
 def sibling(path: str, suffix: str) -> str:
@@ -214,49 +199,8 @@ def weight_of(path: str) -> float:
 
 
 def frame_count(path: str) -> int | None:
-    """Äänen näytemäärä ffprobella, tai ``None`` jos ei selviä."""
-    try:
-        ffprobe_bin = get_binary_path("ffprobe")
-        done = subprocess.run(
-            [
-                ffprobe_bin,
-                "-v",
-                "error",
-                "-select_streams",
-                "a:0",
-                "-show_entries",
-                "stream=duration_ts,nb_samples,sample_rate,duration",
-                "-of",
-                "json",
-                path,
-            ],
-            capture_output=True,
-            text=True,
-            stdin=subprocess.DEVNULL,
-            timeout=60,
-        )
-        streams = json.loads(done.stdout or "{}").get("streams") or []
-    except (
-        OSError,
-        subprocess.TimeoutExpired,
-        json.JSONDecodeError,
-        FileNotFoundError,
-    ):
-        return None
-    if not streams:
-        return None
-    stream = streams[0]
-    for name in ("nb_samples", "duration_ts"):
-        raw = stream.get(name)
-        if raw not in (None, "N/A"):
-            try:
-                return int(raw)
-            except (TypeError, ValueError):
-                continue
-    try:
-        return int(round(float(stream["duration"]) * int(stream["sample_rate"])))
-    except (KeyError, TypeError, ValueError):
-        return None
+    """Äänen näytemäärä; kirjastossa (``speechmix.stems.frame_count``)."""
+    return stems.frame_count(path)
 
 
 def extract_dir() -> Path:
@@ -413,426 +357,50 @@ def _geometry(item, frames: int) -> tuple:
     return envelopes.geometry(track_of(item), frames)
 
 
-#: Kuinka monta kierrosta masterointitasoa haetaan. Rajoitin vie osan noston
-#: tuomasta äänekkyydestä, joten yksi kierros jää aina alle — mutta ero
-#: pienenee kertaluokan kierrosta kohden, joten kolme riittää.
-DELIVER_ROUNDS = 3
-#: Oletustoleranssi jos asetuksissa ei ole omaa, LU.
-DELIVER_TOLERANCE = 0.5
-#: Kuinka kaukana tavoitteesta jakso lasketaan «hiljaiseksi», LU. Tätä
-#: lähempänä olevaan ei kosketa: nosto on tarkoitettu ohjelman pohjalle eikä
-#: sen tavalliselle tasolle, ja liian korkea lattia litistäisi kaiken.
-LIFT_WINDOW_LU = 8.0
+_anyone_speaking = stems.anyone_speaking
+delivery_lufs = stems.delivery_lufs
 
 
-def _anyone_speaking(grid, program_start: float):
-    """``(maski, ohjelman alku)`` puheportille, tai ``None``.
+def _with_tracks(jobs: list[dict]) -> list[dict]:
+    """Kirjaston työ tarvitsee ``Track``in; tämä sovellus tuntee ``item``in.
 
-    Kuka tahansa käy: portin tehtävä on erottaa puhe muusta, ei puhujia
-    toisistaan. Ruudukko on aikajanan aikaa, ja ``_mask_samples`` muuntaa sen
-    tiedoston näytteiksi kun ryhmä on tiedossa.
+    Muunnos on ``track_of``issa ja vain siellä. Työ johon se on jo tehty
+    (``_jobs``) kelpaa sellaisenaan.
     """
-    if grid is None:
-        return None
-    lanes = [np.asarray(lane.on, dtype=bool) for lane in getattr(grid, "speakers", [])]
-    if not lanes:
-        return None
-    anyone = lanes[0].copy()
-    for lane in lanes[1:]:
-        anyone |= lane
-    return (anyone, float(program_start))
-
-
-def delivery_lufs(settings) -> float:
-    """Ohjelman masterointitaso, LUFS. Nolla = ei masterointia.
-
-    Oma luku voittaa; muuten sama kuin käyttöliittymän tavoite, koska se
-    **on** ohjelman taso (YouTube -14, suoratoisto -16). Ilman tätä vartijan
-    peruutus jätti ohjelman -19,4:ään ja tavoite näytti täyttyneen.
-    """
-    own = float(getattr(settings, "program_lufs", 0.0) or 0.0)
-    if own:
-        return own
-    if getattr(settings, "program_target", True):
-        return float(getattr(settings, "target_lufs", 0.0) or 0.0)
-    return 0.0
+    out = []
+    for job in jobs:
+        if job.get("track") is None and job.get("item") is not None:
+            job = {**job, "track": track_of(job["item"])}
+        out.append(job)
+    return out
 
 
 def program_deliver(jobs: list[dict], result: "MixResult", ducks: dict,
                     extra: dict, settings: AudioSettings,
                     speech=None) -> None:
-    """Ohjelma masterointitasoon: mittaa, nosta, rajoita, mittaa uudestaan.
-
-    Tämä on se työ jonka moni tekee erillisellä työkalulla viennin jälkeen —
-    rajoitin ja äänekkyyskorjaus valmiin miksauksen päälle. Se kuuluu tänne,
-    koska tässä on ainoa paikka jossa **summa** on olemassa: stemit
-    kirjoitetaan erikseen ja isäntä soittaa niiden summan, joten jokainen
-    muu paikka joutuisi arvaamaan sen.
-
-    Silmukka on tarpeen eikä varovaisuutta. Nosto tuo äänekkyyttä, rajoitin
-    vie osan siitä takaisin, ja yksi kierros jää siksi aina tavoitteen alle.
-    Ero pienenee nopeasti, joten kolme kierrosta riittää.
-
-    Mittaus on koko ohjelmasta eikä ikkunasta: ``IntegratedMeter`` kerää
-    lukeman samasta virrasta jonka katto kirjoittaa, joten koko pituus
-    maksaa yhden lisäkierroksen eikä yhtään ylimääräistä lukukertaa.
-    """
-    target = delivery_lufs(settings)
-    if not target:
-        program_ceiling(jobs, result, ducks, extra)
-        return
-    ceiling = float(getattr(settings, "program_peak_db", chain.CEILING_DB))
-    rate = 48000
-    for job in jobs:
-        if os.path.exists(job.get("target", "")):
-            with __import__("pedalboard").io.AudioFile(job["target"]) as handle:
-                rate = int(handle.samplerate)
-            break
-
-    tolerance = float(getattr(settings, "program_tolerance", DELIVER_TOLERANCE))
-    short_target = float(getattr(settings, "program_short_term_db", 0.0) or 0.0)
-
-    # Ensimmäinen lukema tulee katon omasta ajosta, ei erillisestä
-    # lukukierroksesta. Katto ajetaan joka tapauksessa, se virtaa jokaisen
-    # stemin läpi ja osaa jo täyttää mittarin — erillinen mittauskierros
-    # olisi gigatavu luettavaa eikä yhtään desibeliä enempää tietoa.
-    #
-    # Sama syy miksi lukemaa ei kerätä stemeittäin kirjoituksen yhteydessä:
-    # summan äänekkyys ei ole stemien äänekkyyksien summa, ja mikkien
-    # välinen vuoto on korreloitunutta, joten tehojen laskeminen yhteen
-    # olisi arvio eikä mittaus. Mitataan se mikä soi.
-    # Kierrokset ovat **kuivia**: ne lukevat ja mittaavat muttei kirjoita.
-    # Silmukka etsii oikean noston, ja vasta valittu nosto kirjoitetaan
-    # kerran. Kirjoittavat kierrokset rajoittivat jo rajoitettua, ja
-    # tiivistys kertyi kierroksittain — mitattuna LRA 5,1 kun kerran ajettuna
-    # se on lähes kolme yksikköä enemmän. Nosto on siksi myös absoluuttinen
-    # eikä askel: jokainen kierros lähtee samasta tilanteesta.
-    budget = float(getattr(settings, "program_limit_budget_db", 0.0) or 0.0)
-    lift_db = float(getattr(settings, "program_lift_db", 0.0) or 0.0)
-    step_sec = BLOCK_SEC / OVERLAP
-
-    def run(gain, curve, write=False):
-        """Yksi ajo. Palauttaa ``(lukema, mittari, rajoittimen hinta LU)``.
-
-        Kaksi mittaria: sama summa rajoitettuna ja ilman. Erotus on
-        rajoittimen hinta äänekkyytenä, ja se on ainoa mielekäs mitta sille
-        kuinka kovaa se tekee työtä — käyrän minimi on yhden näytteen
-        vaatimus, ja keskiarvo on lähes nolla koska rajoitin ei tee mitään
-        suurimman osan ajasta.
-        """
-        played, plain = IntegratedMeter(rate), IntegratedMeter(rate)
-        program_ceiling(jobs, result, ducks, extra, gain, ceiling, played,
-                        curve, step_sec if curve is not None else 0.0,
-                        not write, plain, speech)
-        gate = played.speech() > 0.5 if speech is not None else None
-        after, before = played.value(keep=gate), plain.value(keep=gate)
-        cost = 0.0 if (after is None or before is None) else before - after
-        return after, played, cost
-
-    measured, meter, cost = run(0.0, None)
-    step_sec = meter.step_seconds()
-    boost, ride = 0.0, None
-
-    # Pohja ylös **ensin**, ei viimeisenä keinona. Nosto tuo äänekkyyttä
-    # koskematta huippuihin, joten jokainen desibeli joka saadaan täältä on
-    # desibeli jota tasainen nosto ei tarvitse — ja siis rajoitusta joka jää
-    # tekemättä. Jälkikäteen tehtynä se ei ehtisi vaikuttaa mihinkään:
-    # silmukka on jo ostanut saman äänekkyyden katosta.
-    if lift_db > 0 and measured is not None:
-        rise = programme.short_term_lift(
-            meter.short_term(), target - LIFT_WINDOW_LU, step_sec, lift_db
-        )
-        if rise.any():
-            ride = rise
-            measured, meter, cost = run(0.0, ride)
-            _log(f"pohjan nosto {rise.max():.2f} dB hiljaisiin jaksoihin "
-                 f"-> {measured:.2f} LUFS")
-    for round_number in range(DELIVER_ROUNDS):
-        if measured is None:
-            break
-        step = target - measured
-        wanted = None
-        if short_target:
-            wanted = programme.short_term_ride(
-                meter.short_term() + step, short_target, step_sec
-            )
-            wanted = wanted if wanted.any() else None
-        if abs(step) <= tolerance and wanted is None:
-            break
-        boost = round(max(-programme.MAX_PROGRAM_BOOST,
-                          min(programme.MAX_PROGRAM_BOOST, boost + step)), 2)
-        ride = wanted if wanted is not None else ride
-        measured, meter, cost = run(boost, ride)
-        # Rajoittimella on budjetti, kuten ketjun omalla. Ala on mitattu
-        # muualla eikä täällä: masteroinnissa 1–3 dB rajoitusta on tervettä,
-        # 8–10 tuhoaa transientit. Ylitys otetaan pois **nostosta**, koska
-        # taso on korjattavissa yhdellä liu'ulla ja litistetty ei ole.
-        if budget and cost > budget:
-            boost = round(boost - (cost - budget), 2)
-            measured, meter, cost = run(boost, ride)
-            _log(f"rajoitinbudjetti täynnä: nosto {boost:+.2f} dB, "
-                 f"hinta {cost:.2f} LU -> {measured:.2f} LUFS")
-            break
-        _log(f"masterointi kierros {round_number + 1}: nosto {boost:+.2f} dB"
-             + (f", veto {ride.min():.2f} dB" if ride is not None else "")
-             + f" -> {measured:.2f} LUFS (rajoitin {cost:.2f} LU)")
-
-    # Yksi kirjoittava ajo valitulla nostolla.
-    measured, meter, cost = run(boost, ride, write=True)
-    result.program_limit_cost = round(cost, 2)
-    result.program_boost = boost
-    result.program_lufs = measured if measured is not None else 0.0
-    result.program_range = meter.range()
-    result.program_short_term_max = meter.short_term_max()
-    result.program_momentary_max = meter.momentary_max()
-    _log(f"masterointi: {result.program_lufs:.1f} LUFS · LRA {result.program_range:.1f} "
-         f"· rajoitin {result.program_limit_cost:.2f} LU "
-         f"· lyhyt max {result.program_short_term_max:.1f} "
-         f"· hetkellinen max {result.program_momentary_max:.1f}")
-    if measured is not None and abs(target - measured) > tolerance:
-        for job in jobs:
-            result.notes.setdefault(job["key"], []).append(
-                t("audio.program_short", target=f"{target:.1f}",
-                  got=f"{measured:.1f}")
-            )
-            break
+    """Ohjelma masterointitasoon. Kirjastossa: ``speechmix.stems.program_deliver``."""
+    stems.program_deliver(_with_tracks(jobs), result, ducks, extra, settings, speech)
 
 
 def program_ceiling(jobs: list[dict], result: "MixResult",
                     envelopes: dict | None = None,
                     extra: dict | None = None,
-                    boost_db: float = 0.0,
-                    ceiling_db: float = chain.CEILING_DB,
-                    meter=None,
-                    ride_db=None,
-                    ride_step: float = 0.0,
-                    dry_run: bool = False,
-                    raw_meter=None,
-                    speech=None) -> None:
-    """Huippukatto **ohjelmalle**, ei yhdelle stemille.
-
-    Sama virhe kuin äänekkyydessä, jonka ``program_trim`` jo korjaa: ketju
-    takaa katon jokaiselle tiedostolle erikseen, mutta Final Cut soittaa
-    niiden summan. Kaksi stemiä joiden huiput on molemmat painettu
-    -1,5 dBTP:hen ylittävät täyden asteikon aina kun huiput osuvat samaan
-    hetkeen — teoriassa +4,5 dB, ja oikealla jaksolla mitattuna **+4,51
-    dBFS, 200 ylityspursketta minuutissa**, mediaanipituus 0,23 ms. Se on
-    se särö joka kuuluu, ja Final Cutin punaiset huiput ovat sama asia.
-
-    Korjaus ei ole kovempi rajoitus stemeittäin — silloin jokainen stemi
-    maksaisi kuusi desibeliä crestiä sen takia mitä *toinen* tiedosto
-    sattuu tekemään — vaan **yhteinen käyrä**: vaimennus lasketaan summasta
-    ja kerrotaan jokaiseen stemiin samanlaisena. Summa noudattaa kattoa, ja
-    koska kerroin on sama, puhujien tasapaino ei muutu. Mitattuna summan
-    huippu +4,51 -> -1,51 dBFS ja hinta 0,50 LU.
-
-    Ajo on **idempotentti**: käyrä on ``min(1, katto/huippu)``, joten
-    summalle joka jo noudattaa kattoa se on ykkönen kaikkialla eikä toinen
-    ajo tee mitään. Siksi tämä voidaan ajaa aina, myös silloin kun osa
-    tiedostoista ohitettiin ajan tasalla olevina.
-    """
-    from pedalboard.io import AudioFile
-
-    mics = [
-        job
-        for job in jobs
-        if job.get("speech")
-        and job.get("item") is not None
-        and os.path.exists(job.get("target", ""))
-    ]
-    if len(mics) < 2:
-        # Yksi mikki *on* ohjelma: ketjun oma katto riittää.
-        return
-
-    groups: dict[tuple, list] = {}
-    for job in mics:
-        frames = frame_count(job["target"])
-        if frames is None:
-            continue
-        groups.setdefault(_geometry(job["item"], frames), []).append(job)
-
-    for key, members in groups.items():
-        if len(members) < 2:
-            # Yksin aikajanan palassa: ei summaa johon osua.
-            continue
-        frames = key[0]
-        try:
-            worst = _ceiling_pass(
-                members, frames, AudioFile, envelopes, extra, boost_db,
-                ceiling_db, meter, ride_db, ride_step, dry_run,
-                raw_meter, speech,
-            )
-        except (OSError, ValueError) as exc:
-            for job in members:
-                result.notes.setdefault(job["key"], []).append(str(exc))
-            _log(f"ohjelmakatto ohitettiin: {exc}")
-            continue
-        if worst < -0.01:
-            _log(f"ohjelmakatto: {len(members)} stemiä, suurin vaimennus "
-                 f"{worst:.2f} dB")
-
-
-def _ceiling_pass(members: list[dict], frames: int, AudioFile,
-                  envelopes: dict | None = None,
-                  extra: dict | None = None,
-                  boost_db: float = 0.0,
-                  ceiling_db: float = chain.CEILING_DB,
-                  meter=None,
-                  ride_db=None,
-                  ride_step: float = 0.0,
-                  dry_run: bool = False,
-                  raw_meter=None,
-                  speech=None) -> float:
-    """Yksi ryhmä: summa paloittain, sama käyrä jokaiseen stemiin.
-
-    ``envelopes`` on vaimennus puhujittain aikajanan aikana. Se **on**
-    otettava mukaan summaan, koska vaimennusta ei enää polteta tiedostoon:
-    ilman sitä summa olisi ohjelma jota Final Cut ei koskaan soita — tällä
-    aineistolla 8 ja 30 minuuttia vaimennettavaa — ja katto laskettaisiin
-    liian kovasta signaalista. Vaimennus itse kirjoitetaan silti vientiin,
-    ei tiedostoon; tässä se vain otetaan huomioon.
-
-    ``extra`` on stemikohtainen vakiovaimennus, jolla rajoittimen budjetin
-    eri syvyiset peruutukset tasataan samaan lukemaan. Se kulkee tässä
-    samassa ajossa eikä omanaan, koska tämä pass lukee ja kirjoittaa jokaisen
-    stemin joka tapauksessa.
-
-    Paloittain, koska koko ohjelma muistissa olisi useita gigatavuja.
-    Marginaali molemmin puolin ja siitä keskiosa talteen, jotta rajoittimen
-    palautus ei ala nollasta jokaisen palan alussa — sama kuvio kuin
-    ``chain.apply_plugin``in rinnakkaisilla paloilla.
-    """
-    handles = [AudioFile(job["target"]) for job in members]
-    spoken = None
-    try:
-        rate = int(handles[0].samplerate)
-        if any(int(h.samplerate) != rate for h in handles):
-            raise ValueError("stemien näytetaajuudet eroavat")
-        chunk = int(programme.CEILING_CHUNK * rate)
-        margin = int(programme.CEILING_MARGIN * rate)
-        if speech is not None and members[0].get("item") is not None:
-            # Kerran ryhmää kohden: maski on ruudukon aikaa, mittari haluaa
-            # sen näytteinä ja palan mukana.
-            spoken = _mask_samples(members[0]["item"], speech[0], speech[1],
-                                   rate, frames)
-        # Kuiva ajo lukee ja mittaa muttei kirjoita. Silmukka etsii oikean
-        # noston sillä, ja vasta valittu nosto kirjoitetaan — muuten jokainen
-        # kierros rajoittaisi jo rajoitettua, ja tiivistys kertyisi
-        # kierroksittain. Mitattuna kertyvänä LRA 5,1, kerran ajettuna 7,x.
-        outs = [] if dry_run else [
-            AudioFile(job["target"] + ".ceil.tmp.wav", "w", rate,
-                      int(h.num_channels), bit_depth=job.get("bit_depth", 24))
-            for job, h in zip(members, handles, strict=True)
-        ]
-        worst = 0.0
-        try:
-            position = 0
-            while position < frames:
-                low = max(0, position - margin)
-                high = min(frames, position + chunk + margin)
-                blocks = []
-                for job, handle in zip(members, handles, strict=True):
-                    handle.seek(low)
-                    # Masterointitason nosto on jokaiselle sama, ja se tehdään
-                    # **ennen** jaettua käyrää: silloin rajoitus osuu vain
-                    # sinne missä huiput osuvat yhteen, eikä yksikään stemi
-                    # maksa crestiä toisen puolesta.
-                    # Tasapainon korjaus samaan ajoon: tämä pass lukee ja
-                    # kirjoittaa stemin joka tapauksessa.
-                    blocks.append(
-                        handle.read(high - low)
-                        * _linear((extra or {}).get(job["key"], 0.0) + boost_db)
-                    )
-                if ride_db is not None and ride_step > 0:
-                    # Hidas veto näytteille: käyrä on ohjelman aikaa, ja
-                    # lineaarinen interpolointi riittää, koska se on jo
-                    # pehmennetty ikkunansa pituudella.
-                    when = (np.arange(low, high) / rate) / ride_step
-                    curve = np.interp(when, np.arange(len(ride_db)), ride_db)
-                    blocks[-1] = blocks[-1] * (10.0 ** (curve / 20.0)).astype(
-                        np.float32
-                    )
-                heard = [
-                    block * _envelope_block(job, envelopes, low, high, rate)
-                    for job, block in zip(members, blocks, strict=True)
-                ]
-                gain = programme.shared_gain(heard, rate, ceiling_db)
-                worst = min(worst, programme.reduction_db(gain))
-                head = position - low
-                tail = head + min(chunk, frames - position)
-                if meter is not None:
-                    # Mitataan **vaimennettu** summa rajoituksen jälkeen, eli
-                    # juuri se ohjelma jonka isäntä soittaa. Sama ajo kirjoittaa
-                    # ja mittaa: erillinen mittauskierros olisi gigatavu lisää
-                    # luettavaa eikä yhtään desibeliä enempää tietoa.
-                    played = sum(h * gain for h in heard)
-                    mono = (played[..., head:tail].mean(axis=0)
-                            if played.ndim > 1 else played[head:tail])
-                    meter.add(mono, None if spoken is None
-                              else spoken[low + head:low + tail])
-                if raw_meter is not None:
-                    # Sama summa **ilman** rajoitusta. Erotus on rajoittimen
-                    # hinta äänekkyytenä, ja se on ainoa mielekäs mitta sille
-                    # kuinka kovaa se tekee työtä: käyrän minimi on yhden
-                    # näytteen vaatimus, ja keskiarvo on lähes nolla koska
-                    # rajoitin ei tee mitään suurimman osan ajasta.
-                    plain = sum(heard)
-                    raw_meter.add(plain[..., head:tail].mean(axis=0)
-                                  if plain.ndim > 1 else plain[head:tail])
-                if not dry_run:
-                    for out, block in zip(outs, blocks, strict=True):
-                        out.write(np.ascontiguousarray(
-                            (block * gain)[:, head:tail]))
-                position += chunk
-        finally:
-            for out in outs:
-                out.close()
-    finally:
-        for handle in handles:
-            handle.close()
-
-    if dry_run:
-        return worst
-    for job in members:
-        tmp = job["target"] + ".ceil.tmp.wav"
-        written = frame_count(tmp)
-        if written != frames:
-            # Näytemäärä on viennin ehto: mieluummin ei mitään kuin väärä
-            # pituus, ja alkuperäinen käsitelty tiedosto jää paikalleen.
-            for other in members:
-                _drop(other["target"] + ".ceil.tmp.wav")
-            raise ValueError(
-                f"ohjelmakatto muutti pituutta {frames} -> {written}"
-            )
-    for job in members:
-        os.replace(job["target"] + ".ceil.tmp.wav", job["target"])
-    return worst
-
-
-def _linear(db: float) -> float:
-    """Desibelit kertoimeksi. Nolla on ykkönen eikä pyöristysvirhe."""
-    return 1.0 if not db else float(10.0 ** (float(db) / 20.0))
+                    **kwargs) -> None:
+    """Huippukatto ohjelmalle. Kirjastossa: ``speechmix.stems.program_ceiling``."""
+    stems.program_ceiling(_with_tracks(jobs), result, envelopes, extra, **kwargs)
 
 
 def _envelope_block(job: dict, envelopes_by_speaker: dict | None, low: int,
                     high: int, rate: int) -> np.ndarray:
-    """Vaimennuksen kerroin tiedoston näyteväliltä ``[low, high)``.
+    """Vaimennuksen kerroin. Kirjastossa: ``speechmix.stems.envelope_block``."""
+    (job,) = _with_tracks([job])
+    return stems.envelope_block(job, envelopes_by_speaker, low, high, rate)
 
-    Ykkösiä silloin kun puhujalle ei ole käyrää: silloin summaan menee
-    tiedosto sellaisenaan.
-    """
-    points = (envelopes_by_speaker or {}).get(job.get("speaker"))
-    item = job.get("item")
-    if not points or item is None:
-        return np.ones(1, dtype=np.float32)
-    return envelopes.duck_gain(track_of(item), points, low, high, rate)
 
 def _drop(path: str) -> None:
     """Poistaa tilapäistiedoston, jos se on olemassa."""
     with contextlib.suppress(OSError):
         os.remove(path)
-
-
 
 
 def _jobs(timeline, roles, settings: AudioSettings) -> list[dict]:
@@ -848,6 +416,7 @@ def _jobs(timeline, roles, settings: AudioSettings) -> list[dict]:
                             "name": item.name,
                             "speaker": speaker,
                             "item": item,
+                            "track": track_of(item),
                             "source": item.path,
                             "target": sibling(item.path, MIX_SUFFIX),
                             "target_lufs": settings.target_lufs,
@@ -899,105 +468,9 @@ def _jobs(timeline, roles, settings: AudioSettings) -> list[dict]:
 # olisi kyse mittausvirheestä, ei summasta.
 
 
-def _item_span(item) -> float:
-    """Median kokonaiskesto aikajanalla, ikkunan ankkurin valintaan."""
-    return sum(float(p.duration) for p in item.placements)
-
-
 def program_trim(jobs: list[dict], settings: AudioSettings) -> float:
-    """Kuinka paljon mikkien summa on tavoitteen yli, desibeleinä (≤ 0).
-
-    Tavoitetaso on **ohjelman** taso, ei yhden stemin. Kaksi -14 LUFS:n
-    mikkiä ei summaudu -14:ään: tällä aineistolla mitattu summa oli -12,3.
-    Ero ei ole 3 dB (silloin molemmat puhuisivat koko ajan) eikä 0 dB
-    (silloin toinen mikki olisi täysin hiljaa toisen puhuessa), joten se
-    mitataan eikä arvata.
-
-    Mitataan raa'asta äänestä ennen käsittelyä ja rajatusta ikkunasta.
-    Tarkka vastaus vaatisi koko ohjelman käsittelyn ensin ja jokaisen
-    tiedoston kirjoittamisen toiseen kertaan — noin viidenneksen lisää
-    aikaa — ja ero on murto-osa desibeliä. Lopullinen taso asetetaan
-    Final Cutissa joka tapauksessa.
-
-    Ikkuna on aikajanan aikaa, koska summa on aikajanalla. Tiedostoaika
-    lasketaan esiintymistä samalla kaavalla kuin ``closed_ranges``:issa.
-    """
-    from pedalboard.io import AudioFile
-
-    mics = [
-        job
-        for job in jobs
-        if job.get("speech")
-        and job.get("item") is not None
-        and os.path.exists(job["source"])
-        and os.path.splitext(job["source"])[1].lower() in READABLE
-    ]
-    if len(mics) < 2:
-        # Yksi mikki *on* ohjelma: sen oma taso on jo oikea.
-        return 0.0
-
-    # Ikkuna ankkuroidaan pisimpään mikkitiedostoon eikä koko aikajanan
-    # keskelle: monikamerassa osat ovat peräkkäin, ja aikajanan keskikohta
-    # osuu yhteen osaan — toisen osan tiedostot mittautuisivat hiljaisiksi
-    # ja koko mittaus kaatuisi siihen. Saman osan mikit ovat aina päällekkäin.
-    anchor = max((job["item"] for job in mics), key=_item_span)
-    low, high = float(anchor.timeline_start), float(anchor.timeline_end)
-    span = min(programme.PROGRAM_WINDOW, high - low)
-    if span <= 1.0:
-        return 0.0
-    middle = (low + high) / 2
-    window = (middle - span / 2, middle + span / 2)
-
-    rate = 0
-    voices = 0
-    total: np.ndarray | None = None
-    for job in mics:
-        item = job["item"]
-        with AudioFile(job["source"]) as handle:
-            if rate and handle.samplerate != rate:
-                # Eri näytetaajuudet vaatisivat uudelleennäytteistyksen.
-                # Trimmi on valinnainen tarkennus, ei syy hidastaa ajoa.
-                _log("ohjelmatrimmi ohitettu: mikeillä eri näytetaajuus")
-                return 0.0
-            rate = handle.samplerate
-            if total is None:
-                total = np.zeros(int(span * rate), dtype=np.float32)
-            here = np.zeros_like(total)
-            for span in track_of(item).spans:
-                first = max(window[0], span.programme_start)
-                last = min(window[1], span.programme_end)
-                if last <= first:
-                    continue
-                start = int(round(span.to_file_time(first) * rate))
-                frames = int(round((last - first) * rate))
-                if start < 0 or frames <= 0 or start >= handle.frames:
-                    continue
-                frames = min(frames, handle.frames - start)
-                handle.seek(start)
-                block = handle.read(frames).mean(axis=0)
-                at = int(round((first - window[0]) * rate))
-                end = min(len(here), at + len(block))
-                if end > at:
-                    here[at:end] = block[: end - at]
-        contribution = programme.at_target(here, rate, settings.target_lufs)
-        if contribution is None:
-            continue
-        total += contribution
-        voices += 1
-
-    if voices < 2 or total is None:
-        return 0.0
-    trim = programme.trim_to_target(total, rate, settings.target_lufs)
-    _log(f"ohjelmatrimmi {trim:+.2f} dB")
-    return trim
-
-
-# Tiedoston työ vaiheittain: luku ja kirjoitus ovat gigatavun tiedostolla
-# oikeaa aikaa, ketju on loput. Ketjun sisäinen jako on ``chain.STAGES_*``.
-READ_SHARE = 0.07
-DEBLEED_SHARE = 0.05
-CHAIN_SHARE = 0.81
-WRITE_SHARE = 0.07
+    """Mikkien summan ero tavoitteeseen. Kirjastossa: ``speechmix.stems.program_trim``."""
+    return stems.program_trim(_with_tracks(jobs), settings.target_lufs)
 
 
 def overlaps(one, other) -> bool:
@@ -1007,60 +480,6 @@ def overlaps(one, other) -> bool:
     vuodonvähennys tarvitsee saman. Tänne jää `track_of`, eli FCPXML.
     """
     return timeline_lib.overlaps(track_of(one), track_of(other))
-
-
-def _debleed(job, audio, rate, program_start, solos, partners, result):
-    """Vähentää muiden mikkien vuodon ``audio``:sta paikan päällä.
-
-    Yksi lähde kerrallaan ja aina tuoreimmasta tuloksesta: kun kolmas
-    puhuja vuotaa kahteen muuhun, ensimmäisen vähennyksen jälkeen jäljellä
-    oleva ei ole enää sama signaali kuin alussa.
-
-    Epäonnistuminen ei ole hiljainen. Jos vähennystä ei tehty, syy menee
-    lokiin ja tulokseen — asetus päällä ja lopputuloksessa ei mitään on
-    juuri se vika joka tässä projektissa on jo kerran jäänyt huomaamatta.
-    """
-    from pedalboard.io import AudioFile
-
-    from speechmix import debleed as db
-
-    mine = (solos or {}).get(job.get("speaker"))
-    if mine is None:
-        return
-    frames = audio.shape[1]
-    solo_target = _mask_samples(job["item"], mine, program_start, rate, frames)
-    target = audio[0].astype(np.float64)
-    for partner in partners:
-        theirs = (solos or {}).get(partner.get("speaker"))
-        if theirs is None:
-            continue
-        if partner.get("item") is None or not overlaps(job["item"], partner["item"]):
-            continue          # eri osa: ei yhtään yhteistä hetkeä
-        try:
-            with AudioFile(ensure_readable(partner["source"])) as handle:
-                if handle.samplerate != rate:
-                    _log(f"    vuoto {partner['speaker']}: eri näytetaajuus, ohitetaan")
-                    continue
-                other = handle.read(handle.frames)
-        except (OSError, RuntimeError) as exc:
-            _log(f"    vuoto {partner['speaker']}: {exc}")
-            continue
-        source = _aligned(
-            job["item"], partner["item"], np.asarray(other).mean(axis=0), rate, frames
-        )
-        solo_source = _mask_samples(partner["item"], theirs, program_start, rate, frames)
-        target, info = db.remove(target, source, rate, solo_source, solo_target)
-        if info["reason"]:
-            note = t(f"audio.debleed_{info['reason']}", name=partner["speaker"])
-            _log(f"    vuoto {partner['speaker']}: {note}")
-            if result is not None:
-                result.notes.setdefault(job["key"], []).append(note)
-        else:
-            _log(
-                f"    vuoto {partner['speaker']}: -{info['reduction_db']:.1f} dB, "
-                f"oma puhe {info['kept']:.4f}"
-            )
-    audio[0] = target.astype(audio.dtype, copy=False)
 
 
 def preview_audio(
@@ -1204,130 +623,19 @@ def _run_one(
     result=None,
     speaking: dict | None = None,
 ) -> float:
-    """Käsittelee yhden tiedoston. Palauttaa normalisoinnin noston.
+    """Käsittelee yhden tiedoston. Kirjastossa: ``speechmix.stems.process_stem``.
 
-    ``stage(nimi, osuus)`` kertoo missä kohtaa tätä tiedostoa mennään.
-    Liitännäinen on kallein vaihe eikä kerro itsestään mitään kesken ajon,
-    joten vaiheen tarkkuus on se mitä edistymisestä on saatavissa — ja se
-    riittää siihen, ettei palkki seiso tunnin tiedoston ajan paikallaan.
+    Sovellukselle jää kaksi asiaa: kameran äänen purku luettavaksi
+    (``ensure_readable``) ja leima, josta ``is_fresh`` tunnistaa ajan tasalla
+    olevan tuloksen.
     """
-    from pedalboard.io import AudioFile
-
-    def report(name: str, share: float) -> None:
-        if stage is not None:
-            stage(name, share)
-
-    source = ensure_readable(job["source"])
-    with AudioFile(source) as handle:
-        audio = handle.read(handle.frames)
-        rate = handle.samplerate
-    report("read", READ_SHARE)
-    if audio.shape[1] == 0:
-        raise MixError(t("audio.empty_file", name=os.path.basename(job["source"])))
-    if job.get("mono") and audio.shape[0] > 1:
-        audio = audio.mean(axis=0, keepdims=True)
-
-    # Ristivuoto pois ennen liitännäistä. Järjestys ei ole makuasia:
-    # liitännäinen on generatiivinen eikä säilytä raitojen välistä
-    # lineaarista suhdetta, ja sen jälkeen vuotoa ei enää voi vähentää
-    # millään suotimella.
-    if settings.debleed and job.get("speech", True) and partners:
-        _debleed(job, audio, rate, program_start, solos, partners, result)
-    report("debleed", READ_SHARE + DEBLEED_SHARE)
-
-    # Ohjelmatrimmi kuuluu **tavoitteeseen**, ei vahvistukseen. Ketju
-    # normalisoi lopuksi tavoitteeseen, joten vahvistukseen lisätty trimmi
-    # kumoutuu siinä kokonaan — mitattuna stemit osuivat -14,1:een kun niiden
-    # piti osua -15,8:aan. Tavoitteessa se säilyy, koska normalisointi ajaa
-    # juuri siihen lukemaan.
-    target = job.get("target_lufs")
-    if target is not None and trim_db:
-        target = float(target) + trim_db
-
-    # Tasonkuljettajan maski: milloin **tämän raidan oma puhuja** on
-    # äänessä. Signaalista pääteltynä puolet «puheesta» olisi toisen
-    # vuotoa, ja kuljettaja nostaisi sitä — ks. ``chain.rider_gain``.
-    own = None
-    mine = (speaking or {}).get(job.get("speaker"))
-    if mine is not None and job.get("item") is not None and job.get("speech"):
-        block = max(1, int(chain.RIDER_BLOCK_S * rate))
-        own = speech_blocks(job["item"], mine, program_start, rate, block,
-                            audio.shape[1] // block)
-
-    audio, info = chain.process(
-        audio,
-        rate,
-        settings,
-        job.get("gain_db", 0.0),
-        job.get("speech", True),
-        target,
-        plugin,
-        speaking=own,
-        stage=lambda name, frac: report(
-            name, READ_SHARE + DEBLEED_SHARE + CHAIN_SHARE * frac
-        ),
+    (job,) = _with_tracks([job])
+    gain = stems.process_stem(
+        job, settings, plugin, program_start, stage, trim_db, solos,
+        _with_tracks(partners or []), result, speaking, readable=ensure_readable,
     )
-
-    # Vaimennusta **ei** polteta tiedostoon. Se kirjoitetaan vientiin Final
-    # Cutin omaksi kulmakohtaiseksi äänenvoimakkuuskäyräksi, jolloin
-    # leikkaaja voi muuttaa sen ilman uutta ajoa — ks. ``duck_envelopes``.
-    # Tiedostoon poltettuna se oli ketjun ainoa peruuttamaton tasopäätös.
-    report("duck", READ_SHARE + DEBLEED_SHARE + CHAIN_SHARE)
-
-    # Ketjun tiivistys kirjataan muistiinpanoksi. Se on tähän asti ollut
-    # ainoa vaihe jonka tulos ei näkynyt mistään: tiedosto on kelvollinen ja
-    # oikean mittainen, ja se että rajoitin vei siitä viisitoista desibeliä
-    # crestiä selviää vain kuuntelemalla. Ks. `chain.LIMITER_BUDGET_DB`.
-    who = os.path.basename(job["source"])
-    if not info.reached_target:
-        result.notes.setdefault(job["key"], []).append(
-            f"{who}: tavoitetaso ei osunut, rajoitin {info.limiter_db:.1f} dB"
-        )
-    if info.psr_lu == info.psr_lu and info.psr_lu < chain.PSR_FLOOR_LU:
-        result.notes.setdefault(job["key"], []).append(
-            f"{who}: ylipakattu, PSR {info.psr_lu:.1f} LU "
-            f"(alle {chain.PSR_FLOOR_LU:.0f})"
-        )
-
-    limit = int(rate * MAX_LAG_MS / 1000)
-    if abs(info.lag) > limit:
-        raise MixError(
-            t(
-                "audio.plugin_shifted",
-                samples=info.lag,
-                ms=info.lag / rate * 1000,
-                name=os.path.basename(job["source"]),
-            )
-        )
-
-    # Alkuperäiseen ei kosketa. ``sibling`` takaa tämän jo, mutta tarkistus
-    # on kirjoituskohdassa, koska kohteen laskeminen on muualla ja yksi
-    # virhe siellä olisi peruuttamaton.
-    if os.path.abspath(job["target"]) == os.path.abspath(job["source"]):
-        raise MixError(t("audio.would_overwrite", name=os.path.basename(job["source"])))
-
-    tmp = job["target"] + ".tmp.wav"
-    with AudioFile(
-        tmp, "w", rate, audio.shape[0], bit_depth=job.get("bit_depth", 24)
-    ) as out:
-        out.write(np.ascontiguousarray(audio))
-    written = frame_count(tmp)
-    if written is not None and written != info.frames:
-        os.remove(tmp)
-        raise MixError(
-            t(
-                "audio.written_length",
-                before=info.frames,
-                after=written,
-                name=os.path.basename(job["source"]),
-            )
-        )
-    os.replace(tmp, job["target"])
     write_stamp(job, settings)
-    report("write", READ_SHARE + DEBLEED_SHARE + CHAIN_SHARE + WRITE_SHARE)
-    if result is not None:
-        result.backoffs[job["key"]] = info.backed_off_db
-    return info.gain_db
+    return gain
 
 
 def freshness(timeline, roles, settings: AudioSettings) -> tuple[int, int]:
