@@ -647,6 +647,13 @@ def main():
         help="Disable the slow level rider ahead of the compressors",
     )
     parser.add_argument(
+        "--no-block-level",
+        action="store_false",
+        dest="block_level",
+        help="Hindenburg sessions: do not level a speaker's blocks (a hot take, "
+        "another day) to their own level before the chain",
+    )
+    parser.add_argument(
         "--mic-duck",
         action="store_true",
         dest="speech_mic_duck",
@@ -732,6 +739,7 @@ def main():
         args.speech_desmack = False
         args.speech_debleed = False
         args.speech_rider = False
+        args.block_level = False
         args.speech_mic_duck = False
         args.music_carve = False
         args.music_duck = False
@@ -875,6 +883,7 @@ def _mix_session(args, path: str) -> None:
         debleed=args.speech_debleed,
         mic_duck=args.speech_mic_duck,
         mic_duck_db=args.mic_duck_db,
+        block_level=args.block_level,
     )
 
 

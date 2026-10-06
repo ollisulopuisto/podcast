@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.6.5] - 2026-10-06
+
+### Added
+- **`speechmix.blocks`: block-level gain.** A speaker's own-voice blocks (pauses under 1.5 s closed) are each measured by their median level, so one emphatic or shouted burst does not move them. A block more than 3 dB from the speaker's own level is brought 80 % of the way back, capped at 12 dB, with the change made mid-pause over 50 ms. The rule reproduces the editor's by-ear clip gains on vst s13e03: Olli's intro +12.8/+10.0/+7.8 dB hot, set to −12.2/−7.5/−5.3, with the blocks at 26:18 and 36:41 left alone.
+
 ## [2026.10.6.4] - 2026-10-06
 
 ### Added

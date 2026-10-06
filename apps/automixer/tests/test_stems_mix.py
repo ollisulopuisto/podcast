@@ -136,3 +136,29 @@ def test_the_bed_sits_over_the_speech_by_the_measured_amount(tmp_path):
     bed = meter.integrated_loudness(mix[int(21.0 * RATE):int(25.5 * RATE)])
     speech = meter.integrated_loudness(mix[int(30.0 * RATE):int(40.0 * RATE)])
     assert abs((bed - speech) - session.MUSIC_PLATEAU_OVER_SPEECH_DB) < 1.0, bed - speech
+
+
+def test_a_hot_take_is_brought_to_the_speakers_level(tmp_path, capsys):
+    """Ollin intro oli +8…+13 dB hänen tasonsa yllä (vst s13e03), ja
+    käyttäjä laski sen alueen vahvistuksella. Sama automaattisesti:
+    lohkotaso ennen ketjua (``speechmix.blocks``)."""
+    path = _session(tmp_path, seconds=40.0, bed=False)
+    p0, _ = sf.read(tmp_path / "p0.wav")
+    p0[: int(9.5 * RATE)] *= 10 ** (10 / 20)      # kaksi ensimmäistä vuoroa +10 dB
+    sf.write(tmp_path / "p0.wav", p0.astype(np.float32), RATE)
+
+    out = tmp_path / "mix.wav"
+    stems_mix.mix(str(path), str(out), target_lufs=-16.0)
+    mix, _ = sf.read(out, always_2d=True)
+    meter = pyln.Meter(RATE)
+
+    def level(a, b):
+        seg = mix[int(a * RATE):int(b * RATE)]
+        return meter.integrated_loudness(seg)
+
+    hot = level(0.5, 2.5)
+    normal = level(30.5, 32.5)
+    # Ilman lohkotasoa ketju (kuljettaja, kompressorit) jättää tällä
+    # signaalilla +2,7 dB; lohkotaso ennen ketjua vie sen alle 1,5:n.
+    assert abs(hot - normal) < 1.5, (hot, normal)
+    assert "block" in capsys.readouterr().out

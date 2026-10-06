@@ -10,6 +10,11 @@ and this project adheres to Calendar Versioning (CalVer).
 ### Fixed
 - **`automixer-beds`: a click at the start of each bed.** The first 10 ms played near full level before the fade took over (on vst s13e03's end bed, a burst at −11 dBFS). Each bed now starts with a 200 ms fade from silence that covers it; the fades themselves are unchanged.
 
+## [2026.10.6.3] - 2026-10-06
+
+### Added
+- **Hot or quiet takes are levelled before processing** (Hindenburg sessions). Each speaker's blocks that sit more than 3 dB off their own level — another day, another take, a different distance from the mic — get a constant gain, as the editor does by hand with clip gain in Hindenburg. A shouted or emphatic moment inside a block does not count. Every correction is logged (`block Kari 23:56.5–24:03.1: +8.1 dB off, gain −6.5 dB`). `--no-block-level` turns it off.
+
 ## [2026.10.6.2] - 2026-10-06
 
 ### Fixed

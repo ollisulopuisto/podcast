@@ -24,7 +24,7 @@ import tempfile
 from dataclasses import asdict
 from types import SimpleNamespace
 
-from speechmix import chain, envelopes, masks, panning, programme, stems
+from speechmix import blocks, chain, envelopes, masks, panning, programme, stems
 from speechmix.timeline import Span, Track
 
 from . import session as hindenburg
@@ -77,6 +77,38 @@ def stereo_layout(members, blocks):
     return out
 
 
+def own_voice(lanes) -> dict:
+    """Puhuja -> milloin **oma** ääni: aktiivinen ja enintään
+    ``masks.DUCK_DOMINANCE_DB`` kovimman alla. Toisen puhujan vuoto on
+    raidalla kovaa mutta ei omaa, ja lohkon taso mitattaisiin siitä."""
+    import numpy as np
+
+    active = np.stack([lane.on for lane in lanes])
+    levels = np.stack([lane.level for lane in lanes])
+    loudest = np.where(active, levels, -300.0).max(axis=0)
+    keep = active & (levels >= loudest - masks.DUCK_DOMINANCE_DB)
+    return {lane.name: keep[i] for i, lane in enumerate(lanes)}
+
+
+def level_blocks(source: str, target: str, found: list) -> None:
+    """Kirjoittaa ``source``n ``target``iin lohkojen vahvistuksella, paloittain."""
+    from pedalboard.io import AudioFile
+
+    with AudioFile(source) as src:
+        rate = int(src.samplerate)
+        with AudioFile(target, "w", rate, src.num_channels, bit_depth=32) as out:
+            position, step = 0, 60 * rate
+            while position < src.frames:
+                piece = src.read(min(step, src.frames - position))
+                end = position + piece.shape[-1]
+                out.write(piece * blocks.gain_block(found, position, end, rate))
+                position = end
+
+
+def _mmss(seconds: float) -> str:
+    return f"{int(seconds // 60)}:{seconds % 60:04.1f}"
+
+
 def mix(
     session_path: str,
     output: str,
@@ -92,6 +124,7 @@ def mix(
     debleed: bool = True,
     mic_duck: bool = False,
     mic_duck_db: float | None = None,
+    block_level: bool = True,
 ) -> stems.StemResult:
     """Miksaa istunnon ``output``iin. Palauttaa ohjelman tason tulokset."""
     result = stems.StemResult()
@@ -125,9 +158,26 @@ def mix(
 
         # Puheruudukko raa'oista stemeistä, verhokäyristä — ei näytteinä.
         grid = None
+        lanes = stems.grid_from_files({t["name"]: t["path"] for t in speech}) if speech else None
         if len(speech) > 1:
-            grid = stems.grid_from_files({t["name"]: t["path"] for t in speech})
+            grid = lanes
             _log(f"speech grid: {len(grid.speakers)} microphones")
+
+        # Lohkotaso ennen ketjua: eri otto, eri päivä, eri etäisyys —
+        # vakio vahvistus koko lohkolle, kuten käyttäjä tekee Hindenburgissa.
+        if block_level and lanes is not None:
+            own = own_voice(lanes.speakers)
+            for number, t in enumerate(speech):
+                lane = next(x for x in lanes.speakers if x.name == t["name"])
+                found = blocks.block_gains(lane.level, own[t["name"]])
+                fixed = [b for b in found if b.gain_db]
+                for b in fixed:
+                    _log(f"block {t['name']} {_mmss(b.start)}–{_mmss(b.end)}: "
+                         f"{b.deviation_db:+.1f} dB off, gain {b.gain_db:+.1f} dB")
+                if fixed:
+                    leveled = os.path.join(workdir, f"{number:02d} {t['name']} [level].wav")
+                    level_blocks(t["path"], leveled, found)
+                    t["path"] = leveled
         solos = masks.solo_masks(grid) if (grid is not None and debleed) else {}
         speaking = masks.speech_masks(grid) if grid is not None else None
 
