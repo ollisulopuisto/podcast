@@ -76,3 +76,48 @@ def test_gain_curve_changes_in_the_gap_without_a_step():
     step = np.max(np.abs(np.diff(20 * np.log10(curve))))
     assert step < 0.5
     assert abs(20 * np.log10(curve[int(8.5 * rate)]) - _gain_at(found, 4.0)) < 1e-6
+
+
+def _mixed(spans, seconds=120.0, floor=-80.0, seed=0):
+    """Kuten ``_curve``, mutta lohkon kehyksistä osuus ``soft`` on 15 dB
+    hiljaisempia (tavujen hännät, hengitys): ``(alku, loppu, taso, soft)``."""
+    rng = np.random.default_rng(seed)
+    n = int(seconds / HOP_SEC)
+    db = np.full(n, floor, dtype=np.float32)
+    own = np.zeros(n, dtype=bool)
+    for a, b, level, soft in spans:
+        i, j = int(a / HOP_SEC), int(b / HOP_SEC)
+        quiet = rng.random(j - i) < soft
+        db[i:j] = np.where(quiet, level - 15.0, level)
+        own[i:j] = True
+    return db, own
+
+
+def test_a_block_with_more_soft_frames_is_not_quiet():
+    """Olli 0:33 (27 s): kehysten mediaani luki −7,3 dB ja olisi nostanut
+    +5,9 dB; LUFS luki −2,4 ja käyttäjä ei koskenut. Taso on energiaa,
+    ei hiljaisten kehysten osuus."""
+    normal = [(s, e, -30.0, 0.3) for s, e, _ in NORMAL]
+    db, own = _mixed([(0, 7.5, -30.0, 0.6), *normal])
+    assert _gain_at(blocks.block_gains(db, own), 4.0) == 0.0
+
+
+def test_a_short_loud_part_still_counts_when_it_is_the_block():
+    """Ollin ensimmäinen introlohko: LUFS +12,8, käyttäjä −12,2. Kehysten
+    mediaani näki siitä +4,3 ja korjasi vain −3,4."""
+    normal = [(s, e, -30.0, 0.3) for s, e, _ in NORMAL]
+    db, own = _mixed([(0, 7, -14.0, 0.7), *normal])
+    gain = _gain_at(blocks.block_gains(db, own), 3.0)
+    assert gain <= -8.0
+
+
+def test_slivers_are_not_corrected():
+    """Kari 16:16, 40:41, 42:49; Panu 1:24, 38:12: 1–2 s, −51…−61 dB —
+    hengitys tai vuoto. Kehysten mediaani nosti ne +12 dB:llä."""
+    db, own = _curve([(0, 1.5, -60.0), *NORMAL])
+    assert _gain_at(blocks.block_gains(db, own), 0.7) == 0.0
+
+
+def test_boosts_are_capped_lower_than_cuts():
+    db, own = _curve([(0, 8, -45.0), *NORMAL])
+    assert _gain_at(blocks.block_gains(db, own), 4.0) == blocks.MAX_BOOST_DB
