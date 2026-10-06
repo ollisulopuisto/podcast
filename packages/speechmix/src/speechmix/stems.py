@@ -151,7 +151,7 @@ def delivery_lufs(settings) -> float:
 
 
 def program_deliver(jobs: list[dict], result, ducks: dict, extra: dict,
-                    settings, speech=None) -> None:
+                    settings, speech=None, layout=None) -> None:
     """Ohjelma masterointitasoon: mittaa, nosta, rajoita, mittaa uudestaan.
 
     Tämä on se työ jonka moni tekee erillisellä työkalulla viennin jälkeen —
@@ -170,7 +170,7 @@ def program_deliver(jobs: list[dict], result, ducks: dict, extra: dict,
     """
     target = delivery_lufs(settings)
     if not target:
-        program_ceiling(jobs, result, ducks, extra)
+        program_ceiling(jobs, result, ducks, extra, layout=layout)
         return
     ceiling = float(getattr(settings, "program_peak_db", chain.CEILING_DB))
     rate = 48000
@@ -214,7 +214,7 @@ def program_deliver(jobs: list[dict], result, ducks: dict, extra: dict,
         played, plain = IntegratedMeter(rate), IntegratedMeter(rate)
         program_ceiling(jobs, result, ducks, extra, gain, ceiling, played,
                         curve, step_sec if curve is not None else 0.0,
-                        not write, plain, speech)
+                        not write, plain, speech, layout=layout)
         gate = played.speech() > 0.5 if speech is not None else None
         after, before = played.value(keep=gate), plain.value(keep=gate)
         cost = 0.0 if (after is None or before is None) else before - after
@@ -299,8 +299,15 @@ def program_ceiling(jobs: list[dict], result,
                     ride_step: float = 0.0,
                     dry_run: bool = False,
                     raw_meter=None,
-                    speech=None) -> None:
+                    speech=None,
+                    layout=None) -> None:
     """Huippukatto **ohjelmalle**, ei yhdelle stemille.
+
+    ``layout(jäsenet, palat)`` kertoo miten stemit soivat isännän ulostulossa
+    (``(kanavat, n)``), jotta mittari mittaa sen eikä stemien summaa.
+    autoraffkatilla sitä ei ole: Final Cut soittaa stemit, ja mittari
+    mittaa summan monona kuten ennenkin. automixer kirjoittaa stereon
+    itse, panoroituna ja stereomusiikin kanssa.
 
     Sama virhe kuin äänekkyydessä, jonka ``program_trim`` jo korjaa: ketju
     takaa katon jokaiselle tiedostolle erikseen, mutta isäntä soittaa
@@ -350,7 +357,7 @@ def program_ceiling(jobs: list[dict], result,
             worst = _ceiling_pass(
                 members, frames, AudioFile, envelopes_by_speaker, extra,
                 boost_db, ceiling_db, meter, ride_db, ride_step, dry_run,
-                raw_meter, speech,
+                raw_meter, speech, layout,
             )
         except (OSError, ValueError) as exc:
             for job in members:
@@ -372,7 +379,8 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                   ride_step: float = 0.0,
                   dry_run: bool = False,
                   raw_meter=None,
-                  speech=None) -> float:
+                  speech=None,
+                  layout=None) -> float:
     """Yksi ryhmä: summa paloittain, sama käyrä jokaiseen stemiin.
 
     ``envelopes_by_speaker`` on vaimennus puhujittain aikajanan aikana. Se
@@ -451,15 +459,12 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                     # juuri se ohjelma jonka isäntä soittaa. Sama ajo kirjoittaa
                     # ja mittaa: erillinen mittauskierros olisi gigatavu lisää
                     # luettavaa eikä yhtään desibeliä enempää tietoa.
-                    played = sum(h * gain for h in heard)
-                    mono = (played[..., head:tail].mean(axis=0)
-                            if played.ndim > 1 else played[head:tail])
-                    meter.add(mono, None if spoken is None
+                    meter.add(_heard(members, [h * gain for h in heard], layout,
+                                     head, tail),
+                              None if spoken is None
                               else spoken[low + head:low + tail])
                 if raw_meter is not None:
-                    plain = sum(heard)
-                    raw_meter.add(plain[..., head:tail].mean(axis=0)
-                                  if plain.ndim > 1 else plain[head:tail])
+                    raw_meter.add(_heard(members, heard, layout, head, tail))
                 if not dry_run:
                     for out, block in zip(outs, blocks, strict=True):
                         out.write(np.ascontiguousarray(
@@ -488,6 +493,15 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
     for job in members:
         os.replace(job["target"] + ".ceil.tmp.wav", job["target"])
     return worst
+
+
+def _heard(members, blocks, layout, head: int, tail: int) -> np.ndarray:
+    """Mitä mittari kuulee palasta: isännän ulostulo tai stemien summa monona."""
+    if layout is not None:
+        return np.asarray(layout(members, blocks))[..., head:tail]
+    played = sum(blocks)
+    return (played[..., head:tail].mean(axis=0)
+            if played.ndim > 1 else played[head:tail])
 
 
 def _linear(db: float) -> float:
@@ -904,3 +918,39 @@ def sum_to_file(sources: list[Source], program_start: float, seconds: float,
     finally:
         for handle in opened.values():
             handle.close()
+
+
+# ------------------------------------------------------------------ ruudukko
+
+
+@dataclass
+class Lanes:
+    """Puheruudukko siinä muodossa jota ``masks`` lukee: ``speakers``-lista."""
+
+    speakers: list
+
+
+def grid_from_files(named: dict[str, str], envelope=None) -> Lanes:
+    """Puheruudukko aikajanan mittaisista stemitiedostoista, verhokäyristä.
+
+    autoraffkatin tapa eikä ``grid.speech_grid``in: tasot luetaan
+    välimuistiin tallennetuista verhokäyristä (``rms.envelope_for``, 20 ms
+    HOP), eikä yhtäkään raitaa pidetä muistissa näytteinä. ``speech_grid``
+    halusi kaikki raidat liukulukuina kerralla, ja 5 minuutin istunnolla se
+    oli 1,5 GB:n huippu — 47 minuutissa ~14 GB.
+
+    Päätös on ``grid.lane``: aktiivinen = oman pohjan yli
+    ``grid.FLOOR_MARGIN_DB``; kuka on kovin päätetään maskeissa.
+    """
+    from . import grid as grid_lib
+
+    if envelope is None:
+        from .rms import envelope_for
+
+        envelope = envelope_for
+    lanes = []
+    for name, path in named.items():
+        db = np.asarray(envelope(path), dtype=np.float32)
+        floor = grid_lib.noise_floor(grid_lib.smooth(db))
+        lanes.append(grid_lib.lane(name, [(db, None, floor, grid_lib.FLOOR_MARGIN_DB, 0.0)]))
+    return Lanes(speakers=lanes)

@@ -1004,3 +1004,74 @@ def test_peak_to_short_term_in_chunks_matches_and_stays_small():
     _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     assert peak < 1.0 * mono.nbytes, peak / mono.nbytes
+
+
+def _multiband_whole(audio, rate, threshold_db, ratio, max_gr_db, attack_ms, release_ms):
+    """Vanha toteutus vertailuksi: kaistat ja kompressori koko signaalille."""
+    parts = chain.split_bands(audio, rate, chain.BANDS_HZ)
+    out = np.zeros_like(audio)
+    for part in parts:
+        level = chain._one_pole(np.abs(part).max(axis=0), rate, attack_ms)
+        over = np.maximum(0.0, 20.0 * np.log10(level + 1e-9) - threshold_db)
+        wanted = -np.minimum(over * (1.0 - 1.0 / max(ratio, 1.0001)), max_gr_db)
+        instant = 10.0 ** (wanted / 20.0)
+        gain = np.minimum(chain._one_pole(instant, rate, release_ms), instant)
+        out = out + part * gain
+    return out
+
+
+def test_multiband_in_chunks_matches_the_whole_signal():
+    audio = speech_like(seconds=7.3, level=0.3)
+    audio = np.atleast_2d(audio)
+    args = (RATE, -25.0, 3.0, chain.MAX_GR_DB, chain.PEAK_ATTACK_MS, chain.PEAK_RELEASE_MS)
+    want = _multiband_whole(audio, *args)
+    got = chain.multiband(audio, *args)
+    assert got.shape == want.shape
+    assert np.max(np.abs(got - want)) < 1e-9
+
+
+def test_multiband_memory_does_not_grow_with_the_episode():
+    """Monikaistakompressori piti kymmenkunta koko raidan kopiota float64:nä:
+    5 minuutin raidalle 1,15 GB (memray, 2026-10-06), 47 minuutille ~11 GB.
+    Paloittain kaistojen ja kompressorin suotimet jatkavat tilastaan, joten
+    tulos on sama ja muisti vakio plus tulos."""
+    import tracemalloc
+
+    audio = np.atleast_2d(speech_like(seconds=60.0, level=0.3))
+    tracemalloc.start()
+    chain.multiband(audio, RATE, -25.0, 3.0)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    # Tulos on float64 (kuten ennenkin) = 2× float32-syöte, palat päälle:
+    # mitattu 2,34. Kokonaisena sama mittaus oli 22,0.
+    assert peak < 3.0 * audio.nbytes, peak / audio.nbytes
+
+
+def _deess_whole(audio, rate):
+    """Vanha toteutus vertailuksi."""
+    from scipy import signal as _sig
+
+    sos = _sig.butter(4, min(chain.DEESS_HZ, rate / 2 * 0.95) / (rate / 2), output="sos")
+    low = _sig.sosfilt(sos, audio, axis=-1)
+    high = audio - low
+    level = chain._one_pole(np.abs(high).max(axis=0), rate, chain.DEESS_SMOOTH_MS)
+    over = np.maximum(0.0, 20.0 * np.log10(level + 1e-9) - chain.DEESS_THRESHOLD_DB)
+    reduction_db = -over * (1.0 - 1.0 / chain.DEESS_RATIO)
+    gain = chain._one_pole(10.0 ** (reduction_db / 20.0), rate, chain.DEESS_SMOOTH_MS)
+    return low + high * gain
+
+
+def test_deess_in_chunks_matches_and_stays_small():
+    """Sihinänpoisto piti kahdeksan koko raidan kopiota float64:nä:
+    0,9 GB viiden minuutin raidalle (memray, 2026-10-06)."""
+    import tracemalloc
+
+    audio = np.atleast_2d(speech_like(seconds=7.3, level=0.3))
+    assert np.max(np.abs(chain.deess(audio, RATE) - _deess_whole(audio, RATE))) < 1e-9
+
+    long = np.atleast_2d(speech_like(seconds=60.0, level=0.3))
+    tracemalloc.start()
+    chain.deess(long, RATE)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert peak < 3.0 * long.nbytes, peak / long.nbytes

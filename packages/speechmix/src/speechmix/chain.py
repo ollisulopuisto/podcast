@@ -990,15 +990,28 @@ def deess(
     if audio.size == 0:
         return audio
     sos = _sig.butter(4, min(freq, rate / 2 * 0.95) / (rate / 2), output="sos")
-    low = _sig.sosfilt(sos, audio, axis=-1)
-    high = audio - low
-
-    level = _one_pole(np.abs(high).max(axis=0), rate, DEESS_SMOOTH_MS)
-    level_db = 20.0 * np.log10(level + 1e-9)
-    over = np.maximum(0.0, level_db - threshold_db)
-    reduction_db = -over * (1.0 - 1.0 / ratio)
-    gain = _one_pole(10.0 ** (reduction_db / 20.0), rate, DEESS_SMOOTH_MS)
-    return low + high * gain
+    # Paloittain, suotimet ja seuraajat jatkavat tilastaan: sama tulos kuin
+    # kokonaisena, mutta muistissa on pala. Kokonaisena tämä piti kahdeksan
+    # koko raidan float64-kopiota, 0,9 GB viiden minuutin raidalle (memray,
+    # 2026-10-06).
+    x2 = np.atleast_2d(audio)
+    state = np.zeros((sos.shape[0], x2.shape[0], 2))
+    follow_level = _Follower(rate, DEESS_SMOOTH_MS)
+    follow_gain = _Follower(rate, DEESS_SMOOTH_MS)
+    out = np.empty(x2.shape, dtype=np.result_type(x2.dtype, np.float64))
+    total = x2.shape[-1]
+    for start in range(0, total, _COMPRESS_CHUNK):
+        stop = min(total, start + _COMPRESS_CHUNK)
+        piece = x2[:, start:stop]
+        low, state = _sig.sosfilt(sos, piece, axis=-1, zi=state)
+        high = piece - low
+        level = follow_level.step(np.abs(high).max(axis=0))
+        level_db = 20.0 * np.log10(level + 1e-9)
+        over = np.maximum(0.0, level_db - threshold_db)
+        reduction_db = -over * (1.0 - 1.0 / ratio)
+        gain = follow_gain.step(10.0 ** (reduction_db / 20.0))
+        out[:, start:stop] = low + high * gain
+    return out.reshape(audio.shape)
 
 
 def limiter_gain(
@@ -1207,11 +1220,49 @@ def compress(
     """
     if audio.size == 0:
         return audio
-    level = _one_pole(np.abs(audio).max(axis=0), rate, attack_ms)
+    # Paloittain, seuraajien tila jatkuu palasta toiseen: tulos on sama kuin
+    # kokonaisena, mutta muistissa on vain pala. Kokonaisena tämä piti
+    # seitsemän koko raidan float64-kopiota (memray, 2026-10-06).
+    attack, release = _Follower(rate, attack_ms), _Follower(rate, release_ms)
+    # Sama tulostyyppi kuin kokonaisena: vahvistus on float64, joten tulo on.
+    out = np.empty(audio.shape, dtype=np.result_type(audio.dtype, np.float64))
+    total = audio.shape[-1]
+    for start in range(0, total, _COMPRESS_CHUNK):
+        stop = min(total, start + _COMPRESS_CHUNK)
+        out[..., start:stop] = _compress_block(
+            audio[..., start:stop], threshold_db, ratio, max_gr_db, attack, release
+        )
+    return out
+
+
+#: Kompressorin pala näytteinä. Sekunti 48 kHz:llä.
+_COMPRESS_CHUNK = 48000
+
+
+class _Follower:
+    """``_one_pole`` paloittain: tila jatkuu, alkutila ensimmäisestä näytteestä."""
+
+    def __init__(self, rate: int, ms: float):
+        coeff = float(np.exp(-1.0 / max(1.0, ms * rate / 1000.0)))
+        self.b, self.a = [1.0 - coeff], [1.0, -coeff]
+        self.z = None
+
+    def step(self, x: np.ndarray) -> np.ndarray:
+        from scipy import signal as _sig
+
+        if self.z is None:
+            self.z = _sig.lfilter_zi(self.b, self.a) * float(np.asarray(x).reshape(-1)[0])
+        out, self.z = _sig.lfilter(self.b, self.a, x, zi=self.z)
+        return out
+
+
+def _compress_block(audio, threshold_db, ratio, max_gr_db, attack, release):
+    """Yksi pala kompressoria; seuraajat kantavat tilan seuraavaan."""
+    level = attack.step(np.abs(audio).max(axis=0))
     over = np.maximum(0.0, 20.0 * np.log10(level + 1e-9) - threshold_db)
     wanted = -np.minimum(over * (1.0 - 1.0 / max(ratio, 1.0001)), max_gr_db)
     instant = 10.0 ** (wanted / 20.0)
-    gain = np.minimum(_one_pole(instant, rate, release_ms), instant)
+    gain = np.minimum(release.step(instant), instant)
     return audio * gain
 
 
@@ -1265,7 +1316,8 @@ def multiband(
     kuullaan säröisenä vaikka mikään ei leikkaannu. Kaistoittain jokainen
     hoitaa oman ongelmansa eikä kuule toisten.
     """
-    parts = split_bands(audio, rate, BANDS_HZ)
+    from scipy import signal as _sig
+
     # Sama suhde ja sama vaimennuskatto joka kaistalle. Ensin ne olivat
     # eri suuruisia — matalalle enemmän, ylös vähemmän — mikä on juuri se
     # mitä Owsinski varoittaa tekemästä: «Use the same compression ratio
@@ -1273,12 +1325,39 @@ def multiband(
     # Apply roughly the same amount of gain reduction to each band to avoid
     # altering the overall mix balance too much.» Eri määrä kaistoittain
     # muuttaa äänen sävyä ohjelman mukana, ja sen kuulee epäluonnollisena.
-    out = np.zeros_like(audio)
-    for part in parts:
-        out = out + compress(
-            part, rate, threshold_db, ratio, max_gr_db, attack_ms, release_ms
-        )
-    return out
+    #
+    # Paloittain: kaistasuotimet ja kompressorien seuraajat jatkavat
+    # tilastaan, joten tulos on sama kuin ``split_bands`` + ``compress``
+    # kokonaisena. Kokonaisena tämä oli ketjun muistihuippu, 1,15 GB
+    # viiden minuutin raidalle (memray, 2026-10-06).
+    x2 = np.atleast_2d(audio)
+    soses = [
+        _sig.butter(4, min(edge, rate / 2 * 0.95) / (rate / 2), output="sos")
+        for edge in BANDS_HZ
+    ]
+    states = [np.zeros((sos.shape[0], x2.shape[0], 2)) for sos in soses]
+    followers = [
+        (_Follower(rate, attack_ms), _Follower(rate, release_ms))
+        for _ in range(len(soses) + 1)
+    ]
+    out = np.empty(x2.shape, dtype=np.result_type(x2.dtype, np.float64))
+    total = x2.shape[-1]
+    for start in range(0, total, _COMPRESS_CHUNK):
+        stop = min(total, start + _COMPRESS_CHUNK)
+        rest = x2[:, start:stop]
+        parts = []
+        for i, sos in enumerate(soses):
+            low, states[i] = _sig.sosfilt(sos, rest, axis=-1, zi=states[i])
+            parts.append(low)
+            rest = rest - low
+        parts.append(rest)
+        acc = np.zeros_like(rest)
+        for part, (attack, release) in zip(parts, followers, strict=True):
+            acc = acc + _compress_block(
+                part, threshold_db, ratio, max_gr_db, attack, release
+            )
+        out[:, start:stop] = acc
+    return out.reshape(audio.shape)
 
 
 # Ylipakkauksen mittari. Owsinski: «If the maximum short-term loudness is
