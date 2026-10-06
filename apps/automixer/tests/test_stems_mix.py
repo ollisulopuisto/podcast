@@ -162,3 +162,33 @@ def test_a_hot_take_is_brought_to_the_speakers_level(tmp_path, capsys):
     # signaalilla +2,7 dB; lohkotaso ennen ketjua vie sen alle 1,5:n.
     assert abs(hot - normal) < 1.5, (hot, normal)
     assert "block" in capsys.readouterr().out
+
+
+def _with_shout(tmp_path):
+    path = _session(tmp_path, seconds=40.0, bed=False)
+    p0, _ = sf.read(tmp_path / "p0.wav")
+    # Pitkä vuoro 30–39 s (kuten Ollin 14 s:n lohko 36:41), huuto keskellä.
+    p0[int(33 * RATE):int(36 * RATE)] = p0[int(30 * RATE):int(33 * RATE)]
+    p0[int(33.5 * RATE):int(35.3 * RATE)] *= 10 ** (8 / 20)
+    sf.write(tmp_path / "p0.wav", p0.astype(np.float32), RATE)
+    return path
+
+
+def test_a_loud_stretch_is_listed_for_listening_not_changed(tmp_path):
+    path = _with_shout(tmp_path)
+    out = tmp_path / "mix.wav"
+    stems_mix.mix(str(path), str(out), target_lufs=-16.0)
+    listing = (tmp_path / "mix flags.txt").read_text(encoding="utf-8")
+    line = next(x for x in listing.splitlines() if "P0" in x and "loud" in x)
+    assert line.startswith("0:33")
+
+
+def test_flags_only_writes_the_list_without_a_mix(tmp_path, monkeypatch):
+    from automixer import cli_mix
+
+    path = _with_shout(tmp_path)
+    monkeypatch.setattr("sys.argv", ["automixer", str(path), "--flags-only"])
+    cli_mix.main()
+    assert (tmp_path / "jakso automixer flags.txt").exists()
+    assert not (tmp_path / "jakso automixer.wav").exists()
+    assert not list(tmp_path.glob("automixer-*"))

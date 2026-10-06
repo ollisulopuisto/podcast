@@ -170,3 +170,65 @@ def gain_block(found: list[Block], low: int, high: int, rate: int) -> np.ndarray
 def gain_curve(found: list[Block], frames: int, rate: int) -> np.ndarray:
     """Koko tiedoston vahvistus. Testeille ja lyhyille tiedostoille."""
     return gain_block(found, 0, frames, rate)
+
+
+# ------------------------------------------------------------------ liputus
+
+#: Kova jakso lohkon sisällä: hetkellinen äänekkyys (0,4 s, EBU) tämän verran
+#: lohkon tason yllä. s13e03:n tunnetut: Ollin 26:18 +4 dB, 36:41 +7 dB.
+LOUD_DB = 4.0
+#: ... vähintään näin kauan. Yksittäinen plosiivi tai naksahdus jää alle.
+LOUD_MIN_S = 1.0
+#: Hetkellisen äänekkyyden ikkuna, s.
+MOMENTARY_S = 0.4
+#: Tätä lyhyempi notkahdus ei katkaise jaksoa.
+LOUD_GAP_S = 0.3
+
+
+@dataclass(frozen=True)
+class Loud:
+    """Kova jakso lohkon sisällä: aikajanan sekunnit ja ylitys lohkon tasosta."""
+
+    start: float
+    end: float
+    excess_db: float
+
+
+def loud_spans(level_db: np.ndarray, own: np.ndarray, found: list[Block],
+               hop: float = HOP_SEC) -> list[Loud]:
+    """Lohkojen sisäiset kovat jaksot. **Merkitään, ei korjata.**
+
+    Ainoat kaksi selvää tapausta s13e03:ssa (26:18, 36:41) olivat
+    painotusta, ja käyttäjä jätti ne korvalla ennalleen. Painotus on
+    sisältöä: sääntö joka laskisi sen kumoaisi juuri sen mitä toimittaja
+    piti. Lista on kuunneltavaksi; kun sen merkinnöistä tiedetään mitkä
+    käyttäjä korjaisi, siitä voi tulla sääntö.
+    """
+    level_db = np.asarray(level_db, dtype=np.float64)
+    own = np.asarray(own, dtype=bool)[: len(level_db)]
+    power = np.where(own, 10.0 ** (level_db / 10.0), 0.0)
+    width = max(1, int(round(MOMENTARY_S / hop)))
+    kernel = np.ones(width) / width
+    # Energia ikkunassa jaettuna oman puheen osuudella: tauot eivät
+    # laimenna, mutta yksittäinen kehys ei myöskään riitä.
+    energy = np.convolve(power, kernel, mode="same")
+    share = np.convolve(own.astype(np.float64), kernel, mode="same")
+    momentary = 10.0 * np.log10(np.where(share > 0.5, energy / np.maximum(share, 1e-9), 1e-30))
+    gap = int(round(LOUD_GAP_S / hop))
+    shortest = int(round(LOUD_MIN_S / hop))
+    out = []
+    for block in found:
+        a, b = int(round(block.start / hop)), int(round(block.end / hop))
+        over = momentary[a:b] > block.level_db + LOUD_DB
+        runs: list[list[int]] = []
+        for s, e in _runs(over):
+            if runs and s - runs[-1][1] <= gap:
+                runs[-1][1] = e
+            else:
+                runs.append([s, e])
+        for s, e in runs:
+            if e - s < shortest:
+                continue
+            excess = float(np.median(momentary[a + s:a + e])) - block.level_db
+            out.append(Loud((a + s) * hop, (a + e) * hop, round(excess, 2)))
+    return out

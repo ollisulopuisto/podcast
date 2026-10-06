@@ -3536,7 +3536,7 @@ wheels = [
 
 [[package]]
 name = "speechmix"
-version = "2026.10.6.5"
+version = "2026.10.6.7"
 source = { editable = "packages/speechmix" }
 dependencies = [
     { name = "numpy" },

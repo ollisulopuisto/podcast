@@ -10,6 +10,12 @@ and this project adheres to Calendar Versioning (CalVer).
 ### Fixed
 - **`automixer-beds`: a click at the start of each bed.** The first 10 ms played near full level before the fade took over (on vst s13e03's end bed, a burst at −11 dBFS). Each bed now starts with a 200 ms fade from silence that covers it; the fades themselves are unchanged.
 
+## [2026.10.6.4] - 2026-10-06
+
+### Added
+- **A listening list next to every Hindenburg mix** (`<output> flags.txt`): the blocks that were levelled, with their gain, and the loud stretches inside blocks, which are only flagged and never changed (a shout or an emphatic line is usually content). One line per place, in time order.
+- **`--flags-only`** writes just that list, without mixing: a few minutes instead of a full render.
+
 ## [2026.10.6.3] - 2026-10-06
 
 ### Added

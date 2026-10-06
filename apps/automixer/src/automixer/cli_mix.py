@@ -647,6 +647,12 @@ def main():
         help="Disable the slow level rider ahead of the compressors",
     )
     parser.add_argument(
+        "--flags-only",
+        action="store_true",
+        help="Hindenburg sessions: write only the listening list (blocks that "
+        "would be levelled, loud stretches inside blocks), no mix",
+    )
+    parser.add_argument(
         "--no-block-level",
         action="store_false",
         dest="block_level",
@@ -856,6 +862,9 @@ def _mix_session(args, path: str) -> None:
     from . import stems_mix
 
     output = args.output or os.path.splitext(path)[0] + " automixer.wav"
+    if args.flags_only:
+        stems_mix.flags(path, os.path.splitext(output)[0] + " flags.txt")
+        return
     plugins = list(args.speech_plugins or [])
     if len(plugins) > 1:
         print(f"  ! one speech plug-in per session: using {os.path.basename(plugins[0])}")

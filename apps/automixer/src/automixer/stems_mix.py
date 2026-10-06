@@ -109,6 +109,58 @@ def _mmss(seconds: float) -> str:
     return f"{int(seconds // 60)}:{seconds % 60:04.1f}"
 
 
+def review(speech: list[dict], lanes) -> tuple[dict, dict]:
+    """Puhuja -> lohkot (``blocks.block_gains``) ja kovat jaksot (``loud_spans``).
+
+    Lohkot korjataan, kovat jaksot vain merkitään: lohkon sisäinen kova
+    jakso oli s13e03:ssa painotusta, ja käyttäjä jätti sen ennalleen.
+    """
+    found, loud = {}, {}
+    if lanes is None:
+        return found, loud
+    own = own_voice(lanes.speakers)
+    for t in speech:
+        lane = next(x for x in lanes.speakers if x.name == t["name"])
+        found[t["name"]] = blocks.block_gains(lane.level, own[t["name"]])
+        loud[t["name"]] = blocks.loud_spans(lane.level, own[t["name"]], found[t["name"]])
+    return found, loud
+
+
+def write_flags(path: str, found: dict, loud: dict, block_level: bool = True) -> int:
+    """Kuuntelulista: mitä muutettiin ja mitä vain merkittiin, ajassa."""
+    rows = []
+    for name, items in found.items():
+        for b in items:
+            if b.gain_db and block_level:
+                rows.append((b.start, f"{_mmss(b.start)}–{_mmss(b.end)}  {name}  block "
+                             f"{b.deviation_db:+.1f} dB off its level, gain {b.gain_db:+.1f} dB"))
+    for name, items in loud.items():
+        for x in items:
+            rows.append((x.start, f"{_mmss(x.start)}–{_mmss(x.end)}  {name}  loud "
+                         f"{x.excess_db:+.1f} dB over its block (not changed)"))
+    rows.sort()
+    with open(path, "w", encoding="utf-8") as handle:
+        for _, line in rows:
+            handle.write(line + "\n")
+    return len(rows)
+
+
+def flags(session_path: str, path: str) -> int:
+    """Pelkkä kuuntelulista ilman miksausta: lohkot ja kovat jaksot."""
+    workdir = tempfile.mkdtemp(
+        prefix="automixer-", dir=os.path.dirname(os.path.abspath(path)) or None
+    )
+    try:
+        loaded = hindenburg.load(session_path, workdir)
+        speech = [t for t in loaded.tracks if t["type"] == "speech"]
+        lanes = stems.grid_from_files({t["name"]: t["path"] for t in speech}) if speech else None
+        count = write_flags(path, *review(speech, lanes))
+        _log(f"{count} places to listen to → {path}")
+        return count
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
 def mix(
     session_path: str,
     output: str,
@@ -165,11 +217,18 @@ def mix(
 
         # Lohkotaso ennen ketjua: eri otto, eri päivä, eri etäisyys —
         # vakio vahvistus koko lohkolle, kuten käyttäjä tekee Hindenburgissa.
+        # Kovat jaksot lohkojen sisällä vain merkitään kuuntelulistaan.
+        found_all, loud_all = review(speech, lanes)
+        listing = os.path.splitext(output)[0] + " flags.txt"
+        count = write_flags(listing, found_all, loud_all, block_level)
+        _log(f"{count} places to listen to → {listing}")
+        for name, items in loud_all.items():
+            for x in items:
+                _log(f"loud {name} {_mmss(x.start)}–{_mmss(x.end)}: "
+                     f"{x.excess_db:+.1f} dB over its block (not changed)")
         if block_level and lanes is not None:
-            own = own_voice(lanes.speakers)
             for number, t in enumerate(speech):
-                lane = next(x for x in lanes.speakers if x.name == t["name"])
-                found = blocks.block_gains(lane.level, own[t["name"]])
+                found = found_all[t["name"]]
                 fixed = [b for b in found if b.gain_db]
                 for b in fixed:
                     _log(f"block {t['name']} {_mmss(b.start)}–{_mmss(b.end)}: "
