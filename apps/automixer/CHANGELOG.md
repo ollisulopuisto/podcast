@@ -10,13 +10,17 @@ and this project adheres to Calendar Versioning (CalVer).
 ### Fixed
 - **`automixer-beds`: a click at the start of each bed.** The first 10 ms played near full level before the fade took over (on vst s13e03's end bed, a burst at −11 dBFS). Each bed now starts with a 200 ms fade from silence that covers it; the fades themselves are unchanged.
 
+## [2026.10.6.2] - 2026-10-06
+
+### Fixed
+- **Music beds were 3 dB too quiet against the speech** in the stems pipeline: speakers were panned with Final Cut's balance law, which plays a centred voice at full level on both channels (+3 dB in stereo), while the beds were matched to the speech's mono level. On vst s13e03 the beds came out +3.3 to +4.9 dB over the speech instead of +7. Speech is panned with constant power again, as automixer always did.
+
 ## [2026.10.6.1] - 2026-10-06
 
 ### Fixed
 - **A full-length Hindenburg episode can be mixed on a 32 GB Mac.** A 47-minute session needed ~40 GB and stalled in swap, because every track and the whole mix were held in memory. Session mode now uses autoraffkat's pipeline (shared in `speechmix.stems`): each speaker is processed one at a time to a stem on disk, and the peak ceiling, mastering and final stereo mix stream over the stems in chunks. Synthetic 3-speaker session, peak memory: 5 min 7.1 → 1.8 GB, 10 min 9.9 → 3.1 GB (~13 GB projected for 47 min, was ~40). The output lands on the target loudness (−16.0 LUFS measured) with a −1 dBTP true-peak ceiling.
 
 ### Changed
-- Speakers are panned with Final Cut's balance law (full level at centre), the same as autoraffkat's render, instead of constant power. Overall loudness is unaffected because mastering measures the stereo output.
 - In session mode only the first `--speech-plugins` entry is used, and `--ad-spot` is ignored (edit the gap in Hindenburg).
 
 ## [2026.10.5.3] - 2026-10-05

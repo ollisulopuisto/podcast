@@ -48,12 +48,17 @@ def _duration(path: str) -> float:
     return info.frames / info.samplerate
 
 
+#: Puheen panorointilaki: vakioteho, kuten automixerin oma väylä ennenkin.
+#: Keskellä −3 dB kumpaankin, joten stereon äänekkyys on monon, ja musiikki
+#: (tasattu puheen monotasoon) pysyy mitatulla etäisyydellään puheesta.
+SPEECH_PAN_LAW = "power"
+
+
 def stereo_layout(members, blocks):
     """Miten stemit soivat ulostulossa: sama laki kuin ``stems.sum_to_file``.
 
-    Mittari mittaa tämän eikä stemien monosummaa. Keskelle panoroitu
-    monopuhe soi täysillä kummastakin kanavasta, ja se on BS.1770:llä 3 dB
-    kovempi kuin sama mono — ilman tätä miksaus jäi tavoitteen yli.
+    Mittari mittaa tämän eikä stemien monosummaa, jotta masterointi osuu
+    siihen mitä kirjoitetaan.
     """
     import numpy as np
 
@@ -66,7 +71,7 @@ def stereo_layout(members, blocks):
         else:
             mono = block.mean(axis=0)
             pair = np.stack([mono, mono])
-        left, right = stems.pan_gains(job.get("pan", 0.0))
+        left, right = stems.pan_gains(job.get("pan", 0.0), job.get("pan_law", "balance"))
         out[0] += pair[0] * left
         out[1] += pair[1] * right
     return out
@@ -136,6 +141,7 @@ def mix(
                 "source": t["path"], "target": target,
                 "target_lufs": SPEECH_REFERENCE_LUFS, "gain_db": 0.0,
                 "speech": True, "mono": True, "pan": pans[number],
+                "pan_law": SPEECH_PAN_LAW,
             })
 
         pools: dict = {}
@@ -208,7 +214,8 @@ def mix(
 
         sources = [
             stems.Source(job["target"], [(0.0, seconds, 0.0)],
-                         duck=ducks.get(job["speaker"]), pan=job["pan"])
+                         duck=ducks.get(job["speaker"]), pan=job["pan"],
+                         pan_law=job["pan_law"])
             for job in jobs[: len(speech)]
         ] + [
             stems.Source(job["target"], [(0.0, seconds, 0.0)], stereo=True)

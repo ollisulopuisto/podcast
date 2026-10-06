@@ -78,7 +78,10 @@ def test_a_session_is_mixed_to_the_target_through_stems(tmp_path, capsys):
     mix, rate = sf.read(out, always_2d=True)
     assert rate == RATE and mix.shape[1] == 2
     assert abs(len(mix) - 40 * RATE) <= 1
-    lufs = pyln.Meter(RATE).integrated_loudness(mix)
+    # Masterointi tähtää puheen äänekkyyteen (puheportti, kuten
+    # autoraffkatissa): 40 sekunnin testissä 12 s pohjaa +7 dB puheen yllä
+    # nostaa koko tiedoston lukemaa, 47 minuutin jaksossa ei (−16,27).
+    lufs = pyln.Meter(RATE).integrated_loudness(mix[int(30 * RATE):])
     assert abs(lufs - -16.0) < 0.6, lufs
     assert _true_peak_db(mix) <= -1.0 + 0.1
 
@@ -86,9 +89,14 @@ def test_a_session_is_mixed_to_the_target_through_stems(tmp_path, capsys):
     gap = mix[int(22.5 * RATE):int(25.5 * RATE)]
     assert 20 * np.log10(np.sqrt(np.mean(gap ** 2))) > -40
     assert np.corrcoef(gap[:, 0], gap[:, 1])[0, 1] < 0.5
-    # Häivytys hiljaisuuteen: pohjan lopussa ei ole musiikkia.
-    tail = mix[int(28.5 * RATE):int(29.5 * RATE)]
-    assert np.abs(np.corrcoef(tail[:, 0], tail[:, 1])[0, 1]) > 0.9
+    # Häivytys hiljaisuuteen: pohjan lopussa ei ole musiikkia. Sivusignaali
+    # (L−R) on musiikkia — puhe on lähes keskellä — joten se mitataan suoraan.
+    # Mitattu: tauolla −18,9 dB, häivytyksen jälkeen −78,9.
+    def side_db(a, b):
+        seg = mix[int(a * RATE):int(b * RATE)]
+        return 20 * np.log10(np.sqrt(np.mean(((seg[:, 0] - seg[:, 1]) / 2) ** 2)) + 1e-12)
+
+    assert side_db(28.5, 29.5) < side_db(22.5, 25.5) - 40
 
     # Työhakemisto siivotaan.
     assert not list(tmp_path.glob("automixer-*"))
@@ -111,3 +119,20 @@ def test_memory_follows_one_stem_not_the_number_of_tracks(tmp_path):
 
     two, four = peak(2), peak(4)
     assert four < 1.5 * two, (two, four)
+
+
+def test_the_bed_sits_over_the_speech_by_the_measured_amount(tmp_path):
+    """Pohjan tasanne ``session.MUSIC_PLATEAU_OVER_SPEECH_DB`` puheen yllä
+    myös stereoulostulossa. Täyden tason keskipanorointi (Final Cutin laki)
+    nosti monopuheen stereossa 3 dB, ja pohja jäi oikealla jaksolla
+    +3,3…+4,9 dB:iin kun piti olla +7 (vst s13e03, 2026-10-06)."""
+    from automixer import session
+
+    path = _session(tmp_path, seconds=40.0)
+    out = tmp_path / "mix.wav"
+    stems_mix.mix(str(path), str(out), target_lufs=-16.0)
+    mix, _ = sf.read(out, always_2d=True)
+    meter = pyln.Meter(RATE)
+    bed = meter.integrated_loudness(mix[int(21.0 * RATE):int(25.5 * RATE)])
+    speech = meter.integrated_loudness(mix[int(30.0 * RATE):int(40.0 * RATE)])
+    assert abs((bed - speech) - session.MUSIC_PLATEAU_OVER_SPEECH_DB) < 1.0, bed - speech

@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.6.4] - 2026-10-06
+
+### Added
+- `stems.Source.pan_law` / `pan_gains(..., law)`: `"balance"` (Final Cut, the default, unchanged for autoraffkat) or `"power"` (constant power, centre −3 dB per channel).
+
 ## [2026.10.6.3] - 2026-10-06
 
 ### Changed
