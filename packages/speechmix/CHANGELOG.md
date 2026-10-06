@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.6.7] - 2026-10-06
+
+### Added
+- `blocks.loud_spans`: loud stretches inside a block (momentary loudness, 0.4 s, more than 4 dB over the block for at least 1 s). These are **flagged, not changed**: on vst s13e03 the only two such places were emphasis, and the editor left both alone.
+
 ## [2026.10.6.6] - 2026-10-06
 
 ### Fixed

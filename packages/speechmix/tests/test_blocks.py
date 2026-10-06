@@ -121,3 +121,24 @@ def test_slivers_are_not_corrected():
 def test_boosts_are_capped_lower_than_cuts():
     db, own = _curve([(0, 8, -45.0), *NORMAL])
     assert _gain_at(blocks.block_gains(db, own), 4.0) == blocks.MAX_BOOST_DB
+
+
+def test_a_loud_stretch_inside_a_block_is_flagged_not_changed():
+    """Ollin 36:41: viisi sekuntia huutoa +7 dB lohkonsa yllä. Käyttäjä ei
+    korjannut — se on painotusta, ja painotus on sisältöä. Työkalu merkitsee
+    sen kuunneltavaksi eikä muuta tasoa."""
+    db, own = _curve([(0, 5, -23.0), (5, 14, -30.0), *[(s + 20, e + 20, lv) for s, e, lv in NORMAL]])
+    found = blocks.block_gains(db, own)
+    flags = blocks.loud_spans(db, own, found)
+    assert len(flags) == 1
+    flag = flags[0]
+    assert abs(flag.start - 0.0) < 0.5 and abs(flag.end - 5.0) < 0.5
+    assert abs(flag.excess_db - 7.0) < 0.5
+    assert _gain_at(found, 2.0) == 0.0          # lohkoa ei korjattu
+
+
+def test_a_short_spike_or_a_small_rise_is_not_flagged():
+    spike = [(0, 4, -30.0), (4, 4.5, -20.0), (4.5, 9, -30.0)]
+    rise = [(30, 33, -27.0), (33, 39, -30.0)]
+    db, own = _curve([*spike, *rise, *[(s + 40, e + 40, lv) for s, e, lv in NORMAL]])
+    assert blocks.loud_spans(db, own, blocks.block_gains(db, own)) == []
