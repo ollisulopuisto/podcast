@@ -158,3 +158,46 @@ def test_the_speech_flag_travels_with_the_audio():
     assert marks[:80].mean() > 0.9, "puhe merkittiin muuksi"
     assert marks[-80:].mean() < 0.1, "muu merkittiin puheeksi"
     assert meter.value(keep=marks > 0.5) > meter.value() + 0.3
+
+
+#: libebur128:n (pyebur128 0.1.1, BS.1770:n C-vertailutoteutus) lukema
+#: ``_speechlike()``:lle, mitattu 2026-10-07. Tämä mittari luki saman
+#: 1e-10:n tarkkuudella; pyloudnorm −21,737, eli 0,042 LU alakanttiin.
+EBUR128_SPEECHLIKE = -21.694992017
+
+
+def test_the_reading_matches_libebur128():
+    meter = IntegratedMeter(RATE)
+    meter.add(_speechlike())
+    assert meter.value() == pytest.approx(EBUR128_SPEECHLIKE, abs=1e-6)
+
+
+def test_the_chain_measures_with_the_same_meter():
+    """Ketju mittasi pyloudnormilla ja masterointi tällä mittarilla: kaksi
+    lukemaa samasta äänestä, 0,042 LU eri. Nyt yksi, ja se on oikea."""
+    from speechmix import chain
+
+    got = chain.loudness(_speechlike().astype(np.float64), RATE)
+    assert got == pytest.approx(EBUR128_SPEECHLIKE, abs=1e-6)
+
+
+def test_the_weighting_pass_matches_the_filters():
+    """K-painotus ja teho yhdellä käännetyllä kierroksella. Mitattu 20
+    minuutista: kaksi ``lfilter``iä ja neliöinti 1,0 s, ks. muutosloki."""
+    from scipy import signal as sig
+
+    from speechmix import meter as m
+
+    rng = np.random.default_rng(3)
+    x = rng.normal(0, 0.1, (2, 50000))
+    (b1, a1), (b2, a2), _ = m._k_weighting(RATE)
+    want = np.zeros(x.shape[1])
+    z1, z2 = np.zeros((2, 2)), np.zeros((2, 2))
+    for half in (slice(0, 20000), slice(20000, None)):
+        y, z1 = sig.lfilter(b1, a1, x[:, half], axis=-1, zi=z1)
+        y, z2 = sig.lfilter(b2, a2, y, axis=-1, zi=z2)
+        want[half] = np.sum(y * y, axis=0)
+    state = np.zeros((2, 4))
+    got = np.concatenate([m._weighted_power(x[:, half], b1, a1, b2, a2, state)
+                          for half in (slice(0, 20000), slice(20000, None))])
+    assert np.max(np.abs(got - want)) < 1e-12
