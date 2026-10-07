@@ -872,6 +872,7 @@ def debleed(job, audio, rate, program_start, solos, partners, result,
         source = timeline_lib.aligned(
             job["track"], partner["track"], np.asarray(other).mean(axis=0), rate, frames
         )
+        del other              # raaka ääni pois ennen vähennystä
         solo_source = envelopes.mask_samples(
             partner["track"], theirs, program_start, rate, frames
         )

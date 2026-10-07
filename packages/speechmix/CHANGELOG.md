@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.7.14] - 2026-10-07
+
+### Changed
+- **De-bleed's memory peak per track went from 6× to under 4× the track's size, with identical audio:** the solo masking is applied a piece at a time instead of to whole float64 copies, the leak is subtracted in place, and the partner's raw audio is released once it is aligned. The "own speech kept" check now computes its correlation in place instead of with `np.corrcoef`, and the reading can differ in the last digit (0.9999999999999999 → 1.0).
+
 ## [2026.10.7.13] - 2026-10-07
 
 ### Changed

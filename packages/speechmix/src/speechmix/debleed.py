@@ -136,7 +136,7 @@ _PAIR_BLOCK = 1 << 16
 
 
 def _lag_pair(
-    target: np.ndarray, source: np.ndarray, taps: int
+    target: np.ndarray, source: np.ndarray, taps: int, keep=None
 ) -> tuple[np.ndarray, np.ndarray]:
     """``(_lags(source, source), _lags(target, source))`` yhdellä kierroksella.
 
@@ -146,24 +146,36 @@ def _lag_pair(
     soolojen ulkopuolelta, joten tällaisia on suurin osa. Pyöreä
     korrelaatio on tässä sama kuin lineaarinen, koska FFT on vähintään
     palan ja tappien mittainen: viiveet ``< taps`` eivät kierrä.
+
+    ``keep`` (valinnainen) nollaa molemmat signaalit sen ulkopuolelta pala
+    kerrallaan, float64:ssä: sama kuin maskattu kopio etukäteen, mutta
+    raidan mittaisia float64-kopioita ei synny (5 min: 4 × float32-raita).
     """
     from scipy import fft
 
     n = min(len(target), len(source))
+    if keep is not None:
+        n = min(n, len(keep))
+
+    def masked(x, a, b):
+        if keep is None:
+            return np.asarray(x[a:b], dtype=np.float64)
+        return np.multiply(x[a:b], keep[a:b], dtype=np.float64)
+
     block = max(_PAIR_BLOCK, taps)
     size = fft.next_fast_len(block + taps - 1, real=True)
     auto = np.zeros(taps, dtype=np.float64)
     cross = np.zeros(taps, dtype=np.float64)
     for start in range(0, n, block):
         stop = min(start + block, n)
-        piece = np.asarray(source[start:stop], dtype=np.float64)
+        piece = masked(source, start, stop)
         if not piece.any():
             continue
         conj = np.conj(fft.rfft(piece, size))
         # Laajennettu pala kantaa viiveet palan reunan yli; ``rfft``
         # täyttää lopun nollilla, kuten ``_lags``in nollaus.
         for out, x in ((auto, source), (cross, target)):
-            wide = np.asarray(x[start:min(stop + taps - 1, n)], dtype=np.float64)
+            wide = masked(x, start, min(stop + taps - 1, n))
             out += fft.irfft(fft.rfft(wide, size) * conj, size)[:taps]
     return auto, cross
 
@@ -187,13 +199,14 @@ def path(
     from scipy import linalg
 
     n = min(len(target), len(source), len(keep))
-    mask = np.asarray(keep[:n], dtype=np.float64)
-    t = np.asarray(target[:n], dtype=np.float64) * mask
-    s = np.asarray(source[:n], dtype=np.float64) * mask
-    if not np.any(s):
+    # Totuusarvoilla kertominen on sama kuin 1,0/0,0-maski; muu maski
+    # kerrotaan float64:nä kuten ennen.
+    mask = np.asarray(keep[:n])
+    if mask.dtype != bool:
+        mask = mask.astype(np.float64)
+    auto, cross = _lag_pair(target, source, taps, mask)
+    if not auto.any():                 # lähde hiljaa koko soolon ajan
         return np.zeros(taps)
-
-    auto, cross = _lag_pair(t, s, taps)
     if auto[0] <= 0:
         return np.zeros(taps)
     auto[0] *= 1.0 + REGULARISATION
@@ -227,17 +240,29 @@ def leak(source, filt: np.ndarray, frames: int) -> np.ndarray:
     """
     from scipy import fft
 
-    x = np.asarray(source, dtype=np.float64)
+    x = source
     filt = np.asarray(filt, dtype=np.float64)
     size = fft.next_fast_len(LEAK_CHUNK + filt.size - 1, real=True)
     response = fft.rfft(filt, size)
     out = np.zeros(frames, dtype=np.float64)
     for start in range(0, min(len(x), frames), LEAK_CHUNK):
-        piece = x[start:start + LEAK_CHUNK]
+        piece = np.asarray(x[start:start + LEAK_CHUNK], dtype=np.float64)
         full = fft.irfft(fft.rfft(piece, size) * response, size)
         end = min(frames, start + piece.size + filt.size - 1)
         out[start:end] += full[: end - start]
     return out
+
+def _correlation(a: np.ndarray, b: np.ndarray) -> float:
+    """Pearsonin korrelaatio omistetuista kopioista, keskistys paikallaan.
+
+    ``np.corrcoef`` pinoaa ja keskistää omat kopionsa: se oli de-bleedin
+    muistihuippu (5 min: 6,0 × float32-raita, tämän kanssa 3,6). Sama
+    kaava; lukema voi erota viimeisissä biteissä.
+    """
+    a -= a.mean()
+    b -= b.mean()
+    return float(np.dot(a, b) / np.sqrt(np.dot(a, a) * np.dot(b, b)))
+
 
 def remove(
     target: np.ndarray,
@@ -271,7 +296,10 @@ def remove(
         info["reason"] = "no_path"
         return target, info
 
-    cleaned = np.asarray(target, dtype=np.float64) - leak(source, filt, len(target))
+    # Vähennys vuodon taulukkoon: sama lasku, yksi raidan mittainen kopio
+    # vähemmän.
+    cleaned = leak(source, filt, len(target))
+    np.subtract(target, cleaned, out=cleaned)
 
     before = _level(target, solo_source)
     after = _level(cleaned, solo_source)
@@ -279,10 +307,10 @@ def remove(
 
     solo_target = np.asarray(solo_target, dtype=bool)
     if solo_target.any():
-        a = np.asarray(target, np.float64)[: len(solo_target)][solo_target]
+        a = np.asarray(target)[: len(solo_target)][solo_target].astype(np.float64)
         b = cleaned[: len(solo_target)][solo_target]
         if a.size > 1 and np.std(a) > 0 and np.std(b) > 0:
-            info["kept"] = float(np.corrcoef(a, b)[0, 1])
+            info["kept"] = _correlation(a, b)
 
     if info["kept"] < MIN_SPEECH_KEPT:
         info["reason"] = "ate_speech"
