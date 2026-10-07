@@ -1332,7 +1332,7 @@ def _clicky(seconds=30.0, seed=5):
     """Puhetta, naksuja ja yksi naksu palan rajan päällä."""
     rng = np.random.default_rng(seed)
     audio = speech_like(seconds, level=0.2)
-    for at in rng.uniform(0.5, seconds - 0.5, 12).tolist() + [5.0, 10.0 - 0.0005]:
+    for at in [*rng.uniform(0.5, seconds - 0.5, 12).tolist(), 5.0, 10.0 - 0.0005]:
         i = int(at * RATE)
         audio[0, i:i + 30] += np.hanning(30).astype(np.float32) * 0.5 * np.sin(
             2 * np.pi * 9000 * np.arange(30) / RATE).astype(np.float32)
@@ -1369,3 +1369,26 @@ def test_declick_memory_does_not_grow_with_the_track(monkeypatch):
     tracemalloc.stop()
     # Tulos (1×) ja palat. Kokonaisena mitattu ks. yllä.
     assert peak < 2.0 * audio.nbytes, peak / audio.nbytes
+
+
+def test_the_chain_can_take_the_track_over_and_keeps_the_envelope_compact():
+    """Kaksi raidan kokoista kopiota lisää pois, tulos sama:
+    kutsuja luovuttaa raidan (``[audio]``) eikä pidä sitä koko ketjun ajan,
+    ja GPU:n huippuverho pysyy float32:na, jona GPU sen laskee. Mitattu
+    3 min testisignaalilla: 8,0 × float32-syöte ennen."""
+    import tracemalloc
+
+    audio = _spiky(seconds=180.0).astype(np.float32)
+    want, _ = chain.process(audio.copy(), RATE, AudioSettings(), 0.0, True, -16.0, None)
+    nbytes = audio.nbytes
+    handed = [audio]
+    del audio
+    tracemalloc.start()
+    out, info = chain.process(handed, RATE, AudioSettings(), 0.0, True, -16.0, None)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert not handed                                # luovutettu
+    assert np.array_equal(out, want)
+    assert info.limiter_db < 0.0
+    expected = 6.5 if chain._gpu_peak_envelope_available() else 7.5
+    assert peak / nbytes < expected, peak / nbytes

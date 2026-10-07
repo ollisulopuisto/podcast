@@ -1139,11 +1139,13 @@ def limiter_curve(
 
     ceiling = 10.0 ** (ceiling_db / 20.0)
     lin = 10.0 ** (gain_db / 20.0)
+    # float64:ssä myös float32-verholle (``peak_envelope(compact=True)``):
+    # muunnos on tarkka, joten luvut ovat samat kuin float64-verhosta.
     # Samat laskut kuin ``_shape_limiter``issa, mutta paikallaan ja vaatimus
     # vapautettuna heti kun ennakoiva minimi on laskettu: kerralla muistissa
     # on kaksi raidan mittaista taulukkoa, ei viittä. Ketju laskee tämän
     # jokaisella kierroksella koko raidalle.
-    needed = lin * peak
+    needed = np.multiply(peak, lin, dtype=np.float64)
     np.maximum(needed, 1e-9, out=needed)
     np.divide(ceiling, needed, out=needed)
     np.minimum(1.0, needed, out=needed)
@@ -1176,7 +1178,8 @@ def true_peak(audio: np.ndarray) -> float:
     raidan mittaista verhoa."""
     if not np.size(audio):
         return 0.0
-    return max(float(piece.max()) for _, _, piece in _envelope_chunks(np.atleast_2d(audio)))
+    rows = _Rows(audio) if isinstance(audio, _LimitedMono) else np.atleast_2d(audio)
+    return max(float(piece.max()) for _, _, piece in _envelope_chunks(rows))
 
 
 def _gpu_peak_envelope_available() -> bool:
@@ -1206,7 +1209,8 @@ def _envelope_chunks_gpu(audio: np.ndarray):
     taps = _sig.firwin(2 * 10 * up + 1, 1.0 / up, window=("kaiser", 5.0)) * up
     delay = (len(taps) - 1) // 2
     kernel = mx.array(taps[::-1].astype(np.float32))[None, :, None]
-    audio = np.atleast_2d(audio)
+    if isinstance(audio, np.ndarray):
+        audio = np.atleast_2d(audio)
     total = audio.shape[1]
     for start in range(0, total, _GPU_CHUNK):
         stop = min(total, start + _GPU_CHUNK)
@@ -1228,7 +1232,8 @@ def _envelope_chunks_cpu(audio: np.ndarray):
     from scipy import signal as _sig
 
     up = LIMITER_OVERSAMPLE
-    audio = np.atleast_2d(audio)
+    if isinstance(audio, np.ndarray):
+        audio = np.atleast_2d(audio)
     total = audio.shape[1]
     for start in range(0, total, _TRUE_PEAK_CHUNK):
         stop = min(total, start + _TRUE_PEAK_CHUNK)
@@ -1249,7 +1254,7 @@ def _envelope_chunks(audio: np.ndarray):
     return _envelope_chunks_cpu(audio)
 
 
-def peak_envelope(audio: np.ndarray) -> np.ndarray:
+def peak_envelope(audio: np.ndarray, compact: bool = False) -> np.ndarray:
     """Näytteittäin suurin ylinäytteistetty (4×) huippu kanavista.
 
     Macilla Metalilla (``_envelope_chunks_gpu``), muualla scipyllä.
@@ -1260,8 +1265,14 @@ def peak_envelope(audio: np.ndarray) -> np.ndarray:
     ``_TRUE_PEAK_PAD``in alle.
     """
     audio = np.atleast_2d(audio)
-    peak = np.empty(audio.shape[1], dtype=np.float64)
-    for start, stop, piece in _envelope_chunks(audio):
+    # ``compact``: GPU laskee verhon float32:na, joten float32-taulukko pitää
+    # sen tarkasti puolessa tilassa (87 min: 2 GB -> 1 GB). CPU:n verho on
+    # float64, eikä sitä kavenneta.
+    gpu = _gpu_peak_envelope_available()
+    dtype = np.float32 if (compact and gpu) else np.float64
+    peak = np.empty(audio.shape[1], dtype=dtype)
+    for start, stop, piece in (_envelope_chunks_gpu(audio) if gpu
+                               else _envelope_chunks_cpu(audio)):
         peak[start:stop] = piece
     return peak
 
@@ -1384,6 +1395,7 @@ def compress(
     max_gr_db: float,
     attack_ms: float,
     release_ms: float,
+    in_place: bool = False,
 ) -> np.ndarray:
     """Yksi kompressorivaihe, jonka vaimennuksella on **katto**.
 
@@ -1406,7 +1418,13 @@ def compress(
     state = np.zeros(3)
     x2 = np.atleast_2d(audio)
     # Sama tulostyyppi kuin kokonaisena: vahvistus on float64, joten tulo on.
-    out = np.empty(x2.shape, dtype=np.result_type(x2.dtype, np.float64))
+    # ``in_place``: tulos syötteen päälle, kun kutsuja omistaa float64-
+    # syötteen. Pala luetaan ennen kuin se kirjoitetaan, joten tulos on sama
+    # — ilman toista raidan mittaista taulukkoa.
+    if in_place and x2.dtype == np.float64:
+        out = x2
+    else:
+        out = np.empty(x2.shape, dtype=np.result_type(x2.dtype, np.float64))
     total = x2.shape[-1]
     for start in range(0, total, _COMPRESS_CHUNK):
         stop = min(total, start + _COMPRESS_CHUNK)
@@ -1683,7 +1701,7 @@ def peak_to_short_term(audio: np.ndarray, rate: int) -> float:
     Alle kuuden tarkoittaa että tiivistys on mennyt pidemmälle kuin oli
     tarpeen. Palauttaa ``nan`` jos ei ole mitattavaa.
     """
-    mono = np.asarray(audio).mean(axis=0) if audio.ndim > 1 else np.asarray(audio)
+    mono = _mono(np.asarray(audio))
     return _psr_of_mono(mono, rate)
 
 
@@ -1705,9 +1723,15 @@ def _short_term_max(mono: np.ndarray, rate: int) -> float:
         return float("-inf") if len(mono) < window else _short_term_max_loop(mono, rate)
     # Askeleen mittaisten lohkojen energiat, ikkuna = kuusi peräkkäistä:
     # sama summa kuin ikkunoittain, ilman raidan mittaisia välitaulukoita.
+    # Paloittain askeleen rajoilla: sama lohkojako, eikä ``mono`` tarvitse
+    # olla valmiina taulukkona (``_LimitedMono``).
     count = len(mono) // step
-    blocks = np.asarray(mono[: count * step], dtype=np.float64).reshape(count, step)
-    energy = np.einsum("ij,ij->i", blocks, blocks)
+    energy = np.empty(count, dtype=np.float64)
+    piece = max(1, _MEASURE_CHUNK // step) * step
+    for a in range(0, count * step, piece):
+        b = min(count * step, a + piece)
+        blocks = np.asarray(mono[a:b], dtype=np.float64).reshape(-1, step)
+        energy[a // step:b // step] = np.einsum("ij,ij->i", blocks, blocks)
     per = window // step
     windows = np.convolve(energy, np.ones(per), mode="valid") / window
     return float(-0.691 + 10.0 * np.log10(windows.max() + 1e-20))
@@ -1724,14 +1748,48 @@ def _short_term_max_loop(mono: np.ndarray, rate: int) -> float:
     return float(best)
 
 
-def _limited_mono(pre: np.ndarray, gain_db: float, shaped: np.ndarray) -> np.ndarray:
-    """``(pre · G · käyrä).mean(axis=0)`` paloittain, ilman rajoitettua ääntä."""
-    lin = 10.0 ** (gain_db / 20.0)
-    out = np.empty(pre.shape[1], dtype=np.float64)
-    for start in range(0, pre.shape[1], _MEASURE_CHUNK):
-        stop = start + _MEASURE_CHUNK
-        out[start:stop] = (pre[:, start:stop] * (lin * shaped[start:stop])).mean(axis=0)
-    return out
+def _mono(audio: np.ndarray) -> np.ndarray:
+    """``audio.mean(axis=0)``, mutta yksikanavaisesta näkymä eikä kopio:
+    yhden luvun keskiarvo on luku itse, joten arvot ovat samat."""
+    if audio.ndim == 1:
+        return audio
+    if audio.shape[0] == 1:
+        return audio[0]
+    return audio.mean(axis=0)
+
+
+class _LimitedMono:
+    """``(pre · G · käyrä).mean(axis=0)`` pyydetyltä väliltä, laskettuna vasta
+    kun sitä luetaan. Rajoittimen kierrokset mittaavat tämän (äänekkyys,
+    true peak, lyhyt taso) muodostamatta raidan mittaista monoa: se oli
+    PSR-tarkistuksen huippu, 2 × float32-syöte. Väli lasketaan samoin
+    laskuin kuin koko raita, joten luvut ovat samat."""
+
+    ndim = 1
+
+    def __init__(self, pre: np.ndarray, gain_db: float, shaped: np.ndarray):
+        self.pre, self.shaped = pre, shaped
+        self.lin = 10.0 ** (gain_db / 20.0)
+        self.size = pre.shape[1]
+
+    def __len__(self) -> int:
+        return self.size
+
+    def __getitem__(self, key: slice) -> np.ndarray:
+        a, b, _ = key.indices(self.size)
+        return (self.pre[:, a:b] * (self.lin * self.shaped[a:b])).mean(axis=0)
+
+
+class _Rows:
+    """``_LimitedMono`` yksikanavaisena ``(1, n)``-taulukkona huippuverholle."""
+
+    def __init__(self, mono: _LimitedMono):
+        self.mono = mono
+        self.shape = (1, mono.size)
+
+    def __getitem__(self, key):
+        row, span = key
+        return self.mono[span] if isinstance(row, int) else self.mono[span][None, :]
 
 
 def _apply_limit(pre: np.ndarray, gain_db: float, shaped: np.ndarray) -> np.ndarray:
@@ -1846,6 +1904,12 @@ def process(
     """
     import pedalboard
 
+    # Luovutus: ``[audio]`` tyhjennetään, jolloin kutsuja ei pidä raitaa
+    # muistissa koko ketjun ajan — ensimmäinen vaihe tekee siitä uuden.
+    # Mitattu: yksi float32-raidan kokoinen kopio vähemmän huipussa.
+    if isinstance(audio, list):
+        audio = audio.pop()
+
     weights = STAGES_PLUGIN if plugin is not None else STAGES_PLAIN
 
     def done(name: str) -> None:
@@ -1906,7 +1970,7 @@ def process(
 
     # 4. Normalisointi siivotusta signaalista.
     with log.step("measure loudness"):
-        measured = loudness(audio.mean(axis=0), rate) if target_lufs is not None else None
+        measured = loudness(_mono(audio), rate) if target_lufs is not None else None
     lift = 0.0 if measured is None else float(target_lufs - measured)
     done("measure")
 
@@ -1950,6 +2014,7 @@ def process(
                 MAX_GR_DB,
                 LEVEL_ATTACK_MS,
                 LEVEL_RELEASE_MS,
+                in_place=True,
             )
         # Kolmas vaihe on hidas ja sen kynnys on toista **alempana**, ei
         # ylempänä. Plusmerkki teki siitä kuolleen: se ajetaan toisen
@@ -1969,8 +2034,17 @@ def process(
                 MAX_GR_DB,
                 LEVEL_ATTACK_MS * 4,
                 LEVEL_RELEASE_MS * 2,
+                in_place=True,
             )
-        audio = audio * (1.0 - PARALLEL_MIX) + compressed * PARALLEL_MIX
+        if audio.dtype == np.float64 and compressed.dtype == np.float64:
+            # Paikallaan: samat kertolaskut ja yhteenlasku, mutta ilman kahta
+            # raidan mittaista välitulosta molempien rinnalla — se oli ketjun
+            # huippu (8 × float32-syöte, 3 min testisignaali).
+            np.multiply(audio, 1.0 - PARALLEL_MIX, out=audio)
+            np.multiply(compressed, PARALLEL_MIX, out=compressed)
+            audio += compressed
+        else:
+            audio = audio * (1.0 - PARALLEL_MIX) + compressed * PARALLEL_MIX
         # Tiivistetty haara oli muuten muistissa rajoittimen loppuun asti:
         # koko raidan float64-kopio (2 × float32-syöte) jota ei enää lueta.
         del compressed
@@ -1990,7 +2064,7 @@ def process(
         # lohkoja ja lukema nousee — mitattuna 2,2 dB tavoitteen yli. Siksi
         # korjaus tehdään vasta tässä, ja rajoitin sen jälkeen.
         with log.step("measure after compression"):
-            after = loudness(audio.mean(axis=0), rate) if target_lufs is not None else None
+            after = loudness(_mono(audio), rate) if target_lufs is not None else None
         correction = 0.0 if after is None else float(target_lufs - after)
         lift += correction
         tail = _board(
@@ -2027,7 +2101,7 @@ def process(
         pre = audio
         pre_lift = lift
         with log.step("limiter: peak envelope"):
-            peak = peak_envelope(pre)
+            peak = peak_envelope(pre, compact=True)
         gain_db_now = 0.0
 
         # Kierros ei muodosta rajoitettua ääntä, vain käyrän: mittaukset
@@ -2045,7 +2119,7 @@ def process(
             return float(20.0 * np.log10(max(shaped.min(), 1e-9)))
 
         def mono():
-            return _limited_mono(pre, current["gain"], current["shaped"])
+            return _LimitedMono(pre, current["gain"], current["shaped"])
 
         budget = float(getattr(settings, "limiter_budget_db", LIMITER_BUDGET_DB))
         if budget > 0:
@@ -2094,7 +2168,7 @@ def process(
         # liikkui. Rajoittamattoman true peak on suoraan huippuverhosta.
         with log.step("psr guard: measure"):
             limit = min(PSR_GUARD_LU, 20.0 * np.log10(float(peak.max()) + 1e-12)
-                        - _short_term_max(pre.mean(axis=0), rate))
+                        - _short_term_max(_mono(pre), rate))
         # Kolme yritystä: taso ostaa crestiä lähes yksi yhteen mutta ei
         # tarkasti, ja kahdella jäätiin testimateriaalilla 14,44:ään (raja
         # 14,5). Kolmas maksaa vain silloin kun kaksi ei riittänyt.

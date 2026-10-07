@@ -5,6 +5,18 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.3] - 2026-10-08
+
+### Changed
+- **A stem's memory peak fell another third, with identical output:**
+  - the track is handed over to the chain rather than held by the caller throughout;
+  - the dry/compressed mix and the two wideband compressors work in place;
+  - mono tracks are measured without copying them;
+  - the limiter rounds measure loudness, true peak and short-term level without building the limited track;
+  - the GPU's peak envelope stays in float32, which is what the GPU computes.
+
+  On 20 min of real speech with de-click, the peak went from 9.0× to 6.0× the track's float32 size. On a 69-min mic that is about 7.1 GB → 4.7 GB of live memory.
+
 ## [2026.10.8.2] - 2026-10-08
 
 ### Fixed
