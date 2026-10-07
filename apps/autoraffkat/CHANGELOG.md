@@ -8,6 +8,10 @@ and this project adheres to Calendar Versioning (CalVer).
 ## [Unreleased]
 
 ### Changed
+- **Faster video measurement on a Mac:** keyframes for face measurement are decoded by the hardware video decoder (VideoToolbox). Measured on test footage: 1080p H.264 3× faster, 4K HEVC 7× faster, with 5–20× less CPU. The frames are bit-identical, so cached measurements stay valid.
+- **Audio envelopes are computed in parallel** ("Computing envelopes"): each file is its own decode, and a multicam episode's 6–10 files were done one at a time on one core.
+
+### Changed
 - **The exported project's name in Final Cut starts with the episode it came from:** `pp 56 baseline · Rough cut · broadcast · 7.10. 12:23` instead of `Rough cut · broadcast · 7.10. 12:23`, so cuts of different episodes can be told apart in the browser.
 
 ### Changed

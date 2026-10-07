@@ -32,6 +32,7 @@ from pathlib import Path
 
 import numpy as np
 
+from speechmix import binaries
 from speechmix.binaries import get_binary_path
 
 from . import detect
@@ -178,8 +179,10 @@ def _extract_with_times(
     raportoinnin jo purkuvaiheessa.
     """
     ffmpeg = get_binary_path("ffmpeg")
+    # Laitteistopurku (VideoToolbox) Macilla: 3–7× nopeampi, samat ruudut.
     cmd = [
         ffmpeg, "-nostdin", "-v", "info",
+        *binaries.hw_decode_args(),
         "-skip_frame", "nokey", "-i", path,
         "-fps_mode", "passthrough",
         "-vf", f"scale={WIDTH}:-2,showinfo",

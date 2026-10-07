@@ -8,6 +8,7 @@ purkua.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from fractions import Fraction
 
@@ -150,21 +151,43 @@ class Analysis:
         return hit
 
 
+#: Rinnakkaiset verhokäyrät. Jokainen on oma ffmpeg-prosessinsa, joka purkaa
+#: yhdellä ytimellä; monikamerajaksossa tiedostoja on 6–10. Puolet ytimistä,
+#: jotta kone ja levy jaksavat vielä käyttöliittymän ja muun työn.
+ENVELOPE_WORKERS = max(2, (os.cpu_count() or 4) // 2)
+
+
 def analyze(
     timeline: Timeline, progress=None, keys: list[str] | None = None
 ) -> Analysis:
-    """Laskee tai lukee välimuistista verhokäyrät. Hidas — ajetaan kerran."""
+    """Laskee tai lukee välimuistista verhokäyrät. Hidas — ajetaan kerran.
+
+    Tiedostot rinnakkain: kukin on yksisäikeinen ffmpeg-purku, ja yksi
+    kerrallaan laskettuna kymmenestä ytimestä käytettiin yhtä.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     analysis = Analysis(timeline=timeline)
     targets = [
         m for m in timeline.media if m.has_audio and (keys is None or m.key in keys)
     ]
-    for index, item in enumerate(targets):
-        if progress is not None:
-            progress(index, len(targets), item.name)
-        try:
-            analysis.envelopes[item.key] = envelope_for(item.path, cache_dir=cache_dir())
-        except EnvelopeError as exc:
-            analysis.errors[item.key] = str(exc)
+    if progress is not None and targets:
+        progress(0, len(targets), targets[0].name)
+    done = 0
+    with ThreadPoolExecutor(max_workers=min(ENVELOPE_WORKERS, max(1, len(targets)))) as pool:
+        futures = {
+            pool.submit(envelope_for, item.path, cache_dir=cache_dir()): item
+            for item in targets
+        }
+        for future in as_completed(futures):
+            item = futures[future]
+            try:
+                analysis.envelopes[item.key] = future.result()
+            except EnvelopeError as exc:
+                analysis.errors[item.key] = str(exc)
+            done += 1
+            if progress is not None and done < len(targets):
+                progress(done, len(targets), item.name)
     if progress is not None:
         progress(len(targets), len(targets), "")
     return analysis

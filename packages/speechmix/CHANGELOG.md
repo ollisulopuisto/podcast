@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.7.1] - 2026-10-07
+
+### Added
+- `binaries.hw_decode_args()`: VideoToolbox hardware decode flags for ffmpeg on a Mac that has it, nothing elsewhere. For bulk decoding only: on keyframe extraction 1080p H.264 went 8.3 → 2.8 s and 4K HEVC 14.6 → 2.0 s, with bit-identical frames; for a single frame it is slower (decoder start-up), so it is not used there.
+
 ## [2026.10.6.7] - 2026-10-06
 
 ### Added

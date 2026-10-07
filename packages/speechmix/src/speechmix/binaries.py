@@ -12,8 +12,10 @@ repossa juuri se vika jota vastaan lintti on säädetty tiukaksi.
 
 from __future__ import annotations
 
+import functools
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -56,3 +58,32 @@ def require_ffmpeg() -> None:
     """
     for tool in ("ffmpeg", "ffprobe"):
         get_binary_path(tool)
+
+
+def _hwaccels() -> set[str]:
+    """ffmpegin tuntemat laitteistokiihdytykset (``-hwaccels``)."""
+    try:
+        done = subprocess.run(
+            [get_binary_path("ffmpeg"), "-hide_banner", "-hwaccels"],
+            capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.TimeoutExpired, MissingBinary):
+        return set()
+    lines = done.stdout.splitlines()[1:]
+    return {line.strip() for line in lines if line.strip()}
+
+
+@functools.lru_cache(maxsize=1)
+def hw_decode_args() -> list[str]:
+    """Laitteistopurun liput ffmpegille: Macilla VideoToolbox, muualla ei mitään.
+
+    Vain **massapurkuun** (kaikki avainruudut). Mitattu 2026-10-07:
+    1080p H.264 avainruudut 8,3 → 2,8 s (CPU-aika 9,9 → 2,0 s), 4K HEVC
+    14,6 → 2,0 s, ruudut bitilleen samat ja aikaleimat samat. Yksittäiseen
+    ruutuun se **ei** kannata: purkajan käynnistys maksaa enemmän kuin
+    säästää (H.264 0,19 → 0,33 s/ruutu). Koodekki jota VideoToolbox ei osaa
+    (VP9) puretaan ohjelmallisesti samoin tuloksin.
+    """
+    if sys.platform != "darwin":
+        return []
+    return ["-hwaccel", "videotoolbox"] if "videotoolbox" in _hwaccels() else []
