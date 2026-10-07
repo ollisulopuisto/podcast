@@ -126,3 +126,75 @@ def test_nothing_to_master_is_said(tmp_path):
     stems.program_deliver(jobs, result, {}, {},
                           SimpleNamespace(target_lufs=-16.0, program_peak_db=-1.0))
     assert any("master" in n.lower() for n in result.notes.get("a", []))
+
+
+# --- Rinnakkaiset stemit ----------------------------------------------------
+
+GB = 1 << 30
+
+
+def test_two_stems_run_together_when_both_fit(monkeypatch):
+    monkeypatch.delenv("SPEECHMIX_PARALLEL_STEMS", raising=False)
+    size = GB // 4                       # 20 min mono float32 ≈ 0.23 GB
+    need = 2 * stems.STEM_MEMORY_FACTOR * size + stems.MEMORY_RESERVE
+    assert stems.parallel_count([size, size], available=need + GB) == 2
+    assert stems.parallel_count([size, size], available=need - GB) == 1
+
+
+def test_one_at_a_time_when_unsure(monkeypatch):
+    """Tuntematon koko, yksi stemi tai pakotettu 1: ei rinnakkain. Arvio
+    joka epäonnistuu ajaa niin kuin ennen eikä ota muistia sokkona."""
+    monkeypatch.delenv("SPEECHMIX_PARALLEL_STEMS", raising=False)
+    plenty = 512 * GB
+    assert stems.parallel_count([GB // 4, None], available=plenty) == 1
+    assert stems.parallel_count([GB // 4], available=plenty) == 1
+    assert stems.parallel_count([GB // 4] * 5, available=plenty) == stems.MAX_PARALLEL
+    monkeypatch.setenv("SPEECHMIX_PARALLEL_STEMS", "1")
+    assert stems.parallel_count([GB // 4] * 2, available=plenty) == 1
+
+
+def test_stems_overlap_and_results_come_back(monkeypatch):
+    import threading
+
+    meet = threading.Barrier(2, timeout=5)
+
+    def work(job):
+        meet.wait()                     # aikakatkaisu jos ajetaan peräkkäin
+        if job == "b":
+            raise ValueError("rikki")
+        return job.upper()
+
+    got = {job: (value, error) for job, value, error
+           in stems.run_parallel(["a", "b"], work, 2)}
+    assert got["a"] == ("A", None)
+    assert isinstance(got["b"][1], ValueError)
+
+
+def test_one_worker_keeps_the_order_and_the_thread():
+    import threading
+
+    seen = []
+    out = list(stems.run_parallel(
+        ["a", "b", "c"], lambda job: seen.append(threading.current_thread()) or job, 1
+    ))
+    assert [job for job, _v, _e in out] == ["a", "b", "c"]
+    assert set(seen) == {threading.main_thread()}
+
+
+def test_stem_size_reads_the_header(tmp_path):
+    path = tmp_path / "x.wav"
+    sf.write(path, np.zeros((RATE, 2), dtype=np.float32), RATE)
+    assert stems.stem_size(str(path)) == RATE * 2 * 4
+    assert stems.stem_size(str(tmp_path / "missing.wav")) is None
+
+
+def test_parallel_work_sees_the_callers_context():
+    """autoraffkatin kieli on ``ContextVar``: rinnakkaisen stemin virhe
+    olisi muuten väärällä kielellä."""
+    import contextvars
+
+    lang = contextvars.ContextVar("lang", default="en")
+    lang.set("fi")
+    got = [value for _job, value, _e in stems.run_parallel(
+        ["a", "b"], lambda _job: lang.get(), 2)]
+    assert got == ["fi", "fi"]

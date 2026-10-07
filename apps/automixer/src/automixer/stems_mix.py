@@ -316,15 +316,28 @@ def mix(
                 )
             return pools[key]
 
+        def work(job):
+            _log(f"{job['name']}: processing")
+            partners = [o for o in jobs if o is not job]
+            return stems.process_stem(
+                job, settings, plugin_for(job["name"]), 0.0,
+                lambda name, _share, who=job["name"]: _log(f"  {who}: {name}"),
+                0.0, solos, partners, result, speaking,
+            )
+
+        # Liitännäisvarannot luodaan pääsäikeessä ennen rinnakkaisia ajoja:
+        # ``plugin_for`` täyttää sanakirjaa, eikä kahden säikeen pidä luoda
+        # samaa varantoa kahdesti.
+        for job in jobs:
+            plugin_for(job["name"])
+        workers = stems.parallel_count([stems.stem_size(j["source"]) for j in jobs])
+        if workers > 1:
+            _log(f"{workers} stems at a time")
         try:
-            for job in jobs:
-                _log(f"{job['name']}: processing")
-                partners = [o for o in jobs if o is not job]
-                result.gains[job["key"]] = stems.process_stem(
-                    job, settings, plugin_for(job["name"]), 0.0,
-                    lambda name, _share, who=job["name"]: _log(f"  {who}: {name}"),
-                    0.0, solos, partners, result, speaking,
-                )
+            for job, gain, error in stems.run_parallel(jobs, work, workers):
+                if error is not None:
+                    raise error
+                result.gains[job["key"]] = gain
         finally:
             for pool in pools.values():
                 if hasattr(pool, "close"):
