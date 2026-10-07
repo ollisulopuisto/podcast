@@ -1223,3 +1223,30 @@ def test_deess_filters_the_next_piece_while_compressing(monkeypatch):
     monkeypatch.setitem(chain._KERNELS, "deess", kernel)
     rng = np.random.default_rng(0)
     chain.deess(rng.normal(0, 0.1, (1, 2 * chain._COMPRESS_CHUNK)), 48000)
+
+
+def _chain_peak(audio):
+    import tracemalloc
+
+    chain.process(audio[:, : RATE * 5].copy(), RATE, AudioSettings(), 0.0, True,
+                  -16.0, None)                   # käännökset ja välimuistit ensin
+    tracemalloc.start()
+    out, info = chain.process(audio.copy(), RATE, AudioSettings(), 0.0, True,
+                              -16.0, None)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    return peak / audio.nbytes, out, info
+
+
+def test_the_limiter_section_does_not_hold_the_track_many_times():
+    """Rajoitinosuus piti koko raidan float64-kopioita: rajoittamaton,
+    huippuverho, käyrä, jokaisen kierroksen tulos ja edellinen, ja mittausten
+    monot. Mitattu 5 min oikeaa puhetta (float32-syötteen kerrannaisina):
+    PSR-vartijan rajoitin 17,0×, etupää (kompressorit) 6×. Rinnakkaiset
+    stemit mahtuvat samaan muistiin vasta kun rajoitin ei ole huippu."""
+    # Kolme minuuttia: GPU:n huippuverhon pala (2^21 näytettä) on vakio, ja
+    # minuutin raidalla se näyttäisi raidan kerrannaiselta.
+    audio = _spiky(seconds=180.0).astype(np.float32)
+    ratio, _out, info = _chain_peak(audio)
+    assert info.limiter_db < 0.0                   # rajoitin teki työtä
+    assert ratio < 9.0, ratio
