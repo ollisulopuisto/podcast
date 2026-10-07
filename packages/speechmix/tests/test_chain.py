@@ -1075,3 +1075,39 @@ def test_deess_in_chunks_matches_and_stays_small():
     _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     assert peak < 3.0 * long.nbytes, peak / long.nbytes
+
+
+def test_limiter_curve_from_one_peak_envelope_equals_relimiting():
+    """Rajoittimen vaatimus vakiovahvistukselle G saadaan yhdestä
+    ylinäytteistetystä huippuverhosta: ylinäytteistys on lineaarinen.
+    Sama tulos kuin ``limiter_gain(audio·G)``, mutta ilman uutta
+    ylinäytteistystä jokaisella kierroksella."""
+    audio = np.atleast_2d(speech_like(seconds=6.0, level=0.5))
+    peak = chain.peak_envelope(audio)
+    for gain_db in (-6.0, 0.0, 4.0, 9.5):
+        lin = 10 ** (gain_db / 20)
+        want = chain.limiter_gain(audio * lin, RATE)
+        got = chain.limiter_curve(peak, gain_db, RATE)
+        # 1e-6: testisignaali on float32, ja ``audio · G`` pyöristyy siinä
+        # (~3e-7 eli 0,000003 dB); ``G · peak`` on float64.
+        assert np.max(np.abs(got - want)) < 1e-6, gain_db
+
+
+def test_dynamics_oversample_the_track_once(monkeypatch):
+    """vst/pp 56 --verbose: rajoitin, budjetti, kaksi asettumiskierrosta ja
+    PSR-vartija ylinäytteistivät 87 minuutin raidan kukin uudestaan —
+    153 s 280:stä. Nyt kerran."""
+    calls = {"n": 0}
+    real = chain.peak_envelope
+
+    def counting(audio, *a, **k):
+        calls["n"] += 1
+        return real(audio, *a, **k)
+
+    monkeypatch.setattr(chain, "peak_envelope", counting)
+    monkeypatch.setattr(chain, "_needed_gain", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("_needed_gain called: oversampling again")))
+    audio = np.atleast_2d(speech_like(seconds=30.0, level=0.3))
+    out, _ = chain.process(audio, RATE, AudioSettings(), 0.0, True, -16.0, None)
+    assert calls["n"] == 1
+    assert out.shape == audio.shape
