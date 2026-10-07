@@ -372,6 +372,37 @@ def worker_count(wanted: int = 0) -> int:
 PIECE_MARGIN = 5.0
 # Tätä lyhyempää ei pilkota: marginaalit söisivät hyödyn.
 PIECE_MIN = 120.0
+# Sauma haetaan hiljaisimmasta kohdasta tältä etäisyydeltä tasajaon kohdasta.
+# Palat eroavat toisistaan hieman (yllä), ja ero kuuluu jos sauma osuu
+# sanaan: v5 vs v5b (2026-10-08) suurin ero −5,7 dBFS juuri ensimmäisessä
+# saumassa 8:00. Tauossa sama ero on hiljaisuutta. ±20 s pitää palat
+# lähes tasakokoisina (8 min palassa ±4 %), ja puheessa on tauko useammin.
+PIECE_SEAM_SEARCH = 20.0
+# Hiljaisuuden mitta: energia tämän mittaisessa ikkunassa, 50 ms välein.
+# Lyhyt hiljainen hetki sanan sisällä (klusiilin sulku) ei ole tauko.
+PIECE_SEAM_WINDOW = 0.2
+
+
+def _piece_edges(audio: np.ndarray, rate: int, pieces: int) -> list[int]:
+    """Palojen rajat: tasajako, jokainen sisäraja siirrettynä hiljaisimpaan
+    kohtaan ``PIECE_SEAM_SEARCH``in sisällä."""
+    frames = audio.shape[1]
+    edges = [int(round(i * frames / pieces)) for i in range(pieces + 1)]
+    hop = max(1, int(0.05 * rate))
+    width = max(1, int(PIECE_SEAM_WINDOW * rate / hop))
+    reach = int(PIECE_SEAM_SEARCH * rate)
+    for i in range(1, pieces):
+        lo = max(edges[i - 1] + hop, edges[i] - reach)
+        hi = min(frames - hop, edges[i] + reach)
+        count = (hi - lo) // hop
+        if count < width:
+            continue
+        span = np.asarray(audio[:, lo:lo + count * hop], dtype=np.float64)
+        power = (span * span).sum(axis=0).reshape(count, hop).sum(axis=1)
+        energy = np.convolve(power, np.ones(width), mode="valid")
+        best = int(np.argmin(energy))
+        edges[i] = lo + (best + width // 2) * hop + hop // 2
+    return edges
 
 
 class PluginPool:
@@ -477,7 +508,7 @@ def apply_plugin(plugin, audio: np.ndarray, rate: int) -> np.ndarray:
         return _one_piece(pool[0], audio, rate)
 
     margin = int(PIECE_MARGIN * rate)
-    edges = [int(round(i * frames / pieces)) for i in range(pieces + 1)]
+    edges = _piece_edges(audio, rate, pieces)
     out = np.zeros_like(audio)
     failures: list[Exception] = []
 
@@ -512,7 +543,7 @@ def _apply_pool(pool: "PluginPool", audio: np.ndarray, rate: int) -> np.ndarray:
         return _one_piece(pool.plugin(0), audio, rate)
 
     margin = int(PIECE_MARGIN * rate)
-    edges = [int(round(i * frames / pieces)) for i in range(pieces + 1)]
+    edges = _piece_edges(audio, rate, pieces)
     out = np.zeros_like(audio)
 
     def one(index: int) -> None:
