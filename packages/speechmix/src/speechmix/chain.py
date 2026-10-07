@@ -660,18 +660,20 @@ def parameter_specs(path: str) -> tuple[list[dict], int]:
 
 
 def loudness(mono: np.ndarray, rate: int) -> float | None:
-    """Integroitu äänekkyys, tai ``None`` jos ei mitattavissa."""
-    import pyloudnorm as pyln
+    """Integroitu äänekkyys, tai ``None`` jos ei mitattavissa.
+
+    Sama mittari kuin masteroinnissa (``meter.IntegratedMeter``). pyloudnorm
+    luki 0,042 LU alakanttiin libebur128:aan verrattuna, joten ketju ja
+    masterointi mittasivat samaa ääntä eri lukemin.
+    """
+    from speechmix.meter import IntegratedMeter
 
     if mono.size < rate:  # alle sekunti: ei mitattavaa
         return None
-    try:
-        value = float(
-            pyln.Meter(rate).integrated_loudness(np.asarray(mono, dtype=np.float64))
-        )
-    except Exception:
-        return None
-    if not np.isfinite(value) or value < -70.0:
+    meter = IntegratedMeter(rate)
+    meter.add(mono)
+    value = meter.value()
+    if value is None or not np.isfinite(value) or value < -70.0:
         return None
     return value
 

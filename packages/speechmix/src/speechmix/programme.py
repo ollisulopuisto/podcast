@@ -282,17 +282,20 @@ class MasterResult:
 
 
 def _lufs(audio: np.ndarray, rate: int) -> float | None:
-    """Monikanavainen integroitu äänekkyys: kanavien tehot summataan."""
-    import pyloudnorm as pyln
+    """Monikanavainen integroitu äänekkyys: kanavien tehot summataan.
+
+    Sama mittari kuin ketjussa ja stemien masteroinnissa; pyloudnorm luki
+    0,042 LU alakanttiin (ks. ``chain.loudness``).
+    """
+    from speechmix.meter import IntegratedMeter
 
     block = np.asarray(audio, dtype=np.float64)
     if block.shape[-1] < rate:
         return None
-    try:
-        value = float(pyln.Meter(rate).integrated_loudness(block.T))
-    except Exception:
-        return None
-    return value if np.isfinite(value) and value >= -70.0 else None
+    meter = IntegratedMeter(rate)
+    meter.add(block)
+    value = meter.value()
+    return value if value is not None and np.isfinite(value) and value >= -70.0 else None
 
 
 def master(audio: np.ndarray, rate: int, target_lufs: float,

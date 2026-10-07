@@ -68,6 +68,45 @@ def _k_weighting(rate: int):
     return (b, a), (b2, a2), _sig
 
 
+_KERNEL: dict = {}
+
+
+def _weighted_power(x, b1, a1, b2, a2, state) -> np.ndarray:
+    """K-painotettu teho näytteittäin, kanavien tehot summattuna.
+
+    Molemmat suotimet ja neliöinti yhtenä käännettynä silmukkana (numba).
+    Kaksi ``lfilter``iä ja ``y * y`` olivat neljä koko taulukon kierrosta:
+    20 minuutista 1,0 s, ja ketju mittaa jokaisen raidan 2–4 kertaa.
+    Laskutoimitukset ovat ``lfilter``in (transponoitu suora muoto II), joten
+    tulos on sama. ``state`` on ``(kanavat, 4)``: molempien suotimien tila,
+    ja se jatkuu palasta toiseen.
+    """
+    if not _KERNEL:
+        from numba import njit
+
+        @njit(cache=True)
+        def run(x, b1, a1, b2, a2, state):
+            channels, n = x.shape
+            out = np.zeros(n)
+            for c in range(channels):
+                p0, p1, q0, q1 = state[c, 0], state[c, 1], state[c, 2], state[c, 3]
+                for i in range(n):
+                    v = x[c, i]
+                    u = b1[0] * v + p0
+                    p0 = b1[1] * v - a1[1] * u + p1
+                    p1 = b1[2] * v - a1[2] * u
+                    y = b2[0] * u + q0
+                    q0 = b2[1] * u - a2[1] * y + q1
+                    q1 = b2[2] * u - a2[2] * y
+                    out[i] += y * y
+                state[c, 0], state[c, 1], state[c, 2], state[c, 3] = p0, p1, q0, q1
+            return out
+
+        _KERNEL["run"] = run
+    return _KERNEL["run"](np.ascontiguousarray(x, dtype=np.float64),
+                          b1, a1, b2, a2, state)
+
+
 class IntegratedMeter:
     """Kerää ohjelman äänekkyyden paloista. Mono tai ``(kanavat, n)``.
 
@@ -82,9 +121,8 @@ class IntegratedMeter:
 
     def __init__(self, rate: int):
         self.rate = int(rate)
-        (self._b1, self._a1), (self._b2, self._a2), self._sig = _k_weighting(rate)
-        self._z1: np.ndarray | None = None
-        self._z2: np.ndarray | None = None
+        (self._b1, self._a1), (self._b2, self._a2), _ = _k_weighting(rate)
+        self._state: np.ndarray | None = None
         self.step = max(1, int(round(BLOCK_SEC * rate / OVERLAP)))
         self._tail = np.zeros(0, dtype=np.float64)
         self._tail_speech = np.zeros(0, dtype=np.float64)
@@ -103,27 +141,24 @@ class IntegratedMeter:
         x = np.atleast_2d(np.asarray(block, dtype=np.float64))
         if not x.shape[1]:
             return
-        if self._z1 is None:
-            self._z1 = np.zeros((x.shape[0], 2))
-            self._z2 = np.zeros((x.shape[0], 2))
-        y, self._z1 = self._sig.lfilter(self._b1, self._a1, x, axis=-1, zi=self._z1)
-        y, self._z2 = self._sig.lfilter(self._b2, self._a2, y, axis=-1, zi=self._z2)
+        if self._state is None:
+            self._state = np.zeros((x.shape[0], 4))
+        power = _weighted_power(x, self._b1, self._a1, self._b2, self._a2,
+                                self._state)
         n = x.shape[1]
         flag = (np.ones(n) if speech is None
                 else np.asarray(speech, dtype=float)[:n])
         if flag.size < n:
             flag = np.pad(flag, (0, n - flag.size))
-        # Kanavien tehot summaan: ``sqrt(Σ y²)`` on näytteittäin se signaali
-        # jonka teho on kanavien tehojen summa, joten lohkojen keskiarvo
-        # alla on BS.1770:n summa. Monolle se on itse signaali.
-        y = y[0] if y.shape[0] == 1 else np.sqrt(np.sum(y * y, axis=0))
-        data = np.concatenate((self._tail, y)) if self._tail.size else y
+        # Kanavien tehot on jo summattu (BS.1770), joten lohkon keskiarvo
+        # on suoraan sen teho.
+        data = np.concatenate((self._tail, power)) if self._tail.size else power
         marks = (np.concatenate((self._tail_speech, flag))
                  if self._tail_speech.size else flag)
         count = data.size // self.step
         if count:
             usable = data[: count * self.step].reshape(count, self.step)
-            self._powers.extend(np.mean(usable**2, axis=1).tolist())
+            self._powers.extend(np.mean(usable, axis=1).tolist())
             spoken = marks[: count * self.step].reshape(count, self.step)
             self._speech.extend(spoken.mean(axis=1).tolist())
         self._tail = data[count * self.step :].copy()

@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.7.10] - 2026-10-07
+
+### Changed
+- **One loudness meter everywhere, and it is 3× faster:** the chain's own loudness readings (and the in-memory programme master) used pyloudnorm, which reads 0.042 LU low against libebur128, the reference implementation; mastering used speechmix's own meter, which matches libebur128 to 1e-10 LU. Everything now uses the latter, so processed tracks land about 0.04 dB differently than before. K-weighting and power are one compiled pass: 20 min 1.1 → 0.35 s; the chain on 20 min of real speech 16.9 → 14.4 s.
+
 ## [2026.10.7.9] - 2026-10-07
 
 ### Changed
