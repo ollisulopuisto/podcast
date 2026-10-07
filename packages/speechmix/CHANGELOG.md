@@ -5,6 +5,12 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.7.2] - 2026-10-07
+
+### Changed
+- **Block-level gain corrects all the way,** not 80 %: the cold open, often recorded at another time, now comes out at the same loudness as the rest of the show (with 80 %, Olli's +12.5 dB intro stayed +2.5 dB hot).
+- **Short hot lines are cut from 1 s of own voice;** boosts still need 3 s, because a short quiet stretch is usually a breath or bleed.
+
 ## [2026.10.7.1] - 2026-10-07
 
 ### Added

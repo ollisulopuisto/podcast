@@ -43,6 +43,10 @@ GAP_CLOSE_S = 1.5
 #: kymmenkunta 1–2 sekunnin pätkää −51…−61 dB:stä +12 dB:llä: hengitystä,
 #: vuotoa, kohinaa — ei puhetta jonka tasoa korjata.
 MIN_BLOCK_S = 3.0
+#: Laskuun riittää lyhyempi: kylmän alun repliikit ovat lyhyitä ja usein eri
+#: aikaan äänitettyjä (käyttäjä, 2026-10-07), eikä kovan repliikin
+#: laskeminen nosta kohinaa kuten hiljaisen pätkän nosto.
+MIN_CUT_S = 1.0
 #: Tason ikkuna ja askel, s. Kolme sekuntia on EBU:n lyhytaikainen ikkuna.
 WINDOW_S = 3.0
 WINDOW_STEP_S = 0.5
@@ -51,9 +55,11 @@ MIN_REFERENCE_S = 5.0
 #: Pienempään poikkeamaan ei kosketa. Käyttäjä jätti ≤ 2 dB koskematta;
 #: kolme jättää tilaa mittauksen hajonnalle.
 THRESHOLD_DB = 3.0
-#: Kuinka suuren osan poikkeamasta korjaus vie. Käyttäjä: 12,2/12,8,
-#: 7,5/10,0, 5,3/7,8 — keskimäärin noin 0,8.
-SHARE = 0.8
+#: Kuinka suuren osan poikkeamasta korjaus vie. Ensin 0,8 — käyttäjä jätti
+#: intron korvalla 1–2 dB kuumaksi (12,2/12,8, 7,5/10,0, 5,3/7,8) — mutta
+#: valmiissa miksauksessa kylmä alku jäi silloin +2,5 dB muuta ohjelmaa
+#: kovemmaksi, ja käyttäjä halusi sen samalle tasolle (2026-10-07).
+SHARE = 1.0
 #: Suurin lasku, dB. Ollin intron suurin oli 12,2.
 MAX_CORRECTION_DB = 12.0
 #: Suurin nosto, dB. Käyttäjän korjaukset olivat laskuja yhtä +1,9:ää
@@ -139,7 +145,8 @@ def block_gains(level_db: np.ndarray, own: np.ndarray, hop: float = HOP_SEC) -> 
     for a, b, seconds, level in found:
         deviation = level - reference
         gain = 0.0
-        if seconds >= MIN_BLOCK_S and abs(deviation) > THRESHOLD_DB:
+        long_enough = seconds >= (MIN_CUT_S if deviation > 0 else MIN_BLOCK_S)
+        if long_enough and abs(deviation) > THRESHOLD_DB:
             gain = float(np.clip(-SHARE * deviation, -MAX_CORRECTION_DB, MAX_BOOST_DB))
         out.append(Block(a * hop, b * hop, seconds, level, deviation, round(gain, 2)))
     return out

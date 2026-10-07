@@ -36,12 +36,14 @@ def _gain_at(found, t):
     return 0.0
 
 
-def test_a_hot_block_comes_down_most_of_the_way():
+def test_a_hot_block_comes_down_all_the_way():
+    """Käyttäjä 2026-10-07: «the cold open should be the same loudness as the
+    rest of the show». 80 %:n korjaus (sovitettu siitä että käyttäjä jätti
+    intron korvalla 1–2 dB kuumaksi) jätti Ollin +12,5 dB:n intron +2,5:een."""
     db, own = _curve([(0, 8, -20.0), *NORMAL])
     found = blocks.block_gains(db, own)
     gain = _gain_at(found, 4.0)
-    # Poikkeama +10 dB, korjaus 80 %: −8 dB. Käyttäjä: +10,0 → −7,5.
-    assert abs(gain - -8.0) < 0.5
+    assert abs(gain - -10.0) < 0.5
     assert all(_gain_at(found, t) == 0.0 for t in (15, 30, 45, 60))
 
 
@@ -142,3 +144,12 @@ def test_a_short_spike_or_a_small_rise_is_not_flagged():
     rise = [(30, 33, -27.0), (33, 39, -30.0)]
     db, own = _curve([*spike, *rise, *[(s + 40, e + 40, lv) for s, e, lv in NORMAL]])
     assert blocks.loud_spans(db, own, blocks.block_gains(db, own)) == []
+
+
+def test_a_short_hot_line_is_cut():
+    """Kylmä alku äänitetään usein eri aikaan, ja repliikit ovat lyhyitä
+    (käyttäjä, 2026-10-07): 1,5 sekunnin +10 dB:n repliikki lasketaan.
+    Nosto vaatii edelleen 3 s, koska lyhyt hiljainen pätkä on usein
+    hengitystä tai vuotoa (``test_slivers_are_not_corrected``)."""
+    db, own = _curve([(0, 1.5, -20.0), *NORMAL])
+    assert abs(_gain_at(blocks.block_gains(db, own), 0.7) - -10.0) < 0.5
