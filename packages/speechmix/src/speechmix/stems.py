@@ -221,6 +221,14 @@ def program_deliver(jobs: list[dict], result, ducks: dict, extra: dict,
         return after, played, cost
 
     measured, meter, cost = run(0.0, None)
+    if measured is None:
+        # Ei yhtään mitattavaa stemiä: sanotaan se. Ennen loki kirjoitti
+        # «masterointi: 0.0 LUFS» ja ohjelma jäi masteroimatta hiljaa.
+        _log("masterointi ohitettu: yhtään stemiä ei voitu mitata")
+        for job in jobs:
+            result.notes.setdefault(job["key"], []).append(t("audio.program_none"))
+            break
+        return
     step_sec = meter.step_seconds()
     boost, ride = 0.0, None
 
@@ -337,28 +345,56 @@ def program_ceiling(jobs: list[dict], result,
         and job.get("track") is not None
         and os.path.exists(job.get("target", ""))
     ]
-    if len(members_all) < 2:
-        # Yksi stemi *on* ohjelma: ketjun oma katto riittää.
+    # Yksin oleva stemi *on* ohjelma, ja ketjun oma katto riittää sille —
+    # paitsi masteroinnissa: siellä se nostetaan, ja nosto tarvitsee katon
+    # ja mittauksen. Ennen yksittäinen mikki jäi masteroimatta kokonaan.
+    alone_ok = meter is not None
+    if not members_all or (len(members_all) < 2 and not alone_ok):
         return
 
-    groups: dict[tuple, list] = {}
-    for job in members_all:
-        frames = frame_count(job["target"])
-        if frames is None:
-            continue
-        groups.setdefault(envelopes.geometry(job["track"], frames), []).append(job)
+    from . import timeline as timeline_lib
 
-    for key, members in groups.items():
-        if len(members) < 2:
+    # Ryhmät: stemit jotka soivat aikajanalla yhtä aikaa. Ennen ryhmä oli
+    # «sama sijainti ja sama pituus», ja eri tallentimien mikit (eri pituus)
+    # jäivät kukin yksin: ei kattoa, ei mittausta, ja masterointi kirjoitti
+    # «0.0 LUFS» sanomatta mitään (pp 56, 2026-10-07).
+    parent = list(range(len(members_all)))
+
+    def root(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i in range(len(members_all)):
+        for j in range(i + 1, len(members_all)):
+            if timeline_lib.overlaps(members_all[i]["track"], members_all[j]["track"]):
+                parent[root(i)] = root(j)
+    components: dict[int, list] = {}
+    for i, job in enumerate(members_all):
+        components.setdefault(root(i), []).append(job)
+
+    for members in components.values():
+        if len(members) < 2 and not alone_ok:
             # Yksin aikajanan palassa: ei summaa johon osua.
             continue
-        frames = key[0]
+        frames = [frame_count(job["target"]) for job in members]
+        if any(f is None for f in frames):
+            continue
+        shapes = {envelopes.geometry(job["track"], f) for job, f in zip(members, frames, strict=True)}
         try:
-            worst = _ceiling_pass(
-                members, frames, AudioFile, envelopes_by_speaker, extra,
-                boost_db, ceiling_db, meter, ride_db, ride_step, dry_run,
-                raw_meter, speech, layout,
-            )
+            if len(shapes) == 1:
+                worst = _ceiling_pass(
+                    members, frames[0], AudioFile, envelopes_by_speaker, extra,
+                    boost_db, ceiling_db, meter, ride_db, ride_step, dry_run,
+                    raw_meter, speech, layout,
+                )
+            else:
+                worst = _ceiling_pass_timeline(
+                    members, AudioFile, envelopes_by_speaker, extra,
+                    boost_db, ceiling_db, meter, ride_db, ride_step, dry_run,
+                    raw_meter, speech, layout,
+                )
         except (OSError, ValueError) as exc:
             for job in members:
                 result.notes.setdefault(job["key"], []).append(str(exc))
@@ -367,6 +403,162 @@ def program_ceiling(jobs: list[dict], result,
         if worst < -0.01:
             _log(f"ohjelmakatto: {len(members)} stemiä, suurin vaimennus "
                  f"{worst:.2f} dB")
+
+
+def _programme_block(job, handle, low: int, high: int, rate: int) -> np.ndarray:
+    """Stemin ääni aikajanan näyteväliltä ``[low, high)``; nollaa muualla."""
+    block = np.zeros((int(handle.num_channels), high - low), dtype=np.float32)
+    for span in job["track"].spans:
+        p0 = max(low, int(round(span.programme_start * rate)))
+        p1 = min(high, int(round(span.programme_end * rate)))
+        if p1 <= p0:
+            continue
+        f0 = int(round(span.to_file_time(p0 / rate) * rate))
+        if f0 >= handle.frames:
+            continue
+        count = min(p1 - p0, handle.frames - max(f0, 0))
+        if f0 < 0:
+            p0 -= f0
+            count += f0
+            f0 = 0
+        if count <= 0:
+            continue
+        handle.seek(f0)
+        piece = handle.read(count)
+        block[:, p0 - low:p0 - low + piece.shape[-1]] = piece
+    return block
+
+
+def _ceiling_pass_timeline(members: list[dict], AudioFile,
+                           envelopes_by_speaker: dict | None = None,
+                           extra: dict | None = None,
+                           boost_db: float = 0.0,
+                           ceiling_db: float = chain.CEILING_DB,
+                           meter=None,
+                           ride_db=None,
+                           ride_step: float = 0.0,
+                           dry_run: bool = False,
+                           raw_meter=None,
+                           speech=None,
+                           layout=None) -> float:
+    """Ryhmä jonka stemit ovat eri kohdissa tai eri mittaisia: summa
+    **aikajanalla**.
+
+    Kaksi vaihetta. Ensin aikajana paloittain: jokaisen stemin osuus
+    luetaan aikajanan paikalleen, käyrä lasketaan summasta ja mittari saa
+    summan — kuten ``_ceiling_pass``issa. Käyrästä talletetaan vain kohdat
+    joissa se on alle ykkösen. Sitten, jos kirjoitetaan, jokainen stemi
+    omassa tiedostoajassaan: käyrä luetaan sen aikajanan paikoilta.
+    """
+    handles = [AudioFile(job["target"]) for job in members]
+    stored: list[tuple[int, np.ndarray]] = []
+    worst = 0.0
+    try:
+        rate = int(handles[0].samplerate)
+        if any(int(h.samplerate) != rate for h in handles):
+            raise ValueError("stemien näytetaajuudet eroavat")
+        first = min(int(round(s.programme_start * rate))
+                    for job in members for s in job["track"].spans)
+        last = max(int(round(s.programme_end * rate))
+                   for job in members for s in job["track"].spans)
+        chunk = int(programme.CEILING_CHUNK * rate)
+        margin = int(programme.CEILING_MARGIN * rate)
+        position = first
+        while position < last:
+            low = max(first, position - margin)
+            high = min(last, position + chunk + margin)
+            blocks = [
+                _programme_block(job, h, low, high, rate)
+                * _linear((extra or {}).get(job["key"], 0.0) + boost_db)
+                for job, h in zip(members, handles, strict=True)
+            ]
+            times = np.arange(low, high) / rate
+            if ride_db is not None and ride_step > 0:
+                curve = np.interp(times / ride_step, np.arange(len(ride_db)), ride_db)
+                blocks[-1] = blocks[-1] * (10.0 ** (curve / 20.0)).astype(np.float32)
+            heard = []
+            for job, block in zip(members, blocks, strict=True):
+                points = (envelopes_by_speaker or {}).get(job.get("speaker"))
+                if points:
+                    db = np.interp(times, [t for t, _ in points], [v for _, v in points])
+                    block = block * (10.0 ** (db / 20.0)).astype(np.float32)
+                heard.append(block)
+            gain = programme.shared_gain(heard, rate, ceiling_db)
+            worst = min(worst, programme.reduction_db(gain))
+            head = position - low
+            tail = head + min(chunk, last - position)
+            spoken = None
+            if speech is not None:
+                mask, start = speech
+                index = ((times[head:tail] - start) / grid_hop()).astype(int)
+                inside = (index >= 0) & (index < len(mask))
+                spoken = np.zeros(tail - head, dtype=bool)
+                spoken[inside] = np.asarray(mask, dtype=bool)[index[inside]]
+            if meter is not None:
+                meter.add(_heard(members, [h * gain for h in heard], layout, head, tail),
+                          spoken)
+            if raw_meter is not None:
+                raw_meter.add(_heard(members, heard, layout, head, tail))
+            below = np.flatnonzero(gain[head:tail] < 1.0)
+            if not dry_run and below.size:
+                a, b = head + below[0], head + below[-1] + 1
+                stored.append((low + a, gain[a:b].astype(np.float32)))
+            position += chunk
+        if dry_run:
+            return worst
+        for job, handle in zip(members, handles, strict=True):
+            _write_with_gain(job, handle, rate, stored,
+                             _linear((extra or {}).get(job["key"], 0.0) + boost_db))
+    finally:
+        for handle in handles:
+            handle.close()
+    for job in members:
+        os.replace(job["target"] + ".ceil.tmp.wav", job["target"])
+    return worst
+
+
+def grid_hop() -> float:
+    from .grid import HOP_SEC
+
+    return HOP_SEC
+
+
+def _write_with_gain(job, handle, rate: int, stored, scale: float) -> None:
+    """Stemi omassa tiedostoajassaan: ``scale`` ja käyrä aikajanan paikoilta."""
+    from pedalboard.io import AudioFile
+
+    tmp = job["target"] + ".ceil.tmp.wav"
+    frames = handle.frames
+    step = int(programme.CEILING_CHUNK * rate)
+    with AudioFile(tmp, "w", rate, int(handle.num_channels),
+                   bit_depth=job.get("bit_depth", 24)) as out:
+        handle.seek(0)
+        position = 0
+        while position < frames:
+            count = min(step, frames - position)
+            block = handle.read(count) * scale
+            gain = np.ones(count, dtype=np.float32)
+            for span in job["track"].spans:
+                f0 = max(position, int(round(span.file_offset * rate)))
+                f1 = min(position + count,
+                         int(round(span.to_file_time(span.programme_end) * rate)))
+                if f1 <= f0:
+                    continue
+                p0 = int(round(span.programme_start * rate)) + (
+                    f0 - int(round(span.file_offset * rate)))
+                p1 = p0 + (f1 - f0)
+                for start, curve in stored:
+                    a, b = max(p0, start), min(p1, start + len(curve))
+                    if b <= a:
+                        continue
+                    gain[f0 - position + (a - p0):f0 - position + (b - p0)] = \
+                        curve[a - start:b - start]
+            out.write(np.ascontiguousarray(block * gain))
+            position += count
+    written = frame_count(tmp)
+    if written != frames:
+        _drop(tmp)
+        raise ValueError(f"ohjelmakatto muutti pituutta {frames} -> {written}")
 
 
 def _ceiling_pass(members: list[dict], frames: int, AudioFile,

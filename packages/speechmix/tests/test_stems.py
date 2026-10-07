@@ -53,3 +53,76 @@ def test_meter_reads_stereo_as_the_standard_does():
         meter.add(stereo[:, i:i + RATE])
     want = pyln.Meter(RATE).integrated_loudness(stereo.T)
     assert abs(meter.value() - want) < 0.1
+
+
+def _noise(path, seconds, level, seed):
+    rng = np.random.default_rng(seed)
+    x = rng.normal(0, level, int(seconds * RATE)).astype(np.float32)
+    sf.write(path, x, RATE, subtype="FLOAT")
+
+
+def _job(tmp_path, name, seconds, start, level, seed):
+    from speechmix.timeline import Span, Track
+
+    target = tmp_path / f"{name} [mix].wav"
+    _noise(target, seconds, level, seed)
+    return {
+        "key": name, "name": name, "speaker": name, "speech": True,
+        "source": str(target), "target": str(target), "bit_depth": 32,
+        "track": Track(str(target), name, [Span(start, start + seconds, 0.0)]),
+    }
+
+
+def _programme(jobs, seconds):
+    """Stemit aikajanalle kuten isäntä ne soittaa (mono, ei panorointia)."""
+    out = np.zeros(int(seconds * RATE))
+    for job in jobs:
+        x, _ = sf.read(job["target"])
+        span = job["track"].spans[0]
+        a = int(round(span.programme_start * RATE))
+        out[a:a + len(x)] += x
+    return out
+
+
+def test_mics_of_different_length_are_mastered_on_the_timeline(tmp_path):
+    """pp 56: kaksi eri tallentimen mikkiä, eri pituus. Katto ryhmitteli
+    stemit tarkan sijainnin ja pituuden mukaan, kumpikin jäi yksin, eikä
+    mitään masteroitu: «masterointi: 0.0 LUFS · nan» (2026-10-07)."""
+    from types import SimpleNamespace
+
+    import pyloudnorm as pyln
+
+    jobs = [_job(tmp_path, "a", 10.0, 0.0, 0.25, 1),
+            _job(tmp_path, "b", 8.0, 2.0, 0.25, 2)]
+    result = stems.StemResult()
+    settings = SimpleNamespace(target_lufs=-16.0, program_peak_db=-1.0)
+    stems.program_deliver(jobs, result, {}, {}, settings)
+    assert result.program_lufs != 0.0
+    programme = _programme(jobs, 10.0)
+    assert abs(pyln.Meter(RATE).integrated_loudness(programme) - -16.0) < 0.6
+    from scipy import signal
+    peak = 20 * np.log10(np.abs(signal.resample_poly(programme, 4, 1)).max())
+    assert peak <= -1.0 + 0.2, peak
+
+
+def test_a_single_mic_is_mastered_too(tmp_path):
+    from types import SimpleNamespace
+
+    import pyloudnorm as pyln
+
+    jobs = [_job(tmp_path, "a", 10.0, 0.0, 0.06, 3)]   # ~ −23 LUFS, kuten ketjun stemi
+    result = stems.StemResult()
+    stems.program_deliver(jobs, result, {}, {},
+                          SimpleNamespace(target_lufs=-16.0, program_peak_db=-1.0))
+    programme = _programme(jobs, 10.0)
+    assert abs(pyln.Meter(RATE).integrated_loudness(programme) - -16.0) < 0.6
+
+
+def test_nothing_to_master_is_said(tmp_path):
+    from types import SimpleNamespace
+
+    result = stems.StemResult()
+    jobs = [{"key": "a", "speech": True, "target": str(tmp_path / "missing.wav")}]
+    stems.program_deliver(jobs, result, {}, {},
+                          SimpleNamespace(target_lufs=-16.0, program_peak_db=-1.0))
+    assert any("master" in n.lower() for n in result.notes.get("a", []))

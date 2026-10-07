@@ -366,6 +366,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "fi": "Masterointi jäi tavoitteesta: tavoite {target} LUFS, tulos {got}.",
         "en": "Mastering fell short: target {target} LUFS, got {got}.",
     },
+    "audio.program_none": {
+        "fi": "Masterointi ohitettiin: yhtään käsiteltyä stemiä ei voitu mitata.",
+        "en": "Mastering was skipped: no processed stem could be measured.",
+    },
     "audio.plugin_skipped": {
         "fi": "Liitännäinen ohitettu, muu käsittely tehtiin: {error}",
         "en": "Plug-in skipped, the rest of the chain still ran: {error}",
