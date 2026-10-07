@@ -150,7 +150,8 @@ def test_server_round_trip(scratch_xml):
     # näyttää projektin nimen eikä tiedostonimeä, joten ilman tätä peräkkäiset
     # tuonnit ovat selaimessa erottamattomia.
     shown = written.find(".//project").get("name")
-    assert shown.startswith("Testi")
+    # Lähteen nimi ensin, sitten projektin nimi (ks. fcp_project_name).
+    assert shown.startswith("sync · Testi")
     assert shown != "Testi", "vientiä ei voi erottaa muista Final Cutissa"
     assert len(written.find(".//spine")) == exported["cuts"]
 

@@ -152,6 +152,10 @@ def fcp_project_name(name: str, out_path: str, stamp: str = "") -> str:
     Nimeen liitetään siis se osa tiedoston nimestä joka erottaa sen muista:
     tagi ja numero, esimerkiksi «broadcast audio v8».
 
+    **Lähteen nimi ensin.** «pp 56 baseline.fcpxmld» näkyi Final Cutissa
+    nimellä «Rough cut · broadcast · 7.10. 12:23», josta ei näe mistä
+    jaksosta leikkaus on (käyttäjä, 2026-10-07).
+
     **Ja leima**, koska pelkkä tiedostonimi ei riitä. ``next_output_path``
     numeroi vasta silloin kun edellinen vienti on yhä paikallaan, ja tuotu
     vienti siirretään arkistoon tai poistetaan — se on tavallista eikä
@@ -162,10 +166,12 @@ def fcp_project_name(name: str, out_path: str, stamp: str = "") -> str:
     """
     stem = os.path.splitext(os.path.basename(out_path))[0]
     marker = ""
-    at = stem.find(OUTPUT_SUFFIX)
+    source = ""
+    at = stem.rfind(OUTPUT_SUFFIX)
     if at >= 0:
+        source = stem[:at].strip()
         marker = stem[at + len(OUTPUT_SUFFIX) :].strip()
-    parts = [p for p in (name, marker, stamp) if p]
+    parts = [p for p in (source, name, marker, stamp) if p]
     return " · ".join(parts)
 
 

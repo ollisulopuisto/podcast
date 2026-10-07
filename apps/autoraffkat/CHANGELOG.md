@@ -8,6 +8,9 @@ and this project adheres to Calendar Versioning (CalVer).
 ## [Unreleased]
 
 ### Changed
+- **The exported project's name in Final Cut starts with the episode it came from:** `pp 56 baseline · Rough cut · broadcast · 7.10. 12:23` instead of `Rough cut · broadcast · 7.10. 12:23`, so cuts of different episodes can be told apart in the browser.
+
+### Changed
 - **The audio processing pipeline now lives in the shared `speechmix` library** (`speechmix.stems`): per-file processing, the programme ceiling, mastering and the programme trim. Nothing changes for the user; automixer now uses the same code.
 
 ### Added

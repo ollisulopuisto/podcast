@@ -203,20 +203,33 @@ def test_the_shown_name_distinguishes_exports():
     """
     from autoraffkat.project import fcp_project_name
 
-    # Ensimmäinen vienti ilman tagia: nimi sellaisenaan, ei turhaa koristetta.
-    assert fcp_project_name("Rough cut", "/x/jakso-cut.fcpxml") == "Rough cut"
+    # Ensimmäinen vienti ilman tagia: lähde ja nimi, ei turhaa koristetta.
+    assert fcp_project_name("Rough cut", "/x/jakso-cut.fcpxml") == "jakso · Rough cut"
     # Tagi ja numero erottavat.
     assert (
         fcp_project_name("Rough cut", "/x/jakso-cut broadcast audio v8.fcpxml")
-        == "Rough cut · broadcast audio v8"
+        == "jakso · Rough cut · broadcast audio v8"
     )
-    assert fcp_project_name("Rough cut", "/x/jakso-cut v3.fcpxml") == "Rough cut · v3"
+    assert fcp_project_name("Rough cut", "/x/jakso-cut v3.fcpxml") == "jakso · Rough cut · v3"
     # Peräkkäiset viennit eroavat toisistaan, mikä on koko pointti.
     names = {
         fcp_project_name("Rough cut", f"/x/jakso-cut broadcast v{n}.fcpxml")
         for n in range(2, 6)
     }
     assert len(names) == 4
+
+
+def test_the_name_says_which_episode_it_came_from():
+    """«pp 56 baseline.fcpxmld» vietiin nimellä «pp 56 baseline-cut
+    broadcast.fcpxml», mutta Final Cut näytti «Rough cut · broadcast · 7.10.
+    12:23» — eikä siitä näe mistä jaksosta leikkaus on (käyttäjä,
+    2026-10-07). Lähteen nimi tulee ensimmäiseksi."""
+    from autoraffkat.project import fcp_project_name
+
+    shown = fcp_project_name(
+        "Rough cut", "/x/pp 56 baseline-cut broadcast.fcpxml", stamp="7.10. 12:23"
+    )
+    assert shown == "pp 56 baseline · Rough cut · broadcast · 7.10. 12:23"
 
 
 def test_two_exports_to_the_same_path_are_still_told_apart():
