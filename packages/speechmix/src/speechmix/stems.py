@@ -1163,3 +1163,91 @@ def grid_from_files(named: dict[str, str], envelope=None) -> Lanes:
         floor = grid_lib.noise_floor(grid_lib.smooth(db))
         lanes.append(grid_lib.lane(name, [(db, None, floor, grid_lib.FLOOR_MARGIN_DB, 0.0)]))
     return Lanes(speakers=lanes)
+
+
+# --- Rinnakkaiset stemit ----------------------------------------------------
+#
+# Stemit ovat toisistaan riippumattomia, ja ketjun raskaat osat (numba,
+# scipy, MLX, pedalboard) vapauttavat GIL:n, joten kaksi stemiä etenee
+# säikeissä yhtä aikaa. Rajana on muisti: montako mahtuu, lasketaan vapaasta
+# muistista ennen ajoa. Arvio joka ei onnistu ajaa yhden kerrallaan, kuten
+# ennen — sokkona ei oteta muistia.
+
+#: Enintään näin monta stemiä kerrallaan. Ketjun vaiheet käyttävät jo omia
+#: säikeitään (enintään neljä), ja liitännäinen ajetaan aina yksi kerrallaan.
+MAX_PARALLEL = 2
+
+#: Yhden stemin muistitarve float32-raidan kokoon nähden (``stem_size``).
+#: Mitattu kahdella 20 min stemillä oikeaa puhetta (process_stem, RSS-huippu,
+#: 2026-10-07): yksi kerrallaan 13,7 × yhden raidan koko, kaksi rinnakkain
+#: 24,7 × (12,4 per stemi) — aika 27,9 -> 17,7 s. Ennen rajoittimen ja
+#: de-bleedin kevennystä yksi kerrallaan oli 19,0 ×. 15 on varman puolella.
+STEM_MEMORY_FACTOR = 15.0
+
+#: Muulle koneelle jätettävä muisti: käyttöjärjestelmä, isäntä, GPU:n
+#: välimuisti ja liitännäisen instanssit.
+MEMORY_RESERVE = 4 << 30
+
+
+def stem_size(path: str) -> int | None:
+    """Raidan koko float32:na tavuina tiedoston otsakkeesta, tai ``None``."""
+    from pedalboard.io import AudioFile
+
+    try:
+        with AudioFile(path) as handle:
+            return int(handle.frames) * int(handle.num_channels) * 4
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+def parallel_count(sizes: list, available: int | None = None) -> int:
+    """Montako stemiä ajetaan kerrallaan, kun stemien koot ovat ``sizes``.
+
+    Suurimmat stemit ratkaisevat: ``n`` kerrallaan mahtuu, jos ``n``
+    suurimman tarve ja varaus mahtuvat vapaaseen muistiin.
+    ``SPEECHMIX_PARALLEL_STEMS`` pakottaa luvun (``1`` = kuten ennen).
+    """
+    forced = os.environ.get("SPEECHMIX_PARALLEL_STEMS", "").strip()
+    limit = MAX_PARALLEL
+    if forced.isdigit() and int(forced) > 0:
+        limit = int(forced)
+    if len(sizes) < 2 or limit < 2 or any(size is None for size in sizes):
+        return 1
+    if available is None:
+        import psutil
+
+        available = int(psutil.virtual_memory().available)
+    largest = sorted(sizes, reverse=True)
+    count = 1
+    for n in range(2, min(limit, len(sizes)) + 1):
+        if STEM_MEMORY_FACTOR * sum(largest[:n]) + MEMORY_RESERVE <= available:
+            count = n
+    return count
+
+
+def run_parallel(jobs: list, work, workers: int):
+    """``work(job)`` jokaiselle, ``workers`` kerrallaan.
+
+    Tuottaa ``(job, tulos, virhe)`` valmistumisjärjestyksessä; virhettä ei
+    nosteta, vaan kutsuja päättää siitä kuten ennenkin. Yhdellä ajetaan
+    järjestyksessä samassa säikeessä, eli täsmälleen kuten ennen.
+    """
+    if workers <= 1:
+        for job in jobs:
+            try:
+                yield job, work(job), None
+            except Exception as exc:  # kutsuja päättää, ks. docstring
+                yield job, None, exc
+        return
+
+    import contextvars
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    # Jokainen työ saa kutsujan kontekstimuuttujat (autoraffkatin kieli on
+    # ``ContextVar``): uusi säie aloittaisi muuten oletuksista.
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        running = {pool.submit(contextvars.copy_context().run, work, job): job
+                   for job in jobs}
+        for future in as_completed(running):
+            error = future.exception()
+            yield running[future], (None if error else future.result()), error

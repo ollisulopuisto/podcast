@@ -861,68 +861,103 @@ def _run_todo(
     result, todo, jobs, settings, plugin, program_start,
     progress, trim, started, total_weight, solos=None, speaking=None,
 ):
-    """Tiedostot yksi kerrallaan. Erillään, jotta liitännäisvaranto suljetaan
-    myös silloin kun jokin kaatuu kesken."""
-    behind = 0.0
-    for index, job in enumerate(todo):
-        _log(f"{index + 1}/{len(todo)} {job['name']}")
-        # Kello nollataan tiedostoittain: vaiheen kesto on tämän tiedoston
-        # vaiheen kesto, ei kulunut aika koko ajon alusta.
-        stage_at = time.perf_counter()
+    """Tiedostot, yksi tai kaksi kerrallaan (``stems.parallel_count``).
+    Erillään, jotta liitännäisvaranto suljetaan myös silloin kun jokin
+    kaatuu kesken."""
+    import threading
 
-        def stage(name: str, share: float, job=job, behind=behind) -> None:
-            """Yhden vaiheen valmistuminen: lokiin ja edistymiseen."""
-            nonlocal stage_at
-            now = time.perf_counter()
-            _log(f"    {name} {now - stage_at:.1f}s")
-            stage_at = now
-            fraction = (behind + job["weight"] * share) / total_weight
-            if progress is not None:
-                progress(
-                    {
-                        "done": index,
-                        "total": len(todo),
-                        "current": job["name"],
-                        "stage": name,
-                        "fraction": round(fraction, 4),
-                        "eta": _eta(started, fraction),
-                    }
-                )
+    # Kumppanit ovat *kaikki* mikkityöt, eivät vain tehtävälistan: vuoto
+    # tulee toisesta mikistä riippumatta siitä onko se jo käsitelty.
+    # Lähteeksi luetaan aina raaka tiedosto.
+    def partners_of(job):
+        return [
+            other
+            for other in jobs
+            if other.get("speech")
+            and other.get("speaker")
+            and other["speaker"] != job.get("speaker")
+            and os.path.exists(other["source"])
+        ]
 
-        if progress is not None:
-            progress(
-                {
-                    "done": index,
-                    "total": len(todo),
-                    "current": job["name"],
-                    "stage": "read",
-                    "fraction": round(behind / total_weight, 4),
-                    "eta": _eta(started, behind / total_weight),
-                }
-            )
+    workers = 1
+    if len(todo) > 1:
+        # Kameran ääni puretaan nyt, pääsäikeessä: rinnakkain kaksi stemiä
+        # purkaisi saman kumppanin samaan väliaikaistiedostoon.
         try:
-            # Kumppanit ovat *kaikki* mikkityöt, eivät vain tehtävälistan:
-            # vuoto tulee toisesta mikistä riippumatta siitä onko se jo
-            # käsitelty. Lähteeksi luetaan aina raaka tiedosto.
-            partners = [
-                other
-                for other in jobs
-                if other.get("speech")
-                and other.get("speaker")
-                and other["speaker"] != job.get("speaker")
-                and os.path.exists(other["source"])
-            ]
-            result.gains[job["key"]] = _run_one(
-                job, settings, plugin, program_start, stage, trim,
-                solos, partners, result, speaking,
+            readable = {job["source"]: ensure_readable(job["source"])
+                        for job in [*todo, *jobs] if os.path.exists(job["source"])}
+            workers = stems.parallel_count(
+                [stems.stem_size(readable.get(job["source"], job["source"]))
+                 for job in todo]
             )
-        except (MixError, ChainError, OSError, RuntimeError, ValueError) as exc:
-            result.errors[job["key"]] = str(exc)
-            _log(f"    VIRHE: {exc}")
-            behind += job["weight"]
+        except MixError as exc:
+            _log(f"purku ennen käsittelyä epäonnistui, yksi kerrallaan: {exc}")
+    if workers > 1:
+        _log(f"{workers} tiedostoa kerrallaan")
+
+    # Palkki: valmiiden paino ja keskeneräisten osuudet yhteen. Jokaisen
+    # tiedoston osuus vain kasvaa, joten summakin kasvaa — myös kun kaksi
+    # tiedostoa etenee yhtä aikaa.
+    lock = threading.Lock()
+    shares: dict = {}
+    finished = {"weight": 0.0, "count": 0}
+
+    def report(job, name: str) -> None:
+        if progress is None:
+            return
+        fraction = (finished["weight"] + sum(
+            item["weight"] * share for item, share in shares.values()
+        )) / total_weight
+        progress(
+            {
+                "done": finished["count"],
+                "total": len(todo),
+                "current": job["name"],
+                "stage": name,
+                "fraction": round(min(fraction, 1.0), 4),
+                "eta": _eta(started, fraction),
+            }
+        )
+
+    def work(job):
+        index = todo.index(job)
+        _log(f"{index + 1}/{len(todo)} {job['name']}")
+        # Kello tiedostoittain: vaiheen kesto on tämän tiedoston vaiheen
+        # kesto, ei kulunut aika koko ajon alusta.
+        stage_at = [time.perf_counter()]
+        who = f"{job['name']}: " if workers > 1 else ""
+
+        def stage(name: str, share: float) -> None:
+            """Yhden vaiheen valmistuminen: lokiin ja edistymiseen."""
+            now = time.perf_counter()
+            _log(f"    {who}{name} {now - stage_at[0]:.1f}s")
+            stage_at[0] = now
+            with lock:
+                shares[job["key"]] = (job, max(share, shares.get(job["key"], (job, 0.0))[1]))
+                report(job, name)
+
+        with lock:
+            shares[job["key"]] = (job, 0.0)
+            report(job, "read")
+        return _run_one(
+            job, settings, plugin, program_start, stage, trim,
+            solos, partners_of(job), result, speaking,
+        )
+
+    expected = (MixError, ChainError, OSError, RuntimeError, ValueError)
+    for job, gain, error in stems.run_parallel(todo, work, workers):
+        with lock:
+            shares.pop(job["key"], None)
+            finished["weight"] += job["weight"]
+            finished["count"] += 1
+        if error is not None:
+            if not isinstance(error, expected):
+                raise error
+            result.errors[job["key"]] = str(error)
+            _log(f"    VIRHE {job['name']}: {error}")
             continue
-        _log(f"    valmis {result.gains[job['key']]:+.1f} dB")
-        behind += job["weight"]
+        result.gains[job["key"]] = gain
+        _log(f"    valmis {job['name']} {gain:+.1f} dB")
         result.processed += 1
         _record(result, job)
     _log(f"valmis {time.perf_counter() - started:.0f}s")

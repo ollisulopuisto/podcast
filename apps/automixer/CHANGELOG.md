@@ -5,6 +5,11 @@ All notable changes to automixer are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.1] - 2026-10-08
+
+### Changed
+- **Speakers are processed two at a time when memory allows** (speechmix 2026.10.8.1). The mix is bit-identical to one at a time, and the log says "2 stems at a time" when it happens. `SPEECHMIX_PARALLEL_STEMS=1` forces one at a time.
+
 ## [2026.10.5.4] - 2026-10-05
 
 ### Fixed

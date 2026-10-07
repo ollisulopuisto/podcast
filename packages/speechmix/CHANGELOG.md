@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.1] - 2026-10-08
+
+### Added
+- **Two stems processed at once when memory allows:** `parallel_count` decides from free RAM before the run (15× each stem's float32 size plus 4 GB for the rest of the machine), and falls back to one at a time when a size is unknown or memory is short. Measured on two 20-min stems of real speech: 27.9 → 17.7 s, peak memory 3.2 → 5.7 GB. Output is bit-identical. The restoration plug-in still runs for one stem at a time, since it already uses most cores. `SPEECHMIX_PARALLEL_STEMS=1` forces the old one-at-a-time behaviour.
+
 ## [2026.10.7.14] - 2026-10-07
 
 ### Changed

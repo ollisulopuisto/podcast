@@ -1250,3 +1250,33 @@ def test_the_limiter_section_does_not_hold_the_track_many_times():
     ratio, _out, info = _chain_peak(audio)
     assert info.limiter_db < 0.0                   # rajoitin teki työtä
     assert ratio < 9.0, ratio
+
+
+def test_the_plugin_runs_one_stem_at_a_time():
+    """Rinnakkaiset stemit eivät aja liitännäistä yhtä aikaa: dxRevive
+    jakaa jo yhden tiedoston koneen ytimille (``worker_count``), ja varanto
+    on säiekohtainen."""
+    import threading
+
+    active, worst = [0], [0]
+    lock = threading.Lock()
+
+    class Plugin:
+        def process(self, audio, rate, reset=True):
+            with lock:
+                active[0] += 1
+                worst[0] = max(worst[0], active[0])
+            time.sleep(0.2)
+            with lock:
+                active[0] -= 1
+            return audio
+
+    audio = np.atleast_2d(speech_like(seconds=4.0))
+    runs = [threading.Thread(target=chain.process, args=(
+        audio.copy(), RATE, AudioSettings(), 0.0, True, -16.0, Plugin()))
+        for _ in range(2)]
+    for run in runs:
+        run.start()
+    for run in runs:
+        run.join()
+    assert worst[0] == 1

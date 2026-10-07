@@ -1788,6 +1788,9 @@ STAGES_PLAIN = {
 }
 
 
+_PLUGIN_LOCK = threading.Lock()
+
+
 def process(
     audio: np.ndarray,
     rate: int,
@@ -1829,7 +1832,11 @@ def process(
     # liitännäiselle paloissa; ``apply_plugin``in rinnakkaiset palat ovat eri
     # asia, jokainen niistä on oma täysi ajonsa.
     if plugin is not None:
-        audio = apply_plugin(plugin, audio, rate)
+        # Yksi stemi kerrallaan, vaikka stemejä ajettaisiin rinnakkain: varanto
+        # jakaa jo yhden tiedoston koneen ytimille, ja instanssit ovat
+        # säiekohtaisia. Muut stemit jatkavat omia vaiheitaan sillä aikaa.
+        with _PLUGIN_LOCK:
+            audio = apply_plugin(plugin, audio, rate)
         if audio.shape[1] != frames:
             raise ChainError(
                 t("audio.plugin_length", before=frames, after=audio.shape[1])
