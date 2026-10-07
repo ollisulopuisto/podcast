@@ -121,13 +121,12 @@ def test_memory_follows_one_stem_not_the_number_of_tracks(tmp_path):
     assert four < 1.5 * two, (two, four)
 
 
-def test_the_bed_sits_over_the_speech_by_the_measured_amount(tmp_path):
-    """Pohjan tasanne ``session.MUSIC_PLATEAU_OVER_SPEECH_DB`` puheen yllä
-    myös stereoulostulossa. Täyden tason keskipanorointi (Final Cutin laki)
-    nosti monopuheen stereossa 3 dB, ja pohja jäi oikealla jaksolla
-    +3,3…+4,9 dB:iin kun piti olla +7 (vst s13e03, 2026-10-06)."""
-    from automixer import session
-
+def test_the_bed_is_no_louder_than_the_speech(tmp_path):
+    """Pohjan tasanne puheen tasolla, ei yli: käyttäjä, 2026-10-07 — «music
+    at most at −16 LUFS, the same as the speech». +7 dB (sovitettu
+    Hindenburgin istunnosta, käsittelemätöntä puhetta vasten) teki
+    valmiissa miksauksessa intropohjasta +7…+10 dB puhetta kovemman; käyttäjän
+    oma master: +1,2. Taso asetetaan **käsitellystä** puheesta mitattuna."""
     path = _session(tmp_path, seconds=40.0)
     out = tmp_path / "mix.wav"
     stems_mix.mix(str(path), str(out), target_lufs=-16.0)
@@ -135,7 +134,8 @@ def test_the_bed_sits_over_the_speech_by_the_measured_amount(tmp_path):
     meter = pyln.Meter(RATE)
     bed = meter.integrated_loudness(mix[int(21.0 * RATE):int(25.5 * RATE)])
     speech = meter.integrated_loudness(mix[int(30.0 * RATE):int(40.0 * RATE)])
-    assert abs((bed - speech) - session.MUSIC_PLATEAU_OVER_SPEECH_DB) < 1.0, bed - speech
+    assert bed <= speech + 0.5, (bed, speech)
+    assert abs((bed - speech) - stems_mix.BED_UNDER_SPEECH_DB) < 1.0, bed - speech
 
 
 def test_a_hot_take_is_brought_to_the_speakers_level(tmp_path, capsys):

@@ -48,6 +48,15 @@ def _duration(path: str) -> float:
     return info.frames / info.samplerate
 
 
+#: Musiikkipohjan kovin hetki (lyhytaikainen äänekkyys, 3 s) näin paljon
+#: **käsitellyn** puheen äänekkyyden alla. Käyttäjä 2026-10-07: «music at
+#: most at −16 LUFS, the same as the speech». Käyttäjän oma master: pohja
+#: +1,2 dB puheen yllä; aiempi +7 dB (Hindenburgin istunnosta,
+#: käsittelemätöntä puhetta vasten) teki valmiissa miksauksessa +7…+10.
+#: Tutkimus (Sound On Sound, Transom): selvästi soiva musiikki puheen
+#: tasolle, koska musiikin huiput ovat kovemmat ja masterointi litistää ne.
+BED_UNDER_SPEECH_DB = -1.0
+
 #: Puheen panorointilaki: vakioteho, kuten automixerin oma väylä ennenkin.
 #: Keskellä −3 dB kumpaankin, joten stereon äänekkyys on monon, ja musiikki
 #: (tasattu puheen monotasoon) pysyy mitatulla etäisyydellään puheesta.
@@ -75,6 +84,42 @@ def stereo_layout(members, blocks):
         out[0] += pair[0] * left
         out[1] += pair[1] * right
     return out
+
+
+def _loudness(jobs: list[dict], gate=None) -> tuple[float | None, float | None]:
+    """``(integroitu, suurin lyhytaikainen)`` LUFS stemien summasta stereona.
+
+    Paloittain levyltä, ``stereo_layout``in kautta: sama mittaus jolla
+    masterointi mittaa. ``gate`` on ``stems.anyone_speaking``in tulos;
+    sen kanssa integroitu lukema on puheen lukema.
+    """
+    import numpy as np
+    from pedalboard.io import AudioFile
+
+    from speechmix.meter import IntegratedMeter
+
+    handles = [AudioFile(job["target"]) for job in jobs]
+    try:
+        rate = int(handles[0].samplerate)
+        frames = min(h.frames for h in handles)
+        spoken = None
+        if gate is not None:
+            spoken = envelopes.mask_samples(jobs[0]["track"], gate[0], gate[1], rate, frames)
+        meter = IntegratedMeter(rate)
+        position, step = 0, 60 * rate
+        while position < frames:
+            count = min(step, frames - position)
+            blocks = [np.atleast_2d(h.read(count)) for h in handles]
+            meter.add(stereo_layout(jobs, blocks),
+                      None if spoken is None else spoken[position:position + count])
+            position += count
+    finally:
+        for handle in handles:
+            handle.close()
+    keep = meter.speech() > 0.5 if gate is not None else None
+    short = meter.short_term()
+    loud = float(np.nanmax(short[np.isfinite(short)])) if np.isfinite(short).any() else None
+    return meter.value(keep=keep), loud
 
 
 def own_voice(lanes) -> dict:
@@ -317,6 +362,21 @@ def mix(
             program_limit_budget_db=programme.PROGRAM_LIMIT_BUDGET_LU,
         )
         extra = programme.shared_backoff(result.backoffs)
+
+        # Pohjat käsitellyn puheen tasolle: kovin hetki ``BED_UNDER_SPEECH_DB``
+        # puheen alla. Mitataan ketjun jälkeen, koska vain se pysyy
+        # masteroinnin läpi — molemmat nostetaan samalla.
+        speech_jobs = jobs[: len(speech)]
+        music_jobs = jobs[len(speech):]
+        if speech_jobs and music_jobs:
+            spoken_level, _ = _loudness(speech_jobs, stems.anyone_speaking(grid, 0.0))
+            _, bed_level = _loudness(music_jobs)
+            if spoken_level is not None and bed_level is not None:
+                change = round(spoken_level + BED_UNDER_SPEECH_DB - bed_level, 2)
+                for job in music_jobs:
+                    extra[job["key"]] = extra.get(job["key"], 0.0) + change
+                _log(f"beds: loudest {bed_level:.1f} LUFS, speech {spoken_level:.1f} "
+                     f"→ beds {change:+.1f} dB")
         stems.program_deliver(jobs, result, ducks, extra, deliver,
                               stems.anyone_speaking(grid, 0.0),
                               layout=stereo_layout)

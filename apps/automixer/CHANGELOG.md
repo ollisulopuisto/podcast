@@ -10,6 +10,11 @@ and this project adheres to Calendar Versioning (CalVer).
 ### Fixed
 - **`automixer-beds`: a click at the start of each bed.** The first 10 ms played near full level before the fade took over (on vst s13e03's end bed, a burst at −11 dBFS). Each bed now starts with a 200 ms fade from silence that covers it; the fades themselves are unchanged.
 
+## [2026.10.7.1] - 2026-10-07
+
+### Fixed
+- **Music beds were far louder than the speech** in the finished mix: the intro bed of vst s13e03 was +7 to +10 dB over the speech (the editor's own master: +1.2), because the +7 dB target had been measured against unprocessed speech in Hindenburg. A bed's loudest moment (3 s short-term) is now set 1 dB under the **processed** speech, measured after the speech chain on the stereo output, so the relation survives mastering. Following the editor ("music at most at −16 LUFS, the same as the speech") and narrative-radio practice (music in the clear at about the voice's level).
+
 ## [2026.10.6.4] - 2026-10-06
 
 ### Added
