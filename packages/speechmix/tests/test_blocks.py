@@ -60,9 +60,13 @@ def test_one_loud_burst_does_not_move_the_block():
     assert _gain_at(blocks.block_gains(db, own), 8.0) == 0.0
 
 
-def test_correction_is_capped():
+def test_a_very_hot_take_is_cut_up_to_18_db():
+    """Kylmä alku A_coldopen-ajossa: Ollin lohkot +15,3 ja +14,3 dB, 12 dB:n
+    katto jätti +3,3 ja +2,3. Lasku ei nosta kohinaa, joten katto on 18."""
+    db, own = _curve([(0, 8, -15.0), *NORMAL])
+    assert abs(_gain_at(blocks.block_gains(db, own), 4.0) - -15.0) < 0.5
     db, own = _curve([(0, 8, -5.0), *NORMAL])
-    assert _gain_at(blocks.block_gains(db, own), 4.0) == -blocks.MAX_CORRECTION_DB
+    assert _gain_at(blocks.block_gains(db, own), 4.0) == -18.0
 
 
 def test_gain_curve_changes_in_the_gap_without_a_step():
