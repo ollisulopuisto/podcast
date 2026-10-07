@@ -1182,11 +1182,12 @@ def grid_from_files(named: dict[str, str], envelope=None) -> Lanes:
 MAX_PARALLEL = 2
 
 #: Yhden stemin muistitarve float32-raidan kokoon nähden (``stem_size``).
-#: Mitattu kahdella 20 min stemillä oikeaa puhetta (process_stem, RSS-huippu,
-#: 2026-10-07): yksi kerrallaan 13,7 × yhden raidan koko, kaksi rinnakkain
-#: 24,7 × (12,4 per stemi) — aika 27,9 -> 17,7 s. Ennen rajoittimen ja
-#: de-bleedin kevennystä yksi kerrallaan oli 19,0 ×. 15 on varman puolella.
-STEM_MEMORY_FACTOR = 15.0
+#: Mitattu kahdella 20 min stemillä oikeaa puhetta, de-click päällä
+#: (process_stem, RSS-huippu, 2026-10-08, speechmix 2026.10.8.3): yksi
+#: kerrallaan 11,2 ×, kaksi rinnakkain 13,9 × yhden raidan koko eli ~7 per
+#: stemi. 10 jättää ~40 % varaa. 15 (mitattu ennen muistityötä) vaati kahdelle
+#: 47 min stemille ~20 GB vapaata, eikä v5b saanut rinnakkaisuutta.
+STEM_MEMORY_FACTOR = 10.0
 
 #: Muulle koneelle jätettävä muisti: käyttöjärjestelmä, isäntä, GPU:n
 #: välimuisti ja liitännäisen instanssit.
@@ -1204,29 +1205,49 @@ def stem_size(path: str) -> int | None:
         return None
 
 
-def parallel_count(sizes: list, available: int | None = None) -> int:
+def parallel_count(sizes: list, available: int | None = None, report=None) -> int:
     """Montako stemiä ajetaan kerrallaan, kun stemien koot ovat ``sizes``.
 
     Suurimmat stemit ratkaisevat: ``n`` kerrallaan mahtuu, jos ``n``
     suurimman tarve ja varaus mahtuvat vapaaseen muistiin.
     ``SPEECHMIX_PARALLEL_STEMS`` pakottaa luvun (``1`` = kuten ennen).
+    ``report(teksti)`` kertoo päätöksen ja sen luvut.
     """
+    def said(count: int, why: str) -> int:
+        if report is not None:
+            noun = "stem" if count == 1 else "stems"
+            report(f"{count} {noun} at a time: {why}")
+        return count
+
     forced = os.environ.get("SPEECHMIX_PARALLEL_STEMS", "").strip()
     limit = MAX_PARALLEL
     if forced.isdigit() and int(forced) > 0:
         limit = int(forced)
-    if len(sizes) < 2 or limit < 2 or any(size is None for size in sizes):
+    if len(sizes) < 2:
         return 1
+    if limit < 2:
+        return said(1, "SPEECHMIX_PARALLEL_STEMS")
+    if any(size is None for size in sizes):
+        return said(1, "a track's size could not be read")
     if available is None:
         import psutil
 
         available = int(psutil.virtual_memory().available)
     largest = sorted(sizes, reverse=True)
+
+    def need(n: int) -> float:
+        return STEM_MEMORY_FACTOR * sum(largest[:n]) + MEMORY_RESERVE
+
     count = 1
     for n in range(2, min(limit, len(sizes)) + 1):
-        if STEM_MEMORY_FACTOR * sum(largest[:n]) + MEMORY_RESERVE <= available:
+        if need(n) <= available:
             count = n
-    return count
+    gb = 1 << 30
+    if count == 1:
+        return said(1, f"2 would need {need(2) / gb:.1f} GB, "
+                       f"{available / gb:.1f} GB free")
+    return said(count, f"needs {need(count) / gb:.1f} GB, "
+                       f"{available / gb:.1f} GB free")
 
 
 def run_parallel(jobs: list, work, workers: int):

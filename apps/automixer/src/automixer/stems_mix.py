@@ -330,9 +330,9 @@ def mix(
         # samaa varantoa kahdesti.
         for job in jobs:
             plugin_for(job["name"])
-        workers = stems.parallel_count([stems.stem_size(j["source"]) for j in jobs])
-        if workers > 1:
-            _log(f"{workers} stems at a time")
+        workers = stems.parallel_count(
+            [stems.stem_size(j["source"]) for j in jobs], report=_log
+        )
         try:
             for job, gain, error in stems.run_parallel(jobs, work, workers):
                 if error is not None:
