@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.7.13] - 2026-10-07
+
+### Changed
+- **The chain's memory peak per track roughly halved, with identical output:** the limiter rounds no longer build a limited copy of the track each time. Their loudness and PSR checks are computed piece by piece and the track is written once at the end, and the compressed branch is released as soon as it is mixed in. On 5 min of real speech the peak went from 17× to 8× the track's size (float32), so the limiter is no longer the most memory-hungry stage. This makes room for processing stems in parallel.
+
 ## [2026.10.7.12] - 2026-10-07
 
 ### Changed
