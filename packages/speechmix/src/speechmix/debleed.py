@@ -129,6 +129,45 @@ def _lags(a: np.ndarray, b: np.ndarray, taps: int) -> np.ndarray:
     return out
 
 
+# Yhteisen kierroksen pala. Mitattu 10 minuutista (8192 tappia, 35 %
+# soolona): 2^15 0,44 s, 2^16 0,42 s, 2^18 0,64 s, 2^20 0,98 s. Pienempi
+# pala ohittaa enemmän ei-soolo-aikaa; tappien ylimeno on 2^16:lla 12 %.
+_PAIR_BLOCK = 1 << 16
+
+
+def _lag_pair(
+    target: np.ndarray, source: np.ndarray, taps: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """``(_lags(source, source), _lags(target, source))`` yhdellä kierroksella.
+
+    Molemmat summat kertovat saman lähdepalan muunnoksella, joten se
+    lasketaan kerran. Pala jossa lähde on kokonaan nolla ei lisää
+    kumpaankaan summaan mitään ja ohitetaan — ``path`` nollaa kaiken
+    soolojen ulkopuolelta, joten tällaisia on suurin osa. Pyöreä
+    korrelaatio on tässä sama kuin lineaarinen, koska FFT on vähintään
+    palan ja tappien mittainen: viiveet ``< taps`` eivät kierrä.
+    """
+    from scipy import fft
+
+    n = min(len(target), len(source))
+    block = max(_PAIR_BLOCK, taps)
+    size = fft.next_fast_len(block + taps - 1, real=True)
+    auto = np.zeros(taps, dtype=np.float64)
+    cross = np.zeros(taps, dtype=np.float64)
+    for start in range(0, n, block):
+        stop = min(start + block, n)
+        piece = np.asarray(source[start:stop], dtype=np.float64)
+        if not piece.any():
+            continue
+        conj = np.conj(fft.rfft(piece, size))
+        # Laajennettu pala kantaa viiveet palan reunan yli; ``rfft``
+        # täyttää lopun nollilla, kuten ``_lags``in nollaus.
+        for out, x in ((auto, source), (cross, target)):
+            wide = np.asarray(x[start:min(stop + taps - 1, n)], dtype=np.float64)
+            out += fft.irfft(fft.rfft(wide, size) * conj, size)[:taps]
+    return auto, cross
+
+
 def path(
     target: np.ndarray,
     source: np.ndarray,
@@ -154,8 +193,7 @@ def path(
     if not np.any(s):
         return np.zeros(taps)
 
-    auto = _lags(s, s, taps)
-    cross = _lags(t, s, taps)
+    auto, cross = _lag_pair(t, s, taps)
     if auto[0] <= 0:
         return np.zeros(taps)
     auto[0] *= 1.0 + REGULARISATION
@@ -172,9 +210,9 @@ def _level(x: np.ndarray, keep: np.ndarray) -> float:
     return 10.0 * np.log10(float(np.mean(np.asarray(picked, np.float64) ** 2)) + 1e-30)
 
 
-#: Vuotosuodatuksen lohko näytteinä (overlap-add). Kymmenen sekuntia
-#: 48 kHz:llä: FFT:n hinta pysyy pienenä suhteessa lohkoon, muisti vakiona.
-LEAK_CHUNK = 480000
+#: Vuotosuodatuksen lohko näytteinä (overlap-add). Mitattu 10 minuutista
+#: 8192 tapilla: 2^15 0,54 s, 2^16 0,49 s, 2^18 0,49 s; muisti vakiona.
+LEAK_CHUNK = 1 << 16
 
 
 def leak(source, filt: np.ndarray, frames: int) -> np.ndarray:
@@ -183,18 +221,23 @@ def leak(source, filt: np.ndarray, frames: int) -> np.ndarray:
     Sama kuin ``fftconvolve(source, filt)[:frames]``, mutta lohkoittain ja
     summaten (overlap-add). Koko raita yhtenä FFT:nä oli de-bleedin
     muistihuippu: viiden minuutin raidalle 0,7 GB, 47 minuutin jaksolle
-    gigatavuja (memray, 2026-10-06).
+    gigatavuja (memray, 2026-10-06). Suotimen muunnos lasketaan kerran;
+    ``fftconvolve`` palaa kohden laski sen joka lohkolle (0,80 -> 0,49 s
+    10 minuutista).
     """
-    from scipy import signal as sig
+    from scipy import fft
 
     x = np.asarray(source, dtype=np.float64)
+    filt = np.asarray(filt, dtype=np.float64)
+    size = fft.next_fast_len(LEAK_CHUNK + filt.size - 1, real=True)
+    response = fft.rfft(filt, size)
     out = np.zeros(frames, dtype=np.float64)
     for start in range(0, min(len(x), frames), LEAK_CHUNK):
-        piece = sig.fftconvolve(x[start:start + LEAK_CHUNK], filt)
-        end = min(frames, start + len(piece))
-        out[start:end] += piece[: end - start]
+        piece = x[start:start + LEAK_CHUNK]
+        full = fft.irfft(fft.rfft(piece, size) * response, size)
+        end = min(frames, start + piece.size + filt.size - 1)
+        out[start:end] += full[: end - start]
     return out
-
 
 def remove(
     target: np.ndarray,
