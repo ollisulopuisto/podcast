@@ -408,3 +408,23 @@ def test_crowd_faces_are_looked_for_every_few_seconds(clip, monkeypatch):
     frames = len(table["times"])
     assert stub.seen == len(range(0, frames, 3))
     assert set(table["frame"]) == set(range(0, frames, 3))
+
+
+def test_keyframes_are_decoded_in_hardware_on_a_mac(clip, tmp_path, monkeypatch):
+    """Avainruutujen purku on kasvomittauksen pullonkaula: VideoToolbox
+    teki sen 3–7× nopeammin ja samoin ruuduin (2026-10-07)."""
+    from speechmix import binaries
+
+    monkeypatch.setattr(binaries, "hw_decode_args", lambda: ["-hwaccel", "videotoolbox"])
+    seen = []
+    real = subprocess.Popen
+
+    def spy(cmd, *a, **k):
+        seen.append(cmd)
+        return real(cmd, *a, **k)
+
+    monkeypatch.setattr(measure.subprocess, "Popen", spy)
+    measure._extract_with_times(str(clip), tmp_path)
+    cmd = seen[0]
+    assert cmd[cmd.index("-hwaccel") + 1] == "videotoolbox"
+    assert cmd.index("-hwaccel") < cmd.index("-i")
