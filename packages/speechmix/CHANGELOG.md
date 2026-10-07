@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.2] - 2026-10-08
+
+### Fixed
+- **De-click no longer takes gigabytes on long tracks:** it filtered the whole track at once into four float64 copies, two bands in parallel. On a 69-min mic that was 15.6 GB, the largest memory peak of an automixer run, where de-click is on by default. It now works in one-minute pieces with a one-second overlap, and decides its threshold from the click candidates of the whole track as before. Output is identical (same hash on 20 min of real speech) and so is the speed; memory on 20 min went from 2.65 GB to 0.45 GB, and it no longer grows with track length.
+
 ## [2026.10.8.1] - 2026-10-08
 
 ### Added

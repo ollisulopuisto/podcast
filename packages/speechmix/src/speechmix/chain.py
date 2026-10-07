@@ -749,6 +749,14 @@ DECLICK_ESCALATIONS = 6
 DECLICK_MERGE_MS = 2.0
 
 
+#: De-clickin pala ja reunamarginaali. Minuutin pala: kaksi kaistaa ja
+#: niiden keskiarvot ovat ~0,2 GB raidan pituudesta riippumatta.
+#: Marginaali kattaa suotimien vasteen (4. asteen Butterworth, millisekunteja)
+#: ja keskiarvon 50 ms:n ikkunan moninkertaisesti.
+_DECLICK_CHUNK = 60 * 48000
+_DECLICK_MARGIN_S = 1.0
+
+
 def declick(audio: np.ndarray, rate: int, sensitivity: float = 0.5) -> np.ndarray:
     """Poistaa huulinaksut ja maiskaukset.
 
@@ -796,26 +804,50 @@ def declick(audio: np.ndarray, rate: int, sensitivity: float = 0.5) -> np.ndarra
         level = np.abs(sp.sosfiltfilt(sos, data))
         return level, uniform_filter1d(level, size=window)
 
+    factor0 = DECLICK_FACTOR_MAX - (
+        DECLICK_FACTOR_MAX - DECLICK_FACTOR_MIN
+    ) * float(np.clip(sensitivity, 0.0, 1.0))
+    margin = max(window, int(_DECLICK_MARGIN_S * rate))
     out = audio.copy()
     for channel in range(audio.shape[0]):
         data = audio[channel]
-        # Kaistat ovat riippumattomat ja scipy vapauttaa GIL:n: 20 minuutista
-        # peräkkäin 2,56 s, rinnakkain 1,34 s, tulos bitilleen sama.
-        (high, local), (low, local_low) = _together(
-            partial(band, high_sos, data), partial(band, low_sos, data)
-        )
-        plosive = low > local_low * 3.0
-        factor = DECLICK_FACTOR_MAX - (
-            DECLICK_FACTOR_MAX - DECLICK_FACTOR_MIN
-        ) * float(np.clip(sensitivity, 0.0, 1.0))
+        # Paloittain, reunoille marginaali: suotimien vaste (ms) ja keskiarvon
+        # ikkuna (50 ms) mahtuvat siihen, joten palan sisällä luvut ovat samat
+        # kuin koko raidasta. Koko raidasta kerralla kaistat ja keskiarvot
+        # olivat neljä float64-kopiota, kaksi kerrallaan rinnakkain: 69 min
+        # mikki 15,6 GB (automixer, 2026-10-08).
+        #
+        # Kynnyksen nosto on koko raidan päätös, joten paloista kerätään vain
+        # ehdokkaat alimmalla kertoimella. Korkeampi kerroin valitsee niiden
+        # osajoukon (keskiarvo ≥ 0), joten nosto tehdään niistä samoin luvuin.
+        found_at, levels, means = [], [], []
+        for start in range(0, data.size, _DECLICK_CHUNK):
+            stop = min(data.size, start + _DECLICK_CHUNK)
+            lo, hi = max(0, start - margin), min(data.size, stop + margin)
+            piece = np.asarray(data[lo:hi])
+            # Kaistat ovat riippumattomat ja scipy vapauttaa GIL:n: 20
+            # minuutista peräkkäin 2,56 s, rinnakkain 1,34 s.
+            (high, local), (low, local_low) = _together(
+                partial(band, high_sos, piece), partial(band, low_sos, piece)
+            )
+            keep = slice(start - lo, stop - lo)
+            high, local = high[keep], local[keep]
+            candidates = high > local * factor0
+            candidates &= ~(low[keep] > local_low[keep] * 3.0)
+            at = np.flatnonzero(candidates)
+            found_at.append(at + start)
+            levels.append(high[at])
+            means.append(local[at])
+        everywhere = np.concatenate(found_at)
+        high = np.concatenate(levels)
+        local = np.concatenate(means)
+        factor = factor0
         seconds = max(data.size / rate, 1e-9)
         allowed = DECLICK_MAX_PER_SECOND * seconds
         gap = max(1, int(DECLICK_MERGE_MS * rate / 1000.0))
         index = np.empty(0, dtype=np.intp)
         for _ in range(DECLICK_ESCALATIONS):
-            clicks = high > local * factor
-            clicks &= ~plosive
-            index = np.flatnonzero(clicks)
+            index = everywhere[high > local * factor]
             if index.size == 0:
                 break
             found = 1 + int((np.diff(index) > gap).sum())
