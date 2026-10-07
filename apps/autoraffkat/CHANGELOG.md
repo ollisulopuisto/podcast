@@ -7,6 +7,9 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+### Fixed
+- **Episodes whose mics differ in length were not mastered** (no lift to the target loudness, no shared peak ceiling), and the log said "masterointi: 0.0 LUFS". Mics recorded on different devices are now summed where they overlap on the timeline. A single-mic episode is mastered too, and if mastering cannot run, the panel says so.
+
 ### Changed
 - **Faster video measurement on a Mac:** keyframes for face measurement are decoded by the hardware video decoder (VideoToolbox). Measured on test footage: 1080p H.264 3× faster, 4K HEVC 7× faster, with 5–20× less CPU. The frames are bit-identical, so cached measurements stay valid.
 - **Audio envelopes are computed in parallel** ("Computing envelopes"): each file is its own decode, and a multicam episode's 6–10 files were done one at a time on one core.

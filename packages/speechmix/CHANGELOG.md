@@ -5,6 +5,13 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.7.4] - 2026-10-07
+
+### Fixed
+- **Mastering was silently skipped when the mics differ in length or position on the timeline** (recorded on different devices, say). The ceiling grouped stems by identical placement and length, so each mic sat alone, nothing was summed or measured, and the log said "masterointi: 0.0 LUFS · nan" (pp 56). Stems that play at the same time are now summed on the programme timeline, and each stem gets the shared ceiling at its own file positions; stems with identical placement keep the previous path.
+- **A single mic is mastered too** (lift to target and ceiling); it used to be skipped the same way.
+- **If nothing can be measured, a note says so** instead of reporting 0.0 LUFS.
+
 ## [2026.10.7.3] - 2026-10-07
 
 ### Changed

@@ -36,6 +36,7 @@ FALLBACK: dict[str, str] = {
     "audio.editor_failed": "The plug-in's window could not be opened.",
     "audio.editor_behind": "The plug-in's window did not come to the front.",
     "audio.program_short": "Mastering fell short: target {target} LUFS, got {got}.",
+    "audio.program_none": "Mastering was skipped: no processed stem could be measured.",
     "audio.empty_file": "Empty audio file: {name}",
     "audio.plugin_shifted": (
         "The plug-in shifted the audio by {samples} samples ({ms:.0f} ms): {name}. "
