@@ -207,7 +207,7 @@ wheels = [
 
 [[package]]
 name = "automixer"
-version = "2026.10.7.2"
+version = "2026.10.8.1"
 source = { editable = "apps/automixer" }
 dependencies = [
     { name = "mlx" },

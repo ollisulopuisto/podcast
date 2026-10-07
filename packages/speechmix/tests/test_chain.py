@@ -1280,3 +1280,92 @@ def test_the_plugin_runs_one_stem_at_a_time():
     for run in runs:
         run.join()
     assert worst[0] == 1
+
+
+def _declick_whole(audio, rate, sensitivity=0.5):
+    """Koko raidan toteutus vertailuksi (ennen paloja, 2026-10-08)."""
+    from scipy import signal as sp
+    from scipy.ndimage import uniform_filter1d
+
+    out = audio.copy()
+    for channel in range(audio.shape[0]):
+        data = audio[channel]
+        high = np.abs(sp.sosfiltfilt(sp.butter(4, 4000, "hp", fs=rate, output="sos"), data))
+        low = np.abs(sp.sosfiltfilt(sp.butter(4, 1000, "lp", fs=rate, output="sos"), data))
+        window = max(1, int(0.05 * rate))
+        local = uniform_filter1d(high, size=window)
+        local_low = uniform_filter1d(low, size=window)
+        plosive = low > local_low * 3.0
+        factor = chain.DECLICK_FACTOR_MAX - (
+            chain.DECLICK_FACTOR_MAX - chain.DECLICK_FACTOR_MIN
+        ) * float(np.clip(sensitivity, 0.0, 1.0))
+        allowed = chain.DECLICK_MAX_PER_SECOND * max(data.size / rate, 1e-9)
+        gap = max(1, int(chain.DECLICK_MERGE_MS * rate / 1000.0))
+        index = np.empty(0, dtype=np.intp)
+        for _ in range(chain.DECLICK_ESCALATIONS):
+            index = np.flatnonzero((high > local * factor) & ~plosive)
+            if index.size == 0:
+                break
+            if 1 + int((np.diff(index) > gap).sum()) <= allowed:
+                break
+            factor *= 2.0
+        else:
+            continue
+        if index.size == 0:
+            continue
+        for cluster in np.split(index, np.flatnonzero(np.diff(index) > gap) + 1):
+            start = max(0, int(cluster[0]) - 10)
+            end = min(data.size, int(cluster[-1]) + 10)
+            if end - start >= int(0.01 * rate):
+                continue
+            before = np.arange(max(0, start - 20), start)
+            after = np.arange(end, min(data.size, end + 20))
+            if before.size <= 5 or after.size <= 5:
+                continue
+            reference = np.concatenate([before, after])
+            out[channel, start:end] = np.interp(
+                np.arange(start, end), reference, data[reference])
+    return out
+
+
+def _clicky(seconds=30.0, seed=5):
+    """Puhetta, naksuja ja yksi naksu palan rajan päällä."""
+    rng = np.random.default_rng(seed)
+    audio = speech_like(seconds, level=0.2)
+    for at in rng.uniform(0.5, seconds - 0.5, 12).tolist() + [5.0, 10.0 - 0.0005]:
+        i = int(at * RATE)
+        audio[0, i:i + 30] += np.hanning(30).astype(np.float32) * 0.5 * np.sin(
+            2 * np.pi * 9000 * np.arange(30) / RATE).astype(np.float32)
+    return audio
+
+
+@pytest.mark.parametrize("sensitivity", [0.0, 0.5, 1.0])
+def test_declick_in_pieces_matches_the_whole_track(monkeypatch, sensitivity):
+    """Kokonaisena 69 minuutin mikki vei de-clickissä 15,6 GB (automixer,
+    2026-10-08): kaistat ja niiden keskiarvot float64:nä koko raidalle,
+    kaksi kerrallaan. Paloittain, reunoille marginaali joka kattaa
+    suotimien vasteen. Kynnyksen nosto on koko raidan asia, joten palat
+    keräävät vain ehdokkaat ja päätös tehdään niistä."""
+    monkeypatch.setattr(chain, "_DECLICK_CHUNK", 5 * RATE)
+    audio = _clicky()
+    want = _declick_whole(audio, RATE, sensitivity)
+    got = chain.declick(audio, RATE, sensitivity)
+    assert np.any(want != audio)                # naksuja korjattiin
+    assert np.flatnonzero(got != audio).tolist() == np.flatnonzero(want != audio).tolist()
+    assert np.max(np.abs(got - want)) < 1e-9
+
+
+def test_declick_memory_does_not_grow_with_the_track(monkeypatch):
+    import tracemalloc
+
+    # Pala on vakio (~0,2 GB minuutin palalla); pienempänä testi mittaa
+    # sen mikä kasvaa raidan mukana.
+    monkeypatch.setattr(chain, "_DECLICK_CHUNK", 5 * RATE)
+    audio = _clicky(seconds=180.0)
+    chain.declick(audio[:, : RATE * 5], RATE)
+    tracemalloc.start()
+    chain.declick(audio, RATE)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    # Tulos (1×) ja palat. Kokonaisena mitattu ks. yllä.
+    assert peak < 2.0 * audio.nbytes, peak / audio.nbytes
