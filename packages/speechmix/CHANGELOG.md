@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.7.3] - 2026-10-07
+
+### Changed
+- **Block cuts go up to 18 dB** (was 12): a cold open recorded much hotter than the show was still +1 dB louder after levelling because the cap held it. Boosts stay capped at +6 dB.
+
 ## [2026.10.7.2] - 2026-10-07
 
 ### Changed

@@ -60,8 +60,10 @@ THRESHOLD_DB = 3.0
 #: valmiissa miksauksessa kylmä alku jäi silloin +2,5 dB muuta ohjelmaa
 #: kovemmaksi, ja käyttäjä halusi sen samalle tasolle (2026-10-07).
 SHARE = 1.0
-#: Suurin lasku, dB. Ollin intron suurin oli 12,2.
-MAX_CORRECTION_DB = 12.0
+#: Suurin lasku, dB. Ensin 12 (käyttäjän suurin oli 12,2), mutta kylmän
+#: alun lohkot olivat 3 minuutin otteessa +15,3 ja +14,3 dB, ja katto jätti
+#: kylmän alun muuta ohjelmaa kovemmaksi. Lasku ei nosta kohinaa.
+MAX_CORRECTION_DB = 18.0
 #: Suurin nosto, dB. Käyttäjän korjaukset olivat laskuja yhtä +1,9:ää
 #: lukuun ottamatta, ja nosto nostaa myös pohjakohinan ja vuodon.
 MAX_BOOST_DB = 6.0
