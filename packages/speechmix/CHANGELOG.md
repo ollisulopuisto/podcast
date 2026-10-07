@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.7.11] - 2026-10-07
+
+### Changed
+- **De-click is 1.75× faster with identical output:** its high-pass and low-pass filters run in parallel threads. 20 min of real speech: 3.38 → 1.93 s. De-click is on by default in automixer, off in autoraffkat.
+
 ## [2026.10.7.10] - 2026-10-07
 
 ### Changed

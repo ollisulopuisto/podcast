@@ -1153,3 +1153,25 @@ def test_compressors_and_deesser_run_as_fused_loops(monkeypatch):
     chain.multiband(audio, RATE, -25.0, 3.0)
     chain.compress(audio, RATE, -25.0, 3.0, chain.MAX_GR_DB, 5.0, 100.0)
     chain.deess(audio, RATE)
+
+
+def test_declick_runs_its_two_filters_at_the_same_time(monkeypatch):
+    """Ylä- ja alapäästö ovat toisistaan riippumattomat, ja scipy vapauttaa
+    GIL:n niiden ajaksi. Mitattu 20 minuutista: peräkkäin 2,56 s, kahdessa
+    säikeessä 1,34 s, tulos bitilleen sama. Este (barrier) aikakatkaisee jos
+    toinen odottaa toisen loppumista."""
+    import threading
+
+    from scipy import signal as sp
+
+    real = sp.sosfiltfilt
+    meet = threading.Barrier(2, timeout=5)
+
+    def together(sos, x, *args, **kwargs):
+        meet.wait()
+        return real(sos, x, *args, **kwargs)
+
+    monkeypatch.setattr(sp, "sosfiltfilt", together)
+    rng = np.random.default_rng(0)
+    audio = rng.normal(0, 0.01, (1, 48000))
+    chain.declick(audio, 48000, 0.5)
