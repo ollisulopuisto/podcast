@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.7.12] - 2026-10-07
+
+### Changed
+- **Multiband compressor and de-esser use threads, with identical output:** the three bands compress in parallel while the next second of audio is split, and the de-esser filters the next piece while compressing the current one. On 20 min of real speech: multiband 2.61 → 1.39 s, de-esser 1.07 → 0.69 s, whole chain 14.4 → 12.7 s (it was 43.4 s before today's work). At most four threads per stage. Stems are still processed one at a time to keep memory down.
+
 ## [2026.10.7.11] - 2026-10-07
 
 ### Changed
