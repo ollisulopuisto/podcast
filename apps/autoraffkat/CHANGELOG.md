@@ -7,6 +7,9 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+### Added
+- **`--verbose` / `-v`** prints the steps inside each long audio stage with their durations (e.g. under "dynamics": de-esser, multiband, limiter, PSR guard; under "plugin": each parallel piece). Off by default.
+
 ### Fixed
 - **Episodes whose mics differ in length were not mastered** (no lift to the target loudness, no shared peak ceiling), and the log said "masterointi: 0.0 LUFS". Mics recorded on different devices are now summed where they overlap on the timeline. A single-mic episode is mastered too, and if mastering cannot run, the panel says so.
 
