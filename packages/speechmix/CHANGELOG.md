@@ -5,6 +5,12 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.7.6] - 2026-10-07
+
+### Changed
+- **Faster dynamics stage: the track is oversampled once for all limiter work.** The limiter, its budget check, the settle rounds and the PSR guard each oversampled the whole track 4× again; on pp 56 (87 min) that was 153 s of the 280 s dynamics stage. They now derive their limiter curves from one peak envelope (exact: oversampling is linear) and limit from the unlimited signal, so limiting no longer accumulates across rounds. On 20 min of real speech the output is identical (difference −145 dB) and the chain takes 31.8 s instead of 43.4 s; files that need settle rounds gain the most. The PSR guard still measures the limited signal's true peak exactly, and gets a third attempt.
+- Short-term loudness in the PSR measure is computed blockwise instead of a Python loop over windows (~15 s on 87 min).
+
 ## [2026.10.7.5] - 2026-10-07
 
 ### Added

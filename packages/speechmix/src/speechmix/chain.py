@@ -1031,13 +1031,40 @@ def limiter_gain(
     jokaiseen stemiin erikseen, jolloin summa noudattaa kattoa eikä
     puhujien tasapaino muutu. Ks. ``mix.program_ceiling``.
     """
-    from scipy.ndimage import minimum_filter1d
-
     if audio.size == 0:
         return np.ones(0, dtype=np.float64)
-    needed = _needed_gain(audio, ceiling_db)
-    if needed.min() >= 1.0:
-        return np.ones(audio.shape[1], dtype=np.float64)
+    return _shape_limiter(_needed_gain(audio, ceiling_db), rate, lookahead_ms, release_ms)
+
+
+def limiter_curve(
+    peak: np.ndarray,
+    gain_db: float,
+    rate: int,
+    ceiling_db: float = CEILING_DB,
+    lookahead_ms: float = LIMITER_LOOKAHEAD_MS,
+    release_ms: float = LIMITER_RELEASE_MS,
+) -> np.ndarray:
+    """Rajoittimen käyrä signaalille ``audio · G`` sen huippuverhosta.
+
+    ``peak`` on ``peak_envelope(audio)``. Ylinäytteistys on lineaarinen, joten
+    ``audio · G``:n huippuverho on ``G · peak`` ja käyrä on sama kuin
+    ``limiter_gain(audio · G)`` — ilman uutta ylinäytteistystä. Ketjun
+    asettumiskierrokset ja PSR-vartija muuttavat vain G:tä; ennen jokainen
+    niistä ylinäytteisti koko raidan uudestaan (87 min: 153 s 280:stä).
+    """
+    ceiling = 10.0 ** (ceiling_db / 20.0)
+    lin = 10.0 ** (gain_db / 20.0)
+    needed = np.minimum(1.0, ceiling / np.maximum(lin * peak, 1e-9))
+    return _shape_limiter(needed, rate, lookahead_ms, release_ms)
+
+
+def _shape_limiter(needed: np.ndarray, rate: int, lookahead_ms: float,
+                   release_ms: float) -> np.ndarray:
+    """Vaatimuksesta käyrä: ennakoiva minimi ja pehmeä palautus."""
+    from scipy.ndimage import minimum_filter1d
+
+    if needed.size == 0 or needed.min() >= 1.0:
+        return np.ones(needed.shape[0], dtype=np.float64)
     window = max(1, int(lookahead_ms * rate / 1000.0))
     ahead = minimum_filter1d(needed, size=2 * window + 1, mode="nearest")
     smooth = _one_pole(ahead, rate, release_ms)
@@ -1068,36 +1095,42 @@ def true_peak(audio: np.ndarray) -> float:
     return best
 
 
-def _needed_gain(audio: np.ndarray, ceiling_db: float) -> np.ndarray:
-    """Näytteittäin vaadittu vahvistus, jotta true peak pysyy katon alla.
+def peak_envelope(audio: np.ndarray) -> np.ndarray:
+    """Näytteittäin suurin ylinäytteistetty (4×) huippu kanavista.
 
-    Ylinäytteistettynä: näytteiden **väliin** jäävä huippu on se joka
-    leikkaa D/A-muuntimessa ja lossy-koodauksessa.
+    Näytteiden **väliin** jäävä huippu on se joka leikkaa D/A-muuntimessa ja
+    lossy-koodauksessa. Paloittain, reunoille päällekkäisyyttä: koko jakso
+    kerralla oli masteroinnin muistihuippu (47 min stereo 4× float64:nä
+    ~21 GB). Suotimen vaste (2·10·up + 1 tappia = 20 näytettä) jää
+    ``_TRUE_PEAK_PAD``in alle.
     """
     from scipy import signal as _sig
 
-    ceiling = 10.0 ** (ceiling_db / 20.0)
     up = LIMITER_OVERSAMPLE
+    audio = np.atleast_2d(audio)
     total = audio.shape[1]
-    needed = np.empty(total, dtype=np.float64)
-    # Paloittain, reunoille päällekkäisyyttä: ylinäytteistyssuotimen vaste on
-    # pidempi kuin ``_TRUE_PEAK_PAD`` näytettä vain jos se olisi yli 50 kertaa
-    # scipyn oletus (2·10·up + 1 tappia ylinäytteistettynä = 20 näytettä).
-    # Koko jakso kerralla oli masteroinnin muistihuippu: 47 minuutin stereo
-    # 4× float64:nä ~21 GB, eikä jakso mahtunut 32 GB:n koneeseen.
+    peak = np.empty(total, dtype=np.float64)
     for start in range(0, total, _TRUE_PEAK_CHUNK):
         stop = min(total, start + _TRUE_PEAK_CHUNK)
         lo = max(0, start - _TRUE_PEAK_PAD)
         hi = min(total, stop + _TRUE_PEAK_PAD)
-        dense = _sig.resample_poly(audio[:, lo:hi], up, 1, axis=-1)
-        dense_peak = np.abs(dense).max(axis=0)
-        dense_gain = np.minimum(1.0, ceiling / np.maximum(dense_peak, 1e-9))
-        usable = (dense_gain.shape[0] // up) * up
-        piece = dense_gain[:usable].reshape(-1, up).min(axis=1)
+        dense = np.abs(_sig.resample_poly(audio[:, lo:hi], up, 1, axis=-1)).max(axis=0)
+        usable = (dense.shape[0] // up) * up
+        piece = dense[:usable].reshape(-1, up).max(axis=1)
         if piece.shape[0] < hi - lo:
             piece = np.pad(piece, (0, hi - lo - piece.shape[0]), mode="edge")
-        needed[start:stop] = piece[start - lo: stop - lo]
-    return needed
+        peak[start:stop] = piece[start - lo: stop - lo]
+    return peak
+
+
+def _needed_gain(audio: np.ndarray, ceiling_db: float) -> np.ndarray:
+    """Näytteittäin vaadittu vahvistus, jotta true peak pysyy katon alla."""
+    ceiling = 10.0 ** (ceiling_db / 20.0)
+    needed = peak_envelope(audio)
+    # Paikallaan: yksi raidan mittainen taulukko eikä kolme.
+    np.maximum(needed, 1e-9, out=needed)
+    np.divide(ceiling, needed, out=needed)
+    return np.minimum(needed, 1.0, out=needed)
 
 
 #: Huippuvaihe: rajoittimen edessä oleva hidas käyrä, joka vie huiput katolle
@@ -1401,14 +1434,36 @@ def peak_to_short_term(audio: np.ndarray, rate: int) -> float:
     if mono.size < rate * 3:
         return float("nan")
     peak = 20.0 * np.log10(true_peak(mono) + 1e-12)
+    best = _short_term_max(mono, rate)
+    return float(peak - best) if np.isfinite(best) else float("nan")
+
+
+def _short_term_max(mono: np.ndarray, rate: int) -> float:
+    """Suurin 3 s:n ikkunan taso (0,5 s välein), dB. Kumulatiivisella summalla:
+    silmukka 10 000 ikkunan yli vei 87 minuutin raidalla ~15 s."""
+    window = int(3 * rate)
+    step = max(1, int(0.5 * rate))
+    if len(mono) < window or window % step:
+        return float("-inf") if len(mono) < window else _short_term_max_loop(mono, rate)
+    # Askeleen mittaisten lohkojen energiat, ikkuna = kuusi peräkkäistä:
+    # sama summa kuin ikkunoittain, ilman raidan mittaisia välitaulukoita.
+    count = len(mono) // step
+    blocks = np.asarray(mono[: count * step], dtype=np.float64).reshape(count, step)
+    energy = np.einsum("ij,ij->i", blocks, blocks)
+    per = window // step
+    windows = np.convolve(energy, np.ones(per), mode="valid") / window
+    return float(-0.691 + 10.0 * np.log10(windows.max() + 1e-20))
+
+
+def _short_term_max_loop(mono: np.ndarray, rate: int) -> float:
+    """Sama ikkunoittain, jos askel ei jaa ikkunaa tasan (oudot näytetaajuudet)."""
     window = int(3 * rate)
     step = max(1, int(0.5 * rate))
     best = -np.inf
     for start in range(0, len(mono) - window + 1, step):
         block = mono[start : start + window]
-        level = -0.691 + 10.0 * np.log10(float(np.mean(block**2)) + 1e-20)
-        best = max(best, level)
-    return float(peak - best) if np.isfinite(best) else float("nan")
+        best = max(best, -0.691 + 10.0 * np.log10(float(np.mean(block**2)) + 1e-20))
+    return float(best)
 
 
 def peak_guard(audio: np.ndarray, ceiling_db: float = CEILING_DB) -> tuple:
@@ -1673,21 +1728,38 @@ def process(
         # jälkikäteen siirtää molempia yhtä paljon eikä muuta sitä lainkaan.
         # Kopio maksaa yhden tiedoston verran muistia, ja se vapautetaan heti
         # kun vartija on tehnyt työnsä.
-        pre = audio.copy()
+        # Kaikki rajoittimen kierrokset lähtevät **rajoittamattomasta**
+        # signaalista ``pre`` ja muuttavat vain vakiovahvistusta G. Silloin
+        # ylinäytteistetty huippuverho lasketaan kerran, ja jokaisen
+        # kierroksen käyrä saadaan siitä (``limiter_curve``). Ennen jokainen
+        # kierros rajoitti jo rajoitettua ja ylinäytteisti koko raidan
+        # uudestaan: 87 minuutin raidalla 153 s 280:stä (pp 56, --verbose,
+        # 2026-10-07). Rajoittamattomasta lähtien rajoitus ei myöskään
+        # kerry kierroksittain.
+        pre = audio
         pre_lift = lift
+        with log.step("limiter: peak envelope"):
+            peak = peak_envelope(pre)
+        gain_db_now = 0.0
+
+        def limited(gain_db_total):
+            shaped = limiter_curve(peak, gain_db_total, rate)
+            out = pre * (10.0 ** (gain_db_total / 20.0) * shaped)
+            return out, float(20.0 * np.log10(max(shaped.min(), 1e-9))), shaped
+
         budget = float(getattr(settings, "limiter_budget_db", LIMITER_BUDGET_DB))
         if budget > 0:
             with log.step("limiter budget"):
-                over = sustained_reduction_db(audio, rate) - budget
+                shaped = limiter_curve(peak, 0.0, rate)
+                quiet = float(np.percentile(shaped, LIMITER_BUDGET_PERCENTILE))
+                over = max(0.0, -20.0 * np.log10(max(quiet, 1e-9))) - budget
             if over > 0:
-                audio = _board(pedalboard.Gain(gain_db=-over))(
-                    audio, rate, reset=True
-                )
+                gain_db_now -= over
                 lift -= over
                 backed_off = -over
                 capped = True
         with log.step("limiter"):
-            audio, limiter_db = limiter(audio, rate)
+            audio, limiter_db, _ = limited(gain_db_now)
         # Rajoitin syö äänekkyyttä sen verran kuin se leikkaa, ja korjaus
         # nostaa huiput takaisin rajoittimen kynsiin — yksi kierros jää siis
         # vajaaksi. Kolme riittää: mitattuna ensimmäinen kierros jäi 1–2 dB
@@ -1702,9 +1774,9 @@ def process(
             if settled is None or abs(target_lufs - settled) <= 0.3:
                 break
             step = float(target_lufs - settled)
-            audio = _board(pedalboard.Gain(gain_db=step))(audio, rate, reset=True)
+            gain_db_now += step
             with log.step("settle: limiter"):
-                audio, round_db = limiter(audio, rate)
+                audio, round_db, _ = limited(gain_db_now)
             limiter_db = min(limiter_db, round_db)
             lift += step
         else:
@@ -1712,33 +1784,36 @@ def process(
             reached = not capped and (
                 settled is None or abs(target_lufs - settled) <= 0.3
             )
-        # Vartija lopputulokselle, ks. PSR_GUARD_LU. Budjetti yllä katsoo
-        # yhtä vaihetta; tämä katsoo sitä mitä tiedostosta tuli. Vaimennus
-        # tehdään rajoittamattomaan kopioon ja rajoitin ajetaan uudestaan,
-        # koska valmiiseen tulokseen se ei enää vaikuttaisi.
-        #
-        # Raja on **pienempi** rajasta ja siitä mitä signaalissa oli ennen
-        # rajoitinta: vartija saa palauttaa vain sen minkä rajoitin vei.
-        # Ilman tätä tiheä lähde vaimennetaan loputtomiin korjaamatta
-        # mitään — sinipurskeilla PSR on luonnostaan matala, ja vartija
-        # otti tasosta 14 dB ilman että PSR liikkui.
+        # Vartija lopputulokselle, ks. PSR_GUARD_LU. Raja on **pienempi**
+        # rajasta ja siitä mitä signaalissa oli ennen rajoitinta: vartija saa
+        # palauttaa vain sen minkä rajoitin vei. Ilman tätä tiheä lähde
+        # vaimennetaan loputtomiin korjaamatta mitään — sinipurskeilla PSR on
+        # luonnostaan matala, ja vartija otti tasosta 14 dB ilman että PSR
+        # liikkui. Rajoittamattoman true peak on suoraan huippuverhosta.
         with log.step("psr guard: measure"):
-            limit = min(PSR_GUARD_LU, peak_to_short_term(pre, rate))
-        for _ in range(2):
+            limit = min(PSR_GUARD_LU, 20.0 * np.log10(float(peak.max()) + 1e-12)
+                        - _short_term_max(pre.mean(axis=0), rate))
+        # Kolme yritystä: taso ostaa crestiä lähes yksi yhteen mutta ei
+        # tarkasti, ja kahdella jäätiin testimateriaalilla 14,44:ään (raja
+        # 14,5). Kolmas maksaa vain silloin kun kaksi ei riittänyt.
+        for _ in range(3):
             if target_lufs is None or not np.isfinite(limit):
                 break
             with log.step("psr guard: check"):
+                # Rajoitetun signaalin true peak **mitataan**: verhosta
+                # arvioituna se jäi jopa 0,5 dB alakanttiin, ja vartija
+                # päästi crestin rajan alle.
                 psr = peak_to_short_term(audio, rate)
             if not np.isfinite(psr) or psr >= limit - 0.1:
                 break
             short = float(limit - psr)
-            extra = (lift - pre_lift) - short
-            audio = _board(pedalboard.Gain(gain_db=extra))(pre, rate, reset=True)
-            audio, limiter_db = limiter(audio, rate)
-            lift = pre_lift + extra
+            gain_db_now = (lift - pre_lift) - short
+            with log.step("psr guard: limiter"):
+                audio, limiter_db, _ = limited(gain_db_now)
+            lift = pre_lift + gain_db_now
             backed_off -= short
             capped, reached = True, False
-        del pre
+        del pre, peak
         # Viimeinen varmistus. Rajoittimen jälkeen tämän ei pitäisi laueta,
         # ja jos laukeaa, se on rajoittimessa oleva vika eikä turvaverkon työ.
         audio, trimmed = peak_guard(audio)
