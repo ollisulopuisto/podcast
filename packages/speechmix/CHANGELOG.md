@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.7.7] - 2026-10-07
+
+### Changed
+- **True-peak oversampling runs on the GPU (Metal, via MLX) on a Mac:** the limiter's peak envelope, the PSR guard's checks and most of every mastering pass. 10 min: 2.07 → 0.20 s with the same filter as the CPU path, within 0.00001 dB. The chain on 20 min of real speech went from 31.8 to 19.7 s with identical output (−140 dB difference); a mastering pass on two 10-min stems from 6.0 to 2.7 s. Falls back to scipy where MLX is missing, or with `SPEECHMIX_NO_GPU=1`.
+
 ## [2026.10.7.6] - 2026-10-07
 
 ### Changed

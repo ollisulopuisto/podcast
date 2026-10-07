@@ -960,7 +960,9 @@ def _needed_gain_whole(audio, ceiling_db):
     return dense_gain[:usable].reshape(-1, up).min(axis=1)[: audio.shape[1]]
 
 
-def test_true_peak_gain_in_chunks_matches_the_whole_signal():
+def test_true_peak_gain_in_chunks_matches_the_whole_signal(monkeypatch):
+    # Prosessorin polku: GPU:lla on oma vertailunsa (float32).
+    monkeypatch.setenv("SPEECHMIX_NO_GPU", "1")
     rng = np.random.default_rng(3)
     audio = rng.normal(0, 0.4, (2, RATE * 7 + 123))
     want = _needed_gain_whole(audio, chain.CEILING_DB)
@@ -969,11 +971,13 @@ def test_true_peak_gain_in_chunks_matches_the_whole_signal():
     assert np.max(np.abs(got[: want.size] - want)) < 1e-9
 
 
-def test_true_peak_gain_memory_does_not_grow_with_the_episode():
+def test_true_peak_gain_memory_does_not_grow_with_the_episode(monkeypatch):
     """Koko jakson 4× ylinäytteistys float64:nä oli masteroinnin huippu:
     5 min stereo 0,9 GB yksin, 47 min jakso ~21 GB — mikki ei mahtunut
     32 GB:n koneeseen (vst s13e03, 2026-10-06). Paloittain huippu on
     vakio plus tulos."""
+    # Prosessorin polku: GPU:lla on oma vertailunsa (float32).
+    monkeypatch.setenv("SPEECHMIX_NO_GPU", "1")
     import tracemalloc
 
     audio = np.random.default_rng(4).normal(0, 0.3, (2, RATE * 60))
@@ -986,9 +990,11 @@ def test_true_peak_gain_memory_does_not_grow_with_the_episode():
     assert peak < 1.0 * audio.nbytes, peak / audio.nbytes
 
 
-def test_peak_to_short_term_in_chunks_matches_and_stays_small():
+def test_peak_to_short_term_in_chunks_matches_and_stays_small(monkeypatch):
     """Sama 4× ylinäytteistys kokonaisena oli puheväylän seuraava
     muistihuippu (memray, 5 min synteettinen istunto, 2026-10-06)."""
+    # Prosessorin polku: GPU:lla on oma vertailunsa (float32).
+    monkeypatch.setenv("SPEECHMIX_NO_GPU", "1")
     import tracemalloc
 
     from scipy import signal as _sig
@@ -1097,17 +1103,41 @@ def test_dynamics_oversample_the_track_once(monkeypatch):
     """vst/pp 56 --verbose: rajoitin, budjetti, kaksi asettumiskierrosta ja
     PSR-vartija ylinäytteistivät 87 minuutin raidan kukin uudestaan —
     153 s 280:stä. Nyt kerran."""
-    calls = {"n": 0}
+    calls = {"n": 0, "measured": 0}
     real = chain.peak_envelope
+    real_true_peak = chain.true_peak
 
     def counting(audio, *a, **k):
         calls["n"] += 1
         return real(audio, *a, **k)
 
+    def measuring(audio, *a, **k):
+        # PSR-vartijan tarkistus mittaa **rajoitetun** signaalin: oma asiansa.
+        calls["measured"] += 1
+        return real_true_peak(audio, *a, **k)
+
     monkeypatch.setattr(chain, "peak_envelope", counting)
+    monkeypatch.setattr(chain, "true_peak", measuring)
     monkeypatch.setattr(chain, "_needed_gain", lambda *a, **k: (_ for _ in ()).throw(
         AssertionError("_needed_gain called: oversampling again")))
     audio = np.atleast_2d(speech_like(seconds=30.0, level=0.3))
     out, _ = chain.process(audio, RATE, AudioSettings(), 0.0, True, -16.0, None)
-    assert calls["n"] == 1
+    assert calls["n"] == 1          # true_peak (vartijan mittaus) on oma polkunsa
     assert out.shape == audio.shape
+
+
+def test_peak_envelope_on_the_gpu_matches_the_cpu(monkeypatch):
+    """Ylinäytteistys Metalilla (MLX): 10 min 2,07 → 0,20 s (2026-10-07).
+    float32 GPU:lla, float64 CPU:lla: ero alle 0,0001 dB."""
+    import sys
+
+    if sys.platform != "darwin":
+        assert chain._gpu_peak_envelope_available() is False
+        return
+    audio = np.random.default_rng(9).standard_normal((2, RATE * 30)) * 0.3
+    assert chain._gpu_peak_envelope_available()
+    gpu = chain.peak_envelope(audio)
+    monkeypatch.setenv("SPEECHMIX_NO_GPU", "1")
+    cpu = chain.peak_envelope(audio)
+    assert gpu.shape == cpu.shape
+    assert float(np.max(np.abs(20 * np.log10(gpu / cpu)))) < 1e-4
