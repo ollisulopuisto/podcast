@@ -301,3 +301,30 @@ def test_leak_transforms_the_filter_once(monkeypatch):
     monkeypatch.setattr(sig, "fftconvolve", per_piece)
     got = debleed.leak(source, filt, source.size)
     assert np.max(np.abs(got - want)) < 1e-10
+
+
+def test_remove_holds_few_copies_of_the_track():
+    """De-bleed oli rajoittimen keventämisen jälkeen stemin muistihuippu:
+    ``remove`` piti maskin float64:nä, molemmat maskatut signaalit ja
+    vuodon sekä tuloksen erikseen. Mitattu 5 min: 7,0 × float32-raita.
+    Kertolasku totuusarvolla ja vähennys paikallaan antavat samat luvut."""
+    import tracemalloc
+
+    target, source, _own, solo_source, solo_target = _room(seconds=180.0)
+    target = target.astype(np.float32)
+    source = source.astype(np.float32)
+    debleed.remove(target[:RATE * 30], source[:RATE * 30], RATE,
+                   solo_source[:RATE * 30], solo_target[:RATE * 30])
+    tracemalloc.start()
+    debleed.remove(target, source, RATE, solo_source, solo_target)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert peak < 5.0 * target.nbytes, peak / target.nbytes
+
+
+def test_the_kept_correlation_is_pearsons():
+    rng = np.random.default_rng(8)
+    a = rng.normal(size=5000)
+    b = 0.7 * a + rng.normal(size=5000)
+    want = float(np.corrcoef(a, b)[0, 1])
+    assert debleed._correlation(a.copy(), b.copy()) == pytest.approx(want, abs=1e-12)
