@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.5] - 2026-10-08
+
+### Changed
+- **dxRevive's pieces now join in pauses instead of mid-word:** each join between the parallel pieces moves to the quietest 200 ms within 20 s of its even-split position. The pieces differ slightly from each other (the plug-in's own slow adaptation), and at a join inside speech that difference can be audible (v5 vs v5b: the largest difference, −5.7 dBFS, sat at the first join). On 20 min of real speech the five joins moved from −15…−50 dB to −48…−71 dB. Piece lengths stay within ±20 s of equal.
+
 ## [2026.10.8.4] - 2026-10-08
 
 ### Changed

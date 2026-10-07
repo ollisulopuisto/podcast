@@ -437,8 +437,11 @@ def test_parallel_pieces_keep_the_length_and_the_content():
     used = [p.calls for p in pool]
     assert all(len(c) == 1 for c in used)
     assert all(c[0] < frames for c in used)
-    # Marginaali on mukana: pala on neljännestä pidempi.
-    assert all(c[0] > frames / 4 for c in used)
+    # Marginaali on mukana jokaisessa saumassa, molemmin puolin. Saumat
+    # siirtyvät hiljaiseen kohtaan (``_piece_edges``), joten palan pituus ei
+    # ole neljännes — mutta pituuksien summa on tiedosto ja marginaalit.
+    margin = int(chain.PIECE_MARGIN * rate)
+    assert sum(c[0] for c in used) == frames + 2 * margin * (len(pool) - 1)
 
 
 def test_a_short_file_is_not_cut_into_pieces():
@@ -1392,3 +1395,30 @@ def test_the_chain_can_take_the_track_over_and_keeps_the_envelope_compact():
     assert info.limiter_db < 0.0
     expected = 6.5 if chain._gpu_peak_envelope_available() else 7.5
     assert peak / nbytes < expected, peak / nbytes
+
+
+def test_plugin_pieces_join_in_a_quiet_moment(monkeypatch):
+    """dxRevive ajetaan paloina, ja palat eroavat hieman toisistaan
+    (liitännäisen oma hidas sopeutuminen). v5 vs v5b (2026-10-08): suurin
+    ero −5,7 dBFS juuri ensimmäisessä saumassa 8:00. Sauma siirretään
+    lähimpään hiljaiseen kohtaan, jossa ero ei kuulu."""
+    monkeypatch.setattr(chain, "PIECE_MIN", 10.0)
+    seconds = 40.0
+    n = int(seconds * RATE)
+    rng = np.random.default_rng(3)
+    audio = (0.2 * rng.standard_normal((1, n))).astype(np.float32)
+    # Tauko 18,3–18,9 s, nimellisen sauman (20 s) haun sisällä.
+    pause = slice(int(18.3 * RATE), int(18.9 * RATE))
+    audio[:, pause] *= 0.001
+
+    class Marked:
+        def __init__(self, gain):
+            self.gain = gain
+
+        def process(self, x, rate, reset=True):
+            return x * self.gain
+
+    out = chain.apply_plugin([Marked(1.0), Marked(1.1)], audio, RATE)
+    ratio = out[0] / np.where(audio[0] == 0, 1, audio[0])
+    join = int(np.flatnonzero(np.abs(ratio - 1.1) < 1e-3)[0])
+    assert pause.start <= join < pause.stop, join / RATE
