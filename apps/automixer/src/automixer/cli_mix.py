@@ -647,6 +647,10 @@ def main():
         help="Disable the slow level rider ahead of the compressors",
     )
     parser.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="Print each processing step and how long it took",
+    )
+    parser.add_argument(
         "--flags-only",
         action="store_true",
         help="Hindenburg sessions: write only the listening list (blocks that "
@@ -737,6 +741,10 @@ def main():
     )
 
     args = parser.parse_args()
+    if args.verbose:
+        from speechmix import log
+
+        log.enable()
 
     if args.minimal:
         args.speech_hp = False

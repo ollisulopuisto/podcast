@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.7.5] - 2026-10-07
+
+### Added
+- `speechmix.log`: opt-in step timings inside the long stages (`SPEECHMIX_VERBOSE=1` or `log.enable()`): the chain's de-click, rider, de-esser, the three compressor stages, the limiter and its rounds, the PSR guard, each plug-in piece, de-bleed and every mastering pass.
+
 ## [2026.10.7.4] - 2026-10-07
 
 ### Fixed

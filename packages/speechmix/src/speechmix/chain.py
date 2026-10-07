@@ -35,6 +35,7 @@ from pathlib import Path
 
 import numpy as np
 
+from . import log
 from .messages import t
 
 # Ylipäästön jyrkkyys ja kompressorien ajat. automixer ilmaisi kompressorin
@@ -517,7 +518,9 @@ def _apply_pool(pool: "PluginPool", audio: np.ndarray, rate: int) -> np.ndarray:
     def one(index: int) -> None:
         first, last = edges[index], edges[index + 1]
         low, high = max(0, first - margin), min(frames, last + margin)
-        done = pool.plugin(index).process(audio[:, low:high], rate, reset=True)
+        with log.step(f"plugin piece {index + 1}/{pieces} "
+                      f"({(high - low) / rate / 60:.1f} min)"):
+            done = pool.plugin(index).process(audio[:, low:high], rate, reset=True)
         if done.shape[1] != high - low:
             raise ChainError(
                 t("audio.plugin_length", before=high - low, after=done.shape[1])
@@ -1542,7 +1545,8 @@ def process(
     if len(cleanup):
         audio = cleanup(audio, rate, reset=True)
     if speech and getattr(settings, "declick", False):
-        audio = declick(audio, rate, getattr(settings, "declick_sensitivity", 0.5))
+        with log.step("declick"):
+            audio = declick(audio, rate, getattr(settings, "declick_sensitivity", 0.5))
     done("cleanup")
 
     # 3,5. Tasonkuljettaja **ennen** kaikkea muuta mitä me teemme.
@@ -1556,11 +1560,13 @@ def process(
     #
     # Ilman maskia ei kuljeteta: ks. ``rider_gain``.
     if speaking is not None and getattr(settings, "rider", True):
-        audio = ride(audio, rate, speaking,
-                     float(getattr(settings, "rider_max_db", RIDER_MAX_DB)))
+        with log.step("rider"):
+            audio = ride(audio, rate, speaking,
+                         float(getattr(settings, "rider_max_db", RIDER_MAX_DB)))
 
     # 4. Normalisointi siivotusta signaalista.
-    measured = loudness(audio.mean(axis=0), rate) if target_lufs is not None else None
+    with log.step("measure loudness"):
+        measured = loudness(audio.mean(axis=0), rate) if target_lufs is not None else None
     lift = 0.0 if measured is None else float(target_lufs - measured)
     done("measure")
 
@@ -1569,7 +1575,8 @@ def process(
         if lift:
             audio = _board(pedalboard.Gain(gain_db=lift))(audio, rate, reset=True)
         # Sihinä pois ennen kompressoreita: muuten yksi s ohjaa koko lauseen.
-        audio = deess(audio, rate)
+        with log.step("deess"):
+            audio = deess(audio, rate)
 
         # Rinnakkaiskompressio. Tiivistetty haara nostaa hiljaiset kohdat,
         # kuiva haara pitää transientit — sarjassa ajettuna sama tiivistys
@@ -1584,24 +1591,26 @@ def process(
         # jottei plosiivi ohjaa sihinää eikä toisin päin; sitten kaksi lempeää
         # leveäkaistaista, jotka tasaavat kokonaisuuden. Jokainen enintään
         # MAX_GR_DB, joten yhteensäkin vaimennus on maltillinen ja tasainen.
-        compressed = multiband(
-            audio,
-            rate,
-            settings.peak_threshold_db + offset,
-            PEAK_RATIO,
-            MAX_GR_DB,
-            PEAK_ATTACK_MS,
-            PEAK_RELEASE_MS,
-        )
-        compressed = compress(
-            compressed,
-            rate,
-            settings.leveler_threshold_db + offset,
-            LEVEL_RATIO,
-            MAX_GR_DB,
-            LEVEL_ATTACK_MS,
-            LEVEL_RELEASE_MS,
-        )
+        with log.step("multiband"):
+            compressed = multiband(
+                audio,
+                rate,
+                settings.peak_threshold_db + offset,
+                PEAK_RATIO,
+                MAX_GR_DB,
+                PEAK_ATTACK_MS,
+                PEAK_RELEASE_MS,
+            )
+        with log.step("leveler"):
+            compressed = compress(
+                compressed,
+                rate,
+                settings.leveler_threshold_db + offset,
+                LEVEL_RATIO,
+                MAX_GR_DB,
+                LEVEL_ATTACK_MS,
+                LEVEL_RELEASE_MS,
+            )
         # Kolmas vaihe on hidas ja sen kynnys on toista **alempana**, ei
         # ylempänä. Plusmerkki teki siitä kuolleen: se ajetaan toisen
         # jälkeen, joka on jo vetänyt kaiken oman kynnyksensä alle, joten
@@ -1611,15 +1620,16 @@ def process(
         # rajattua vaihetta ja ajoi kaksi. Neljä desibeliä alempana se tekee
         # saman verran kuin toinen vaihe (hajonta 0,58 dB kumpikin), mikä on
         # se «pieniä määriä useaan kertaan» joka tässä oli tarkoitus.
-        compressed = compress(
-            compressed,
-            rate,
-            settings.leveler_threshold_db + offset - 4.0,
-            LEVEL_RATIO,
-            MAX_GR_DB,
-            LEVEL_ATTACK_MS * 4,
-            LEVEL_RELEASE_MS * 2,
-        )
+        with log.step("slow stage"):
+            compressed = compress(
+                compressed,
+                rate,
+                settings.leveler_threshold_db + offset - 4.0,
+                LEVEL_RATIO,
+                MAX_GR_DB,
+                LEVEL_ATTACK_MS * 4,
+                LEVEL_RELEASE_MS * 2,
+            )
         audio = audio * (1.0 - PARALLEL_MIX) + compressed * PARALLEL_MIX
         # Hylly vasta tässä, ks. TONE_PRESENCE_DB. Ennen tasomittausta, jotta
         # korjaus kattaa myös sen tuoman äänekkyyden.
@@ -1636,7 +1646,8 @@ def process(
         # kompressori nostaa hiljaisia kohtia, portin läpi pääsee eri joukko
         # lohkoja ja lukema nousee — mitattuna 2,2 dB tavoitteen yli. Siksi
         # korjaus tehdään vasta tässä, ja rajoitin sen jälkeen.
-        after = loudness(audio.mean(axis=0), rate) if target_lufs is not None else None
+        with log.step("measure after compression"):
+            after = loudness(audio.mean(axis=0), rate) if target_lufs is not None else None
         correction = 0.0 if after is None else float(target_lufs - after)
         lift += correction
         tail = _board(
@@ -1666,7 +1677,8 @@ def process(
         pre_lift = lift
         budget = float(getattr(settings, "limiter_budget_db", LIMITER_BUDGET_DB))
         if budget > 0:
-            over = sustained_reduction_db(audio, rate) - budget
+            with log.step("limiter budget"):
+                over = sustained_reduction_db(audio, rate) - budget
             if over > 0:
                 audio = _board(pedalboard.Gain(gain_db=-over))(
                     audio, rate, reset=True
@@ -1674,7 +1686,8 @@ def process(
                 lift -= over
                 backed_off = -over
                 capped = True
-        audio, limiter_db = limiter(audio, rate)
+        with log.step("limiter"):
+            audio, limiter_db = limiter(audio, rate)
         # Rajoitin syö äänekkyyttä sen verran kuin se leikkaa, ja korjaus
         # nostaa huiput takaisin rajoittimen kynsiin — yksi kierros jää siis
         # vajaaksi. Kolme riittää: mitattuna ensimmäinen kierros jäi 1–2 dB
@@ -1684,12 +1697,14 @@ def process(
         for _ in range(3):
             if target_lufs is None or capped:
                 break
-            settled = loudness(audio.mean(axis=0), rate)
+            with log.step("settle: measure"):
+                settled = loudness(audio.mean(axis=0), rate)
             if settled is None or abs(target_lufs - settled) <= 0.3:
                 break
             step = float(target_lufs - settled)
             audio = _board(pedalboard.Gain(gain_db=step))(audio, rate, reset=True)
-            audio, round_db = limiter(audio, rate)
+            with log.step("settle: limiter"):
+                audio, round_db = limiter(audio, rate)
             limiter_db = min(limiter_db, round_db)
             lift += step
         else:
@@ -1707,11 +1722,13 @@ def process(
         # Ilman tätä tiheä lähde vaimennetaan loputtomiin korjaamatta
         # mitään — sinipurskeilla PSR on luonnostaan matala, ja vartija
         # otti tasosta 14 dB ilman että PSR liikkui.
-        limit = min(PSR_GUARD_LU, peak_to_short_term(pre, rate))
+        with log.step("psr guard: measure"):
+            limit = min(PSR_GUARD_LU, peak_to_short_term(pre, rate))
         for _ in range(2):
             if target_lufs is None or not np.isfinite(limit):
                 break
-            psr = peak_to_short_term(audio, rate)
+            with log.step("psr guard: check"):
+                psr = peak_to_short_term(audio, rate)
             if not np.isfinite(psr) or psr >= limit - 0.1:
                 break
             short = float(limit - psr)

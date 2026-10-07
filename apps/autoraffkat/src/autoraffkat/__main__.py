@@ -48,6 +48,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--debug", action="store_true", help="ota kehitystyökalut käyttöön"
     )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="äänen käsittelyn askeleet ja niiden kestot terminaaliin",
+    )
     parser.add_argument("--port", type=int, default=8731)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument(
@@ -56,6 +60,12 @@ def main(argv: list[str] | None = None) -> int:
         help="älä avaa selainta (vain headless-tilassa)",
     )
     args = parser.parse_args(argv)
+    if args.verbose:
+        # Ympäristön kautta, jotta se kulkee myös käsittelyn lapsiprosessiin.
+        os.environ["SPEECHMIX_VERBOSE"] = "1"
+        from speechmix import log
+
+        log.enable()
 
     # Oletustila: jos ajetaan pakattuna sovelluksena (.app / .exe) tai annettu --gui
     is_frozen = getattr(sys, "frozen", False)

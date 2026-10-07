@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from . import chain, envelopes, programme
+from . import chain, envelopes, log, programme
 from .binaries import get_binary_path
 from .messages import t
 from .meter import BLOCK_SEC, OVERLAP, IntegratedMeter
@@ -212,9 +212,11 @@ def program_deliver(jobs: list[dict], result, ducks: dict, extra: dict,
         suurimman osan ajasta.
         """
         played, plain = IntegratedMeter(rate), IntegratedMeter(rate)
-        program_ceiling(jobs, result, ducks, extra, gain, ceiling, played,
-                        curve, step_sec if curve is not None else 0.0,
-                        not write, plain, speech, layout=layout)
+        with log.step(f"mastering pass ({'write' if write else 'measure'}, "
+                      f"lift {gain:+.2f} dB)"):
+            program_ceiling(jobs, result, ducks, extra, gain, ceiling, played,
+                            curve, step_sec if curve is not None else 0.0,
+                            not write, plain, speech, layout=layout)
         gate = played.speech() > 0.5 if speech is not None else None
         after, before = played.value(keep=gate), plain.value(keep=gate)
         cost = 0.0 if (after is None or before is None) else before - after
@@ -873,7 +875,8 @@ def debleed(job, audio, rate, program_start, solos, partners, result,
         solo_source = envelopes.mask_samples(
             partner["track"], theirs, program_start, rate, frames
         )
-        target, info = db.remove(target, source, rate, solo_source, solo_target)
+        with log.step(f"debleed ← {partner['speaker']}: path + subtract"):
+            target, info = db.remove(target, source, rate, solo_source, solo_target)
         if info["reason"]:
             note = t(f"audio.debleed_{info['reason']}", name=partner["speaker"])
             _log(f"    vuoto {partner['speaker']}: {note}")

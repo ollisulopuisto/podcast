@@ -10,6 +10,11 @@ and this project adheres to Calendar Versioning (CalVer).
 ### Fixed
 - **`automixer-beds`: a click at the start of each bed.** The first 10 ms played near full level before the fade took over (on vst s13e03's end bed, a burst at −11 dBFS). Each bed now starts with a 200 ms fade from silence that covers it; the fades themselves are unchanged.
 
+## [2026.10.7.2] - 2026-10-07
+
+### Added
+- `--verbose` / `-v`: prints each processing step inside the long stages and how long it took.
+
 ## [2026.10.7.1] - 2026-10-07
 
 ### Fixed
