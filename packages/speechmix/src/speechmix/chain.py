@@ -1032,16 +1032,31 @@ def deess(
     slope = 1.0 - 1.0 / ratio
     out = np.empty(x2.shape, dtype=np.result_type(x2.dtype, np.float64))
     total = x2.shape[-1]
-    for start in range(0, total, _COMPRESS_CHUNK):
-        stop = min(total, start + _COMPRESS_CHUNK)
-        piece = x2[:, start:stop]
-        low, state = _sig.sosfilt(sos, piece, axis=-1, zi=state)
-        high = piece - low
-        gain = _kernels()["deess"](
-            np.ascontiguousarray(high, dtype=np.float64), float(threshold_db),
-            slope, smooth, follow,
-        )
-        out[:, start:stop] = low + high * gain
+    kernel = _kernels()["deess"]
+
+    # Silmukka palalle k säikeessä, alipäästö palalle k+1 sillä aikaa.
+    # Seuraaja jatkaa tilastaan, joten pala kerätään ennen seuraavaa.
+    def collect(pending):
+        begin, end, low, high, future = pending
+        out[:, begin:end] = low + high * future.result()
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    pending = None
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        for start in range(0, total, _COMPRESS_CHUNK):
+            stop = min(total, start + _COMPRESS_CHUNK)
+            piece = x2[:, start:stop]
+            low, state = _sig.sosfilt(sos, piece, axis=-1, zi=state)
+            high = piece - low
+            if pending is not None:
+                collect(pending)
+            pending = (start, stop, low, high, pool.submit(
+                kernel, np.ascontiguousarray(high, dtype=np.float64),
+                float(threshold_db), slope, smooth, follow,
+            ))
+        if pending is not None:
+            collect(pending)
     return out.reshape(audio.shape)
 
 
@@ -1390,7 +1405,7 @@ def _kernels():
 
     from numba import njit
 
-    @njit(cache=True)
+    @njit(cache=True, nogil=True)
     def compress_gain(block, threshold_db, slope, max_gr_db, ca, cr, state):
         n = block.shape[1]
         gain = np.empty(n)
@@ -1423,7 +1438,7 @@ def _kernels():
         state[2] = rel
         return gain
 
-    @njit(cache=True)
+    @njit(cache=True, nogil=True)
     def deess_gain(high, threshold_db, slope, c1, state):
         n = high.shape[1]
         gain = np.empty(n)
@@ -1541,21 +1556,41 @@ def multiband(
     followers = [np.zeros(3) for _ in range(len(soses) + 1)]
     out = np.empty(x2.shape, dtype=np.result_type(x2.dtype, np.float64))
     total = x2.shape[-1]
-    for start in range(0, total, _COMPRESS_CHUNK):
-        stop = min(total, start + _COMPRESS_CHUNK)
-        rest = x2[:, start:stop]
-        parts = []
-        for i, sos in enumerate(soses):
-            low, states[i] = _sig.sosfilt(sos, rest, axis=-1, zi=states[i])
-            parts.append(low)
-            rest = rest - low
-        parts.append(rest)
-        acc = np.zeros_like(rest)
-        for part, state in zip(parts, followers, strict=True):
-            acc = acc + _compress_block(
-                part, threshold_db, ratio, max_gr_db, ca, cr, state
-            )
-        out[:, start:stop] = acc
+
+    # Kaistojen kompressorit säikeissä, ja samalla jaetaan seuraava pala.
+    # Kaistan seuraaja jatkaa omasta tilastaan, joten palan tulos kerätään
+    # ennen kuin saman kaistan seuraava pala lähtee: järjestys ja tulos ovat
+    # samat kuin peräkkäin. Mitattu 20 minuutista: jako 1,21 s, kompressio
+    # 1,47 s; säikeissä yhteensä ks. muutosloki.
+    def collect(pending):
+        begin, end, futures = pending
+        acc = np.zeros((x2.shape[0], end - begin))
+        for future in futures:
+            acc = acc + future.result()
+        out[:, begin:end] = acc
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    pending = None
+    with ThreadPoolExecutor(max_workers=len(followers)) as pool:
+        for start in range(0, total, _COMPRESS_CHUNK):
+            stop = min(total, start + _COMPRESS_CHUNK)
+            rest = x2[:, start:stop]
+            parts = []
+            for i, sos in enumerate(soses):
+                low, states[i] = _sig.sosfilt(sos, rest, axis=-1, zi=states[i])
+                parts.append(low)
+                rest = rest - low
+            parts.append(rest)
+            if pending is not None:
+                collect(pending)
+            pending = (start, stop, [
+                pool.submit(_compress_block, part, threshold_db, ratio,
+                            max_gr_db, ca, cr, state)
+                for part, state in zip(parts, followers, strict=True)
+            ])
+        if pending is not None:
+            collect(pending)
     return out.reshape(audio.shape)
 
 

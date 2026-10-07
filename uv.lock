@@ -3536,7 +3536,7 @@ wheels = [
 
 [[package]]
 name = "speechmix"
-version = "2026.10.7.11"
+version = "2026.10.7.12"
 source = { editable = "packages/speechmix" }
 dependencies = [
     { name = "numba" },

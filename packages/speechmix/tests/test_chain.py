@@ -1175,3 +1175,51 @@ def test_declick_runs_its_two_filters_at_the_same_time(monkeypatch):
     rng = np.random.default_rng(0)
     audio = rng.normal(0, 0.01, (1, 48000))
     chain.declick(audio, 48000, 0.5)
+
+
+def test_multiband_compresses_its_bands_at_the_same_time(monkeypatch):
+    """Kaistojen kompressorit ovat toisistaan riippumattomat ja käännetyt
+    silmukat vapauttavat GIL:n. Mitattu 20 minuutista: jako 1,21 s ja
+    kolmen kaistan kompressio 1,47 s peräkkäin."""
+    import threading
+
+    real = chain._compress_block
+    meet = threading.Barrier(len(chain.BANDS_HZ) + 1, timeout=5)
+
+    def together(*args):
+        meet.wait()
+        return real(*args)
+
+    monkeypatch.setattr(chain, "_compress_block", together)
+    rng = np.random.default_rng(0)
+    chain.multiband(rng.normal(0, 0.1, (1, 48000)), 48000, -30.0, 3.0)
+
+
+def test_deess_filters_the_next_piece_while_compressing(monkeypatch):
+    """Sihinänpoiston silmukka palalle k ja alipäästö palalle k+1 samaan
+    aikaan. Mitattu 20 minuutista: 1,2 s peräkkäin, ks. muutosloki."""
+    import threading
+
+    from scipy import signal as sp
+
+    meet = threading.Barrier(2, timeout=5)
+    real_filter = sp.sosfilt
+    real_kernel = chain._kernels()["deess"]
+    calls = {"filter": 0, "kernel": 0}
+
+    def filt(*args, **kwargs):
+        calls["filter"] += 1
+        if calls["filter"] == 2:
+            meet.wait()
+        return real_filter(*args, **kwargs)
+
+    def kernel(*args):
+        calls["kernel"] += 1
+        if calls["kernel"] == 1:
+            meet.wait()
+        return real_kernel(*args)
+
+    monkeypatch.setattr(sp, "sosfilt", filt)
+    monkeypatch.setitem(chain._KERNELS, "deess", kernel)
+    rng = np.random.default_rng(0)
+    chain.deess(rng.normal(0, 0.1, (1, 2 * chain._COMPRESS_CHUNK)), 48000)
