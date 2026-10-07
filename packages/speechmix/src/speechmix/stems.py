@@ -959,8 +959,12 @@ def process_stem(
         own = envelopes.speech_blocks(job["track"], mine, program_start, rate,
                                       block, audio.shape[1] // block)
 
+    # Raita luovutetaan ketjulle: muuten tämä kehys pitäisi sitä koko
+    # ketjun ajan (yksi raidan kokoinen kopio huipussa, ks. ``chain.process``).
+    handed = [audio]
+    del audio
     audio, info = chain.process(
-        audio,
+        handed,
         rate,
         settings,
         job.get("gain_db", 0.0),

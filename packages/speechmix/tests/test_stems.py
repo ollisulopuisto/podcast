@@ -198,3 +198,43 @@ def test_parallel_work_sees_the_callers_context():
     got = [value for _job, value, _e in stems.run_parallel(
         ["a", "b"], lambda _job: lang.get(), 2)]
     assert got == ["fi", "fi"]
+
+
+def test_a_stem_holds_few_copies_of_its_track(tmp_path, monkeypatch):
+    """Stemin huippu raidan kerrannaisena. Mitattu 20 min oikeaa puhetta
+    de-clickin kanssa: 9,0 × float32-raita ennen, 6,0 kun raita luovutetaan
+    ketjulle, ketju sekoittaa ja kompressoi paikallaan ja rajoittimen
+    kierrokset mittaavat ilman raidan mittaista monoa."""
+    import sys
+    import tracemalloc
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from test_chain import _spiky
+
+    from autoraffkat.model import AudioSettings
+
+    audio = _spiky(seconds=180.0)[0]
+    sf.write(tmp_path / "mic.wav", audio, RATE, subtype="FLOAT")
+    sf.write(tmp_path / "warm.wav", audio[: RATE * 5], RATE, subtype="FLOAT")
+    settings = AudioSettings()
+    settings.declick = True
+
+    def job(name):
+        return {"key": name, "name": name, "speaker": name,
+                "source": str(tmp_path / f"{name}.wav"),
+                "target": str(tmp_path / f"{name} out.wav"),
+                "target_lufs": -16.0, "gain_db": 0.0, "speech": True, "mono": True}
+
+    # Vakiokokoiset palat (de-click minuutti, GPU 2^21 näytettä) pienemmiksi:
+    # kolmen minuutin raidalla ne näyttäisivät raidan kerrannaisilta.
+    from speechmix import chain
+
+    monkeypatch.setattr(chain, "_DECLICK_CHUNK", 5 * RATE)
+    monkeypatch.setattr(chain, "_GPU_CHUNK", 1 << 17)
+    stems.process_stem(job("warm"), settings, None)
+    tracemalloc.start()
+    stems.process_stem(job("mic"), settings, None)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert peak < 7.0 * audio.nbytes, peak / audio.nbytes
