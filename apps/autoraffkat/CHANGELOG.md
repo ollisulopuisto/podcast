@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.2] - 2026-10-08
+
+### Changed
+- The processing log says how many microphones are processed at a time and why, and two at a time needs less free memory than before (speechmix 2026.10.8.4).
+
 ## [2026.10.8.1] - 2026-10-08
 
 ### Changed

@@ -5,6 +5,12 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.4] - 2026-10-08
+
+### Changed
+- **Two stems at once on smaller machines too:** the memory estimate per stem drops from 15× to 10× its float32 size. Measured after today's memory work, two stems at once cost about 7× each. Two 47-min stems now need about 14 GB free instead of 20.
+- The log always says how many stems run at a time and why, e.g. "1 stem at a time: 2 would need 14.1 GB, 9.8 GB free".
+
 ## [2026.10.8.3] - 2026-10-08
 
 ### Changed

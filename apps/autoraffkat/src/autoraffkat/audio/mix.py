@@ -888,12 +888,11 @@ def _run_todo(
                         for job in [*todo, *jobs] if os.path.exists(job["source"])}
             workers = stems.parallel_count(
                 [stems.stem_size(readable.get(job["source"], job["source"]))
-                 for job in todo]
+                 for job in todo],
+                report=_log,
             )
         except MixError as exc:
             _log(f"purku ennen käsittelyä epäonnistui, yksi kerrallaan: {exc}")
-    if workers > 1:
-        _log(f"{workers} tiedostoa kerrallaan")
 
     # Palkki: valmiiden paino ja keskeneräisten osuudet yhteen. Jokaisen
     # tiedoston osuus vain kasvaa, joten summakin kasvaa — myös kun kaksi

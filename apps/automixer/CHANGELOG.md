@@ -5,6 +5,11 @@ All notable changes to automixer are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.2] - 2026-10-08
+
+### Changed
+- The log says how many speakers are processed at a time and why (free memory against the estimate), and two at a time now needs about 14 GB free for 47-min tracks instead of 20 (speechmix 2026.10.8.4).
+
 ## [2026.10.8.1] - 2026-10-08
 
 ### Changed

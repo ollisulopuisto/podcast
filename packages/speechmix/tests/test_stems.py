@@ -238,3 +238,27 @@ def test_a_stem_holds_few_copies_of_its_track(tmp_path, monkeypatch):
     _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     assert peak < 7.0 * audio.nbytes, peak / audio.nbytes
+
+
+def test_the_stem_count_says_why(monkeypatch):
+    """v5b:ssä (2026-10-08) loki ei kertonut miksi stemit menivät yksi
+    kerrallaan. Päätös kerrotaan aina, luvuin."""
+    monkeypatch.delenv("SPEECHMIX_PARALLEL_STEMS", raising=False)
+    said = []
+    size = GB // 2
+    assert stems.parallel_count([size, size], available=2 * GB, report=said.append) == 1
+    assert "1 stem at a time" in said[0] and "GB" in said[0]
+    said.clear()
+    plenty = 512 * GB
+    assert stems.parallel_count([size, size], available=plenty, report=said.append) == 2
+    assert "2 stems at a time" in said[0]
+
+
+def test_two_47_minute_stems_fit_in_16_gb_free(monkeypatch):
+    """Mitattu 20 min oikeaa puhetta, de-click päällä, kaksi stemiä yhtä
+    aikaa: RSS-huippu 13,9 × yhden raidan float32-koko eli ~7 per stemi.
+    Kerroin 15 vaati kahdelle 47 min stemille ~20 GB vapaata, eikä v5b
+    saanut rinnakkaisuutta."""
+    monkeypatch.delenv("SPEECHMIX_PARALLEL_STEMS", raising=False)
+    stem = 47 * 60 * 48000 * 4
+    assert stems.parallel_count([stem, stem], available=16 * GB) == 2
