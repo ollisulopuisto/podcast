@@ -1141,3 +1141,15 @@ def test_peak_envelope_on_the_gpu_matches_the_cpu(monkeypatch):
     cpu = chain.peak_envelope(audio)
     assert gpu.shape == cpu.shape
     assert float(np.max(np.abs(20 * np.log10(gpu / cpu)))) < 1e-4
+
+
+def test_compressors_and_deesser_run_as_fused_loops(monkeypatch):
+    """Monikaista vei 87 minuutin raidalla 20 s, vaikka sen suotimet ovat
+    1–3 s: aika meni numpyn kokonaisen taulukon kierroksiin (abs, log,
+    exp, väliaikaiset). Seuraaja, vahvistuslaskin ja dB-muunnokset ovat
+    nyt yksi käännetty silmukka (numba); ``_Follower``ia ei tarvita."""
+    monkeypatch.setattr(chain, "_Follower", None)
+    audio = np.atleast_2d(speech_like(seconds=5.0, level=0.3))
+    chain.multiband(audio, RATE, -25.0, 3.0)
+    chain.compress(audio, RATE, -25.0, 3.0, chain.MAX_GR_DB, 5.0, 100.0)
+    chain.deess(audio, RATE)

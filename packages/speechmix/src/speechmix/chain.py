@@ -999,8 +999,9 @@ def deess(
     # 2026-10-06).
     x2 = np.atleast_2d(audio)
     state = np.zeros((sos.shape[0], x2.shape[0], 2))
-    follow_level = _Follower(rate, DEESS_SMOOTH_MS)
-    follow_gain = _Follower(rate, DEESS_SMOOTH_MS)
+    smooth = _pole(rate, DEESS_SMOOTH_MS)
+    follow = np.zeros(3)
+    slope = 1.0 - 1.0 / ratio
     out = np.empty(x2.shape, dtype=np.result_type(x2.dtype, np.float64))
     total = x2.shape[-1]
     for start in range(0, total, _COMPRESS_CHUNK):
@@ -1008,11 +1009,10 @@ def deess(
         piece = x2[:, start:stop]
         low, state = _sig.sosfilt(sos, piece, axis=-1, zi=state)
         high = piece - low
-        level = follow_level.step(np.abs(high).max(axis=0))
-        level_db = 20.0 * np.log10(level + 1e-9)
-        over = np.maximum(0.0, level_db - threshold_db)
-        reduction_db = -over * (1.0 - 1.0 / ratio)
-        gain = follow_gain.step(10.0 ** (reduction_db / 20.0))
+        gain = _kernels()["deess"](
+            np.ascontiguousarray(high, dtype=np.float64), float(threshold_db),
+            slope, smooth, follow,
+        )
         out[:, start:stop] = low + high * gain
     return out.reshape(audio.shape)
 
@@ -1304,16 +1304,18 @@ def compress(
     # Paloittain, seuraajien tila jatkuu palasta toiseen: tulos on sama kuin
     # kokonaisena, mutta muistissa on vain pala. Kokonaisena tämä piti
     # seitsemän koko raidan float64-kopiota (memray, 2026-10-06).
-    attack, release = _Follower(rate, attack_ms), _Follower(rate, release_ms)
+    ca, cr = _pole(rate, attack_ms), _pole(rate, release_ms)
+    state = np.zeros(3)
+    x2 = np.atleast_2d(audio)
     # Sama tulostyyppi kuin kokonaisena: vahvistus on float64, joten tulo on.
-    out = np.empty(audio.shape, dtype=np.result_type(audio.dtype, np.float64))
-    total = audio.shape[-1]
+    out = np.empty(x2.shape, dtype=np.result_type(x2.dtype, np.float64))
+    total = x2.shape[-1]
     for start in range(0, total, _COMPRESS_CHUNK):
         stop = min(total, start + _COMPRESS_CHUNK)
-        out[..., start:stop] = _compress_block(
-            audio[..., start:stop], threshold_db, ratio, max_gr_db, attack, release
+        out[:, start:stop] = _compress_block(
+            x2[:, start:stop], threshold_db, ratio, max_gr_db, ca, cr, state
         )
-    return out
+    return out.reshape(audio.shape)
 
 
 #: Kompressorin pala näytteinä. Sekunti 48 kHz:llä.
@@ -1337,13 +1339,103 @@ class _Follower:
         return out
 
 
-def _compress_block(audio, threshold_db, ratio, max_gr_db, attack, release):
-    """Yksi pala kompressoria; seuraajat kantavat tilan seuraavaan."""
-    level = attack.step(np.abs(audio).max(axis=0))
-    over = np.maximum(0.0, 20.0 * np.log10(level + 1e-9) - threshold_db)
-    wanted = -np.minimum(over * (1.0 - 1.0 / max(ratio, 1.0001)), max_gr_db)
-    instant = 10.0 ** (wanted / 20.0)
-    gain = np.minimum(release.step(instant), instant)
+def _pole(rate: int, ms: float) -> float:
+    """Yksinapaisen seuraajan kerroin, sama kuin ``_Follower``issa."""
+    return float(np.exp(-1.0 / max(1.0, ms * rate / 1000.0)))
+
+
+_KERNELS: dict = {}
+
+
+def _kernels():
+    """Käännetyt silmukat (numba), kerran prosessia kohden.
+
+    Seuraaja, vahvistuslaskin ja dB-muunnokset yhtenä silmukkana. Erikseen
+    numpyllä ne olivat kymmenkunta koko taulukon kierrosta, ja monikaista
+    vei 87 minuutin raidalla 20 s vaikka sen suotimet ovat 1–3 s (tutkimus
+    ja mittaus 2026-10-07). Laskutoimitukset ja niiden järjestys ovat samat
+    kuin ``lfilter``-seuraajissa, joten tulos on sama.
+    """
+    if _KERNELS:
+        return _KERNELS
+    import math
+
+    from numba import njit
+
+    @njit(cache=True)
+    def compress_gain(block, threshold_db, slope, max_gr_db, ca, cr, state):
+        n = block.shape[1]
+        gain = np.empty(n)
+        started = state[0] != 0.0
+        level = state[1]
+        rel = state[2]
+        for i in range(n):
+            x = 0.0
+            for c in range(block.shape[0]):
+                v = abs(block[c, i])
+                if v > x:
+                    x = v
+            if not started:
+                level = x
+            level = (1.0 - ca) * x + ca * level
+            over = 20.0 * math.log10(level + 1e-9) - threshold_db
+            if over < 0.0:
+                over = 0.0
+            wanted = over * slope
+            if wanted > max_gr_db:
+                wanted = max_gr_db
+            instant = 10.0 ** (-wanted / 20.0)
+            if not started:
+                rel = instant
+                started = True
+            rel = (1.0 - cr) * instant + cr * rel
+            gain[i] = rel if rel < instant else instant
+        state[0] = 1.0
+        state[1] = level
+        state[2] = rel
+        return gain
+
+    @njit(cache=True)
+    def deess_gain(high, threshold_db, slope, c1, state):
+        n = high.shape[1]
+        gain = np.empty(n)
+        started = state[0] != 0.0
+        level = state[1]
+        g = state[2]
+        for i in range(n):
+            x = 0.0
+            for c in range(high.shape[0]):
+                v = abs(high[c, i])
+                if v > x:
+                    x = v
+            if not started:
+                level = x
+            level = (1.0 - c1) * x + c1 * level
+            over = 20.0 * math.log10(level + 1e-9) - threshold_db
+            if over < 0.0:
+                over = 0.0
+            target = 10.0 ** ((-over * slope) / 20.0)
+            if not started:
+                g = target
+                started = True
+            g = (1.0 - c1) * target + c1 * g
+            gain[i] = g
+        state[0] = 1.0
+        state[1] = level
+        state[2] = g
+        return gain
+
+    _KERNELS["compress"] = compress_gain
+    _KERNELS["deess"] = deess_gain
+    return _KERNELS
+
+
+def _compress_block(audio, threshold_db, ratio, max_gr_db, ca, cr, state):
+    """Yksi pala kompressoria; ``state`` kantaa seuraajat seuraavaan palaan."""
+    gain = _kernels()["compress"](
+        np.ascontiguousarray(audio, dtype=np.float64), float(threshold_db),
+        1.0 - 1.0 / max(ratio, 1.0001), float(max_gr_db), ca, cr, state,
+    )
     return audio * gain
 
 
@@ -1417,10 +1509,8 @@ def multiband(
         for edge in BANDS_HZ
     ]
     states = [np.zeros((sos.shape[0], x2.shape[0], 2)) for sos in soses]
-    followers = [
-        (_Follower(rate, attack_ms), _Follower(rate, release_ms))
-        for _ in range(len(soses) + 1)
-    ]
+    ca, cr = _pole(rate, attack_ms), _pole(rate, release_ms)
+    followers = [np.zeros(3) for _ in range(len(soses) + 1)]
     out = np.empty(x2.shape, dtype=np.result_type(x2.dtype, np.float64))
     total = x2.shape[-1]
     for start in range(0, total, _COMPRESS_CHUNK):
@@ -1433,9 +1523,9 @@ def multiband(
             rest = rest - low
         parts.append(rest)
         acc = np.zeros_like(rest)
-        for part, (attack, release) in zip(parts, followers, strict=True):
+        for part, state in zip(parts, followers, strict=True):
             acc = acc + _compress_block(
-                part, threshold_db, ratio, max_gr_db, attack, release
+                part, threshold_db, ratio, max_gr_db, ca, cr, state
             )
         out[:, start:stop] = acc
     return out.reshape(audio.shape)

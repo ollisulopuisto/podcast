@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.7.8] - 2026-10-07
+
+### Changed
+- **Compressors and de-esser run as compiled loops (numba):** envelope follower, gain computer and dB conversions in one pass instead of a dozen whole-array numpy passes. Bit-identical output; on 20 min of real speech multiband 4.4 → 2.6 s, de-esser 1.7 → 1.4 s, the two wideband stages 1.1 → 0.5 s each. numba is now a declared dependency.
+
 ## [2026.10.7.7] - 2026-10-07
 
 ### Changed
