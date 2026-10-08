@@ -1,6 +1,6 @@
 [project]
 name = "colab-transcribe"
-version = "2026.9.12.1"
+version = "2026.10.8.1"
 description = "Litterointi ja Auto-Silence Colabin näytönohjaimella: paikallinen ajuri ja TUI, ketju pilvessä"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -16,6 +16,13 @@ classifiers = [
 ]
 dependencies = [
     "textual>=8.0.0",
+    # ``colab``-komento mukaan, jotta ``uvx`` riittää asennukseksi. Suorat
+    # git-viittaukset eivätkä PyPI: PyPI:n ``jupyter-kernel-client`` on eri
+    # paketti kuin Colab CLI:n tarvitsema Google-fork, ja Colab CLI:n oma
+    # ``[tool.uv.sources]`` ei päde kun se on toisen riippuvuus. Commitit
+    # ovat ne joilla kehittäjän ``colab`` toimii (2026-10-08).
+    "google-colab-cli @ git+https://github.com/googlecolab/google-colab-cli@930275e62970df10055f411c8e28ca61755dcfc7",
+    "jupyter-kernel-client @ git+https://github.com/googlecolab/jupyter-kernel-client.git@f18e982c3265df5e923aa9def101ab3fd737e139",
 ]
 
 [project.scripts]
@@ -27,6 +34,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/colabtranscribe"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

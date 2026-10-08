@@ -56,7 +56,11 @@ def is_session_alive(session_name: str) -> bool:
 def stop_session(session_name: str) -> int:
     """Sulje Colab-istunto ajamalla `colab stop -s <session_name>`."""
     try:
-        res = subprocess.run(["colab", "stop", "-s", session_name], check=False)
+        from .onboarding import colab_env
+
+        res = subprocess.run(
+            ["colab", "stop", "-s", session_name], check=False, env=colab_env()
+        )
         return res.returncode
     except FileNotFoundError:
         return 127

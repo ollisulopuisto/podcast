@@ -63,7 +63,7 @@ def test_stop_session_runs_colab_stop(monkeypatch):
 
     calls = []
 
-    def fake_run(cmd, check=True):
+    def fake_run(cmd, check=True, env=None):
         calls.append(cmd)
         return subprocess.CompletedProcess(cmd, 0)
 
@@ -71,3 +71,18 @@ def test_stop_session_runs_colab_stop(monkeypatch):
     code = session.stop_session("test-sess")
     assert code == 0
     assert calls == [["colab", "stop", "-s", "test-sess"]]
+
+
+def test_stop_finds_the_bundled_colab(monkeypatch):
+    from colabtranscribe import session as session_mod
+
+    seen = []
+    monkeypatch.setattr("colabtranscribe.onboarding.bundled_colab", lambda: "/env/bin/colab")
+
+    def run(cmd, check=False, env=None):
+        seen.append((cmd, env["PATH"].split(":")[0]))
+        return type("R", (), {"returncode": 0})()
+
+    monkeypatch.setattr("subprocess.run", run)
+    assert session_mod.stop_session("s") == 0
+    assert seen == [(["colab", "stop", "-s", "s"], "/env/bin")]

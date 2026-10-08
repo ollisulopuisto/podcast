@@ -51,8 +51,20 @@ TUI ja komentorivi molemmat kulkevat sen kautta, ja `--dry-run` tulostaa
 samat komennot jotka oikea ajo suorittaa. Jos komennon muoto muuttuu,
 muuttuu vain `driver.py` ja sen testit — ei kolmea kopiota.
 
-`colab`-työkalu on ulkoinen riippuvuus (`google-colab-cli`, asennus `uv tool
-install google-colab-cli`). Järjestelmä tarkistaa apuohjelman olemassaolon
+`colab`-työkalu (`google-colab-cli`) on riippuvuus, jotta `uvx` riittää
+asennukseksi. Se ja Googlen `jupyter-kernel-client`-fork ovat suoria
+git-viittauksia kiinnitettyinä toimiviksi todettuihin committeihin: PyPI:n
+samanniminen `jupyter-kernel-client` on eri paketti, eikä Colab CLI:n oma
+`[tool.uv.sources]` päde kun se on toisen riippuvuus. `onboarding.bundled_colab`
+löytää sen oman Pythonin vierestä, ja `colab_env` lisää sen hakemiston
+PATHin alkuun: komennot pysyvät muodossa `colab ...`, joten `--dry-run`
+näyttää täsmälleen mitä ajetaan. uv:n `#!/bin/sh`-käynnistimen takana
+oleva Python haetaan `_script_python`illa — shebangista luettuna se olisi
+`/bin/sh`, ja tarkistukset ja korjaukset epäonnistuisivat hiljaa.
+Ensimmäinen kirjautuminen: `colab-transcribe --login` (ajaa `colab usage`,
+joka kysyy Google-tunnuksen); gcloudia ei tarvita.
+
+Järjestelmä tarkistaa apuohjelman olemassaolon
 sekä tunnistetiedot (`onboarding.py`): jos ne puuttuvat, TUI avaa opastusikkunan
 ja komentorivi antaa selkeät asennus- ja kirjautumiskomennot ennen ajoa.
 TUI:ssa syöte- ja tulostekansiot valitaan interaktiivisilla valintaikkunoilla

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.1] - 2026-10-08
+
+### Added
+- **Runs with one command and nothing installed but uv:** `uvx --from "git+https://github.com/ollisulopuisto/podcast#subdirectory=colab-transcribe" colab-transcribe`. Google's `colab` tool now comes along as a dependency, pinned to the build with Google's own `jupyter-kernel-client` that works, so it no longer needs installing separately.
+- **`colab-transcribe --login`:** a first-time Google sign-in through the `colab` tool (open an address in the browser, paste the code back). It covers Colab and the Drive transfer, so `gcloud` is no longer needed. The setup check points here first when credentials are missing.
+
+### Fixed
+- The setup check and the two `colab` fixes this app applies now find `colab`'s Python behind uv's `#!/bin/sh` launcher. Before, they read `/bin/sh` as the Python, reported a working `colab` as broken and silently skipped the fixes.
+
 ## [colab-transcribe-v2026.9.12.1] - 2026-09-12
 
 ### Fixed

@@ -14,24 +14,39 @@ tulokset takaisin: `<jakso> litteroitu.nhsx` ja `<jakso>_processed.nhsx`.
 
 ## Ajaminen
 
-Repositorion juuresta, kun `uv sync --all-packages` on ajettu:
+Macilla, jossa on [Homebrew](https://brew.sh), asennettavaksi jää vain uv:
 
 ```
-uv run colab-transcribe              # TUI (interaktiivinen kansionvalinta + opastus)
-uv run colab-transcribe --check      # tarkista apuohjelmat ja tunnistetiedot
+brew install uv
+```
+
+Sen jälkeen ilman muita asennuksia (`colab`-työkalu tulee mukana):
+
+```
+uvx --from "git+https://github.com/ollisulopuisto/podcast#subdirectory=colab-transcribe" colab-transcribe --login   # vain ensimmäisellä kerralla
+uvx --from "git+https://github.com/ollisulopuisto/podcast#subdirectory=colab-transcribe" colab-transcribe           # TUI
+```
+
+`--login` kirjaa sinut Googleen `colab`-työkalun kautta: se tulostaa osoitteen, jonka avaat selaimessa, ja selaimen antama koodi liitetään takaisin terminaaliin. Sama kirjautuminen kattaa Colabin ja Google Drive -siirron, joten `gcloud`ia ei tarvita. Tarvitset Google-tilin, jolla on Colab; ilmaisversiossa on T4-näytönohjain.
+
+Alla `colab-transcribe` tarkoittaa tuota `uvx --from … colab-transcribe` -komentoa, tai repositoriossa `uv run colab-transcribe` -komentoa, kun `uv sync --all-packages` on ajettu:
+
+```
+colab-transcribe              # TUI (interaktiivinen kansionvalinta + opastus)
+colab-transcribe --check      # tarkista apuohjelmat ja tunnistetiedot
 ```
 
 Täysin skriptattuna, ilman käyttöliittymää:
 
 ```
-uv run colab-transcribe --input ~/jakso/ --output ~/valmis/ --preset intra-mic
-uv run colab-transcribe --input ~/jakso/ --dry-run     # tulosta suunnitelma, älä aja
-uv run colab-transcribe --input ~/jakso/ --gpu A100 --rms --thr -40
-uv run colab-transcribe --input ~/jakso/ --no-drive    # käytä vanhaa hidasta suoraa Colab-latausta
-uv run colab-transcribe --session-status               # tarkista aktiivisen Colab-istunnon tila
-uv run colab-transcribe --stop                         # sulje aktiivinen Colab-istunto
-uv run colab-transcribe --input ~/jakso/ --reset-session # pakota vanhan istunnon sulkeminen ja uusi VM
-uv run colab-transcribe --input ~/jakso/ --keep-session  # jätä Colab-istunto käyntiin ajon jälkeen
+colab-transcribe --input ~/jakso/ --output ~/valmis/ --preset intra-mic
+colab-transcribe --input ~/jakso/ --dry-run     # tulosta suunnitelma, älä aja
+colab-transcribe --input ~/jakso/ --gpu A100 --rms --thr -40
+colab-transcribe --input ~/jakso/ --no-drive    # käytä vanhaa hidasta suoraa Colab-latausta
+colab-transcribe --session-status               # tarkista aktiivisen Colab-istunnon tila
+colab-transcribe --stop                         # sulje aktiivinen Colab-istunto
+colab-transcribe --input ~/jakso/ --reset-session # pakota vanhan istunnon sulkeminen ja uusi VM
+colab-transcribe --input ~/jakso/ --keep-session  # jätä Colab-istunto käyntiin ajon jälkeen
 ```
 
 Tiedostot siirretään oletuksena Google Driven kautta (`--transfer drive`), jolloin
@@ -44,11 +59,10 @@ esiasetuksen lukua.
 
 ## Vaatimukset
 
-* `colab`-komentorivityökalu (`uv tool install --reinstall git+https://github.com/googlecolab/google-colab-cli`) ja Colab-tili jolla on GPU-käyttö. PyPI-julkaisu voi ratkaista yhteensopimattoman `jupyter-kernel-client`-paketin; lähdeasennus tuo Colabin yhteensopivan riippuvuuslukituksen mukanaan.
-* Google Cloud ADC -tunnistetiedot (`gcloud auth application-default login`) tai `GOOGLE_APPLICATION_CREDENTIALS`.
-* `colab-transcribe` opastaa käyttäjää (onboarding) automaattisesti TUI:ssa tai `--check`-valitsimella, jos työkaluja tai tunnisteita puuttuu.
-* Paikallisesti ei muuta: raskas työ ajaa pilvessä, ja ajettava skripti
-  kulkee tämän paketin mukana.
+* [uv](https://docs.astral.sh/uv/) (`brew install uv`). `colab`-komentorivityökalu on riippuvuus ja tulee `uvx`:n mukana, kiinnitettynä versioon jossa on Googlen oma `jupyter-kernel-client`.
+* Google-tili, jolla on Colab, kirjautuneena kerran komennolla `colab-transcribe --login`. Vaihtoehtoisesti Google Cloud ADC -tunnisteet (`gcloud auth application-default login`) tai `GOOGLE_APPLICATION_CREDENTIALS`.
+* `colab-transcribe` opastaa automaattisesti TUI:ssa tai `--check`-valitsimella, jos jotain puuttuu.
+* Siinä kaikki paikallisesti. ffmpegiä ei tarvita: raskas työ tehdään pilvessä, ja ketjun skripti tulee tämän paketin mukana.
 
 ## Ketjusta
 
