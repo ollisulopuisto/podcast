@@ -13,8 +13,9 @@ from typing import List
 
 import mlx.core as mx
 import numpy as np
-import pyloudnorm as pyln
 import soundfile as sf
+
+from speechmix.meter import Meter
 
 CACHE_DIR = Path(".automixer/cache")
 
@@ -201,7 +202,7 @@ class Track:
 
         # Analysis (Only if loading full track or if we want local loudness)
         if is_full_load and self.loudness is None:
-            meter = pyln.Meter(sr)
+            meter = Meter(sr)
             self.loudness = meter.integrated_loudness(data_mono)
             self._save_cache()
 

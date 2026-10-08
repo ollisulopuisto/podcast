@@ -117,3 +117,16 @@ def test_bed_without_a_pause_is_left_alone_and_said(tmp_path, monkeypatch, capsy
     _run(monkeypatch, path)
     assert "no pause" in capsys.readouterr().out
     assert _music_clip(tmp_path / "jakso beds.nhsx").ramps == ()
+
+
+def test_the_plateau_is_measured_with_the_shared_meter(tmp_path):
+    from automixer import cli_beds
+    from speechmix.meter import Meter
+
+    rng = np.random.default_rng(4)
+    music = (0.1 * rng.standard_normal((RATE * 8, 2))).astype(np.float32)
+    sf.write(tmp_path / "bed.wav", music, RATE, subtype="FLOAT")
+    curve = [(0.0, -60.0), (1.0, 0.0), (5.0, 0.0), (6.0, -60.0)]
+    got = cli_beds._plateau_gain(str(tmp_path / "bed.wav"), 0.0, curve)
+    want = cli_beds.PLATEAU_LUFS - Meter(RATE).integrated_loudness(music[RATE:5 * RATE])
+    assert abs(got - want) < 1e-6

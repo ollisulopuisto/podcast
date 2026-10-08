@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.6] - 2026-10-08
+
+### Added
+- `meter.Meter`: the shared loudness meter behind pyloudnorm's interface (samples first, `-inf` for silence), so code written against pyloudnorm can switch with one line.
+
 ## [2026.10.8.5] - 2026-10-08
 
 ### Changed
