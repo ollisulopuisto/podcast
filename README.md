@@ -24,6 +24,23 @@ Whether you need to automatically cut multicam video to the speaker, transcribe 
 
 ## Quick Start
 
+### One command
+
+On a Mac with [Homebrew](https://brew.sh), paste this into Terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ollisulopuisto/podcast/main/run.sh | sh
+```
+
+It installs `uv` and `ffmpeg` if they are missing, signs you in to Google the first time (colab-transcribe needs it), and starts colab-transcribe. For another tool, name it, and add any arguments after it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ollisulopuisto/podcast/main/run.sh | sh -s -- autoraffkat
+curl -fsSL https://raw.githubusercontent.com/ollisulopuisto/podcast/main/run.sh | sh -s -- automixer "episode.nhsx"
+```
+
+[`run.sh`](run.sh) is short; read it first if you prefer. `PODCAST_REF=<branch or commit>` before `sh` picks another version than `main`.
+
 ### Run without installing (uvx)
 
 On a Mac with [Homebrew](https://brew.sh), install the two prerequisites once:
