@@ -545,7 +545,7 @@ wheels = [
 
 [[package]]
 name = "colab-transcribe"
-version = "2026.10.8.1"
+version = "2026.10.8.2"
 source = { editable = "colab-transcribe" }
 dependencies = [
     { name = "google-colab-cli" },

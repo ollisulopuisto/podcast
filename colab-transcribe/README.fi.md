@@ -14,6 +14,14 @@ tulokset takaisin: `<jakso> litteroitu.nhsx` ja `<jakso>_processed.nhsx`.
 
 ## Ajaminen
 
+Nopein tapa Macilla, jossa on [Homebrew](https://brew.sh): liitä tämä Päätteeseen. Se asentaa puuttuvat `uv`:n (ja muiden työkalujen tarvitseman `ffmpeg`in), hoitaa Google-kirjautumisen ensimmäisellä kerralla ja avaa sovelluksen:
+
+```
+curl -fsSL https://raw.githubusercontent.com/ollisulopuisto/podcast/main/run.sh | sh
+```
+
+Tai vaihe vaiheelta:
+
 Macilla, jossa on [Homebrew](https://brew.sh), asennettavaksi jää vain uv:
 
 ```

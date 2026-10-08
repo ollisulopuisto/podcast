@@ -14,6 +14,14 @@ every region where nobody speaks (Auto-Silence), and downloads the results:
 
 ## Run it
 
+The quickest way, on a Mac with [Homebrew](https://brew.sh): paste this into Terminal. It installs `uv` (and `ffmpeg` for the other tools) if missing, runs the Google sign-in the first time, and opens the app:
+
+```
+curl -fsSL https://raw.githubusercontent.com/ollisulopuisto/podcast/main/run.sh | sh
+```
+
+Or step by step:
+
 On a Mac with [Homebrew](https://brew.sh), the only thing to install is uv:
 
 ```

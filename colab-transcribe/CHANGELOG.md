@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.2] - 2026-10-08
+
+### Added
+- **One command from a fresh Mac with Homebrew:** `curl -fsSL https://raw.githubusercontent.com/ollisulopuisto/podcast/main/run.sh | sh` installs `uv` and `ffmpeg` if missing, runs the Google sign-in the first time, and opens colab-transcribe. Naming another tool after `sh -s --` starts that one instead (autoraffkat, automixer, podcast-magic…).
+
 ## [2026.10.8.1] - 2026-10-08
 
 ### Added
