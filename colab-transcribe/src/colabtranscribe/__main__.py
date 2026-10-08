@@ -94,6 +94,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="tarkista apuohjelmat ja ympäristömuuttujat",
     )
+    parser.add_argument(
+        "--login",
+        action="store_true",
+        help="kirjaudu Googleen Colab CLI:n kautta (ensimmäisellä kerralla)",
+    )
     parser.add_argument("--version", action="version", version=__version__)
     return parser
 
@@ -186,6 +191,17 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.login:
+        # ``colab`` kysyy tunnuksen itse: URL selaimeen, koodi takaisin
+        # tähän terminaaliin. Sen token kelpaa Colabiin ja Driveen, joten
+        # gcloudia ei tarvita. Mikä tahansa tunnistusta vaativa komento
+        # käynnistää kirjautumisen; ``usage`` ei luo virtuaalikonetta.
+        import subprocess
+
+        from .onboarding import colab_env
+
+        return subprocess.run(["colab", "usage"], check=False, env=colab_env()).returncode
 
     if args.stop:
         print(f"Suljetaan Colab-istunto '{args.session}'...")

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from colabtranscribe.onboarding import (
     COLAB_CLI_INSTALL,
     check_credentials,
@@ -293,3 +295,60 @@ def test_patch_colab_cli_runtime(tmp_path: Path, monkeypatch):
     patched_content = fake_runtime.read_text(encoding="utf-8")
     assert '"timeout": 60.0' in patched_content
 
+
+
+def _fake_bin(directory: Path, name: str) -> Path:
+    path = directory / name
+    path.write_text("#!/bin/sh\n", encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+@pytest.mark.real_bundled_colab
+def test_the_colab_next_to_our_python_is_preferred(monkeypatch, tmp_path):
+    """``uvx`` asentaa ``colab``-komennon samaan ympäristöön, mutta ei
+    PATHiin: se löytyy oman Pythonin vierestä. PATHin ``colab`` on vara."""
+    from colabtranscribe import onboarding
+
+    env_bin = tmp_path / "env" / "bin"
+    env_bin.mkdir(parents=True)
+    python = _fake_bin(env_bin, "python")
+    colab = _fake_bin(env_bin, "colab")
+    monkeypatch.setattr("sys.executable", str(python))
+    monkeypatch.setattr("shutil.which", lambda cmd: "/elsewhere/colab")
+    assert onboarding.colab_binary() == str(colab)
+
+    colab.unlink()
+    assert onboarding.colab_binary() == "/elsewhere/colab"
+
+
+def test_missing_credentials_point_to_login_first(monkeypatch, tmp_path):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+    item = next(i for i in check_credentials() if i.key == "credentials")
+    assert not item.ok
+    first = item.instructions.splitlines()[1].strip()
+    assert first == "colab-transcribe --login"
+
+
+def test_the_python_behind_a_uv_launcher_is_found(tmp_path):
+    """uv kirjoittaa komennon alkuun ``#!/bin/sh``-käynnistimen, joka ajaa
+    viereisen ``python``in. Shebangista luettuna Python oli ``/bin/sh``,
+    jolloin uvx:n ``colab`` näytti rikkinäiseltä eikä korjauksia ajettu."""
+    from colabtranscribe import onboarding
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    python = _fake_bin(bin_dir, "python")
+    launcher = bin_dir / "colab"
+    launcher.write_text(
+        "#!/bin/sh\n"
+        "'''exec' \"$(dirname -- \"$(realpath -- \"$0\")\")\"/'python' \"$0\" \"$@\"\n"
+        "' '''\n",
+        encoding="utf-8",
+    )
+    assert onboarding._script_python(str(launcher)) == str(python)
+
+    classic = bin_dir / "classic"
+    classic.write_text(f"#!{python}\nprint()\n", encoding="utf-8")
+    assert onboarding._script_python(str(classic)) == str(python)

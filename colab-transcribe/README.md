@@ -14,24 +14,39 @@ every region where nobody speaks (Auto-Silence), and downloads the results:
 
 ## Run it
 
-From the repository root, after `uv sync --all-packages`:
+On a Mac with [Homebrew](https://brew.sh), the only thing to install is uv:
 
 ```
-uv run colab-transcribe              # the TUI (interactive folder picker + onboarding)
-uv run colab-transcribe --check      # check helper apps and environment credentials
+brew install uv
+```
+
+Then, with nothing else installed (the `colab` tool comes along):
+
+```
+uvx --from "git+https://github.com/ollisulopuisto/podcast#subdirectory=colab-transcribe" colab-transcribe --login   # first time only
+uvx --from "git+https://github.com/ollisulopuisto/podcast#subdirectory=colab-transcribe" colab-transcribe           # the TUI
+```
+
+`--login` signs you in to Google through the `colab` tool: it prints an address to open in a browser, and you paste the code it gives back into the terminal. That one sign-in covers both Colab and the Google Drive transfer, so `gcloud` isn't needed. You need a Google account with Colab; the free tier gives a T4 GPU.
+
+In the commands below, `colab-transcribe` stands for that `uvx --from … colab-transcribe`, or for `uv run colab-transcribe` inside the repository after `uv sync --all-packages`:
+
+```
+colab-transcribe              # the TUI (interactive folder picker + onboarding)
+colab-transcribe --check      # check helper apps and environment credentials
 ```
 
 Fully scripted, no interface:
 
 ```
-uv run colab-transcribe --input ~/jakso/ --output ~/valmis/ --preset intra-mic
-uv run colab-transcribe --input ~/jakso/ --dry-run     # print the plan, run nothing
-uv run colab-transcribe --input ~/jakso/ --gpu A100 --rms --thr -40
-uv run colab-transcribe --input ~/jakso/ --no-drive    # fallback to direct colab upload
-uv run colab-transcribe --session-status               # check active Colab session status
-uv run colab-transcribe --stop                         # stop active Colab session
-uv run colab-transcribe --input ~/jakso/ --reset-session # force stop and recreate Colab VM
-uv run colab-transcribe --input ~/jakso/ --keep-session  # keep Colab VM alive after completion
+colab-transcribe --input ~/jakso/ --output ~/valmis/ --preset intra-mic
+colab-transcribe --input ~/jakso/ --dry-run     # print the plan, run nothing
+colab-transcribe --input ~/jakso/ --gpu A100 --rms --thr -40
+colab-transcribe --input ~/jakso/ --no-drive    # fallback to direct colab upload
+colab-transcribe --session-status               # check active Colab session status
+colab-transcribe --stop                         # stop active Colab session
+colab-transcribe --input ~/jakso/ --reset-session # force stop and recreate Colab VM
+colab-transcribe --input ~/jakso/ --keep-session  # keep Colab VM alive after completion
 ```
 
 Files are transferred via Google Drive (`--transfer drive`, default) using fast
@@ -42,11 +57,10 @@ Presets are the Colab script's: `remote` (tail 1.0 s, gap 1.0 s) and
 
 ## Requirements
 
-* The `colab` command-line tool (`uv tool install --reinstall git+https://github.com/googlecolab/google-colab-cli`), and a Colab account with GPU access. Installing the PyPI release can resolve an incompatible `jupyter-kernel-client` package; the source install carries Colab's compatible dependency pin.
-* Google Cloud ADC credentials (`gcloud auth application-default login`) or `GOOGLE_APPLICATION_CREDENTIALS`.
-* `colab-transcribe` onboards you automatically in the TUI or via `--check` if any tool or credential is missing.
-* That is all locally: the heavy work runs in the cloud, and the pipeline
-  script ships inside this package.
+* [uv](https://docs.astral.sh/uv/) (`brew install uv`). The `colab` command-line tool is a dependency and comes with `uvx`, pinned to a version with Google's own `jupyter-kernel-client`.
+* A Google account with Colab, signed in once with `colab-transcribe --login`. Alternatively, Google Cloud ADC credentials (`gcloud auth application-default login`) or `GOOGLE_APPLICATION_CREDENTIALS`.
+* `colab-transcribe` onboards you automatically in the TUI or via `--check` if anything is missing.
+* That is all locally. No ffmpeg is needed: the heavy work runs in the cloud, and the pipeline script ships inside this package.
 
 ## Note on the pipeline
 
