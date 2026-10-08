@@ -72,6 +72,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--rms", action="store_true", help="RMS-tarkistus Auto-Silencelle"
     )
     parser.add_argument(
+        "--transcribe-only",
+        action="store_true",
+        help="vain litterointi, ei Auto-Silencea (tulos: <jakso> litteroitu.nhsx)",
+    )
+    parser.add_argument(
         "--thr", type=int, default=-35, help="RMS-kynnys desibeleinä (oletus: -35)"
     )
     parser.add_argument(
@@ -118,6 +123,7 @@ def options_from_args(args: argparse.Namespace) -> RunOptions:
         preset=args.preset if args.preset != "remote" else env_opts.preset,
         transfer=transfer,
         rms=args.rms or env_opts.rms,
+        silence=not args.transcribe_only and env_opts.silence,
         thr=args.thr if args.thr != -35 else env_opts.thr,
         tail=args.tail if args.tail != 1.0 else env_opts.tail,
         gap=args.gap if args.gap != 1.0 else env_opts.gap,

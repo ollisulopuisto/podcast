@@ -278,3 +278,12 @@ def test_login_signs_in_through_the_bundled_colab(monkeypatch):
     monkeypatch.setattr("subprocess.run", run)
     assert cli.main(["--login"]) == 0
     assert seen == [(["colab", "usage"], "/env/bin")]
+
+
+def test_transcribe_only_flag_reaches_the_remote_command(tmp_path, capsys):
+    (tmp_path / "puhe.wav").write_bytes(b"")
+    code = cli.main(["--input", str(tmp_path), "--transcribe-only", "--dry-run"])
+    assert code == 0
+    out = capsys.readouterr().out
+    line = next(x for x in out.splitlines() if "python3 /content/pipeline.py" in x)
+    assert "--no-silence" in line

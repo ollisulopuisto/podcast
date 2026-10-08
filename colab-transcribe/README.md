@@ -11,6 +11,8 @@ It starts a Colab VM, uploads everything, transcribes there with Whisper
 (faster-whisper on a T4/L4/A100), writes the words into the session, mutes
 every region where nobody speaks (Auto-Silence), and downloads the results:
 `<jakso> litteroitu.nhsx` and `<jakso>_processed.nhsx`.
+To transcribe without Auto-Silence, use `--transcribe-only` (or switch
+Auto-Silence off in the TUI): you then get only `<jakso> litteroitu.nhsx`.
 
 ## Run it
 
@@ -48,6 +50,7 @@ Fully scripted, no interface:
 
 ```
 colab-transcribe --input ~/jakso/ --output ~/valmis/ --preset intra-mic
+colab-transcribe --input ~/jakso/ --transcribe-only   # transcribe only, no Auto-Silence
 colab-transcribe --input ~/jakso/ --dry-run     # print the plan, run nothing
 colab-transcribe --input ~/jakso/ --gpu A100 --rms --thr -40
 colab-transcribe --input ~/jakso/ --no-drive    # fallback to direct colab upload

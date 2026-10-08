@@ -486,3 +486,21 @@ def test_run_transcription_logs_litterointi_luotu(tmp_path, capsys, monkeypatch)
     assert "Litterointi luotu:" in captured
     assert "haastattelu.json" in captured
 
+
+
+@pytest.mark.parametrize(("argv", "silenced"), [([], True), (["--no-silence"], False)])
+def test_no_silence_skips_auto_silence(monkeypatch, argv, silenced):
+    """``--no-silence``: litteroitu istunto tehdään, Auto-Silence jää pois."""
+    import sys
+
+    from colabtranscribe.colab import pipeline
+
+    ran = []
+    monkeypatch.setattr(sys, "argv", ["pipeline.py", *argv])
+    monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
+    monkeypatch.setattr(pipeline, "run_transcription", lambda *a: None)
+    monkeypatch.setattr(pipeline, "inject_transcriptions_to_nhsx", lambda *a: ["/c/x.nhsx"])
+    monkeypatch.setattr(pipeline, "run_auto_silence", lambda *a: ran.append(a[0]))
+    pipeline.main()
+    assert ran == (["/c/x.nhsx"] if silenced else [])

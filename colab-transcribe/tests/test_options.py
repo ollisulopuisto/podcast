@@ -130,3 +130,11 @@ def test_resolved_output_dir_when_input_is_file(tmp_path):
     assert options.resolved_output_dir() == tmp_path / "output"
 
 
+
+
+def test_transcribe_only_tells_the_script_to_skip_silence():
+    """Kaikki eivät halua Auto-Silencea: litterointi yksin on oma ajonsa."""
+    from colabtranscribe.options import RunOptions, pipeline_args
+
+    assert "--no-silence" not in pipeline_args(RunOptions())
+    assert "--no-silence" in pipeline_args(RunOptions(silence=False))

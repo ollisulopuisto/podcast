@@ -39,6 +39,9 @@ class RunOptions:
     preset: str = "remote"
     transfer: str = "drive"
     rms: bool = False
+    # Auto-Silence litteroinnin jälkeen. Pois päältä tulos on pelkkä
+    # ``<jakso> litteroitu.nhsx`` — kaikki eivät vaimenna hiljaisia kohtia.
+    silence: bool = True
     thr: int = -35
     tail: float = 1.0
     gap: float = 1.0
@@ -86,6 +89,9 @@ class RunOptions:
         preset = os.environ.get("COLAB_PRESET", "remote")
         transfer = os.environ.get("COLAB_TRANSFER", "drive")
         rms = os.environ.get("COLAB_RMS", "").lower() in ("1", "true", "yes")
+        transcribe_only = os.environ.get("COLAB_TRANSCRIBE_ONLY", "").lower() in (
+            "1", "true", "yes"
+        )
         thr = int(os.environ.get("COLAB_THR", "-35"))
         tail = float(os.environ.get("COLAB_TAIL", "1.0"))
         gap = float(os.environ.get("COLAB_GAP", "1.0"))
@@ -109,6 +115,7 @@ class RunOptions:
             preset=preset,
             transfer=transfer,
             rms=rms,
+            silence=not transcribe_only,
             thr=thr,
             tail=tail,
             gap=gap,
@@ -138,4 +145,6 @@ def pipeline_args(options: RunOptions) -> list[str]:
     ]
     if options.rms:
         args.append("--rms")
+    if not options.silence:
+        args.append("--no-silence")
     return args

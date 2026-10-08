@@ -11,6 +11,8 @@ Se käynnistää Colab-istunnon, lähettää kaiken, litteroi siellä Whisperill
 (faster-whisper T4:llä, L4:llä tai A100:lla), kirjoittaa sanat istuntoon,
 vaimentaa jokaisen kohdan jossa kukaan ei puhu (Auto-Silence) ja lataa
 tulokset takaisin: `<jakso> litteroitu.nhsx` ja `<jakso>_processed.nhsx`.
+Pelkkä litterointi ilman Auto-Silencea: `--transcribe-only` (tai TUI:ssa
+Auto-Silence pois päältä), jolloin tulos on vain `<jakso> litteroitu.nhsx`.
 
 ## Ajaminen
 
@@ -48,6 +50,7 @@ Täysin skriptattuna, ilman käyttöliittymää:
 
 ```
 colab-transcribe --input ~/jakso/ --output ~/valmis/ --preset intra-mic
+colab-transcribe --input ~/jakso/ --transcribe-only   # vain litterointi, ei Auto-Silencea
 colab-transcribe --input ~/jakso/ --dry-run     # tulosta suunnitelma, älä aja
 colab-transcribe --input ~/jakso/ --gpu A100 --rms --thr -40
 colab-transcribe --input ~/jakso/ --no-drive    # käytä vanhaa hidasta suoraa Colab-latausta
