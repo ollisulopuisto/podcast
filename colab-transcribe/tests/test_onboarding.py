@@ -355,15 +355,26 @@ def test_the_python_behind_a_uv_launcher_is_found(tmp_path):
     assert onboarding._script_python(str(classic)) == str(python)
 
 
-def test_patch_removes_enter_wait_from_pinned_colab_cli(tmp_path: Path, monkeypatch):
-    """Kiinnitetyn colab-cli:n oma automation.py: Enter-odotus poistuu.
+FIXTURES = Path(__file__).parent / "fixtures"
 
-    Upstream kääri /dev/tty-luennan try/exceptiin, eikä vanha korjaus enää
-    osunut — drivemount jäi odottamaan Enteriä jota kukaan ei nähnyt pyytää.
+
+@pytest.mark.parametrize(
+    "fixture",
+    [
+        # google-colab-cli 930275e sellaisenaan: Enter-odotus try/exceptissä.
+        "colab_cli_automation.py.txt",
+        # Sama ensimmäisen kyselykorjauksen jälkeen (dryrun=true, ei merkkiä):
+        # näin korjattu kopio on jo käyttäjien koneilla ja on päivitettävä.
+        "colab_cli_automation_poll_v1.py.txt",
+    ],
+)
+def test_patch_polls_drive_auth_in_pinned_colab_cli(tmp_path: Path, monkeypatch, fixture):
+    """Drive-luvan odotus kysyy Colabilta eikä odota Enteriä.
+
+    Mitattu 2026-10-08: dryrun=true-kysely ei koskaan kertonut onnistumisesta,
+    ja drivemount aikakatkesi 600 s:ssa vaikka lupa annettiin selaimessa.
     """
     import subprocess
-
-    import colab_cli.commands.automation as real
 
     from colabtranscribe.onboarding import patch_colab_cli_automation
 
@@ -374,7 +385,7 @@ def test_patch_removes_enter_wait_from_pinned_colab_cli(tmp_path: Path, monkeypa
     fake_colab.write_text(f"#!{fake_py}\n# fake colab\n")
     fake_colab.chmod(0o755)
     automation = tmp_path / "automation.py"
-    automation.write_text(Path(real.__file__).read_text(encoding="utf-8"), encoding="utf-8")
+    automation.write_text((FIXTURES / fixture).read_text(encoding="utf-8"), encoding="utf-8")
 
     orig_run = subprocess.run
 
@@ -389,7 +400,9 @@ def test_patch_removes_enter_wait_from_pinned_colab_cli(tmp_path: Path, monkeypa
     patched = automation.read_text(encoding="utf-8")
     assert "/dev/tty" not in patched
     assert "Press Enter" not in patched
-    assert "Waiting for authorization in browser" in patched
+    assert '_poll["dryrun"] = "false"' in patched
+    assert patched.count("Waiting for authorization in browser") == 1
+    assert patched.count("[colab] Authorizing VM...") == 1
     compile(patched, str(automation), "exec")
     # Toinen kerta ei muuta mitään.
     assert patch_colab_cli_automation(str(fake_colab)) is True
