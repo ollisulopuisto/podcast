@@ -8,7 +8,6 @@ ajoa. Jos jokin puuttuu, antaa selkeät ja välittömästi ajettavat ohjeet.
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -71,6 +70,53 @@ def _script_python(script: str) -> str | None:
     return shebang if Path(shebang).is_file() else None
 
 
+def _poll_instead_of_enter(content: str) -> str | None:
+    """Korvaa Enter-odotuksen kyselyllä; None jos kohtaa ei löydy.
+
+    Rivipohjainen eikä regex: upstream muuttaa odotuksen sisältöä (try/except
+    /dev/tty:n ympärillä tuli 2026-10), mutta sen alku ("Press Enter...") ja
+    seuraava vaihe ("Authorizing VM...") pysyvät. Kaikki niiden välissä
+    korvataan. Kysely käyttää samaa dryrun-pyyntöä kuin upstreamin
+    ensimmäinen tarkistus: se kertoo onnistumisen propagoimatta mitään.
+    """
+    lines = content.splitlines(keepends=True)
+    try:
+        first = next(i for i, ln in enumerate(lines) if "Press Enter after you have granted access" in ln)
+        last = next(i for i in range(first, len(lines)) if "[colab] Authorizing VM..." in lines[i])
+    except StopIteration:
+        return None
+    indent = lines[first][: len(lines[first]) - len(lines[first].lstrip())]
+    block = [
+        'if not os.environ.get("COLAB_CLI_NO_BROWSER"):',
+        "    try:",
+        "        import webbrowser",
+        "        webbrowser.open(uri)",
+        "    except Exception:",
+        "        pass",
+        'typer.echo("[colab] Waiting for authorization in browser...")',
+        "import time as _time",
+        "_deadline = _time.time() + 600",
+        "while _time.time() < _deadline:",
+        "    _time.sleep(3)",
+        "    try:",
+        "        _resp = creds.request(",
+        '            "POST", url, params=params, headers=headers,',
+        '            files={"file_id": (None, "empty.ipynb")},',
+        "        )",
+        '        if json.loads(_resp.text.split("\\n", 1)[-1]).get("success"):',
+        '            typer.echo("[colab] Authorization granted in browser.")',
+        "            break",
+        "    except Exception:",
+        "        pass",
+        "else:",
+        '    typer.echo("[colab] No authorization within 10 minutes.")',
+    ]
+    if "import os" not in content:
+        block.insert(0, "import os")
+    replaced = "".join(f"{indent}{ln}\n" for ln in block) + "\n"
+    return "".join(lines[:first]) + replaced + "".join(lines[last:])
+
+
 def patch_colab_cli_automation(colab_path: str | None = None) -> bool:
     """Tarkistaa ja korjaa google-colab-cli:n Drive-valtuutusbugin.
 
@@ -104,68 +150,12 @@ def patch_colab_cli_automation(colab_path: str | None = None) -> bool:
             return False
 
         content = automation_path.read_text(encoding="utf-8")
-        if 'poll_params["dryrun"] = "false"' in content:
+        if "Waiting for authorization in browser" in content:
             return True
-
-        pattern = re.compile(
-            r"([ \t]*)"
-            r"(?:try:\s*\n[ \t]*webbrowser\.open\(uri\)\s*\n[ \t]*typer\.echo\([^)]*\)\s*\n[ \t]*except Exception:\s*\n[ \t]*pass\s*\n[ \t]*)?"
-            r'sys\.stdout\.write\(["\']Press Enter after you have granted access\.\.\. ["\']\)\s*\n'
-            r"[ \t]*sys\.stdout\.flush\(\)\s*\n"
-            r'[ \t]*with open\(["\']/dev/tty["\']\) as tty:\s*\n'
-            r"[ \t]*tty\.readline\(\)",
-            re.MULTILINE,
-        )
-
-        def _repl(m: re.Match[str]) -> str:
-            indent = m.group(1)
-            return (
-                f'{indent}if not os.environ.get("COLAB_CLI_NO_BROWSER"):\n'
-                f"{indent}    try:\n"
-                f"{indent}        import webbrowser\n"
-                f"{indent}        webbrowser.open(uri)\n"
-                f'{indent}        typer.echo("[colab] Opening authorization URL automatically in your default browser...")\n'
-                f"{indent}    except Exception:\n"
-                f"{indent}        pass\n"
-                f'{indent}typer.echo("[colab] Waiting for authorization in browser...")\n'
-                f"{indent}import time\n"
-                f"{indent}deadline = time.time() + 300\n"
-                f"{indent}poll_params = dict(params)\n"
-                f'{indent}poll_params["dryrun"] = "false"\n'
-                f"{indent}while time.time() < deadline:\n"
-                f"{indent}    time.sleep(2)\n"
-                f"{indent}    try:\n"
-                f"{indent}        resp = creds.request(\n"
-                f'{indent}            "POST",\n'
-                f"{indent}            url,\n"
-                f"{indent}            params=poll_params,\n"
-                f"{indent}            headers=headers,\n"
-                f'{indent}            files={{"file_id": (None, "empty.ipynb")}},\n'
-                f"{indent}        )\n"
-                f'{indent}        data = json.loads(resp.text.split("\\n", 1)[-1])\n'
-                f'{indent}        if data.get("success"):\n'
-                f'{indent}            typer.echo("[colab] Authorization granted in browser.")\n'
-                f"{indent}            break\n"
-                f"{indent}    except Exception:\n"
-                f"{indent}        pass\n"
-                f'{indent}if not data.get("success"):\n'
-                f'{indent}    typer.echo("[colab] Authorizing VM...")\n'
-                f'{indent}    params["dryrun"] = "false"\n'
-                f"{indent}    resp = creds.request(\n"
-                f'{indent}        "POST",\n'
-                f"{indent}        url,\n"
-                f"{indent}        params=params,\n"
-                f"{indent}        headers=headers,\n"
-                f'{indent}        files={{"file_id": (None, "empty.ipynb")}},\n'
-                f"{indent}    )"
-            )
-
-        if "/dev/tty" in content:
-            new_content = pattern.sub(_repl, content)
-            if new_content != content:
-                automation_path.write_text(new_content, encoding="utf-8")
-                return True
-            return False
+        new_content = _poll_instead_of_enter(content)
+        if new_content is None:
+            return "/dev/tty" not in content
+        automation_path.write_text(new_content, encoding="utf-8")
         return True
     except Exception:
         return False

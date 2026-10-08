@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.4] - 2026-10-08
+
+### Fixed
+- **Drive mount no longer hangs after the browser sign-in.** The current Colab CLI waited for an Enter key press it never showed on screen, so runs stopped at "[2/10] Liitetään Google Drive...". The run now continues by itself once access is granted in the browser (waits up to 10 minutes).
+
 ## [2026.10.8.3] - 2026-10-08
 
 ### Added
