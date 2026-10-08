@@ -167,6 +167,7 @@ def test_patch_colab_cli_automation(tmp_path: Path, monkeypatch):
         "        sys.stdout.flush()\n"
         '        with open("/dev/tty") as tty:\n'
         "            tty.readline()\n"
+        '    typer.echo("[colab] Authorizing VM...")\n'
         "    return True\n"
     )
     fake_automation.write_text(unpatched_content, encoding="utf-8")
@@ -352,3 +353,44 @@ def test_the_python_behind_a_uv_launcher_is_found(tmp_path):
     classic = bin_dir / "classic"
     classic.write_text(f"#!{python}\nprint()\n", encoding="utf-8")
     assert onboarding._script_python(str(classic)) == str(python)
+
+
+def test_patch_removes_enter_wait_from_pinned_colab_cli(tmp_path: Path, monkeypatch):
+    """Kiinnitetyn colab-cli:n oma automation.py: Enter-odotus poistuu.
+
+    Upstream kääri /dev/tty-luennan try/exceptiin, eikä vanha korjaus enää
+    osunut — drivemount jäi odottamaan Enteriä jota kukaan ei nähnyt pyytää.
+    """
+    import subprocess
+
+    import colab_cli.commands.automation as real
+
+    from colabtranscribe.onboarding import patch_colab_cli_automation
+
+    fake_py = tmp_path / "python3"
+    fake_py.write_text("#!/bin/sh\nexit 0\n")
+    fake_py.chmod(0o755)
+    fake_colab = tmp_path / "colab"
+    fake_colab.write_text(f"#!{fake_py}\n# fake colab\n")
+    fake_colab.chmod(0o755)
+    automation = tmp_path / "automation.py"
+    automation.write_text(Path(real.__file__).read_text(encoding="utf-8"), encoding="utf-8")
+
+    orig_run = subprocess.run
+
+    def fake_run(cmd, *args, **kwargs):
+        if len(cmd) >= 3 and "colab_cli.commands.automation" in cmd[2]:
+            return subprocess.CompletedProcess(cmd, 0, stdout=str(automation), stderr="")
+        return orig_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert patch_colab_cli_automation(str(fake_colab)) is True
+    patched = automation.read_text(encoding="utf-8")
+    assert "/dev/tty" not in patched
+    assert "Press Enter" not in patched
+    assert "Waiting for authorization in browser" in patched
+    compile(patched, str(automation), "exec")
+    # Toinen kerta ei muuta mitään.
+    assert patch_colab_cli_automation(str(fake_colab)) is True
+    assert automation.read_text(encoding="utf-8") == patched
