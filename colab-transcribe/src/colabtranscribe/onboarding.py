@@ -70,18 +70,28 @@ def _script_python(script: str) -> str | None:
     return shebang if Path(shebang).is_file() else None
 
 
+# Upstreamin Enter-odotuksen alku, ja ensimmäisen kyselykorjauksen
+# (dryrun=true, 2026-10-08) alku: sellainen kopio on jo käyttäjien koneilla
+# ja korvataan samoin. Merkki tunnistaa nykyisen korjauksen.
+_WAIT_START = "Press Enter after you have granted access"
+_V1_START = 'if not os.environ.get("COLAB_CLI_NO_BROWSER"):'
+_POLL_MARK = '_poll["dryrun"] = "false"'
+
+
 def _poll_instead_of_enter(content: str) -> str | None:
     """Korvaa Enter-odotuksen kyselyllä; None jos kohtaa ei löydy.
 
     Rivipohjainen eikä regex: upstream muuttaa odotuksen sisältöä (try/except
     /dev/tty:n ympärillä tuli 2026-10), mutta sen alku ("Press Enter...") ja
     seuraava vaihe ("Authorizing VM...") pysyvät. Kaikki niiden välissä
-    korvataan. Kysely käyttää samaa dryrun-pyyntöä kuin upstreamin
-    ensimmäinen tarkistus: se kertoo onnistumisen propagoimatta mitään.
+    korvataan. Kysely tekee varsinaisen propagoinnin (dryrun=false), kuten
+    alkuperäinen korjaus: dryrun=true ei kertonut onnistumisesta koskaan
+    (2026-10-08 ajo aikakatkesi 600 s:ssa vaikka lupa annettiin). Raja on
+    540 s, alle colab-cli:n oman 600 s:n, jotta oma viesti ehtii näkyä.
     """
     lines = content.splitlines(keepends=True)
     try:
-        first = next(i for i, ln in enumerate(lines) if "Press Enter after you have granted access" in ln)
+        first = next(i for i, ln in enumerate(lines) if _WAIT_START in ln or _V1_START in ln)
         last = next(i for i in range(first, len(lines)) if "[colab] Authorizing VM..." in lines[i])
     except StopIteration:
         return None
@@ -95,12 +105,18 @@ def _poll_instead_of_enter(content: str) -> str | None:
         "        pass",
         'typer.echo("[colab] Waiting for authorization in browser...")',
         "import time as _time",
-        "_deadline = _time.time() + 600",
+        "_deadline = _time.time() + 540",
+        "_poll = dict(params)",
+        '_poll["dryrun"] = "false"',
+        "_said = _time.time()",
         "while _time.time() < _deadline:",
         "    _time.sleep(3)",
+        "    if _time.time() - _said > 30:",
+        '        typer.echo("[colab] Still waiting for Drive access in the browser...")',
+        "        _said = _time.time()",
         "    try:",
         "        _resp = creds.request(",
-        '            "POST", url, params=params, headers=headers,',
+        '            "POST", url, params=_poll, headers=headers,',
         '            files={"file_id": (None, "empty.ipynb")},',
         "        )",
         '        if json.loads(_resp.text.split("\\n", 1)[-1]).get("success"):',
@@ -109,7 +125,7 @@ def _poll_instead_of_enter(content: str) -> str | None:
         "    except Exception:",
         "        pass",
         "else:",
-        '    typer.echo("[colab] No authorization within 10 minutes.")',
+        '    typer.echo("[colab] No authorization within 9 minutes.")',
     ]
     if "import os" not in content:
         block.insert(0, "import os")
@@ -150,7 +166,7 @@ def patch_colab_cli_automation(colab_path: str | None = None) -> bool:
             return False
 
         content = automation_path.read_text(encoding="utf-8")
-        if "Waiting for authorization in browser" in content:
+        if _POLL_MARK in content:
             return True
         new_content = _poll_instead_of_enter(content)
         if new_content is None:

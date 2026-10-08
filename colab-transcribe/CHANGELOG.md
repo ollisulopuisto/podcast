@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.5] - 2026-10-08
+
+### Fixed
+- **Drive sign-in is now recognised.** 2026.10.8.4 stopped waiting for Enter, but it checked for success in a way Colab never confirms, so the Drive mount still timed out after 10 minutes although access was granted in the browser. It now completes the sign-in while it waits, prints a note every 30 s while it waits, and computers that already had 2026.10.8.4 are updated on their next run.
+
 ## [2026.10.8.4] - 2026-10-08
 
 ### Fixed
