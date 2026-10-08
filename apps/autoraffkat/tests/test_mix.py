@@ -1257,6 +1257,9 @@ def test_files_are_processed_two_at_a_time_and_progress_still_rises(
     monkeypatch.setattr(mix.chain, "load_plugin", lambda *a, **k: None)
     monkeypatch.setattr(mix, "_run_one", together)
     monkeypatch.delenv("SPEECHMIX_PARALLEL_STEMS", raising=False)
+    # Varaus pois: CI:n koneella vapaata muistia on alle sen (4 GB), ja
+    # testin tiedostot ovat kilotavuja. Päätöksen laskenta ajetaan silti.
+    monkeypatch.setattr(mix.stems, "MEMORY_RESERVE", 0)
     try:
         result = mix.process(
             tl, resolve_roles(tl, tracks),
