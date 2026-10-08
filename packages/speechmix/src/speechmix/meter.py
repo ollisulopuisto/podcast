@@ -261,3 +261,28 @@ class IntegratedMeter:
         if not keep.any():
             return None
         return float(-0.691 + 10.0 * np.log10(blocks[keep].mean()))
+
+
+class Meter:
+    """pyloudnormin ``Meter``in muotoinen kääre ``IntegratedMeter``ille.
+
+    automixerin vanhat polut mittasivat pyloudnormilla, joka luki 0,042 LU
+    alakanttiin libebur128:aan verrattuna (2026-10-07), kun ketju ja
+    masterointi mittaavat tällä. Muoto on pyloudnormin: näytteet ensin
+    (``(n,)`` tai ``(n, kanavat)``), ja hiljaisuus on ``-inf``.
+    """
+
+    #: Syötettävän palan pituus näytteinä: koko raidan tehotaulukkoa ei synny.
+    CHUNK = 1 << 19
+
+    def __init__(self, rate: int):
+        self.rate = int(rate)
+
+    def integrated_loudness(self, audio) -> float:
+        x = np.asarray(audio)
+        frames = x if x.ndim == 1 else x.T
+        meter = IntegratedMeter(self.rate)
+        for start in range(0, frames.shape[-1], self.CHUNK):
+            meter.add(frames[..., start:start + self.CHUNK])
+        value = meter.value()
+        return float("-inf") if value is None else float(value)

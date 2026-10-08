@@ -17,11 +17,11 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import pyloudnorm as pyln
 import soundfile as sf
 
 from nhsx import activity, fades, musicbed, read
 from nhsx.read import locate
+from speechmix.meter import Meter
 
 from .session import _is_music
 
@@ -34,7 +34,7 @@ PLATEAU_LUFS = -18.7
 COLD_OPEN_WORDS = ("INTRO", "ALKU")
 #: Verhokäyrien välimuisti. Turvallista tyhjentää milloin tahansa.
 CACHE_DIR: Path | None = Path.home() / "Library" / "Caches" / "automixer" / "envelopes"
-#: pyloudnormin lyhin mitattava pätkä on yksi 400 ms lohko.
+#: Lyhin mitattava pätkä on yksi 400 ms lohko (BS.1770).
 MIN_LOUDNESS_S = 0.4
 
 
@@ -53,7 +53,7 @@ def _plateau_gain(source: str, offset: float, curve) -> float:
     """Vahvistus joka vie pohjan tasanteen ``PLATEAU_LUFS``:iin."""
     flat = [t for t, db in curve if db == 0.0]
     info = sf.info(source)
-    meter = pyln.Meter(info.samplerate)
+    meter = Meter(info.samplerate)
     if flat and flat[-1] - flat[0] >= MIN_LOUDNESS_S:
         start, stop = offset + flat[0], offset + flat[-1]
     else:

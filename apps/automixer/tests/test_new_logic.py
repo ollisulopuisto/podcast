@@ -54,3 +54,15 @@ def test_track_loudness_analysis(tmp_path):
     assert track.loudness is not None
     # A sine wave at 0.1 peak is roughly -23 LUFS
     assert -30 < track.loudness < -10
+
+
+def test_track_loudness_uses_the_shared_meter(tmp_path):
+    from speechmix.meter import Meter
+
+    rng = np.random.default_rng(6)
+    audio = (0.1 * rng.standard_normal(48000 * 5)).astype(np.float32)
+    path = tmp_path / "t.wav"
+    sf.write(path, audio, 48000, subtype="FLOAT")
+    track = Track("t", str(path))
+    track.read()
+    assert abs(track.loudness - Meter(48000).integrated_loudness(audio)) < 1e-6

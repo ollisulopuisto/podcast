@@ -5,6 +5,11 @@ All notable changes to automixer are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.3] - 2026-10-08
+
+### Changed
+- **Music beds and tracks are measured with the same loudness meter as the processing chain and mastering** (speechmix's, which matches libebur128). Session loading, `automixer-beds` and the older track path used pyloudnorm, which reads about 0.04 LU low, so beds now land about 0.04 dB quieter than before. Inaudible, but the same audio no longer reads two ways.
+
 ## [2026.10.8.2] - 2026-10-08
 
 ### Changed

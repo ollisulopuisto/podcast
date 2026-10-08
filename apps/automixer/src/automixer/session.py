@@ -26,12 +26,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-import pyloudnorm as pyln
 import soundfile as sf
 from scipy.ndimage import minimum_filter1d
 
 from nhsx import read
 from nhsx.mix import envelope, plan
+from speechmix.meter import Meter
 
 #: Puheraitojen viitetaso, jolle ketju normalisoi ennen masterointia. Sama
 #: luku kuin `cli_mix`in `SPEECH_REFERENCE_LUFS`; musiikki sovitetaan
@@ -101,11 +101,11 @@ def _slice(path: str, offset: float, length: float, rate: int) -> np.ndarray:
 #: Tasanne = hetket joilla häivytyskäyrä on enintään tämän verran (dB) oman
 #: huippunsa alapuolella. Sama 1 dB kuin tasanteen mittauksessa (vst s13e03).
 PLATEAU_WINDOW_DB = 1.0
-#: pyloudnormin lyhin mitattava pätkä on yksi 400 ms lohko.
+#: Lyhin mitattava pätkä on yksi 400 ms lohko (BS.1770).
 _MIN_PLATEAU_S = 0.4
 
 
-def _music_scale(audio: np.ndarray, env: np.ndarray, rate: int, meter) -> float:
+def _music_scale(audio: np.ndarray, env: np.ndarray, rate: int, meter=None) -> float:
     """Kerroin joka vie musiikkialueen sen viitetasolle.
 
     Häivytetty pohja (``automixer-beds`` tai käsin tehty) sovitetaan
@@ -114,6 +114,9 @@ def _music_scale(audio: np.ndarray, env: np.ndarray, rate: int, meter) -> float:
     alle ja tasanteen taso riippuisi siitä kuinka paljon pohjassa on hiljaista
     tai matalaa. Häivyttämätön pohja sovitetaan kokonaan puheen tasoon.
     """
+    # Sama mittari kuin ketjussa ja masteroinnissa (``speechmix.meter``);
+    # pyloudnorm luki 0,043 LU alakanttiin.
+    meter = meter or Meter(rate)
     window = int(_MIN_PLATEAU_S * rate)
     if len(env) > window:
         # Vain pitkään kestänyt taso lasketaan huipuksi: automixer-beds kirjoittaa
@@ -144,7 +147,7 @@ def load(path, workdir, rate: int = 48000) -> Loaded:
     if mixdown.missing:
         loaded.notes.append("puuttuu: " + ", ".join(mixdown.missing))
     n = int(round(mixdown.duration * rate))
-    meter = pyln.Meter(rate)
+    meter = Meter(rate)
 
     for number, track in enumerate(session.tracks):
         clips = [c for c in mixdown.clips if c.speaker == track.name]
