@@ -203,6 +203,11 @@ def test_stems_in_parallel_give_the_same_mix(tmp_path, monkeypatch, capsys):
     assert "stems at a time" not in capsys.readouterr().out
 
     monkeypatch.delenv("SPEECHMIX_PARALLEL_STEMS")
+    # Varaus pois: CI:n koneella vapaata muistia on alle sen (4 GB), ja
+    # testin tiedostot ovat kilotavuja. Päätöksen laskenta ajetaan silti.
+    from speechmix import stems
+
+    monkeypatch.setattr(stems, "MEMORY_RESERVE", 0)
     stems_mix.mix(str(path), str(tmp_path / "two.wav"), target_lufs=-16.0)
     assert "2 stems at a time" in capsys.readouterr().out
     one, _ = sf.read(tmp_path / "one.wav")
