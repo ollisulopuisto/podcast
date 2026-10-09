@@ -61,3 +61,8 @@ fraction of autoraffkat's UI: no picture, no cuts, no Final Cut export.
 - An own cleanup model in place of dxRevive (reverb, noise, artefacts) —
   the long-term goal for the plug-in slot. Level and dynamics stay in the
   chain.
+- Music beds exported from Ableton without fades, so the plateau and the
+  fade shape can be matched to the user's own instead of baked-in ones.
+- Ducked-time EQ and pan beyond the mid carve (`speechmix.stems`,
+  `CARVE_DB` = 3 dB at 1–4 kHz, sides, bass and kick untouched): the 3 dB
+  is a default, not measured. Tune it by ear on the blind-test page.

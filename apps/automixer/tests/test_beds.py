@@ -95,7 +95,8 @@ def test_intro_bed_plays_under_the_cold_open(tmp_path, monkeypatch):
     path = _write(tmp_path, music_name="VIKIS INTRO BED.wav")
     _run(monkeypatch, path)
     clip = _music_clip(tmp_path / "jakso beds.nhsx")
-    under = 20 * np.log10(level_at(clip.ramps, 5.0 - clip.start))
+    # Nousu alkaa 10 s ennen tasannetta (11,4 s), joten 2,5 s on vielä alkupidossa.
+    under = 20 * np.log10(level_at(clip.ramps, 2.5 - clip.start))
     plateau = 20 * np.log10(level_at(clip.ramps, 13.0 - clip.start))
     assert abs((under - plateau) - -12.0) < 1.0
 

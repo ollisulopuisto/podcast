@@ -15,7 +15,8 @@ Mitattu kuvio:
 * Lasku päättyy pohjan loppuun, ei puheeseen: MID 0,5 s ja END 1,0 s ennen
   alueen loppua. Lasku on 3,1 s, ja MID:ssä se puristui 1,5 sekuntiin
   koska tasanne vei tilan.
-* Kylmän alun alla (intro) pohja soi 12 dB tasanteen alla. Kun juontaja
+* Kylmän alun alla (intro) pohja soi 12 dB tasanteen alla ja nousee
+  Abletonin muotoon: 8 s loivasti 4 dB, sitten 8 dB 2 s:ssa. Kun juontaja
   aloittaa, pohja painuu 0,4 s ennen ensimmäistä sanaa 9,3 dB tasanteen
   alle, pysyy siellä 2,8 s ja laskee pois.
 
@@ -63,6 +64,12 @@ RISE = (
     (5.0, -18.9), (5.5, -16.8), (6.0, -14.8), (6.5, -12.6), (7.0, -10.7),
     (7.5, -6.8), (8.0, -2.9), (8.5, 0.0),
 )
+#: Kylmän alun nousu, (s, dB tasanteeseen nähden), tasanne 10 s kohdalla.
+#: Abletonilla tehty pohja (vikis s12 ja vieras.als, sokkotesti vst s13e03:
+#: ei pumppaa): noin 8 s loiva nousu, +3,6 dB, sitten +8 dB 2 s:ssa. RISE:n
+#: `max(rise, -12)` teki samasta alusta 12 dB:n kiipeämisen 1,65 s:ssa, ja
+#: kaikki sellaiset versiot pumppasivat.
+COLD_RISE = ((0.0, COLD_OPEN_UNDER_DB), (8.0, -8.0), (10.0, 0.0))
 #: Lasku tasanteelta. END-pohja t 13,1–16,2 s. Kiihtyy loppua kohti.
 FALL = (
     (0.0, 0.0), (0.4, -3.6), (0.9, -6.7), (1.4, -9.8), (1.9, -14.7),
@@ -126,7 +133,8 @@ def curve(start: float, end: float, speech, cold_open: bool = False):
         return None
     last_word, next_word = gap
     plateau = last_word + PLATEAU_AFTER_S
-    rise_from = plateau - RISE[-1][0]
+    rise = COLD_RISE if cold_open else RISE
+    rise_from = plateau - rise[-1][0]
 
     limit = end - END_MARGIN_S
     tail = (
@@ -148,8 +156,9 @@ def curve(start: float, end: float, speech, cold_open: bool = False):
 
     def level(t: float) -> float:
         if t < plateau:
-            rise = _interp(RISE, t - rise_from) if t >= rise_from else SILENCE_DB
-            return max(rise, COLD_OPEN_UNDER_DB) if cold_open else rise
+            if t >= rise_from:
+                return _interp(rise, t - rise_from)
+            return COLD_OPEN_UNDER_DB if cold_open else SILENCE_DB
         if drop_from is not None and t >= drop_from and t < fall_from:
             return _interp(DROP, t - drop_from)
         if t >= fall_from:

@@ -10,6 +10,8 @@ Yksi jakso, kolme pohjaa: nämä ovat lähtöarvoja, eivät sääntöä.
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 from nhsx import musicbed
 
 # Aikajanan sekunteja. Alue, puhe pohjan ympärillä, ja käyttäjän käyrän
@@ -86,6 +88,25 @@ def test_intro_holds_under_the_cold_open_then_dips_under_the_host():
     assert abs(_at(INTRO, curve, 36.0) - -9.3) <= 1.0
     silent = _first(INTRO, curve, lambda db: db <= -36.0, after=drop)
     assert abs(silent - INTRO["silent"]) <= 1.0
+
+
+def test_intro_climbs_long_and_gently_like_the_ableton_bed():
+    """Abletonilla tehty pohja ei pumppaa, NHSX-pohjan nousu pumppaa (sokkotesti
+    vst s13e03: A_ableton_bed ja USER hyviä, kaikki automixer-nousut huonoja).
+    Abletonin nousu alkaa noin 8 s ennen tasannetta: +3,6 dB 8 s:ssa, sitten
+    +8 dB 2 s:ssa. Vanha nousi 12 dB 1,65 s:ssa."""
+    curve = _curve(INTRO, cold_open=True)
+    plateau = _first(INTRO, curve, lambda db: db >= -0.5)
+    start = INTRO["region"][0]
+    slopes = [
+        (b[1] - a[1]) / (b[0] - a[0])
+        for a, b in pairwise(curve)
+        if plateau - 10.5 <= a[0] + start < plateau
+    ]
+    assert max(slopes) <= 4.5
+    left = _at(INTRO, curve, plateau - 8.0)
+    assert -12.0 <= left <= -8.0 and left > _at(INTRO, curve, plateau - 10.0)
+    assert _at(INTRO, curve, plateau - 2.0) <= -6.0
 
 
 def test_without_cold_open_the_bed_starts_from_silence():

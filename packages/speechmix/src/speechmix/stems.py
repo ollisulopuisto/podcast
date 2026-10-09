@@ -477,7 +477,9 @@ def _ceiling_pass_timeline(members: list[dict], AudioFile,
             times = np.arange(low, high) / rate
             if ride_db is not None and ride_step > 0:
                 curve = np.interp(times / ride_step, np.arange(len(ride_db)), ride_db)
-                blocks[-1] = blocks[-1] * (10.0 ** (curve / 20.0)).astype(np.float32)
+                slide = (10.0 ** (curve / 20.0)).astype(np.float32)
+                blocks = [block * slide if ridden else block
+                          for block, ridden in zip(blocks, _ridden(members), strict=True)]
             heard = []
             for job, block in zip(members, blocks, strict=True):
                 points = (envelopes_by_speaker or {}).get(job.get("speaker"))
@@ -497,7 +499,10 @@ def _ceiling_pass_timeline(members: list[dict], AudioFile,
                 spoken = np.zeros(tail - head, dtype=bool)
                 spoken[inside] = np.asarray(mask, dtype=bool)[index[inside]]
             if meter is not None:
-                meter.add(_heard(members, [h * gain for h in heard], layout, head, tail),
+                meter.add(_heard(members,
+                                 [h * _applied(job, gain)
+                                  for job, h in zip(members, heard, strict=True)],
+                                 layout, head, tail),
                           spoken)
             if raw_meter is not None:
                 raw_meter.add(_heard(members, heard, layout, head, tail))
@@ -509,7 +514,8 @@ def _ceiling_pass_timeline(members: list[dict], AudioFile,
         if dry_run:
             return worst
         for job, handle in zip(members, handles, strict=True):
-            _write_with_gain(job, handle, rate, stored,
+            _write_with_gain(job, handle, rate,
+                             stored if job.get("speech") else [],
                              _linear((extra or {}).get(job["key"], 0.0) + boost_db))
     finally:
         for handle in handles:
@@ -637,9 +643,10 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                     # pehmennetty ikkunansa pituudella.
                     when = (np.arange(low, high) / rate) / ride_step
                     curve = np.interp(when, np.arange(len(ride_db)), ride_db)
-                    blocks[-1] = blocks[-1] * (10.0 ** (curve / 20.0)).astype(
-                        np.float32
-                    )
+                    slide = (10.0 ** (curve / 20.0)).astype(np.float32)
+                    blocks = [block * slide if ridden else block
+                              for block, ridden in zip(blocks, _ridden(members),
+                                                       strict=True)]
                 heard = [
                     block * envelope_block(job, envelopes_by_speaker, low, high, rate)
                     for job, block in zip(members, blocks, strict=True)
@@ -653,16 +660,18 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                     # juuri se ohjelma jonka isäntä soittaa. Sama ajo kirjoittaa
                     # ja mittaa: erillinen mittauskierros olisi gigatavu lisää
                     # luettavaa eikä yhtään desibeliä enempää tietoa.
-                    meter.add(_heard(members, [h * gain for h in heard], layout,
-                                     head, tail),
+                    meter.add(_heard(members,
+                                     [h * _applied(job, gain)
+                                      for job, h in zip(members, heard, strict=True)],
+                                     layout, head, tail),
                               None if spoken is None
                               else spoken[low + head:low + tail])
                 if raw_meter is not None:
                     raw_meter.add(_heard(members, heard, layout, head, tail))
                 if not dry_run:
-                    for out, block in zip(outs, blocks, strict=True):
+                    for out, job, block in zip(outs, members, blocks, strict=True):
                         out.write(np.ascontiguousarray(
-                            (block * gain)[:, head:tail]))
+                            (block * _applied(job, gain))[:, head:tail]))
                 position += chunk
         finally:
             for out in outs:
@@ -696,6 +705,27 @@ def _heard(members, blocks, layout, head: int, tail: int) -> np.ndarray:
     played = sum(blocks)
     return (played[..., head:tail].mean(axis=0)
             if played.ndim > 1 else played[head:tail])
+
+
+def _ridden(members: list[dict]) -> list[bool]:
+    """Mille stemeille hidas veto (lyhytaikaisveto, pohjan nosto) menee.
+
+    Puheelle. Veto oli ennen jäsenlistan viimeisellä stemillä, joka
+    automixerissa on musiikki, ja pohja kävi ylös ja alas puheen mukana.
+    Ryhmä jossa ei ole puhetta (autoraffkatin yksi stemi) vetää kaikkia.
+    """
+    speech = [bool(job.get("speech")) for job in members]
+    return speech if any(speech) else [True] * len(members)
+
+
+def _applied(job: dict, gain: np.ndarray):
+    """Yhteisen käyrän osuus jolle stemille: vain puheelle.
+
+    Käyrä lasketaan summasta, mutta musiikkipohjalle se tuli samanlaisena
+    ja pohja «pumppasi» aina kun puhe osui kattoon. Pohjalla on vain
+    staattinen taso (``extra``); summan huippu jää puheen vastuulle.
+    """
+    return gain if job.get("speech") else 1.0
 
 
 def _linear(db: float) -> float:
@@ -1050,6 +1080,44 @@ class Source:
     #: ``"balance"`` (Final Cut) tai ``"power"`` (vakioteho, keskellä −3 dB
     #: kumpaankin). Ks. ``pan_gains``.
     pan_law: str = "balance"
+    #: Pohjan vaimennuskäyrä (``(t, dB)``, 0 = tasanne) joka ohjaa
+    #: keskikaistan leikkausta; ei vaikuta tasoon. ``carve_db`` on leikkaus
+    #: täydellä vaimennuksella (``CARVE_FULL_DB``).
+    ducked: list = None  # type: ignore[assignment]
+    carve_db: float = 0.0
+
+
+#: Puhekaista jonka keskeltä musiikkia raivataan, Hz. Bassoon ja kickiin
+#: (alle 1 kHz) ei kosketa (käyttäjä 2026-10-09), eikä yli 4 kHz:n
+#: konsonanttien yläpuolelle: leikkaus on puheen tilaa, ei sen kilpailija.
+CARVE_BAND_HZ = (1000.0, 4000.0)
+#: Leikkaus on täysi tämän verran tasanteen alapuolella ja skaalautuu sitä
+#: ennen lineaarisesti. Käyttäjän häivytykset laskevat pohjaa ~8 dB ja yli.
+CARVE_FULL_DB = 12.0
+
+
+def _carve_delta(pair: np.ndarray, times: np.ndarray, source: Source,
+                 state: dict) -> np.ndarray:
+    """Keskikaistan leikkaus lähteen kanavapariin; sivut jäävät ennalleen.
+
+    Leikkaus vähennetään **samana molemmista kanavista** (keski = L+R),
+    joten sivusignaali ei muutu, ja syvyyden ollessa 0 vähennys on tasan 0
+    eli tasanne on bittitarkasti alkuperäinen.
+    """
+    from scipy.signal import butter, sosfilt
+
+    db = np.interp(times, [p[0] for p in source.ducked], [p[1] for p in source.ducked])
+    depth = np.clip(-db / CARVE_FULL_DB, 0.0, 1.0)
+    if not depth.any():
+        state.pop("zi", None)
+        return pair
+    sos = butter(2, CARVE_BAND_HZ, btype="bandpass", fs=state["rate"], output="sos")
+    zi = state.get("zi")
+    if zi is None:
+        zi = np.zeros((sos.shape[0], 2))
+    band, state["zi"] = sosfilt(sos, (pair[0] + pair[1]) / 2, zi=zi)
+    cut = (1.0 - 10 ** (-source.carve_db * depth / 20.0)) * band
+    return pair - cut.astype(np.float32)[None, :]
 
 
 def pan_gains(pan: float, law: str = "balance") -> tuple[float, float]:
@@ -1086,6 +1154,7 @@ def sum_to_file(sources: list[Source], program_start: float, seconds: float,
     total = int(round(seconds * rate))
     step = int(block * rate)
     opened: dict = {}
+    carves: dict = {}
     try:
         with AudioFile(out_path, "w", samplerate=rate, num_channels=2) as out:
             for first in range(0, total, step):
@@ -1118,6 +1187,10 @@ def sum_to_file(sources: list[Source], program_start: float, seconds: float,
                         if pair.shape[1] < n:
                             pair = np.pad(pair, ((0, 0), (0, n - pair.shape[1])))
                         gain = 10 ** (source.gain_db / 20.0)
+                        if source.ducked and source.carve_db:
+                            carve = carves.setdefault(id(source), {"rate": rate})
+                            pair = _carve_delta(
+                                pair, low + np.arange(n) / rate, source, carve)
                         if source.duck:
                             times = low + np.arange(n) / rate
                             db = np.interp(times, [p[0] for p in source.duck],

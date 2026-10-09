@@ -5,6 +5,11 @@ All notable changes to automixer are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.9.1] - 2026-10-09
+
+### Fixed
+- **Intro music no longer warbles or pumps.** The bed stem is exported with its duck depth (`ducked`, 20 Hz) and the mix leaves the music untouched at the plateau (speechmix 2026.10.9.1); the beds are generated with one long rise (nhsx 2026.10.9.1). The bed sits `BED_UNDER_SPEECH_DB` = +1.0 dB over the speech (by ear, not measured).
+
 ## [2026.10.8.3] - 2026-10-08
 
 ### Changed

@@ -101,6 +101,9 @@ def _slice(path: str, offset: float, length: float, rate: int) -> np.ndarray:
 #: Tasanne = hetket joilla häivytyskäyrä on enintään tämän verran (dB) oman
 #: huippunsa alapuolella. Sama 1 dB kuin tasanteen mittauksessa (vst s13e03).
 PLATEAU_WINDOW_DB = 1.0
+#: Vaimennuskäyrän näytteitä sekunnissa. Häivytykset ovat sekunnin
+#: mittakaavassa, joten 20 Hz riittää ja pitää listan pienenä.
+DEPTH_HZ = 20
 #: Lyhin mitattava pätkä on yksi 400 ms lohko (BS.1770).
 _MIN_PLATEAU_S = 0.4
 
@@ -155,6 +158,7 @@ def load(path, workdir, rate: int = 48000) -> Loaded:
             continue
         music = _is_music(track, session)
         out = np.zeros((n, 2 if music else 1), dtype=np.float32)
+        depth = np.zeros(n, dtype=np.float32)
         for clip in clips:
             try:
                 audio = _slice(clip.path, clip.file_offset, clip.length, rate)
@@ -167,6 +171,15 @@ def load(path, workdir, rate: int = 48000) -> Loaded:
                 audio = audio if audio.shape[1] == 2 else np.repeat(audio[:, :1], 2, axis=1)
                 audio = audio * np.float32(_music_scale(audio, env, rate, meter))
                 gain = 1.0
+                # Sama kuin _music_scale: alun 1,0 ei ole tasanne.
+                size = int(_MIN_PLATEAU_S * rate)
+                peak = float(minimum_filter1d(env, size=size).max()) if len(env) > size else (
+                    float(env.max()) if len(env) else 0.0)
+                if peak > 0.0:
+                    first = int(round(clip.start * rate))
+                    seen = depth[first:first + len(env)]
+                    depth[first:first + len(env)] = np.minimum(
+                        0.0, 20 * np.log10(np.maximum(env[: len(seen)] / peak, 1e-6)))
             else:
                 audio = audio.mean(axis=1, keepdims=True)
                 # Alueen oma taso ilman raidan faderia.
@@ -176,9 +189,15 @@ def load(path, workdir, rate: int = 48000) -> Loaded:
             out[start:end] += audio[: end - start] * (env[: end - start, None] * gain)
         target = workdir / f"{number:02d} {track.name}.wav"
         sf.write(target, out if music else out[:, 0], rate, subtype="FLOAT")
-        loaded.tracks.append({
+        entry = {
             "name": track.name,
             "path": str(target),
             "type": "music" if music else "speech",
-        })
+        }
+        if music:
+            # Vaimennus tasanteesta, dB, 20 Hz:n välein (``Source.ducked``).
+            step = rate // DEPTH_HZ
+            entry["ducked"] = [(i / rate, float(depth[i]))
+                               for i in range(0, n, step)]
+        loaded.tracks.append(entry)
     return loaded

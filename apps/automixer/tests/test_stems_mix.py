@@ -122,8 +122,9 @@ def test_memory_follows_one_stem_not_the_number_of_tracks(tmp_path):
 
 
 def test_the_bed_is_no_louder_than_the_speech(tmp_path):
-    """Pohjan tasanne puheen tasolla, ei yli: käyttäjä, 2026-10-07 — «music
-    at most at −16 LUFS, the same as the speech». +7 dB (sovitettu
+    """Pohjan tasanne puheen tasolla ja hieman yli: käyttäjä 2026-10-09,
+    korvakuulolta «+1 for now»; aiemmin 2026-10-07 «music at most at −16 LUFS,
+    the same as the speech». +7 dB (sovitettu
     Hindenburgin istunnosta, käsittelemätöntä puhetta vasten) teki
     valmiissa miksauksessa intropohjasta +7…+10 dB puhetta kovemman; käyttäjän
     oma master: +1,2. Taso asetetaan **käsitellystä** puheesta mitattuna."""
@@ -134,8 +135,9 @@ def test_the_bed_is_no_louder_than_the_speech(tmp_path):
     meter = pyln.Meter(RATE)
     bed = meter.integrated_loudness(mix[int(21.0 * RATE):int(25.5 * RATE)])
     speech = meter.integrated_loudness(mix[int(30.0 * RATE):int(40.0 * RATE)])
-    assert bed <= speech + 0.5, (bed, speech)
-    assert abs((bed - speech) - stems_mix.BED_UNDER_SPEECH_DB) < 1.0, bed - speech
+    assert bed <= speech + 2.0, (bed, speech)
+    assert stems_mix.BED_UNDER_SPEECH_DB == 1.0
+    assert abs((bed - speech) - 1.0) < 1.0, bed - speech
 
 
 def test_a_hot_take_is_brought_to_the_speakers_level(tmp_path, capsys):

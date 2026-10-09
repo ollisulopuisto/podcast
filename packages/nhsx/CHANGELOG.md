@@ -5,6 +5,11 @@ All notable changes to the nhsx package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.9.1] - 2026-10-09
+
+### Changed
+- `musicbed.COLD_RISE` is one long rise (−68 → −8 dB in 8 s, then to 0 dB at 10 s) instead of several steps, so the intro bed comes up in a single move.
+
 ## [2026.10.5.3] - 2026-10-05
 
 ### Fixed
