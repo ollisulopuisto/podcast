@@ -47,6 +47,13 @@ contradicted by them.
   was measured. The bugs here are silent — valid output, clean import, no
   exception, wrong result — and the number is what lets the next reader tell
   an improvement from a regression. `SHARED-AUDIO.md` collects them.
+* **Several agents, one checkout.** Nothing is merged at file level in a
+  shared tree. Each change goes on its own branch from `main`, as a PR with a
+  squash merge, preferably from its own worktree. Commit only your own paths
+  (`git add <paths>`, never `git add -A` or `commit -a`): the shared tree
+  holds other agents' unfinished work, and it stays untouched. No stash, reset
+  or discarding another's changes; if a pull stops on overlapping files, stop
+  and ask. Deleting branches and `worktree remove` are the user's call.
 * **CI does not skip.** No `continue-on-error`, and a skipped test is a green
   test: where a test can skip for a missing runner tool, CI checks separately
   that it actually ran.
