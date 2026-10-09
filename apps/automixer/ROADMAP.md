@@ -58,9 +58,13 @@ fraction of autoraffkat's UI: no picture, no cuts, no Final Cut export.
 
 - The Swift NHSX viewer does not yet apply `FadeIn`/`FadeOut`
   (`viewer/Sources/NhsxKit/Mix.swift`); `nhsx-render` and automixer do.
-- Export the music files without fades burned in, so automixer's bed
-  behaviour (`automixer-beds`, `nhsx.musicbed`) can be matched against the
-  by-ear fades on identical material.
+- Music-bed fades: the VIKIS bed WAVs used in s13e03 have fades burned into
+  the audio, so the session carries no `<Fade>`/`FadeIn`/`FadeOut` on the
+  `musa` track and the by-ear behaviour can only be read from the audio.
+  The user will export the same beds without fades; then measure the fades
+  they drew against the speech (ramp start/end vs own-voice onsets and
+  offsets, plateau level vs speech) and turn that into rules that write the
+  `musa` envelope into the new session.
 - An own cleanup model in place of dxRevive (reverb, noise, artefacts) —
   the long-term goal for the plug-in slot. Level and dynamics stay in the
   chain.
