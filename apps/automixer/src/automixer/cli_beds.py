@@ -8,8 +8,10 @@ omista häivytyksistä) ja tallentaa **uuden** istunnon alkuperäisen viereen.
 Hindenburgissa sitä voi hienosäätää kuten käsin tehtyä, ja automixer
 miksaa sen sellaisenaan.
 
-Käyrä kirjoitetaan lyhyinä `<Fade>`-luiskina (``nhsx.fades``), koska
-käyttäjän häivytysmuoto ei ole Hindenburgin raised-cosine.
+Käyrä kirjoitetaan pitkinä `<Fade>`-luiskina (``nhsx.fades.long_segments``):
+lasku ja pienet muutokset yhtenä luiskana, yli 30 dB:n nousu kahtena, jotta se
+seuraa käsin tehtyä dB-suoraa. Lyhyet peräkkäiset luiskat pysäyttävät
+muutosnopeuden liitoksissa ja kuulostavat sätkivältä.
 """
 
 from __future__ import annotations
@@ -102,7 +104,7 @@ def main() -> None:
                 continue
             path = locate(session, info)
             gain = _plateau_gain(path, region.offset, curve)
-            segs = fades.segments([(t, db + gain) for t, db in curve])
+            segs = fades.long_segments([(t, db + gain) for t, db in curve])
             for attr in ("FadeIn", "FadeOut"):
                 region.elem.attrib.pop(attr, None)
             fades.write(region.elem, segs)

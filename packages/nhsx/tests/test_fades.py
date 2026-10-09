@@ -160,3 +160,57 @@ def test_a_bed_starting_below_unity_does_not_click(tmp_path):
     rate = 48000
     env = envelope(clip.length, rate, clip.ramps, clip.fade_in, clip.fade_out)
     assert 20 * math.log10(float(np.max(env[: int(0.02 * rate)]))) <= -45.0
+
+
+def _bed(t):
+    if t < 2.0:
+        return float("-inf")
+    if t < 10.0:
+        return -80.0 + 80.0 * (t - 2.0) / 8.0
+    if t < 14.0:
+        return 0.0
+    return float("-inf") if t > 18.0 else -40.0 * (t - 14.0) / 4.0
+
+
+def _rise_error(tmp_path, segments):
+    ramps = _read_back(tmp_path, segments)
+    worst = 0.0
+    for k in range(200, 1000):
+        want = _bed(k / 100)
+        got = _db(level_at(ramps, k / 100))
+        if want >= fades.AUDIBLE_DB or got >= fades.AUDIBLE_DB:
+            worst = max(worst, abs(got - want))
+    return worst
+
+
+def test_a_rise_is_two_long_ramps_and_a_fall_is_one(tmp_path):
+    """vst s13e03: käyttäjä kuuli INTRO-pohjan nousun sätkivänä. 21 lyhyttä
+    raised-cosine-luiskaa pysäyttää vahvistuksen muutosnopeuden jokaisessa
+    liitoksessa (mitattu: nousu 11,7 dB / 1,9 s, 17 % ajasta lähes
+    nollanopeudella, 2,5 Hz). Tasanne ei tarvitse luiskaa. Lasku on yksi
+    luiska. Nousu on kaksi: käyttäjän nousu on suora desibeleinä (≈8 dB/s),
+    yksi amplitudiluiska poikkeaa siitä jopa 13,7 dB, ja käyttäjä kuuli sen
+    huonompana. Kaksi pitkää luiskaa liittyy vain kerran."""
+    segments = fades.long_segments(_points(_bed))
+    # alun 10 ms, nousu 2 luiskaa, lasku
+    assert len(segments) == 4, segments
+    rise = segments[1:3]
+    assert all(r.length >= 1.9 for r in rise), rise
+    ramps = _read_back(tmp_path, segments)
+    levels = [level_at(ramps, t / 100) for t in range(2000)]
+    end = int((rise[1].start + rise[1].length) * 100)
+    # Nousu ei laske missään.
+    assert all(b >= a - 1e-12 for a, b in pairwise(levels[2:end]))
+
+
+def test_two_ramp_rise_follows_the_db_straight_curve_closer(tmp_path):
+    two = _rise_error(tmp_path, fades.long_segments(_points(_bed)))
+    # Yksi luiska: 13,7 dB (mitattu). Kaksi: selvästi alle.
+    assert two < 8.0, two
+
+
+def test_long_ramp_stays_inaudible_where_the_curve_is_silent(tmp_path):
+    segments = fades.long_segments(_points(lambda t: -90.0 if t < 3.0 else -6.0))
+    ramps = _read_back(tmp_path, segments)
+    assert _db(level_at(ramps, 1.0)) < fades.AUDIBLE_DB
+    assert abs(_db(level_at(ramps, 19.0)) - -6.0) < 0.01

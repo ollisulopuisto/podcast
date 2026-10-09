@@ -2,7 +2,7 @@
 
 [project]
 name = "nhsx"
-version = "2026.10.9.1"
+version = "2026.10.9.2"
 description = "Hindenburg .nhsx session parser and pipeline seam"
 readme = "README.md"
 requires-python = ">=3.13"

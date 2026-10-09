@@ -5,6 +5,11 @@ All notable changes to the nhsx package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.9.2] - 2026-10-09
+
+### Added
+- `nhsx.fades.long_segments`: each change between plateaus is one `<Fade>` ramp (a rise over 30 dB is two), found by grid search, instead of the many short ramps of `segments`. On vst s13e03's INTRO bed `segments` wrote 21 ramps whose zero velocity at every joint was audible as twitching.
+
 ## [2026.10.9.1] - 2026-10-09
 
 ### Changed
