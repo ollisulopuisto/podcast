@@ -49,13 +49,17 @@ def _duration(path: str) -> float:
 
 
 #: Musiikkipohjan kovin hetki (lyhytaikainen äänekkyys, 3 s) näin paljon
-#: **käsitellyn** puheen äänekkyyden alla. Käyttäjä 2026-10-07: «music at
-#: most at −16 LUFS, the same as the speech». Käyttäjän oma master: pohja
-#: +1,2 dB puheen yllä; aiempi +7 dB (Hindenburgin istunnosta,
-#: käsittelemätöntä puhetta vasten) teki valmiissa miksauksessa +7…+10.
-#: Tutkimus (Sound On Sound, Transom): selvästi soiva musiikki puheen
-#: tasolle, koska musiikin huiput ovat kovemmat ja masterointi litistää ne.
-BED_UNDER_SPEECH_DB = -1.0
+#: **käsitellyn** puheen äänekkyyden **yllä**. Käyttäjä 2026-10-09,
+#: korvakuulolta: «+1 for now»; hänen oma master on noin +1,2 dB. Aiemmin
+#: −1,0 (2026-10-07, «music at most −16 LUFS») ja +7 dB (Hindenburgin
+#: istunnosta, käsittelemätöntä puhetta vasten), joka teki valmiissa
+#: miksauksessa +7…+10. Tutkimus (Sound On Sound, Transom): selvästi soiva
+#: musiikki puheen tasolle, koska musiikin huiput ovat kovemmat.
+BED_UNDER_SPEECH_DB = 1.0
+#: Musiikin keskikaistan leikkaus kun pohja on täysin (12 dB) puheen alla,
+#: dB. Oletus, ei mitattu: käyttäjä halusi tilaa puheelle ja bassoon ja
+#: kickiin koskematta; kuunneltava ennen kuin luku on tosi.
+CARVE_DB = 3.0
 
 #: Puheen panorointilaki: vakioteho, kuten automixerin oma väylä ennenkin.
 #: Keskellä −3 dB kumpaankin, joten stereon äänekkyys on monon, ja musiikki
@@ -343,6 +347,7 @@ def mix(
                 if hasattr(pool, "close"):
                     pool.close()
 
+        ducked_by = {t["name"]: t.get("ducked") for t in music}
         for t in music:
             # Musiikki on jo tasollaan ja häivytetty (``session.load``); se
             # kulkee katon ja masteroinnin läpi summan osana.
@@ -400,7 +405,8 @@ def mix(
                          pan_law=job["pan_law"])
             for job in jobs[: len(speech)]
         ] + [
-            stems.Source(job["target"], [(0.0, seconds, 0.0)], stereo=True)
+            stems.Source(job["target"], [(0.0, seconds, 0.0)], stereo=True,
+                         ducked=ducked_by.get(job["key"]), carve_db=CARVE_DB)
             for job in jobs[len(speech):]
         ]
         _log("writing the mix")

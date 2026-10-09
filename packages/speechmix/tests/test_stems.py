@@ -262,3 +262,121 @@ def test_two_47_minute_stems_fit_in_16_gb_free(monkeypatch):
     monkeypatch.delenv("SPEECHMIX_PARALLEL_STEMS", raising=False)
     stem = 47 * 60 * 48000 * 4
     assert stems.parallel_count([stem, stem], available=16 * GB) == 2
+
+
+def test_the_ceiling_curve_never_reaches_the_music_stem(tmp_path):
+    """Musiikki sai puheen ja musiikin summan rajoituskäyrän, joten pohja
+    «pumppasi» aina kun puhe osui kattoon (vst s13e03 -intro, 2026-10-09).
+    Pohjalla on vain staattinen taso; käyrä menee puheelle."""
+    speech = _job(tmp_path, "speech", 6.0, 0.0, 0.6, 5)   # huiput yli katon
+    music = _job(tmp_path, "music", 6.0, 0.0, 0.05, 6)
+    music.update(speech=False, programme=True, speaker="")
+    original, _ = sf.read(music["target"])
+    spoken_peak = np.abs(sf.read(speech["target"])[0]).max()
+    result = stems.StemResult()
+    stems.program_ceiling([speech, music], result, {}, {"music": -6.0})
+    after, _ = sf.read(music["target"])
+    assert np.allclose(after, original * 10 ** (-6.0 / 20), atol=1e-6)
+    squashed, _ = sf.read(speech["target"])
+    # vaimennuksen kantaa puhe. Summa voi ylittää katon pohjan verran
+    # (mitattu tässä 0,879 vs katto 0,841), mutta ei leikkaa.
+    assert np.abs(squashed).max() < 0.8 * spoken_peak
+    assert np.abs(squashed + after).max() < 1.0
+
+
+def test_the_slow_ride_never_reaches_the_music_stem(tmp_path):
+    """Lyhytaikaisveto ja pohjan nosto tulivat jäsenlistan viimeiselle
+    stemille, joka automixerissa on musiikki: pohja kävi ylös ja alas
+    (vst s13e03 -intro, 2026-10-09). Veto kuuluu puheelle."""
+    speech = _job(tmp_path, "speech", 6.0, 0.0, 0.2, 5)
+    music = _job(tmp_path, "music", 6.0, 0.0, 0.05, 6)
+    music.update(speech=False, programme=True, speaker="")
+    original, _ = sf.read(music["target"])
+    spoken, _ = sf.read(speech["target"])
+    ride = np.array([0.0, -6.0, -6.0, 0.0, 0.0, 0.0, 0.0])   # dB, 1 s välein
+    stems.program_ceiling([speech, music], stems.StemResult(), {},
+                          {"music": -6.0}, ride_db=ride, ride_step=1.0)
+    after, _ = sf.read(music["target"])
+    assert np.allclose(after, original * 10 ** (-6.0 / 20), atol=1e-6)
+    ridden, _ = sf.read(speech["target"])
+    rate = 48000
+    assert np.abs(ridden[int(1.5 * rate):int(2.5 * rate)]).max() < \
+        0.7 * np.abs(spoken[int(1.5 * rate):int(2.5 * rate)]).max()
+
+
+def _bed(tmp_path, left, right):
+    sf.write(tmp_path / "bed.wav", np.stack([left, right], axis=1).astype(np.float32),
+             RATE, subtype="FLOAT")
+    return str(tmp_path / "bed.wav")
+
+
+def _mix(path, seconds, **kw):
+    out = path.rsplit("/", 1)[0] + "/mix.wav"
+    stems.sum_to_file([stems.Source(path, [(0.0, seconds, 0.0)], stereo=True, **kw)],
+                      0.0, seconds, out, rate=RATE, block=0.7)
+    return sf.read(out, always_2d=True)[0]
+
+
+def _tone(hz, seconds, level):
+    t = np.arange(int(seconds * RATE)) / RATE
+    return level * np.sin(2 * np.pi * hz * t)
+
+
+def _rms(x):
+    return float(np.sqrt(np.mean(np.square(x))))
+
+
+def _db(a, b):
+    return 20 * np.log10(_rms(a) / _rms(b))
+
+
+#: Pohja soi 0…2 s tasanteella ja 3…5 s −12 dB:ssä (häivytys on jo tiedostossa).
+_DUCKED = [(0.0, 0.0), (2.0, 0.0), (3.0, -12.0), (5.0, -12.0)]
+
+
+def test_the_carve_leaves_the_plateau_bit_exact(tmp_path):
+    """Pohja tasanteella on alkuperäinen: vain staattinen taso (käyttäjä
+    2026-10-09). Leikkaus kuuluu vain vaimennuksen aikaan."""
+    tone = _tone(2000, 5.0, 0.2)
+    path = _bed(tmp_path, tone, tone)
+    plain = _mix(path, 5.0)
+    carved = _mix(path, 5.0, ducked=_DUCKED, carve_db=3.0)
+    assert np.array_equal(carved[: 2 * RATE], plain[: 2 * RATE])
+
+
+def test_the_carve_cuts_the_centre_of_the_ducked_bed_in_the_speech_band(tmp_path):
+    seconds = 5.0
+    mid_speech, mid_bass = _tone(2000, seconds, 0.1), _tone(80, seconds, 0.1)
+    side = _tone(2000, seconds, 0.1)
+    # keskellä: 2 kHz (puhekaista) ja 80 Hz (basso); sivulla: 2 kHz vastavaiheessa
+    path = _bed(tmp_path, mid_speech + mid_bass + side, mid_speech + mid_bass - side)
+    plain = _mix(path, seconds)
+    carved = _mix(path, seconds, ducked=_DUCKED, carve_db=3.0)
+    span = slice(int(3.5 * RATE), int(4.5 * RATE))
+    # sivut ja basso ennallaan, keski puhekaistalla −3 dB
+    for name, hz, expect in (("mid", 2000, -3.0), ("bass", 80, 0.0)):
+        cut = _band(carved[span], plain[span], hz)
+        assert abs(cut - expect) < 0.6, (name, cut)
+
+
+def _band(carved, plain, hz):
+    """Keski- ja sivusignaalin taso taajuudella ``hz``, carved vs plain."""
+    def level(x, kind):
+        sig = (x[:, 0] + x[:, 1]) / 2 if kind == "mid" else (x[:, 0] - x[:, 1]) / 2
+        spec = np.abs(np.fft.rfft(sig * np.hanning(len(sig))))
+        return spec[int(hz * len(sig) / RATE)]
+    if hz == 2000:
+        side = 20 * np.log10(level(carved, "side") / level(plain, "side"))
+        assert abs(side) < 0.1, side
+    return 20 * np.log10(level(carved, "mid") / level(plain, "mid"))
+
+
+def test_the_carve_scales_with_the_duck_depth(tmp_path):
+    tone = _tone(2000, 5.0, 0.2)
+    path = _bed(tmp_path, tone, tone)
+    plain = _mix(path, 5.0)
+    carved = _mix(path, 5.0, ducked=_DUCKED, carve_db=3.0)
+    halfway = slice(int(2.45 * RATE), int(2.55 * RATE))    # ≈ −6 dB, kesken luiskaa
+    deep = slice(int(4 * RATE), int(4.5 * RATE))
+    assert -3.1 < _db(carved[deep], plain[deep]) < -2.7
+    assert -1.9 < _db(carved[halfway], plain[halfway]) < 0.0

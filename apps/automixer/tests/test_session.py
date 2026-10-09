@@ -187,3 +187,14 @@ def test_beds_are_measured_with_the_shared_meter():
     env = np.ones(len(audio), dtype=np.float32)
     want = 10 ** ((session.MUSIC_LUFS - Meter(RATE).integrated_loudness(audio)) / 20)
     assert abs(session._music_scale(audio, env, RATE) - want) < 1e-9
+
+
+def test_a_faded_bed_exports_its_duck_depth_from_the_plateau(tmp_path):
+    """The carve follows the duck: 0 dB at the plateau, the hold's depth
+    (−10 dB under the −2 dB plateau) while ducked."""
+    loaded = session.load(_write_faded_session(tmp_path), tmp_path / "work")
+    music = next(t for t in loaded.tracks if t["type"] == "music")
+    curve = {round(t, 2): db for t, db in music["ducked"]}
+    assert abs(curve[11.0]) < 0.1, curve[11.0]
+    assert abs(curve[4.0] - -10.0) < 0.2, curve[4.0]
+    assert all(db <= 0.0 for db in curve.values())

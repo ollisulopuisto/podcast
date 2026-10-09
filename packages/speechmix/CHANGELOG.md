@@ -5,6 +5,14 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.9.1] - 2026-10-09
+
+### Fixed
+- **The music stem gets no time-varying gain.** The ceiling curve, the limiter gain and the slow ride were applied to every stem, so a bed's plateau pumped and warbled (vst s13e03). Only speech stems are ridden now; a music stem passes through bit-exact at its plateau.
+
+### Added
+- `Source.ducked` and `carve_db`: while a bed is ducked, 1–4 kHz is carved out of its centre (mid) for the speech, in proportion to the duck depth. At the plateau the depth is zero and the carve is a bit-exact passthrough. `CARVE_DB=3.0` is not measured, it is a by-ear starting point.
+
 ## [2026.10.8.6] - 2026-10-08
 
 ### Added
