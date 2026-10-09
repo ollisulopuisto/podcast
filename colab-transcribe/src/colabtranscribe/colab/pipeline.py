@@ -417,6 +417,74 @@ def run_auto_silence(nhsx_path, audio_folder, rms_enabled, threshold, tail, gap)
 
     tree.write(output_path, encoding="UTF-8", xml_declaration=True)
     print(f"Valmis käsitelty projekti: {output_path}")
+    return output_path
+
+
+# 6. Käsikirjoitus valmiista istunnosta
+def _stamp(seconds):
+    total = int(seconds)
+    return f"[{total // 60:02d}:{total % 60:02d}]"
+
+
+def write_script(nhsx_path):
+    """Istunnosta luettava `.md` sen viereen: yksi kappale per puheenvuoro.
+
+    **Snapshot** podcast-magicin `script/core.py`:stä, koska tämä skripti ei
+    voi tuoda työtilaa (ks. CLAUDE.md). Raidan nimi on puhujan nimi,
+    peräkkäiset alueet samalta raidalta ovat yksi vuoro, aikaleima on vuoron
+    ensimmäisen alueen paikka aikajanalla ja tekstin antavat sanat joiden
+    tiedostoaika osuu alueen ikkunaan. `test_the_snapshot_script_matches_
+    podcast_magics` vertaa tulosta alkuperäiseen.
+    """
+    with open(nhsx_path, "r", encoding="utf-8") as f:
+        raw = f.read()
+    _reject_doctype(raw, os.path.basename(nhsx_path))
+    tree = etree.ElementTree(etree.fromstring(raw.encode("utf-8"), _SAFE_PARSER))
+
+    pool = _first_named(tree, "AudioPool")
+    files = {}
+    if pool is not None:
+        for file_elem in _children_named(pool, "File"):
+            files.setdefault(file_elem.get("Id", ""), file_elem)
+
+    entries = []
+    for track in _iter_named(tree, "Track"):
+        name = track.get("Name", "")
+        for region in _children_named(track, "Region"):
+            file_elem = files.get(region.get("Ref", ""))
+            if file_elem is None:
+                continue
+            transcription = _first_named(file_elem, "Transcription")
+            if transcription is None:
+                continue
+            start = time_to_seconds(region.get("Start", "0"))
+            offset = time_to_seconds(region.get("Offset", "0"))
+            length = time_to_seconds(region.get("Length"))
+            words = []
+            for word in _iter_named(transcription, "w"):
+                text = (word.text or "").strip()
+                if not text:
+                    continue
+                ws = time_to_seconds(word.get("s"))
+                we = ws + time_to_seconds(word.get("l"))
+                if ws < offset + length and we > offset:
+                    words.append(text)
+            if words:  # musiikkiraita ja tyhjä alue eivät ole käsikirjoitusta
+                entries.append((start, name, " ".join(words)))
+
+    entries.sort(key=lambda entry: entry[0])
+    turns = []
+    for start, name, text in entries:
+        if turns and turns[-1][1] == name:
+            turns[-1][2].append(text)
+        else:
+            turns.append((start, name, [text]))
+    lines = [f"{_stamp(start)} **{name}:** {' '.join(parts)}" for start, name, parts in turns]
+    output_path = _swap_suffix(nhsx_path, ".nhsx", ".md")
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("\n\n".join(lines) + ("\n" if lines else ""))
+    print(f"Käsikirjoitus luotu: {output_path} ({len(lines)} vuoroa)")
+    return output_path
 
 
 def main():

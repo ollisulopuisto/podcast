@@ -10,7 +10,10 @@ Osoita kansioon jossa on Hindenburgin `.nhsx`-istuntoja ja niiden äänet.
 Se käynnistää Colab-istunnon, lähettää kaiken, litteroi siellä Whisperillä
 (faster-whisper T4:llä, L4:llä tai A100:lla), kirjoittaa sanat istuntoon,
 vaimentaa jokaisen kohdan jossa kukaan ei puhu (Auto-Silence) ja lataa
-tulokset takaisin: `<jakso> litteroitu.nhsx` ja `<jakso>_processed.nhsx`.
+tulokset takaisin: `<jakso> litteroitu.nhsx` ja `<jakso>_processed.nhsx`, sekä valmiin istunnon
+luettava käsikirjoitus viereen (`<jakso>_processed.md`, tai
+`<jakso> litteroitu.md` kun `--no-silence`): yksi kappale per puheenvuoro,
+puhujana raidan nimi.
 
 ## Ajaminen
 

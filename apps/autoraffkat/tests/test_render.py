@@ -403,3 +403,60 @@ def test_the_picture_is_copied_once_after_it_is_drawn(tmp_path, monkeypatch):
          "stream=codec_type,nb_read_frames", "-of", "csv=p=0", str(out)],
         check=True, capture_output=True, text=True).stdout.split()
     assert "video,80" in probe and any(p.startswith("audio") for p in probe)
+
+
+# ------------------------------------------------------------------ pino
+
+SQUARE_CROP = 21.875
+SQUARE_Y = 28.125
+
+
+def _tile(path, sign, *, start=0, end=50, lane=0, crop=SQUARE_CROP):
+    """Pinon puolikas: natiivikokoinen neliö, ``sign`` × 28,125 % ylös."""
+    return Shot(start, end, str(path), 0.0, 1920, 1080, pos_y=sign * SQUARE_Y,
+                fill=False, lane=lane, crop=crop)
+
+
+def test_a_square_tile_is_drawn_at_native_size_not_fitted():
+    """Neliö on 1920×1080-lähde ilman skaalausta (konformi ``none``): sovitus
+    kutistaisi sen 0,5625-kertaiseksi ja pino jäisi pieneksi."""
+    tile = _tile("a.mp4", 1)
+    assert render.base_factor(tile, 1080, 1920) == 1.0
+    assert render.base_factor(Shot(0, 1, "a.mp4", 0.0, 1920, 1080), 1080, 1920) \
+        == pytest.approx(0.5625)
+
+
+def test_a_square_reaction_keeps_the_base_under_it_as_its_other_half():
+    """Reaktio (lane 1) ei korvaa pohjakuvaa vaan jättää sen pinon toiseksi
+    puoliskoksi, ja rajaus säilyy paloissa."""
+    base = _tile("base.mp4", -1)
+    reaction = _tile("reaction.mp4", 1, start=10, end=30, lane=1)
+    flat = render.flatten([base, reaction], render.Fraction(1, 25))
+    assert [(s.start, s.end) for s in flat] == [(0, 10), (10, 30), (30, 50)]
+    stacked = flat[1]
+    assert stacked.partner is not None
+    assert stacked.path == "reaction.mp4" and stacked.partner.path == "base.mp4"
+    assert stacked.partner.file_start == pytest.approx(10 / 25)
+    assert all(s.crop == SQUARE_CROP for s in flat)
+    assert flat[0].partner is None and flat[2].partner is None
+
+
+@needs_ffmpeg
+def test_two_squares_stack_with_each_picture_in_its_own_half(tmp_path):
+    """Merkki: kummassakin lähteessä viiva eri kohdassa. Ylhäällä pitää
+    näkyä ylemmän neliön viiva ja alhaalla alemman — rajattuna 420 px
+    kummaltakin reunalta, eli viiva siirtyy 420 px vasemmalle."""
+    top, bottom = tmp_path / "top.mp4", tmp_path / "bottom.mp4"
+    _bar_source(top, x=1300)
+    _bar_source(bottom, x=700)
+    shots = [_tile(bottom, -1), _tile(top, 1, lane=1)]
+    out = tmp_path / "out.mp4"
+    render.render_video(shots, 1080, 1920, render.Fraction(1, 25), 50, str(out))
+    frame = _frame(out, 25)
+    upper = np.flatnonzero(frame[300] > 128)
+    lower = np.flatnonzero(frame[1600] > 128)
+    assert len(upper) and len(lower)
+    assert abs(upper.mean() - (1300 - 420)) < 3
+    assert abs(lower.mean() - (700 - 420)) < 3
+    # Neliöt kohtaavat 960 px:n kohdalla eikä väliin jää mustaa juovaa.
+    assert np.flatnonzero(frame[955] > 128).size and np.flatnonzero(frame[965] > 128).size

@@ -171,59 +171,97 @@ def render_video(shots: list[Shot], pw: int, ph: int, frame_duration: Fraction,
         shutil.rmtree(work, ignore_errors=True)
 
 
+def _picture_layer(shot: Shot, track, at, span, frames: int,
+                   frame_duration: Fraction, pw: int, ph: int, assets: dict):
+    """Yhden kuvan raidalle: lähde aikajanalle ja sen muunnos kerrosohjeeksi.
+
+    Rajattu neliö (``shot.crop``) saa lisäksi rajausikkunan lähteen
+    koordinaateissa; ``transform`` siirtää sen paikalleen natiivikokoisena,
+    ja ikkunan ulkopuolinen jää läpinäkyväksi eli mustaksi. Pinon
+    puolikkaat piirretään samalla funktiolla eri raidoille.
+    """
+    import AVFoundation
+    import CoreMedia
+    import Foundation
+    import Quartz
+
+    layer = AVFoundation.AVMutableVideoCompositionLayerInstruction \
+        .videoCompositionLayerInstructionWithAssetTrack_(track)
+    source = assets.get(shot.path)
+    if source is None:
+        asset = AVFoundation.AVURLAsset.URLAssetWithURL_options_(
+            Foundation.NSURL.fileURLWithPath_(shot.path),
+            {AVFoundation.AVURLAssetPreferPreciseDurationAndTimingKey: True})
+        videos = asset.tracksWithMediaType_(AVFoundation.AVMediaTypeVideo)
+        if not videos:
+            raise RuntimeError(f"{shot.path}: ei kuvaraitaa")
+        source = videos[0]
+        assets[shot.path] = source
+    ok, error = track.insertTimeRange_ofTrack_atTime_error_(
+        CoreMedia.CMTimeRangeMake(_time(shot.file_start),
+                                  _frames(frames, frame_duration)),
+        source, at, None)
+    if not ok:
+        raise RuntimeError(f"{shot.path}: {error}")
+    # Liuku päättyy aikavälin loppuun, joka on viimeistä ruutua
+    # seuraava hetki: skaala jatketaan sinne, jotta viimeinen ruutu
+    # saa ``scale1``n kuten ffmpeg-polussa.
+    reach = frames / max(1, frames - 1)
+    end = shot.scale0 + (shot.scale1 - shot.scale0) * reach
+    pref = source.preferredTransform()
+    start_t = Quartz.CGAffineTransformConcat(pref, transform(shot, pw, ph, shot.scale0))
+    end_t = Quartz.CGAffineTransformConcat(pref, transform(shot, pw, ph, end))
+    layer.setTransformRampFromStartTransform_toEndTransform_timeRange_(
+        start_t, end_t, span)
+    if shot.crop:
+        side = shot.width * shot.crop / 100.0
+        # Suorakulmio pyobjc:n monikkona: ei uutta kehysnimeä ``_SYMBOLS``iin.
+        layer.setCropRectangle_atTime_(
+            ((side, 0.0), (shot.width - 2 * side, shot.height)), at)
+    return layer
+
+
 def _render_part(flat: list[Shot], pw: int, ph: int, frame_duration: Fraction,
                  total_frames: int, out_path: str, progress=None, stop=None) -> None:
     """Yksi vienti: kuvat ruudusta 0 alkaen, ``total_frames`` pitkä."""
     import AVFoundation
     import CoreMedia
     import Foundation
-    import Quartz
 
     composition = AVFoundation.AVMutableComposition.composition()
     track = composition.addMutableTrackWithMediaType_preferredTrackID_(
         AVFoundation.AVMediaTypeVideo, CoreMedia.kCMPersistentTrackID_Invalid)
+    # Pinon toinen puolikas tarvitsee oman raidan: kaksi kuvaa yhtä aikaa ei
+    # mahdu yhdelle. Raita luodaan vasta kun ensimmäinen pino tulee vastaan.
+    second = None
     assets: dict = {}
     instructions = []
     for shot in flat:
         at = _frames(shot.start, frame_duration)
         frames = shot.end - shot.start
         span = CoreMedia.CMTimeRangeMake(at, _frames(frames, frame_duration))
-        layer = AVFoundation.AVMutableVideoCompositionLayerInstruction \
-            .videoCompositionLayerInstructionWithAssetTrack_(track)
+        layers = []
         if shot.path:
-            source = assets.get(shot.path)
-            if source is None:
-                asset = AVFoundation.AVURLAsset.URLAssetWithURL_options_(
-                    Foundation.NSURL.fileURLWithPath_(shot.path),
-                    {AVFoundation.AVURLAssetPreferPreciseDurationAndTimingKey: True})
-                videos = asset.tracksWithMediaType_(AVFoundation.AVMediaTypeVideo)
-                if not videos:
-                    raise RuntimeError(f"{shot.path}: ei kuvaraitaa")
-                source = videos[0]
-                assets[shot.path] = source
-            ok, error = track.insertTimeRange_ofTrack_atTime_error_(
-                CoreMedia.CMTimeRangeMake(_time(shot.file_start),
-                                          _frames(frames, frame_duration)),
-                source, at, None)
-            if not ok:
-                raise RuntimeError(f"{shot.path}: {error}")
-            # Liuku päättyy aikavälin loppuun, joka on viimeistä ruutua
-            # seuraava hetki: skaala jatketaan sinne, jotta viimeinen ruutu
-            # saa ``scale1``n kuten ffmpeg-polussa.
-            reach = frames / max(1, frames - 1)
-            end = shot.scale0 + (shot.scale1 - shot.scale0) * reach
-            pref = source.preferredTransform()
-            start_t = Quartz.CGAffineTransformConcat(pref, transform(shot, pw, ph, shot.scale0))
-            end_t = Quartz.CGAffineTransformConcat(pref, transform(shot, pw, ph, end))
-            layer.setTransformRampFromStartTransform_toEndTransform_timeRange_(
-                start_t, end_t, span)
+            layer = _picture_layer(shot, track, at, span, frames, frame_duration,
+                                   pw, ph, assets)
+            layers.append(layer)
         else:
+            layer = AVFoundation.AVMutableVideoCompositionLayerInstruction \
+                .videoCompositionLayerInstructionWithAssetTrack_(track)
             track.insertEmptyTimeRange_(span)
             layer.setOpacity_atTime_(0.0, at)
+            layers.append(layer)
+        if shot.partner is not None and shot.partner.path:
+            if second is None:
+                second = composition.addMutableTrackWithMediaType_preferredTrackID_(
+                    AVFoundation.AVMediaTypeVideo,
+                    CoreMedia.kCMPersistentTrackID_Invalid)
+            layers.append(_picture_layer(shot.partner, second, at, span, frames,
+                                         frame_duration, pw, ph, assets))
         instruction = AVFoundation.AVMutableVideoCompositionInstruction \
             .videoCompositionInstruction()
         instruction.setTimeRange_(span)
-        instruction.setLayerInstructions_([layer])
+        instruction.setLayerInstructions_(layers)
         instructions.append(instruction)
 
     video = AVFoundation.AVMutableVideoComposition.videoComposition()
