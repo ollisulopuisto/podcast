@@ -487,7 +487,6 @@ def test_run_transcription_logs_litterointi_luotu(tmp_path, capsys, monkeypatch)
     assert "haastattelu.json" in captured
 
 
-
 @pytest.mark.parametrize(("argv", "silenced"), [([], True), (["--no-silence"], False)])
 def test_no_silence_skips_auto_silence(monkeypatch, argv, silenced):
     """``--no-silence``: litteroitu istunto tehdään, Auto-Silence jää pois."""
@@ -595,3 +594,195 @@ def test_run_auto_silence_returns_the_file_it_wrote(tmp_path):
     session.write_text(TURNS_SESSION, encoding="utf-8")
     out = run_auto_silence(str(session), str(tmp_path), False, -35, 1.0, 1.0)
     assert out == str(tmp_path / "jakso_processed.nhsx")
+
+
+# ------------------------------------------------------------------ downmix
+
+def _downmix_session(tmp_path, tracks_xml):
+    for name in ("a.wav", "b.wav"):
+        (tmp_path / name).write_bytes(b"")
+    session = tmp_path / "jakso.nhsx"
+    session.write_text(
+        '<?xml version="1.0"?><Session><AudioPool>'
+        '<File Id="1" Name="a.wav" Path="a.wav"/>'
+        '<File Id="2" Name="b.wav" Path="b.wav"/>'
+        f"</AudioPool><Tracks>{tracks_xml}</Tracks></Session>",
+        encoding="utf-8",
+    )
+    return session
+
+
+def _ones(path, offset, length, rate):
+    return [1.0] * int(round(length * rate))
+
+
+def _mixed(tmp_path, tracks_xml, decode=_ones, rate=10):
+    from colabtranscribe.colab.pipeline import gain_mix, read_mix
+
+    session = _downmix_session(tmp_path, tracks_xml)
+    clips, duration, missing = read_mix(str(session), str(tmp_path))
+    assert missing == []
+    return list(gain_mix(clips, duration, rate, decode))
+
+
+def test_main_downmix_skips_the_track_chain(monkeypatch):
+    """``--source downmix``: yksi litterointi koko miksauksesta, ei raitoja."""
+    import sys
+
+    from colabtranscribe.colab import pipeline
+
+    def boom(*a, **k):
+        raise AssertionError("raitaketju ajettiin")
+
+    called = []
+    monkeypatch.setattr(sys, "argv", ["pipeline.py", "--source", "downmix"])
+    monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
+    monkeypatch.setattr(pipeline, "run_downmix", lambda *a: called.append(a))
+    for name in ("run_transcription", "inject_transcriptions_to_nhsx", "run_auto_silence", "write_script"):
+        monkeypatch.setattr(pipeline, name, boom)
+    pipeline.main()
+    assert len(called) == 1
+    assert called[0][:2] == ("/content/input", "/content/output")
+
+
+def test_gain_mix_clip_gain_wins_over_gain(tmp_path):
+    out = _mixed(
+        tmp_path,
+        '<Track Name="A"><Region Ref="1" Start="0" Length="1" Offset="0"'
+        ' Gain="-20" ClipGain="0"/></Track>',
+    )
+    assert out == pytest.approx([1.0] * 10)
+
+
+def test_gain_mix_multiplies_track_volume_and_region_gain(tmp_path):
+    out = _mixed(
+        tmp_path,
+        '<Track Name="A" Volume="-20"><Region Ref="1" Start="0" Length="1"'
+        ' Offset="0" Gain="-20"/></Track>',
+    )
+    assert out == pytest.approx([0.01] * 10)
+
+
+def test_gain_mix_skips_muted_tracks_and_regions(tmp_path):
+    out = _mixed(
+        tmp_path,
+        '<Track Name="A" Muted="true"><Region Ref="1" Start="0" Length="1"/></Track>'
+        '<Track Name="B"><Region Ref="2" Start="0" Length="1" Muted="true"/>'
+        '<Region Ref="2" Start="1" Length="1"/></Track>',
+    )
+    # Mykistetyt alueet laskevat silti kestoon: miksaus on 2 s.
+    assert out == pytest.approx([0.0] * 10 + [1.0] * 10)
+
+
+def test_gain_mix_places_by_start_and_reads_from_offset(tmp_path):
+    seen = []
+
+    def decode(path, offset, length, rate):
+        seen.append((os.path.basename(path), offset, length, rate))
+        return [1.0] * int(round(length * rate))
+
+    out = _mixed(
+        tmp_path,
+        '<Track Name="A"><Region Ref="1" Start="1" Length="0.5" Offset="3"/></Track>',
+        decode,
+    )
+    assert seen == [("a.wav", 3.0, 0.5, 10)]
+    assert out == pytest.approx([0.0] * 10 + [1.0] * 5)
+
+
+def test_gain_mix_pads_a_short_source_with_silence(tmp_path):
+    out = _mixed(
+        tmp_path,
+        '<Track Name="A"><Region Ref="1" Start="0" Length="1"/></Track>',
+        lambda *a: [1.0] * 4,
+    )
+    assert out == pytest.approx([1.0] * 4 + [0.0] * 6)
+
+
+def test_read_mix_lists_missing_files_and_run_downmix_refuses(tmp_path):
+    from colabtranscribe.colab.pipeline import read_mix, run_downmix
+
+    session = _downmix_session(tmp_path, '<Track Name="A"><Region Ref="1" Length="1"/></Track>')
+    (tmp_path / "a.wav").unlink()
+    _, _, missing = read_mix(str(session), str(tmp_path))
+    assert missing == ["a.wav"]
+    with pytest.raises(RuntimeError, match=r"a\.wav"):
+        run_downmix(str(tmp_path), str(tmp_path / "out"), "")
+
+
+def test_read_mix_rejects_a_doctype(tmp_path):
+    from colabtranscribe.colab.pipeline import read_mix
+
+    session = tmp_path / "paha.nhsx"
+    session.write_text(
+        '<?xml version="1.0"?><!DOCTYPE Session [<!ENTITY x "y">]><Session/>',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        read_mix(str(session), str(tmp_path))
+
+
+def test_downmix_text_matches_podcast_magics():
+    """Snapshot ei seuraa muutoksia itsestään (ks. CLAUDE.md): sama sanalista,
+    täsmälleen sama teksti kuin ``podcastmagic.transcribe.downmix``."""
+    from colabtranscribe.colab import pipeline
+    from nhsx.read import Word
+    from podcastmagic.transcribe import downmix
+
+    raw = [
+        ("Hei", 0.0, 0.4), (" maailma", 0.5, 0.4), ("tauon", 3.0, 0.4), ("jälkeen", 3.45, 0.5),
+        ("pitkä", 75.2, 0.3), ("tauko", 80.0, 0.3),
+    ]
+    mine = pipeline.paragraph_lines([pipeline._Word(t, s, s + n) for t, s, n in raw])
+    theirs = downmix.paragraph_lines([Word(t, s, n) for t, s, n in raw])
+    assert mine == theirs
+    assert pipeline.paragraph_lines([]) == ""
+
+
+def test_run_downmix_writes_text_and_marker(tmp_path, monkeypatch, capsys):
+    from colabtranscribe.colab import pipeline
+
+    _downmix_session(tmp_path, '<Track Name="A"><Region Ref="1" Start="0" Length="1"/></Track>')
+    out = tmp_path / "out"
+    monkeypatch.setattr(pipeline, "decode_mono", _ones)
+    monkeypatch.setattr(
+        pipeline, "transcribe_samples",
+        lambda samples, rate, prompt: [pipeline._Word("moi", 0.0, 0.3)],
+    )
+    pipeline.run_downmix(str(tmp_path), str(out), "")
+    assert (out / "jakso downmix.md").read_text(encoding="utf-8") == "[00:00] moi\n"
+    assert "Käsikirjoitus luotu:" in capsys.readouterr().out
+
+
+def test_run_downmix_without_words_writes_nothing(tmp_path, monkeypatch, capsys):
+    from colabtranscribe.colab import pipeline
+
+    _downmix_session(tmp_path, '<Track Name="A"><Region Ref="1" Start="0" Length="1"/></Track>')
+    out = tmp_path / "out"
+    monkeypatch.setattr(pipeline, "decode_mono", _ones)
+    monkeypatch.setattr(pipeline, "transcribe_samples", lambda *a: [])
+    pipeline.run_downmix(str(tmp_path), str(out), "")
+    assert list(out.glob("*.md")) == []
+    assert "VAROITUS" in capsys.readouterr().out
+
+
+def test_run_downmix_without_a_session_fails_loudly(tmp_path):
+    from colabtranscribe.colab.pipeline import run_downmix
+
+    (tmp_path / "a.wav").write_bytes(b"")
+    with pytest.raises(RuntimeError, match=r"\.nhsx"):
+        run_downmix(str(tmp_path), str(tmp_path / "out"), "")
+
+
+def test_run_downmix_falls_back_to_a_processed_session(tmp_path, monkeypatch):
+    from colabtranscribe.colab import pipeline
+
+    seen = []
+    (tmp_path / "x_processed.nhsx").write_text("<Session/>", encoding="utf-8")
+    monkeypatch.setattr(
+        pipeline, "read_mix", lambda path, d: seen.append(path) or ([], 0.0, [])
+    )
+    monkeypatch.setattr(pipeline, "transcribe_samples", lambda *a: [])
+    pipeline.run_downmix(str(tmp_path), str(tmp_path / "out"), "")
+    assert seen == [str(tmp_path / "x_processed.nhsx")]

@@ -128,7 +128,6 @@ def test_real_run_single_audio_file_reports_transcripts(tmp_path, capsys, monkey
     assert "haastattelu.json" in out
 
 
-
 def test_failing_remote_run_returns_its_code(tmp_path, monkeypatch):
     from colabtranscribe.onboarding import OnboardingReport
 
@@ -287,3 +286,12 @@ def test_transcribe_only_flag_reaches_the_remote_command(tmp_path, capsys):
     out = capsys.readouterr().out
     line = next(x for x in out.splitlines() if "python3 /content/pipeline.py" in x)
     assert "--no-silence" in line
+
+
+def test_source_flag_reaches_the_remote_command(tmp_path, capsys):
+    (tmp_path / "puhe.wav").write_bytes(b"")
+    code = cli.main(["--input", str(tmp_path), "--source", "downmix", "--dry-run"])
+    assert code == 0
+    out = capsys.readouterr().out
+    line = next(x for x in out.splitlines() if "python3 /content/pipeline.py" in x)
+    assert "--source downmix" in line

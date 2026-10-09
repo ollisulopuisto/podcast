@@ -493,6 +493,26 @@ def copy_drive_file(
         return res.get("id", "")
 
 
+def replace_session_archive(
+    source_id: str, session_folder_id: str, token: str = ""
+) -> str:
+    """Kopioi paketin istuntokansioon ``input.tar``:ksi ja poistaa ensin vanhat.
+
+    Drive sallii samannimiset tiedostot. Kaatunut ajo ei siivoa jälkiään, joten
+    vanha ``input.tar`` jäisi uuden viereen ja Colab purkaisi sen: ajo menisi
+    läpi vanhalla syötteellä, eikä mikään kertoisi siitä.
+    """
+    for stale in list_cache_files(session_folder_id, token=token):
+        if stale.get("name") == "input.tar":
+            delete_file_or_folder(stale["id"], token=token)
+    return copy_drive_file(
+        source_id,
+        target_folder_id=session_folder_id,
+        new_name="input.tar",
+        token=token,
+    )
+
+
 def upload_archive_with_cache(
     input_dir: Path | str,
     session: str,
@@ -552,12 +572,7 @@ def upload_archive_with_cache(
                 log(
                     f"  Välimuistissa: paketti löytyi Google Drivesta ({archive_size_mb:.1f} MB, ohitetaan lähetys)."
                 )
-            return copy_drive_file(
-                matching_cached["id"],
-                target_folder_id=session_folder_id,
-                new_name="input.tar",
-                token=token,
-            )
+            return replace_session_archive(matching_cached["id"], session_folder_id, token)
 
         # 3. Ei löytynyt: ladataan välimuistiin
         last_logged_mb = 0.0
@@ -590,9 +605,4 @@ def upload_archive_with_cache(
         if log:
             log("Google Drive -siirto valmis.")
 
-        return copy_drive_file(
-            cached_id,
-            target_folder_id=session_folder_id,
-            new_name="input.tar",
-            token=token,
-        )
+        return replace_session_archive(cached_id, session_folder_id, token)

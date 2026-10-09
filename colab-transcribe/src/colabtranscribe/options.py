@@ -23,6 +23,11 @@ PRESETS = ("remote", "intra-mic")
 #: "direct" käyttää Colabin hidasta suoraa upload-tunnelia tiedosto kerrallaan.
 TRANSFERS = ("drive", "direct")
 
+#: Mitä litteroidaan. "tracks" litteroi raidat erikseen (puhujat tiedossa),
+#: "downmix" litteroi koko miksauksen kerran ilman puhujia — ks. podcast-magicin
+#: ``transcribe/downmix.py``. Oletus on raidat, eikä sitä kerrota skriptille.
+SOURCES = ("tracks", "downmix")
+
 #: Täytesanat Whispereille. Oletus on sama kuin skriptissa itsessään; jos
 #: se muuttuu sinne, se muuttuu tänne samaan hengessä.
 DEFAULT_PROMPT = "öö, tota, niinku, mhm, joo, silleen, vähän, niinkun, ööh, ömm."
@@ -38,6 +43,7 @@ class RunOptions:
     output_dir: str = "output"
     preset: str = "remote"
     transfer: str = "drive"
+    source: str = "tracks"
     rms: bool = False
     # Auto-Silence litteroinnin jälkeen. Pois päältä tulos on pelkkä
     # ``<jakso> litteroitu.nhsx`` — kaikki eivät vaimenna hiljaisia kohtia.
@@ -60,6 +66,10 @@ class RunOptions:
             raise ValueError(
                 f"Tuntematon transfer: {self.transfer} (sallitut: {', '.join(TRANSFERS)})"
             )
+        if self.source not in SOURCES:
+            raise ValueError(
+                f"Tuntematon source: {self.source} (sallitut: {', '.join(SOURCES)})"
+            )
         if self.tail <= 0:
             raise ValueError(f"tail on oltava positiivinen, ei {self.tail}")
         if self.gap <= 0:
@@ -74,7 +84,6 @@ class RunOptions:
             return base / out
         return out
 
-
     @classmethod
     def from_env(cls) -> RunOptions:
         """Luo asetukset ympäristömuuttujista, täydentäen puuttuvat oletuksilla."""
@@ -88,6 +97,7 @@ class RunOptions:
         )
         preset = os.environ.get("COLAB_PRESET", "remote")
         transfer = os.environ.get("COLAB_TRANSFER", "drive")
+        source = os.environ.get("COLAB_SOURCE", "tracks")
         rms = os.environ.get("COLAB_RMS", "").lower() in ("1", "true", "yes")
         transcribe_only = os.environ.get("COLAB_TRANSCRIBE_ONLY", "").lower() in (
             "1", "true", "yes"
@@ -114,6 +124,7 @@ class RunOptions:
             output_dir=output_dir,
             preset=preset,
             transfer=transfer,
+            source=source,
             rms=rms,
             silence=not transcribe_only,
             thr=thr,
@@ -143,6 +154,8 @@ def pipeline_args(options: RunOptions) -> list[str]:
         "--prompt",
         options.prompt,
     ]
+    if options.source != "tracks":
+        args += ["--source", options.source]
     if options.rms:
         args.append("--rms")
     if not options.silence:
