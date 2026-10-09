@@ -22,6 +22,18 @@ Siksi tämä sovellus ei myöskään seiso `apps/`issa sen enempää kuin se
 ottaisi `speechmix`ia: se on juuressa `viewer/`in tapaan, mutta
 pyproject.tomlilla, ja listattu eksplisiittisesti työtilan jäseneksi.
 
+## Käsikirjoitus on snapshot, ja sen drift on testi
+
+`pipeline.write_script` kirjoittaa valmiista istunnosta `.md`:n (puhujan
+vuoro per kappale, raidan nimi puhujana). Se on kopio
+podcast-magicin `script/core.py`:stä, koska Colabissa ajettava skripti ei voi
+tuoda työtilaa. Driftin vaara on sama kuin muulla skriptillä, mutta tämän
+kohdalla se on testattu: `test_the_snapshot_script_matches_podcast_magics`
+ajaa samalle istunnolle molemmat ja vaatii täsmälleen saman tekstin. Jos
+muotoilu muuttuu `script/core.py`:ssä, testi kaatuu tänne, ja muutos
+siirretään käsin. Teksti syntyy Colabissa ja tulee alas muiden tulosten
+mukana, joten paikallinen puoli ei muutu eikä saa uusia riippuvuuksia.
+
 ## Luettu XML on aina kovennettu
 
 Kaikki `.nhsx`:n luenta kulkee saman kovennetun parserin läpi

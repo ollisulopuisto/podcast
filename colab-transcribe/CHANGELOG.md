@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [colab-transcribe-v2026.10.9.1] - 2026-10-09
+
+### Added
+- **Speaker-turn script next to the finished session** (`colab/pipeline.py`): after the run, `<jakso>_processed.md` (or `<jakso> litteroitu.md` with `--no-silence`) is written next to the session and downloaded with the rest. The track name is the speaker; consecutive regions on one track are one paragraph. A snapshot of podcast-magic's `script/core.py`, held to it by `test_the_snapshot_script_matches_podcast_magics`.
+
 ## [colab-transcribe-v2026.9.12.1] - 2026-09-12
 
 ### Fixed

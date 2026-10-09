@@ -10,7 +10,10 @@ Point it at a folder holding Hindenburg `.nhsx` sessions and their audio.
 It starts a Colab VM, uploads everything, transcribes there with Whisper
 (faster-whisper on a T4/L4/A100), writes the words into the session, mutes
 every region where nobody speaks (Auto-Silence), and downloads the results:
-`<jakso> litteroitu.nhsx` and `<jakso>_processed.nhsx`.
+`<jakso> litteroitu.nhsx` and `<jakso>_processed.nhsx`, plus a readable
+script of the finished session next to it (`<jakso>_processed.md`, or
+`<jakso> litteroitu.md` with `--no-silence`): one paragraph per speaker turn,
+the track name as the speaker.
 
 ## Run it
 

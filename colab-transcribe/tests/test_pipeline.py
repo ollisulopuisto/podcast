@@ -486,3 +486,90 @@ def test_run_transcription_logs_litterointi_luotu(tmp_path, capsys, monkeypatch)
     assert "Litterointi luotu:" in captured
     assert "haastattelu.json" in captured
 
+
+
+# ------------------------------------------------------------------ käsikirjoitus
+
+TURNS_SESSION = """<?xml version="1.0" encoding="UTF-8"?>
+<Session Name="vuorot">
+  <AudioPool Path="">
+    <File Id="1" Name="olli.wav" Path="olli.wav">
+      <Transcription><p>
+        <w s="1.000" l="0.400" sp="UU">Ensin</w>
+        <w s="6.000" l="0.400" sp="UU">sitten</w>
+        <w s="20.000" l="0.400" sp="UU">lopuksi</w>
+        <w s="50.000" l="0.400" sp="UU">hukassa</w>
+      </p></Transcription>
+    </File>
+    <File Id="2" Name="panu.wav" Path="panu.wav">
+      <Transcription><p><w s="11.000" l="0.300" sp="UU">Joo</w></p></Transcription>
+    </File>
+    <File Id="3" Name="musa.wav" Path="musa.wav"/>
+  </AudioPool>
+  <Tracks>
+    <Track Name="Olli">
+      <Region Ref="1" Start="0.000" Length="3.000" Offset="0.000"/>
+      <Region Ref="1" Start="5.000" Length="3.000" Offset="5.000" Muted="True"/>
+      <Region Ref="1" Start="19.000" Length="3.000" Offset="19.000"/>
+    </Track>
+    <Track Name="Panu">
+      <Region Ref="2" Start="10.000" Length="3.000" Offset="10.000"/>
+    </Track>
+    <Track Name="Musiikki">
+      <Region Ref="3" Length="30.000"/>
+    </Track>
+  </Tracks>
+</Session>"""
+
+
+def test_write_script_makes_speaker_turns_next_to_the_session(tmp_path):
+    """Valmis istunto saa viereensä ``.md``:n: raidan nimi puhujana,
+    peräkkäiset alueet yhtenä vuorona, sanat alueen ikkunan sisältä."""
+    from colabtranscribe.colab.pipeline import write_script
+
+    session = tmp_path / "jakso litteroitu_processed.nhsx"
+    session.write_text(TURNS_SESSION, encoding="utf-8")
+    written = write_script(str(session))
+    assert written == str(tmp_path / "jakso litteroitu_processed.md")
+    assert open(written, encoding="utf-8").read() == (
+        "[00:00] **Olli:** Ensin sitten\n"
+        "\n"
+        "[00:10] **Panu:** Joo\n"
+        "\n"
+        "[00:19] **Olli:** lopuksi\n"
+    )
+
+
+def test_the_snapshot_script_matches_podcast_magics(tmp_path):
+    """Snapshot ei seuraa muutoksia itsestään (ks. CLAUDE.md), joten sen
+    ero ``podcastmagic.script``ista on testi eikä arvaus: sama istunto,
+    täsmälleen sama teksti."""
+    from colabtranscribe.colab.pipeline import write_script
+    from podcastmagic.script import core
+
+    session = tmp_path / "vuorot.nhsx"
+    session.write_text(TURNS_SESSION, encoding="utf-8")
+    written = write_script(str(session))
+    assert open(written, encoding="utf-8").read() == core.script(core.read(str(session)))
+
+
+def test_write_script_rejects_a_doctype(tmp_path):
+    from colabtranscribe.colab.pipeline import write_script
+
+    session = tmp_path / "paha.nhsx"
+    session.write_text(
+        '<?xml version="1.0"?><!DOCTYPE Session [<!ENTITY x "y">]><Session/>',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        write_script(str(session))
+    assert not (tmp_path / "paha.md").exists()
+
+
+def test_run_auto_silence_returns_the_file_it_wrote(tmp_path):
+    from colabtranscribe.colab.pipeline import run_auto_silence
+
+    session = tmp_path / "jakso.nhsx"
+    session.write_text(TURNS_SESSION, encoding="utf-8")
+    out = run_auto_silence(str(session), str(tmp_path), False, -35, 1.0, 1.0)
+    assert out == str(tmp_path / "jakso_processed.nhsx")
