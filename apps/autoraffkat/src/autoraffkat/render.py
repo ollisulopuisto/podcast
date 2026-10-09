@@ -48,11 +48,23 @@ class Shot:
     # Neliöpino: 21.875 % per puoli, jolloin jäljelle jää 1080×1080 natiivi-
     # skaalassa. Sama luku kuin ``fcpxml/write.py:SQUARE_CROP``.
     crop: float = 0.0
+    # Pinon toinen puolikas samalla ajalla. ``flatten`` asettaa sen kun
+    # neliöreaktio (lane 1) tulee neliöpohjan päälle: kumpikin on ruudulla,
+    # kumpaakaan ei peitetä. Vain ``path``, ``file_start``, mitat, ``pos_y``
+    # ja ``crop`` luetaan; ``start``/``end`` ovat pinon omat.
+    partner: "Shot | None" = None
 
 
 def base_factor(shot: Shot, pw: int, ph: int) -> float:
-    """Lähteen kerroin projektiin ennen skaalaa: täyttö tai sovitus."""
+    """Lähteen kerroin projektiin ennen skaalaa: täyttö tai sovitus.
+
+    Rajattu neliö (``crop``) on natiivikokoinen: Final Cutin konformi
+    ``none``. Sovitus kutistaisi 1920×1080-lähteen 0,5625-kertaiseksi ja
+    pino jäisi pieneksi.
+    """
     if not shot.width or not shot.height:
+        return 1.0
+    if shot.crop:
         return 1.0
     fits = (pw / shot.width, ph / shot.height)
     return max(fits) if shot.fill else min(fits)
@@ -184,6 +196,10 @@ def flatten(shots: list[Shot], frame_duration: Fraction) -> list[Shot]:
 
     Peitetty kuva pilkotaan, ja pala jatkuu tiedostossa siitä kohdasta johon
     peitto päättyi; mikroliikkeen skaala interpoloidaan palan rajoille.
+
+    **Pino ei peitä.** Kun reaktio on rajattu neliö (``crop``) ja sen alla
+    oleva kuva myös, ne ovat saman ruudun kaksi puoliskoa: reaktion palalle
+    jää alla oleva kuva ``partner``ina eikä sitä katkaista pois.
     """
     base = sorted((s for s in shots if s.lane == 0), key=lambda s: s.start)
     over = sorted((s for s in shots if s.lane != 0), key=lambda s: s.start)
@@ -194,7 +210,7 @@ def flatten(shots: list[Shot], frame_duration: Fraction) -> list[Shot]:
         at = lambda k: shot.scale0 + (shot.scale1 - shot.scale0) * (k - shot.start) / span  # noqa: E731
         return Shot(a, b, shot.path, shot.file_start + (a - shot.start) * seconds,
                     shot.width, shot.height, at(a), at(b - 1) if b - a > 1 else at(a),
-                    shot.pos_x, shot.pos_y, shot.fill, shot.lane)
+                    shot.pos_x, shot.pos_y, shot.fill, shot.lane, shot.crop)
 
     out: list[Shot] = []
     for shot in base:
@@ -205,7 +221,10 @@ def flatten(shots: list[Shot], frame_duration: Fraction) -> list[Shot]:
             if cover.start > cursor:
                 out.append(piece(shot, cursor, cover.start))
             low, high = max(cover.start, cursor), min(cover.end, shot.end)
-            out.append(piece(cover, low, high))
+            top = piece(cover, low, high)
+            if cover.crop and shot.crop:
+                top.partner = piece(shot, low, high)
+            out.append(top)
             cursor = high
         if cursor < shot.end:
             out.append(piece(shot, cursor, shot.end))
@@ -275,8 +294,51 @@ def _run(command: list[str], stop=None) -> None:
         raise subprocess.CalledProcessError(child.returncode, command, stderr=err)
 
 
+def _tile_geometry(tile: Shot, pw: int, ph: int) -> tuple[int, int, int, int]:
+    """Neliön rajaus ja paikka: ``(leveys, vasen reuna lähteessä, x, y)``.
+
+    Leveys on lähteen leveys miinus ``crop`` % kummaltakin puolelta; kuva on
+    natiivikokoinen ja sen keskipiste on projektin keskellä siirrettynä
+    ``pos_x``/``pos_y``:llä (Final Cutin yksiköt, y ylöspäin). Ulos ruudusta
+    jäävä osa leikkautuu, kuten Final Cutissa.
+    """
+    unit = ph / 100.0
+    width = int(round(tile.width * (1 - 2 * tile.crop / 100)))
+    left = (tile.width - width) // 2
+    x = int(round((pw - width) / 2 + tile.pos_x * unit))
+    y = int(round((ph - tile.height) / 2 - tile.pos_y * unit))
+    return width, left, x, y
+
+
+def _stack_graph(shot: Shot, pw: int, ph: int, fps: str) -> tuple[list[str], str]:
+    """Pino yhtenä suodinverkkona: ``(syötteet, filter_complex)``.
+
+    Musta pohja, jonka päälle kumpikin puolikas rajattuna ja paikalleen.
+    Tyhjä puolikas (``path`` puuttuu) jää mustaksi.
+    """
+    tiles = [t for t in (shot, shot.partner) if t is not None and t.path]
+    inputs: list[str] = []
+    graph = [f"color=c=black:s={pw}x{ph}:r={fps}[bg0]"]
+    last = "bg0"
+    for i, tile in enumerate(tiles):
+        inputs += ["-ss", f"{tile.file_start:.6f}", "-i", tile.path]
+        width, left, x, y = _tile_geometry(tile, pw, ph)
+        graph.append(f"[{i}:v]fps={fps},crop=w={width}:h={tile.height}:x={left}:y=0,"
+                     f"format=yuv420p[t{i}]")
+        graph.append(f"[{last}][t{i}]overlay=x={x}:y={y}[bg{i + 1}]")
+        last = f"bg{i + 1}"
+    graph.append(f"[{last}]setsar=1,format=yuv420p[out]")
+    return inputs, ";".join(graph)
+
+
 def _encode(shot: Shot, pw: int, ph: int, fps: str, target: str, stop=None) -> None:
     frames = shot.end - shot.start
+    if shot.crop and (shot.partner is not None or shot.path):
+        inputs, graph = _stack_graph(shot, pw, ph, fps)
+        _run([_ffmpeg(), "-nostdin", "-v", "error", "-y", *inputs,
+              "-filter_complex", graph, "-map", "[out]", "-frames:v", str(frames),
+              "-an", *encoder()[1], "-r", fps, "-f", "mpegts", target], stop)
+        return
     if shot.path:
         inputs = ["-ss", f"{shot.file_start:.6f}", "-i", shot.path,
                   "-vf", video_filter(shot, pw, ph, frames, fps)]

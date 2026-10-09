@@ -885,7 +885,8 @@ def test_a_vertical_reaction_shot_is_filled_and_framed(fixture_dir):
     assert abs(float(crop.get("top"))) < 0.01
     assert abs(float(crop.get("bottom"))) < 0.01
     assert abs(abs(_stack_y(source)) - 28.125) < 0.01
-    assert ("CLOSE_B 01.mp4", 8.0, 9.6) in stub.calls
+    # Neliö rajataan lähteen keskeltä, ei kasvoihin: reframer ei kysy siitä.
+    assert not any(name.startswith("CLOSE_B") for name, _a, _b in stub.calls)
 
 
 def _stack_y(source) -> float:
