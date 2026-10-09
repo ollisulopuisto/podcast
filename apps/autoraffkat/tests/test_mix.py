@@ -1223,3 +1223,57 @@ def test_start_audio_preview_is_atomic(monkeypatch):
     assert state.audio_preview_running is True
     assert state.start_audio_preview() is False
 
+
+
+def test_files_are_processed_two_at_a_time_and_progress_still_rises(
+    fixture_dir, monkeypatch
+):
+    """Kaksi tiedostoa kerrallaan kun muisti riittää (``speechmix.stems.
+    parallel_count``). Palkki laskee keskeneräisten osuudet yhteen, joten se
+    nousee edelleen monotonisesti ja päätyy täyteen."""
+    import threading
+
+    from autoraffkat.analysis import resolve_roles
+    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.model import ROLE_MIC, TrackConfig
+
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    tracks = {
+        t.key: TrackConfig(role=ROLE_MIC, speaker=t.key.split()[0].capitalize())
+        for t in tl.tracks
+        if not t.has_video
+    }
+    meet = threading.Barrier(2, timeout=10)
+    real = mix._run_one
+    first = []
+
+    def together(job, *args, **kwargs):
+        if len(first) < 2:              # kaksi ensimmäistä yhtä aikaa
+            first.append(job["name"])
+            meet.wait()
+        return real(job, *args, **kwargs)
+
+    seen: list[dict] = []
+    monkeypatch.setattr(mix.chain, "load_plugin", lambda *a, **k: None)
+    monkeypatch.setattr(mix, "_run_one", together)
+    monkeypatch.delenv("SPEECHMIX_PARALLEL_STEMS", raising=False)
+    # Varaus pois: CI:n koneella vapaata muistia on alle sen (4 GB), ja
+    # testin tiedostot ovat kilotavuja. Päätöksen laskenta ajetaan silti.
+    monkeypatch.setattr(mix.stems, "MEMORY_RESERVE", 0)
+    try:
+        result = mix.process(
+            tl, resolve_roles(tl, tracks),
+            AudioSettings(enabled=True, plugin_path="", debleed=False, rider=False),
+            progress=seen.append,
+        )
+    finally:
+        for item in tl.media:
+            if item.path and item.path.endswith(".wav"):
+                pathlib.Path(mix.sibling(item.path, mix.MIX_SUFFIX)).unlink(
+                    missing_ok=True
+                )
+    assert result.ok, result.errors
+    assert result.processed >= 2
+    fractions = [s["fraction"] for s in seen]
+    assert fractions == sorted(fractions)
+    assert fractions[-1] == 1.0

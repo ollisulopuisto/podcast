@@ -488,6 +488,28 @@ def test_run_transcription_logs_litterointi_luotu(tmp_path, capsys, monkeypatch)
 
 
 
+@pytest.mark.parametrize(("argv", "silenced"), [([], True), (["--no-silence"], False)])
+def test_no_silence_skips_auto_silence(monkeypatch, argv, silenced):
+    """``--no-silence``: litteroitu istunto tehdään, Auto-Silence jää pois."""
+    import sys
+
+    from colabtranscribe.colab import pipeline
+
+    ran = []
+    monkeypatch.setattr(sys, "argv", ["pipeline.py", *argv])
+    monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
+    monkeypatch.setattr(pipeline, "run_transcription", lambda *a: None)
+    monkeypatch.setattr(pipeline, "inject_transcriptions_to_nhsx", lambda *a: ["/c/x.nhsx"])
+    monkeypatch.setattr(pipeline, "run_auto_silence", lambda *a: ran.append(a[0]))
+    scripted = []
+    monkeypatch.setattr(pipeline, "write_script", scripted.append)
+    pipeline.main()
+    assert ran == (["/c/x.nhsx"] if silenced else [])
+    # Käsikirjoitus tehdään valmiista istunnosta, ei aina samasta.
+    assert scripted == (["/c/x_processed.nhsx"] if silenced else ["/c/x.nhsx"])
+
+
 # ------------------------------------------------------------------ käsikirjoitus
 
 TURNS_SESSION = """<?xml version="1.0" encoding="UTF-8"?>

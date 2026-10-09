@@ -5,6 +5,21 @@ All notable changes to automixer are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.3] - 2026-10-08
+
+### Changed
+- **Music beds and tracks are measured with the same loudness meter as the processing chain and mastering** (speechmix's, which matches libebur128). Session loading, `automixer-beds` and the older track path used pyloudnorm, which reads about 0.04 LU low, so beds now land about 0.04 dB quieter than before. Inaudible, but the same audio no longer reads two ways.
+
+## [2026.10.8.2] - 2026-10-08
+
+### Changed
+- The log says how many speakers are processed at a time and why (free memory against the estimate), and two at a time now needs about 14 GB free for 47-min tracks instead of 20 (speechmix 2026.10.8.4).
+
+## [2026.10.8.1] - 2026-10-08
+
+### Changed
+- **Speakers are processed two at a time when memory allows** (speechmix 2026.10.8.1). The mix is bit-identical to one at a time, and the log says "2 stems at a time" when it happens. `SPEECHMIX_PARALLEL_STEMS=1` forces one at a time.
+
 ## [2026.10.5.4] - 2026-10-05
 
 ### Fixed

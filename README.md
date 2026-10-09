@@ -24,12 +24,56 @@ Whether you need to automatically cut multicam video to the speaker, transcribe 
 
 ## Quick Start
 
-Requirements: macOS, `ffmpeg`, and [uv](https://docs.astral.sh/uv/).
+### One command
+
+On a Mac with [Homebrew](https://brew.sh), paste this into Terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ollisulopuisto/podcast/main/run.sh | sh
+```
+
+It installs `uv` and `ffmpeg` if they are missing, signs you in to Google the first time (colab-transcribe needs it), and starts colab-transcribe. For another tool, name it, and add any arguments after it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ollisulopuisto/podcast/main/run.sh | sh -s -- autoraffkat
+curl -fsSL https://raw.githubusercontent.com/ollisulopuisto/podcast/main/run.sh | sh -s -- automixer "episode.nhsx"
+```
+
+[`run.sh`](run.sh) is short; read it first if you prefer. `PODCAST_REF=<branch or commit>` before `sh` picks another version than `main`.
+
+### Run without installing (uvx)
+
+On a Mac with [Homebrew](https://brew.sh), install the two prerequisites once:
+
+```bash
+brew install uv ffmpeg
+```
+
+Then run any tool straight from GitHub. `uvx` fetches it and its dependencies into a cache, and nothing else is installed:
+
+```bash
+R=git+https://github.com/ollisulopuisto/podcast
+
+uvx --from "$R#subdirectory=apps/autoraffkat" autoraffkat
+uvx --from "$R#subdirectory=apps/automixer" automixer "episode.nhsx"
+uvx --from "$R#subdirectory=apps/automixer" automixer-beds "episode.nhsx"
+uvx --from "podcast-magic[mlx] @ $R#subdirectory=apps/podcast-magic" podcast-magic
+uvx --from "$R#subdirectory=apps/podcast-magic" nhsx-render "episode.nhsx"
+uvx --from "$R#subdirectory=apps/fcp-subs-whisper" fcp-subs-whisper "video.mp4"
+uvx --from "$R#subdirectory=colab-transcribe" colab-transcribe
+```
+
+* To pin a version, put a branch or commit after the URL: `$R@main#subdirectory=…` or `$R@ec2f333#subdirectory=…`.
+* `uvx` checks for updates on each run; add `--refresh` to force one.
+* `[mlx]` is the Apple Silicon Whisper for podcast-magic. Use `[faster]` on Intel.
+* colab-transcribe needs no ffmpeg on your Mac, because the work runs on Colab. It needs a Google account with Colab: run `colab-transcribe --login` once (see [its README](colab-transcribe/README.md)).
+
+### Working on the code
 
 Install workspace dependencies once from the repository root:
 
 ```bash
-brew install ffmpeg
+brew install uv ffmpeg
 uv sync --all-packages --extra mlx   # Apple Silicon (use --extra faster on Intel)
 ```
 
@@ -127,12 +171,14 @@ Then run whichever tool you need with `uv run <tool>`.
 * **The Problem:** You want the transcription and auto-silencing pipeline of Podcast Magic, but your local computer lacks a fast Apple Silicon GPU, or you have large batches of episodes you prefer offloading to a cloud GPU.
 * **The Solution:** A local CLI and TUI driver that connects to Google Colab. It uploads your `.nhsx` session and audio files to a Colab GPU VM (T4/L4/A100), runs Whisper transcription and auto-silence in the cloud, and downloads the finished `<episode>_processed.nhsx` back to your folder.
 * **Interface & Features:** The interactive TUI allows you to select local session directories, choose presets (`remote` or `intra-mic`) and GPU tiers, and monitor live cloud VM provisioning, upload, transcription, and download progress.
-* **How to run:**
+* **How to run:** needs only `brew install uv`; the `colab` tool comes along.
   ```bash
-  uv run colab-transcribe                    # launch interactive terminal UI (TUI)
-  uv run colab-transcribe --input ~/jakso/ --output ~/valmis/ --preset intra-mic  # headless CLI
+  R=git+https://github.com/ollisulopuisto/podcast
+  uvx --from "$R#subdirectory=colab-transcribe" colab-transcribe --login   # first time: Google sign-in
+  uvx --from "$R#subdirectory=colab-transcribe" colab-transcribe           # interactive terminal UI (TUI)
+  uvx --from "$R#subdirectory=colab-transcribe" colab-transcribe --input ~/jakso/ --output ~/valmis/ --preset intra-mic  # headless
   ```
-  *(Requires a Google Colab account and the `colab` CLI tool installed).*
+  *(Requires a Google account with Colab. The `colab` CLI tool comes with `uvx`.)*
 
 📖 Details: [colab-transcribe/README.md](colab-transcribe/README.md) · [Suomeksi](colab-transcribe/README.fi.md)
 

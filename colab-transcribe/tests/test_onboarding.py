@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from colabtranscribe.onboarding import (
     COLAB_CLI_INSTALL,
     check_credentials,
@@ -165,6 +167,7 @@ def test_patch_colab_cli_automation(tmp_path: Path, monkeypatch):
         "        sys.stdout.flush()\n"
         '        with open("/dev/tty") as tty:\n'
         "            tty.readline()\n"
+        '    typer.echo("[colab] Authorizing VM...")\n'
         "    return True\n"
     )
     fake_automation.write_text(unpatched_content, encoding="utf-8")
@@ -293,3 +296,114 @@ def test_patch_colab_cli_runtime(tmp_path: Path, monkeypatch):
     patched_content = fake_runtime.read_text(encoding="utf-8")
     assert '"timeout": 60.0' in patched_content
 
+
+
+def _fake_bin(directory: Path, name: str) -> Path:
+    path = directory / name
+    path.write_text("#!/bin/sh\n", encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+@pytest.mark.real_bundled_colab
+def test_the_colab_next_to_our_python_is_preferred(monkeypatch, tmp_path):
+    """``uvx`` asentaa ``colab``-komennon samaan ympäristöön, mutta ei
+    PATHiin: se löytyy oman Pythonin vierestä. PATHin ``colab`` on vara."""
+    from colabtranscribe import onboarding
+
+    env_bin = tmp_path / "env" / "bin"
+    env_bin.mkdir(parents=True)
+    python = _fake_bin(env_bin, "python")
+    colab = _fake_bin(env_bin, "colab")
+    monkeypatch.setattr("sys.executable", str(python))
+    monkeypatch.setattr("shutil.which", lambda cmd: "/elsewhere/colab")
+    assert onboarding.colab_binary() == str(colab)
+
+    colab.unlink()
+    assert onboarding.colab_binary() == "/elsewhere/colab"
+
+
+def test_missing_credentials_point_to_login_first(monkeypatch, tmp_path):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+    item = next(i for i in check_credentials() if i.key == "credentials")
+    assert not item.ok
+    first = item.instructions.splitlines()[1].strip()
+    assert first == "colab-transcribe --login"
+
+
+def test_the_python_behind_a_uv_launcher_is_found(tmp_path):
+    """uv kirjoittaa komennon alkuun ``#!/bin/sh``-käynnistimen, joka ajaa
+    viereisen ``python``in. Shebangista luettuna Python oli ``/bin/sh``,
+    jolloin uvx:n ``colab`` näytti rikkinäiseltä eikä korjauksia ajettu."""
+    from colabtranscribe import onboarding
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    python = _fake_bin(bin_dir, "python")
+    launcher = bin_dir / "colab"
+    launcher.write_text(
+        "#!/bin/sh\n"
+        "'''exec' \"$(dirname -- \"$(realpath -- \"$0\")\")\"/'python' \"$0\" \"$@\"\n"
+        "' '''\n",
+        encoding="utf-8",
+    )
+    assert onboarding._script_python(str(launcher)) == str(python)
+
+    classic = bin_dir / "classic"
+    classic.write_text(f"#!{python}\nprint()\n", encoding="utf-8")
+    assert onboarding._script_python(str(classic)) == str(python)
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+@pytest.mark.parametrize(
+    "fixture",
+    [
+        # google-colab-cli 930275e sellaisenaan: Enter-odotus try/exceptissä.
+        "colab_cli_automation.py.txt",
+        # Sama ensimmäisen kyselykorjauksen jälkeen (dryrun=true, ei merkkiä):
+        # näin korjattu kopio on jo käyttäjien koneilla ja on päivitettävä.
+        "colab_cli_automation_poll_v1.py.txt",
+    ],
+)
+def test_patch_polls_drive_auth_in_pinned_colab_cli(tmp_path: Path, monkeypatch, fixture):
+    """Drive-luvan odotus kysyy Colabilta eikä odota Enteriä.
+
+    Mitattu 2026-10-08: dryrun=true-kysely ei koskaan kertonut onnistumisesta,
+    ja drivemount aikakatkesi 600 s:ssa vaikka lupa annettiin selaimessa.
+    """
+    import subprocess
+
+    from colabtranscribe.onboarding import patch_colab_cli_automation
+
+    fake_py = tmp_path / "python3"
+    fake_py.write_text("#!/bin/sh\nexit 0\n")
+    fake_py.chmod(0o755)
+    fake_colab = tmp_path / "colab"
+    fake_colab.write_text(f"#!{fake_py}\n# fake colab\n")
+    fake_colab.chmod(0o755)
+    automation = tmp_path / "automation.py"
+    automation.write_text((FIXTURES / fixture).read_text(encoding="utf-8"), encoding="utf-8")
+
+    orig_run = subprocess.run
+
+    def fake_run(cmd, *args, **kwargs):
+        if len(cmd) >= 3 and "colab_cli.commands.automation" in cmd[2]:
+            return subprocess.CompletedProcess(cmd, 0, stdout=str(automation), stderr="")
+        return orig_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert patch_colab_cli_automation(str(fake_colab)) is True
+    patched = automation.read_text(encoding="utf-8")
+    assert "/dev/tty" not in patched
+    assert "Press Enter" not in patched
+    assert '_poll["dryrun"] = "false"' in patched
+    assert patched.count("Waiting for authorization in browser") == 1
+    assert patched.count("[colab] Authorizing VM...") == 1
+    compile(patched, str(automation), "exec")
+    # Toinen kerta ei muuta mitään.
+    assert patch_colab_cli_automation(str(fake_colab)) is True
+    assert automation.read_text(encoding="utf-8") == patched

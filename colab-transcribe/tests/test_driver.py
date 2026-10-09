@@ -641,3 +641,29 @@ def test_run_calls_on_progress(monkeypatch):
     assert progress_events[-1][0] == 100.0
 
 
+def test_commands_find_the_bundled_colab(monkeypatch):
+    """Komento pysyy ``colab ...``:na (sama kuin ``--dry-run``), ja uvx:n
+    ympäristön ``bin`` on PATHin alussa, jolloin sen ``colab`` ajetaan."""
+    from colabtranscribe import driver
+
+    monkeypatch.setattr("colabtranscribe.onboarding.bundled_colab", lambda: "/env/bin/colab")
+    started = []
+
+    class Done:
+        def __init__(self, cmd, **kwargs):
+            started.append((cmd, kwargs["env"]["PATH"].split(":")[0]))
+            self.stdout = iter(())
+            self.returncode = 0
+
+        def communicate(self, *a, **k):
+            return ("", None)
+
+        def wait(self, *a, **k):
+            return 0
+
+        def poll(self):
+            return 0
+
+    monkeypatch.setattr("subprocess.Popen", Done)
+    driver._execute_single(["colab", "stop", "-s", "x"], lambda _m: None, max_retries=0)
+    assert started == [(["colab", "stop", "-s", "x"], "/env/bin")]

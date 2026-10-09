@@ -437,8 +437,11 @@ def test_parallel_pieces_keep_the_length_and_the_content():
     used = [p.calls for p in pool]
     assert all(len(c) == 1 for c in used)
     assert all(c[0] < frames for c in used)
-    # Marginaali on mukana: pala on neljännestä pidempi.
-    assert all(c[0] > frames / 4 for c in used)
+    # Marginaali on mukana jokaisessa saumassa, molemmin puolin. Saumat
+    # siirtyvät hiljaiseen kohtaan (``_piece_edges``), joten palan pituus ei
+    # ole neljännes — mutta pituuksien summa on tiedosto ja marginaalit.
+    margin = int(chain.PIECE_MARGIN * rate)
+    assert sum(c[0] for c in used) == frames + 2 * margin * (len(pool) - 1)
 
 
 def test_a_short_file_is_not_cut_into_pieces():
@@ -1223,3 +1226,199 @@ def test_deess_filters_the_next_piece_while_compressing(monkeypatch):
     monkeypatch.setitem(chain._KERNELS, "deess", kernel)
     rng = np.random.default_rng(0)
     chain.deess(rng.normal(0, 0.1, (1, 2 * chain._COMPRESS_CHUNK)), 48000)
+
+
+def _chain_peak(audio):
+    import tracemalloc
+
+    chain.process(audio[:, : RATE * 5].copy(), RATE, AudioSettings(), 0.0, True,
+                  -16.0, None)                   # käännökset ja välimuistit ensin
+    tracemalloc.start()
+    out, info = chain.process(audio.copy(), RATE, AudioSettings(), 0.0, True,
+                              -16.0, None)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    return peak / audio.nbytes, out, info
+
+
+def test_the_limiter_section_does_not_hold_the_track_many_times():
+    """Rajoitinosuus piti koko raidan float64-kopioita: rajoittamaton,
+    huippuverho, käyrä, jokaisen kierroksen tulos ja edellinen, ja mittausten
+    monot. Mitattu 5 min oikeaa puhetta (float32-syötteen kerrannaisina):
+    PSR-vartijan rajoitin 17,0×, etupää (kompressorit) 6×. Rinnakkaiset
+    stemit mahtuvat samaan muistiin vasta kun rajoitin ei ole huippu."""
+    # Kolme minuuttia: GPU:n huippuverhon pala (2^21 näytettä) on vakio, ja
+    # minuutin raidalla se näyttäisi raidan kerrannaiselta.
+    audio = _spiky(seconds=180.0).astype(np.float32)
+    ratio, _out, info = _chain_peak(audio)
+    assert info.limiter_db < 0.0                   # rajoitin teki työtä
+    assert ratio < 9.0, ratio
+
+
+def test_the_plugin_runs_one_stem_at_a_time():
+    """Rinnakkaiset stemit eivät aja liitännäistä yhtä aikaa: dxRevive
+    jakaa jo yhden tiedoston koneen ytimille (``worker_count``), ja varanto
+    on säiekohtainen."""
+    import threading
+
+    active, worst = [0], [0]
+    lock = threading.Lock()
+
+    class Plugin:
+        def process(self, audio, rate, reset=True):
+            with lock:
+                active[0] += 1
+                worst[0] = max(worst[0], active[0])
+            time.sleep(0.2)
+            with lock:
+                active[0] -= 1
+            return audio
+
+    audio = np.atleast_2d(speech_like(seconds=4.0))
+    runs = [threading.Thread(target=chain.process, args=(
+        audio.copy(), RATE, AudioSettings(), 0.0, True, -16.0, Plugin()))
+        for _ in range(2)]
+    for run in runs:
+        run.start()
+    for run in runs:
+        run.join()
+    assert worst[0] == 1
+
+
+def _declick_whole(audio, rate, sensitivity=0.5):
+    """Koko raidan toteutus vertailuksi (ennen paloja, 2026-10-08)."""
+    from scipy import signal as sp
+    from scipy.ndimage import uniform_filter1d
+
+    out = audio.copy()
+    for channel in range(audio.shape[0]):
+        data = audio[channel]
+        high = np.abs(sp.sosfiltfilt(sp.butter(4, 4000, "hp", fs=rate, output="sos"), data))
+        low = np.abs(sp.sosfiltfilt(sp.butter(4, 1000, "lp", fs=rate, output="sos"), data))
+        window = max(1, int(0.05 * rate))
+        local = uniform_filter1d(high, size=window)
+        local_low = uniform_filter1d(low, size=window)
+        plosive = low > local_low * 3.0
+        factor = chain.DECLICK_FACTOR_MAX - (
+            chain.DECLICK_FACTOR_MAX - chain.DECLICK_FACTOR_MIN
+        ) * float(np.clip(sensitivity, 0.0, 1.0))
+        allowed = chain.DECLICK_MAX_PER_SECOND * max(data.size / rate, 1e-9)
+        gap = max(1, int(chain.DECLICK_MERGE_MS * rate / 1000.0))
+        index = np.empty(0, dtype=np.intp)
+        for _ in range(chain.DECLICK_ESCALATIONS):
+            index = np.flatnonzero((high > local * factor) & ~plosive)
+            if index.size == 0:
+                break
+            if 1 + int((np.diff(index) > gap).sum()) <= allowed:
+                break
+            factor *= 2.0
+        else:
+            continue
+        if index.size == 0:
+            continue
+        for cluster in np.split(index, np.flatnonzero(np.diff(index) > gap) + 1):
+            start = max(0, int(cluster[0]) - 10)
+            end = min(data.size, int(cluster[-1]) + 10)
+            if end - start >= int(0.01 * rate):
+                continue
+            before = np.arange(max(0, start - 20), start)
+            after = np.arange(end, min(data.size, end + 20))
+            if before.size <= 5 or after.size <= 5:
+                continue
+            reference = np.concatenate([before, after])
+            out[channel, start:end] = np.interp(
+                np.arange(start, end), reference, data[reference])
+    return out
+
+
+def _clicky(seconds=30.0, seed=5):
+    """Puhetta, naksuja ja yksi naksu palan rajan päällä."""
+    rng = np.random.default_rng(seed)
+    audio = speech_like(seconds, level=0.2)
+    for at in [*rng.uniform(0.5, seconds - 0.5, 12).tolist(), 5.0, 10.0 - 0.0005]:
+        i = int(at * RATE)
+        audio[0, i:i + 30] += np.hanning(30).astype(np.float32) * 0.5 * np.sin(
+            2 * np.pi * 9000 * np.arange(30) / RATE).astype(np.float32)
+    return audio
+
+
+@pytest.mark.parametrize("sensitivity", [0.0, 0.5, 1.0])
+def test_declick_in_pieces_matches_the_whole_track(monkeypatch, sensitivity):
+    """Kokonaisena 69 minuutin mikki vei de-clickissä 15,6 GB (automixer,
+    2026-10-08): kaistat ja niiden keskiarvot float64:nä koko raidalle,
+    kaksi kerrallaan. Paloittain, reunoille marginaali joka kattaa
+    suotimien vasteen. Kynnyksen nosto on koko raidan asia, joten palat
+    keräävät vain ehdokkaat ja päätös tehdään niistä."""
+    monkeypatch.setattr(chain, "_DECLICK_CHUNK", 5 * RATE)
+    audio = _clicky()
+    want = _declick_whole(audio, RATE, sensitivity)
+    got = chain.declick(audio, RATE, sensitivity)
+    assert np.any(want != audio)                # naksuja korjattiin
+    assert np.flatnonzero(got != audio).tolist() == np.flatnonzero(want != audio).tolist()
+    assert np.max(np.abs(got - want)) < 1e-9
+
+
+def test_declick_memory_does_not_grow_with_the_track(monkeypatch):
+    import tracemalloc
+
+    # Pala on vakio (~0,2 GB minuutin palalla); pienempänä testi mittaa
+    # sen mikä kasvaa raidan mukana.
+    monkeypatch.setattr(chain, "_DECLICK_CHUNK", 5 * RATE)
+    audio = _clicky(seconds=180.0)
+    chain.declick(audio[:, : RATE * 5], RATE)
+    tracemalloc.start()
+    chain.declick(audio, RATE)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    # Tulos (1×) ja palat. Kokonaisena mitattu ks. yllä.
+    assert peak < 2.0 * audio.nbytes, peak / audio.nbytes
+
+
+def test_the_chain_can_take_the_track_over_and_keeps_the_envelope_compact():
+    """Kaksi raidan kokoista kopiota lisää pois, tulos sama:
+    kutsuja luovuttaa raidan (``[audio]``) eikä pidä sitä koko ketjun ajan,
+    ja GPU:n huippuverho pysyy float32:na, jona GPU sen laskee. Mitattu
+    3 min testisignaalilla: 8,0 × float32-syöte ennen."""
+    import tracemalloc
+
+    audio = _spiky(seconds=180.0).astype(np.float32)
+    want, _ = chain.process(audio.copy(), RATE, AudioSettings(), 0.0, True, -16.0, None)
+    nbytes = audio.nbytes
+    handed = [audio]
+    del audio
+    tracemalloc.start()
+    out, info = chain.process(handed, RATE, AudioSettings(), 0.0, True, -16.0, None)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert not handed                                # luovutettu
+    assert np.array_equal(out, want)
+    assert info.limiter_db < 0.0
+    expected = 6.5 if chain._gpu_peak_envelope_available() else 7.5
+    assert peak / nbytes < expected, peak / nbytes
+
+
+def test_plugin_pieces_join_in_a_quiet_moment(monkeypatch):
+    """dxRevive ajetaan paloina, ja palat eroavat hieman toisistaan
+    (liitännäisen oma hidas sopeutuminen). v5 vs v5b (2026-10-08): suurin
+    ero −5,7 dBFS juuri ensimmäisessä saumassa 8:00. Sauma siirretään
+    lähimpään hiljaiseen kohtaan, jossa ero ei kuulu."""
+    monkeypatch.setattr(chain, "PIECE_MIN", 10.0)
+    seconds = 40.0
+    n = int(seconds * RATE)
+    rng = np.random.default_rng(3)
+    audio = (0.2 * rng.standard_normal((1, n))).astype(np.float32)
+    # Tauko 18,3–18,9 s, nimellisen sauman (20 s) haun sisällä.
+    pause = slice(int(18.3 * RATE), int(18.9 * RATE))
+    audio[:, pause] *= 0.001
+
+    class Marked:
+        def __init__(self, gain):
+            self.gain = gain
+
+        def process(self, x, rate, reset=True):
+            return x * self.gain
+
+    out = chain.apply_plugin([Marked(1.0), Marked(1.1)], audio, RATE)
+    ratio = out[0] / np.where(audio[0] == 0, 1, audio[0])
+    join = int(np.flatnonzero(np.abs(ratio - 1.1) < 1e-3)[0])
+    assert pause.start <= join < pause.stop, join / RATE

@@ -403,3 +403,15 @@ def test_progress_bar_updates_on_run(tmp_path: Path):
 
     run_scenario(scenario)
 
+
+
+def test_auto_silence_can_be_switched_off(tmp_path: Path):
+    async def scenario():
+        app = TranscribeApp()
+        async with app.run_test() as pilot:
+            assert app.collect_options().silence is True
+            app.query_one("#silence").value = False
+            assert app.collect_options().silence is False
+            await pilot.pause()
+
+    run_scenario(scenario)

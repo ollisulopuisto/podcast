@@ -9,7 +9,6 @@ ajettavan skriptin tuloste on ainoa tieto siitä mitä siellä tapahtui.
 from __future__ import annotations
 
 import contextlib
-import os
 import re
 import shlex
 import subprocess
@@ -314,7 +313,10 @@ def _execute_single(
         cmd_timeout = timeout if timeout is not None else COMMAND_TIMEOUT
         cmd_to_run = ["colab", "exec", "-s", session, "--timeout", str(cmd_timeout)]
 
-    env = dict(os.environ)
+    # ``colab`` uvx:n ympäristöstä, jos se on siellä (``onboarding.colab_env``).
+    from .onboarding import colab_env
+
+    env = colab_env()
     env["COLAB_CLI_NO_BROWSER"] = "1"
 
     for attempt in range(max_retries + 1):

@@ -170,3 +170,20 @@ def test_a_faded_bed_is_matched_at_its_plateau_over_the_speech(tmp_path):
     assert abs(lufs - (session.MUSIC_LUFS + session.MUSIC_PLATEAU_OVER_SPEECH_DB)) < 0.5
     hold = audio[int(2 * RATE):int(6 * RATE)]
     assert abs(_rms_db(hold) - _rms_db(plateau) - (-12 - -2)) < 0.3
+
+
+def _noise(seconds, level=0.1, channels=2, seed=2):
+    rng = np.random.default_rng(seed)
+    return (level * rng.standard_normal((int(seconds * RATE), channels))).astype(np.float32)
+
+
+def test_beds_are_measured_with_the_shared_meter():
+    """pyloudnorm luki 0,042 LU alakanttiin libebur128:aan verrattuna, ja
+    ketju ja masterointi mittaavat jo speechmixin mittarilla. Pohjan taso
+    sovitetaan samalla, ettei sama ääni mittaudu kahdella tavalla."""
+    from speechmix.meter import Meter
+
+    audio = _noise(6.0)
+    env = np.ones(len(audio), dtype=np.float32)
+    want = 10 ** ((session.MUSIC_LUFS - Meter(RATE).integrated_loudness(audio)) / 20)
+    assert abs(session._music_scale(audio, env, RATE) - want) < 1e-9

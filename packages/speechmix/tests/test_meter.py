@@ -201,3 +201,18 @@ def test_the_weighting_pass_matches_the_filters():
     got = np.concatenate([m._weighted_power(x[:, half], b1, a1, b2, a2, state)
                           for half in (slice(0, 20000), slice(20000, None))])
     assert np.max(np.abs(got - want)) < 1e-12
+
+
+def test_a_pyloudnorm_shaped_meter_reads_like_ours():
+    """automixerin vanhat polut puhuvat pyloudnormin muotoa: näytteet ensin,
+    ``-inf`` hiljaisuudelle. Sama mittari sen takana kuin muualla."""
+    from speechmix.meter import Meter
+
+    audio = _speechlike().astype(np.float64)
+    assert Meter(RATE).integrated_loudness(audio) == pytest.approx(
+        EBUR128_SPEECHLIKE, abs=1e-6)
+    stereo = np.stack([audio, audio], axis=1)          # (n, 2) kuten pyln
+    both = IntegratedMeter(RATE)
+    both.add(stereo.T)
+    assert Meter(RATE).integrated_loudness(stereo) == pytest.approx(both.value(), abs=1e-9)
+    assert Meter(RATE).integrated_loudness(np.zeros(RATE)) == -np.inf

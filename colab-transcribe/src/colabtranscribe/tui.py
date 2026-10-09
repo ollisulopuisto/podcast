@@ -381,6 +381,8 @@ class TranscribeApp(App):
                     id="transfer",
                     allow_blank=False,
                 )
+                yield Label("Auto-Silence (pois: vain litterointi)")
+                yield Switch(value=self._initial.silence, id="silence")
                 yield Label("RMS-tarkistus")
                 yield Switch(value=self._initial.rms, id="rms")
             with Horizontal(id="runrow"):
@@ -419,6 +421,7 @@ class TranscribeApp(App):
             preset=str(self.query_one("#preset", Select).value),
             transfer=str(self.query_one("#transfer", Select).value),
             rms=self.query_one("#rms", Switch).value,
+            silence=self.query_one("#silence", Switch).value,
             thr=int(number("#thr", initial.thr)),
             tail=number("#tail", initial.tail),
             gap=number("#gap", initial.gap),

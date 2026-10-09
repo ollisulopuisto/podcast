@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.2] - 2026-10-08
+
+### Changed
+- The processing log says how many microphones are processed at a time and why, and two at a time needs less free memory than before (speechmix 2026.10.8.4).
+
+## [2026.10.8.1] - 2026-10-08
+
+### Changed
+- **Audio processing works on two microphones at once when the Mac has the memory for it** (shared pipeline, speechmix 2026.10.8.1): about 1.6× faster on a two-mic episode, same files out. The progress bar counts both. Camera audio is extracted before the run starts. dxRevive still processes one file at a time.
+- Shared pipeline memory work: the chain's peak per microphone roughly halved, de-bleed's dropped from 6× to under 4× the track size, and the chain is 3.4× faster than on 2026-10-07 morning (see speechmix's CHANGELOG).
+
 ## [Unreleased]
 
 ### Added

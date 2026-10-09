@@ -515,6 +515,11 @@ def main():
         default="öö, tota, niinku, mhm, joo, silleen, vähän, niinkun, ööh, ömm.",
         help="Whisper initial prompt täytesanoille",
     )
+    parser.add_argument(
+        "--no-silence",
+        action="store_true",
+        help="vain litterointi: Auto-Silence jätetään pois",
+    )
     args = parser.parse_args()
 
     # Esiasetusten logiikka
@@ -541,12 +546,21 @@ def main():
     print("[vaihe 3/4] Injektoidaan litteroinnit .nhsx-rakenteeseen...", flush=True)
     generated_files = inject_transcriptions_to_nhsx(input_dir, output_dir)
 
+    # Käsikirjoitus tehdään valmiista istunnosta: vaimennetusta, tai
+    # litteroidusta kun vaimennus jätettiin pois.
+    finished = list(generated_files)
+    if args.no_silence:
+        print("[vaihe 4/4] Auto-Silence ohitettu (vain litterointi).", flush=True)
+        generated_files = []
     for idx, nhsx_file in enumerate(generated_files, 1):
         print(
             f"[vaihe 4/4 ({idx}/{len(generated_files)})] Suoritetaan Auto-Silence: {os.path.basename(nhsx_file)}...",
             flush=True,
         )
         run_auto_silence(nhsx_file, input_dir, rms_enabled, thr, tail, gap)
+        finished[idx - 1] = _swap_suffix(nhsx_file, ".nhsx", "_processed.nhsx")
+    for nhsx_file in finished:
+        write_script(nhsx_file)
 
     print("\nKoko putki suoritettu onnistuneesti.", flush=True)
 

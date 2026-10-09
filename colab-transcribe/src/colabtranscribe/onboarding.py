@@ -8,11 +8,129 @@ ajoa. Jos jokin puuttuu, antaa selkeät ja välittömästi ajettavat ohjeet.
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+
+def bundled_colab() -> str | None:
+    """``colab`` oman Pythonin vierestä, tai ``None``.
+
+    ``uvx`` asentaa ``google-colab-cli``:n riippuvuutena samaan ympäristöön
+    kuin tämä sovellus, mutta ei PATHiin — ja juuri se versio (Googlen
+    ``jupyter-kernel-client``-forkin kanssa) on testattu.
+    """
+    import sys
+
+    beside = Path(sys.executable).parent / "colab"
+    if beside.is_file() and os.access(beside, os.X_OK):
+        return str(beside)
+    return None
+
+
+def colab_binary() -> str | None:
+    """``colab``-komento: ensin oman ympäristön, sitten PATHin."""
+    return bundled_colab() or shutil.which("colab")
+
+
+def colab_env(env: dict | None = None) -> dict:
+    """Ympäristö jossa ``colab`` löytyy: oman ympäristön ``bin`` PATHin
+    alkuun. Komennot pysyvät muodossa ``colab ...``, joten ``--dry-run``
+    näyttää täsmälleen sen mitä ajetaan."""
+    env = dict(os.environ if env is None else env)
+    bundled = bundled_colab()
+    if bundled:
+        env["PATH"] = os.pathsep.join(
+            [str(Path(bundled).parent), env.get("PATH", "")]
+        )
+    return env
+
+
+def _script_python(script: str) -> str | None:
+    """Python jolla komentoskripti ajetaan, tai ``None``.
+
+    Tavallisesti se on shebangissa. uv kirjoittaa kuitenkin alkuun
+    ``#!/bin/sh``-käynnistimen, joka ajaa skriptin viereisen ``python``in
+    (``uvx``, ``uv tool``). Shebangista luettuna Python oli ``/bin/sh``.
+    """
+    path = Path(script)
+    try:
+        if not path.is_file():
+            return None
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except OSError:
+        return None
+    if not lines or not lines[0].startswith("#!"):
+        return None
+    shebang = lines[0][2:].strip()
+    if shebang in ("/bin/sh", "/bin/bash") and len(lines) > 1 and "'python'" in lines[1]:
+        beside = path.resolve().parent / "python"
+        return str(beside) if beside.is_file() else None
+    return shebang if Path(shebang).is_file() else None
+
+
+# Upstreamin Enter-odotuksen alku, ja ensimmäisen kyselykorjauksen
+# (dryrun=true, 2026-10-08) alku: sellainen kopio on jo käyttäjien koneilla
+# ja korvataan samoin. Merkki tunnistaa nykyisen korjauksen.
+_WAIT_START = "Press Enter after you have granted access"
+_V1_START = 'if not os.environ.get("COLAB_CLI_NO_BROWSER"):'
+_POLL_MARK = '_poll["dryrun"] = "false"'
+
+
+def _poll_instead_of_enter(content: str) -> str | None:
+    """Korvaa Enter-odotuksen kyselyllä; None jos kohtaa ei löydy.
+
+    Rivipohjainen eikä regex: upstream muuttaa odotuksen sisältöä (try/except
+    /dev/tty:n ympärillä tuli 2026-10), mutta sen alku ("Press Enter...") ja
+    seuraava vaihe ("Authorizing VM...") pysyvät. Kaikki niiden välissä
+    korvataan. Kysely tekee varsinaisen propagoinnin (dryrun=false), kuten
+    alkuperäinen korjaus: dryrun=true ei kertonut onnistumisesta koskaan
+    (2026-10-08 ajo aikakatkesi 600 s:ssa vaikka lupa annettiin). Raja on
+    540 s, alle colab-cli:n oman 600 s:n, jotta oma viesti ehtii näkyä.
+    """
+    lines = content.splitlines(keepends=True)
+    try:
+        first = next(i for i, ln in enumerate(lines) if _WAIT_START in ln or _V1_START in ln)
+        last = next(i for i in range(first, len(lines)) if "[colab] Authorizing VM..." in lines[i])
+    except StopIteration:
+        return None
+    indent = lines[first][: len(lines[first]) - len(lines[first].lstrip())]
+    block = [
+        'if not os.environ.get("COLAB_CLI_NO_BROWSER"):',
+        "    try:",
+        "        import webbrowser",
+        "        webbrowser.open(uri)",
+        "    except Exception:",
+        "        pass",
+        'typer.echo("[colab] Waiting for authorization in browser...")',
+        "import time as _time",
+        "_deadline = _time.time() + 540",
+        "_poll = dict(params)",
+        '_poll["dryrun"] = "false"',
+        "_said = _time.time()",
+        "while _time.time() < _deadline:",
+        "    _time.sleep(3)",
+        "    if _time.time() - _said > 30:",
+        '        typer.echo("[colab] Still waiting for Drive access in the browser...")',
+        "        _said = _time.time()",
+        "    try:",
+        "        _resp = creds.request(",
+        '            "POST", url, params=_poll, headers=headers,',
+        '            files={"file_id": (None, "empty.ipynb")},',
+        "        )",
+        '        if json.loads(_resp.text.split("\\n", 1)[-1]).get("success"):',
+        '            typer.echo("[colab] Authorization granted in browser.")',
+        "            break",
+        "    except Exception:",
+        "        pass",
+        "else:",
+        '    typer.echo("[colab] No authorization within 9 minutes.")',
+    ]
+    if "import os" not in content:
+        block.insert(0, "import os")
+    replaced = "".join(f"{indent}{ln}\n" for ln in block) + "\n"
+    return "".join(lines[:first]) + replaced + "".join(lines[last:])
 
 
 def patch_colab_cli_automation(colab_path: str | None = None) -> bool:
@@ -23,18 +141,12 @@ def patch_colab_cli_automation(colab_path: str | None = None) -> bool:
     Korvaamme odotuksen automaattisella selaintunnistuksen kyselyllä (polling).
     """
     if not colab_path:
-        colab_path = shutil.which("colab")
+        colab_path = colab_binary()
     if not colab_path:
         return False
     try:
-        colab_file = Path(colab_path)
-        if not colab_file.is_file():
-            return False
-        shebang = colab_file.read_text(encoding="utf-8", errors="ignore").splitlines()[0]
-        if not shebang.startswith("#!"):
-            return False
-        py_bin = shebang[2:].strip()
-        if not Path(py_bin).is_file():
+        py_bin = _script_python(colab_path)
+        if not py_bin:
             return False
 
         res = subprocess.run(
@@ -54,68 +166,12 @@ def patch_colab_cli_automation(colab_path: str | None = None) -> bool:
             return False
 
         content = automation_path.read_text(encoding="utf-8")
-        if 'poll_params["dryrun"] = "false"' in content:
+        if _POLL_MARK in content:
             return True
-
-        pattern = re.compile(
-            r"([ \t]*)"
-            r"(?:try:\s*\n[ \t]*webbrowser\.open\(uri\)\s*\n[ \t]*typer\.echo\([^)]*\)\s*\n[ \t]*except Exception:\s*\n[ \t]*pass\s*\n[ \t]*)?"
-            r'sys\.stdout\.write\(["\']Press Enter after you have granted access\.\.\. ["\']\)\s*\n'
-            r"[ \t]*sys\.stdout\.flush\(\)\s*\n"
-            r'[ \t]*with open\(["\']/dev/tty["\']\) as tty:\s*\n'
-            r"[ \t]*tty\.readline\(\)",
-            re.MULTILINE,
-        )
-
-        def _repl(m: re.Match[str]) -> str:
-            indent = m.group(1)
-            return (
-                f'{indent}if not os.environ.get("COLAB_CLI_NO_BROWSER"):\n'
-                f"{indent}    try:\n"
-                f"{indent}        import webbrowser\n"
-                f"{indent}        webbrowser.open(uri)\n"
-                f'{indent}        typer.echo("[colab] Opening authorization URL automatically in your default browser...")\n'
-                f"{indent}    except Exception:\n"
-                f"{indent}        pass\n"
-                f'{indent}typer.echo("[colab] Waiting for authorization in browser...")\n'
-                f"{indent}import time\n"
-                f"{indent}deadline = time.time() + 300\n"
-                f"{indent}poll_params = dict(params)\n"
-                f'{indent}poll_params["dryrun"] = "false"\n'
-                f"{indent}while time.time() < deadline:\n"
-                f"{indent}    time.sleep(2)\n"
-                f"{indent}    try:\n"
-                f"{indent}        resp = creds.request(\n"
-                f'{indent}            "POST",\n'
-                f"{indent}            url,\n"
-                f"{indent}            params=poll_params,\n"
-                f"{indent}            headers=headers,\n"
-                f'{indent}            files={{"file_id": (None, "empty.ipynb")}},\n'
-                f"{indent}        )\n"
-                f'{indent}        data = json.loads(resp.text.split("\\n", 1)[-1])\n'
-                f'{indent}        if data.get("success"):\n'
-                f'{indent}            typer.echo("[colab] Authorization granted in browser.")\n'
-                f"{indent}            break\n"
-                f"{indent}    except Exception:\n"
-                f"{indent}        pass\n"
-                f'{indent}if not data.get("success"):\n'
-                f'{indent}    typer.echo("[colab] Authorizing VM...")\n'
-                f'{indent}    params["dryrun"] = "false"\n'
-                f"{indent}    resp = creds.request(\n"
-                f'{indent}        "POST",\n'
-                f"{indent}        url,\n"
-                f"{indent}        params=params,\n"
-                f"{indent}        headers=headers,\n"
-                f'{indent}        files={{"file_id": (None, "empty.ipynb")}},\n'
-                f"{indent}    )"
-            )
-
-        if "/dev/tty" in content:
-            new_content = pattern.sub(_repl, content)
-            if new_content != content:
-                automation_path.write_text(new_content, encoding="utf-8")
-                return True
-            return False
+        new_content = _poll_instead_of_enter(content)
+        if new_content is None:
+            return "/dev/tty" not in content
+        automation_path.write_text(new_content, encoding="utf-8")
         return True
     except Exception:
         return False
@@ -130,17 +186,13 @@ def patch_colab_cli_runtime(colab_path: str | None = None) -> bool:
     Tämä korjaus kasvattaa aikakatkaisun 60 sekuntiin.
     """
     if not colab_path:
-        colab_path = shutil.which("colab")
+        colab_path = colab_binary()
     if not colab_path:
         return False
 
     try:
-        colab_file = Path(colab_path)
-        shebang = colab_file.read_text(encoding="utf-8", errors="ignore").splitlines()[0]
-        if not shebang.startswith("#!"):
-            return False
-        py_bin = shebang[2:].strip()
-        if not Path(py_bin).is_file():
+        py_bin = _script_python(colab_path)
+        if not py_bin:
             return False
 
         res = subprocess.run(
@@ -186,12 +238,8 @@ def colab_cli_has_kernel_client(colab_path: str) -> bool:
     yhteyttä avattaessa, joten tarkistus tehdään jo onboardingissa.
     """
     try:
-        colab_file = Path(colab_path)
-        shebang = colab_file.read_text(encoding="utf-8", errors="ignore").splitlines()[0]
-        if not shebang.startswith("#!"):
-            return False
-        py_bin = shebang[2:].strip()
-        if not Path(py_bin).is_file():
+        py_bin = _script_python(colab_path)
+        if not py_bin:
             return False
         res = subprocess.run(
             [
@@ -257,7 +305,7 @@ def check_helper_apps() -> list[OnboardingItem]:
     """Tarkistaa ulkoiset apuohjelmat."""
     items: list[OnboardingItem] = []
 
-    colab_path = shutil.which("colab")
+    colab_path = colab_binary()
     if colab_path:
         patch_colab_cli_automation(colab_path)
         patch_colab_cli_runtime(colab_path)
@@ -372,7 +420,9 @@ def check_credentials() -> list[OnboardingItem]:
 
     # 4. Ei tunnistetietoja
     instructions = (
-        "Kirjaudu Google Cloudiin komennolla:\n"
+        "Kirjaudu Googleen (avaa selaimen osoitteen, koodi takaisin terminaaliin):\n"
+        "  colab-transcribe --login\n"
+        "tai gcloudilla:\n"
         "  gcloud auth application-default login --scopes=openid,https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/colaboratory\n"
         "tai aseta palvelutunnuksen JSON-avaintiedosto:\n"
         '  export GOOGLE_APPLICATION_CREDENTIALS="/polku/avaimeen.json"'

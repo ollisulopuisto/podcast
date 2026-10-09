@@ -5,6 +5,54 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.8.6] - 2026-10-08
+
+### Added
+- `meter.Meter`: the shared loudness meter behind pyloudnorm's interface (samples first, `-inf` for silence), so code written against pyloudnorm can switch with one line.
+
+## [2026.10.8.5] - 2026-10-08
+
+### Changed
+- **dxRevive's pieces now join in pauses instead of mid-word:** each join between the parallel pieces moves to the quietest 200 ms within 20 s of its even-split position. The pieces differ slightly from each other (the plug-in's own slow adaptation), and at a join inside speech that difference can be audible (v5 vs v5b: the largest difference, −5.7 dBFS, sat at the first join). On 20 min of real speech the five joins moved from −15…−50 dB to −48…−71 dB. Piece lengths stay within ±20 s of equal.
+
+## [2026.10.8.4] - 2026-10-08
+
+### Changed
+- **Two stems at once on smaller machines too:** the memory estimate per stem drops from 15× to 10× its float32 size. Measured after today's memory work, two stems at once cost about 7× each. Two 47-min stems now need about 14 GB free instead of 20.
+- The log always says how many stems run at a time and why, e.g. "1 stem at a time: 2 would need 14.1 GB, 9.8 GB free".
+
+## [2026.10.8.3] - 2026-10-08
+
+### Changed
+- **A stem's memory peak fell another third, with identical output:**
+  - the track is handed over to the chain rather than held by the caller throughout;
+  - the dry/compressed mix and the two wideband compressors work in place;
+  - mono tracks are measured without copying them;
+  - the limiter rounds measure loudness, true peak and short-term level without building the limited track;
+  - the GPU's peak envelope stays in float32, which is what the GPU computes.
+
+  On 20 min of real speech with de-click, the peak went from 9.0× to 6.0× the track's float32 size. On a 69-min mic that is about 7.1 GB → 4.7 GB of live memory.
+
+## [2026.10.8.2] - 2026-10-08
+
+### Fixed
+- **De-click no longer takes gigabytes on long tracks:** it filtered the whole track at once into four float64 copies, two bands in parallel. On a 69-min mic that was 15.6 GB, the largest memory peak of an automixer run, where de-click is on by default. It now works in one-minute pieces with a one-second overlap, and decides its threshold from the click candidates of the whole track as before. Output is identical (same hash on 20 min of real speech) and so is the speed; memory on 20 min went from 2.65 GB to 0.45 GB, and it no longer grows with track length.
+
+## [2026.10.8.1] - 2026-10-08
+
+### Added
+- **Two stems processed at once when memory allows:** `parallel_count` decides from free RAM before the run (15× each stem's float32 size plus 4 GB for the rest of the machine), and falls back to one at a time when a size is unknown or memory is short. Measured on two 20-min stems of real speech: 27.9 → 17.7 s, peak memory 3.2 → 5.7 GB. Output is bit-identical. The restoration plug-in still runs for one stem at a time, since it already uses most cores. `SPEECHMIX_PARALLEL_STEMS=1` forces the old one-at-a-time behaviour.
+
+## [2026.10.7.14] - 2026-10-07
+
+### Changed
+- **De-bleed's memory peak per track went from 6× to under 4× the track's size, with identical audio:** the solo masking is applied a piece at a time instead of to whole float64 copies, the leak is subtracted in place, and the partner's raw audio is released once it is aligned. The "own speech kept" check now computes its correlation in place instead of with `np.corrcoef`, and the reading can differ in the last digit (0.9999999999999999 → 1.0).
+
+## [2026.10.7.13] - 2026-10-07
+
+### Changed
+- **The chain's memory peak per track roughly halved, with identical output:** the limiter rounds no longer build a limited copy of the track each time. Their loudness and PSR checks are computed piece by piece and the track is written once at the end, and the compressed branch is released as soon as it is mixed in. On 5 min of real speech the peak went from 17× to 8× the track's size (float32), so the limiter is no longer the most memory-hungry stage. This makes room for processing stems in parallel.
+
 ## [2026.10.7.12] - 2026-10-07
 
 ### Changed

@@ -126,3 +126,139 @@ def test_nothing_to_master_is_said(tmp_path):
     stems.program_deliver(jobs, result, {}, {},
                           SimpleNamespace(target_lufs=-16.0, program_peak_db=-1.0))
     assert any("master" in n.lower() for n in result.notes.get("a", []))
+
+
+# --- Rinnakkaiset stemit ----------------------------------------------------
+
+GB = 1 << 30
+
+
+def test_two_stems_run_together_when_both_fit(monkeypatch):
+    monkeypatch.delenv("SPEECHMIX_PARALLEL_STEMS", raising=False)
+    size = GB // 4                       # 20 min mono float32 ≈ 0.23 GB
+    need = 2 * stems.STEM_MEMORY_FACTOR * size + stems.MEMORY_RESERVE
+    assert stems.parallel_count([size, size], available=need + GB) == 2
+    assert stems.parallel_count([size, size], available=need - GB) == 1
+
+
+def test_one_at_a_time_when_unsure(monkeypatch):
+    """Tuntematon koko, yksi stemi tai pakotettu 1: ei rinnakkain. Arvio
+    joka epäonnistuu ajaa niin kuin ennen eikä ota muistia sokkona."""
+    monkeypatch.delenv("SPEECHMIX_PARALLEL_STEMS", raising=False)
+    plenty = 512 * GB
+    assert stems.parallel_count([GB // 4, None], available=plenty) == 1
+    assert stems.parallel_count([GB // 4], available=plenty) == 1
+    assert stems.parallel_count([GB // 4] * 5, available=plenty) == stems.MAX_PARALLEL
+    monkeypatch.setenv("SPEECHMIX_PARALLEL_STEMS", "1")
+    assert stems.parallel_count([GB // 4] * 2, available=plenty) == 1
+
+
+def test_stems_overlap_and_results_come_back(monkeypatch):
+    import threading
+
+    meet = threading.Barrier(2, timeout=5)
+
+    def work(job):
+        meet.wait()                     # aikakatkaisu jos ajetaan peräkkäin
+        if job == "b":
+            raise ValueError("rikki")
+        return job.upper()
+
+    got = {job: (value, error) for job, value, error
+           in stems.run_parallel(["a", "b"], work, 2)}
+    assert got["a"] == ("A", None)
+    assert isinstance(got["b"][1], ValueError)
+
+
+def test_one_worker_keeps_the_order_and_the_thread():
+    import threading
+
+    seen = []
+    out = list(stems.run_parallel(
+        ["a", "b", "c"], lambda job: seen.append(threading.current_thread()) or job, 1
+    ))
+    assert [job for job, _v, _e in out] == ["a", "b", "c"]
+    assert set(seen) == {threading.main_thread()}
+
+
+def test_stem_size_reads_the_header(tmp_path):
+    path = tmp_path / "x.wav"
+    sf.write(path, np.zeros((RATE, 2), dtype=np.float32), RATE)
+    assert stems.stem_size(str(path)) == RATE * 2 * 4
+    assert stems.stem_size(str(tmp_path / "missing.wav")) is None
+
+
+def test_parallel_work_sees_the_callers_context():
+    """autoraffkatin kieli on ``ContextVar``: rinnakkaisen stemin virhe
+    olisi muuten väärällä kielellä."""
+    import contextvars
+
+    lang = contextvars.ContextVar("lang", default="en")
+    lang.set("fi")
+    got = [value for _job, value, _e in stems.run_parallel(
+        ["a", "b"], lambda _job: lang.get(), 2)]
+    assert got == ["fi", "fi"]
+
+
+def test_a_stem_holds_few_copies_of_its_track(tmp_path, monkeypatch):
+    """Stemin huippu raidan kerrannaisena. Mitattu 20 min oikeaa puhetta
+    de-clickin kanssa: 9,0 × float32-raita ennen, 6,0 kun raita luovutetaan
+    ketjulle, ketju sekoittaa ja kompressoi paikallaan ja rajoittimen
+    kierrokset mittaavat ilman raidan mittaista monoa."""
+    import sys
+    import tracemalloc
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from test_chain import _spiky
+
+    from autoraffkat.model import AudioSettings
+
+    audio = _spiky(seconds=180.0)[0]
+    sf.write(tmp_path / "mic.wav", audio, RATE, subtype="FLOAT")
+    sf.write(tmp_path / "warm.wav", audio[: RATE * 5], RATE, subtype="FLOAT")
+    settings = AudioSettings()
+    settings.declick = True
+
+    def job(name):
+        return {"key": name, "name": name, "speaker": name,
+                "source": str(tmp_path / f"{name}.wav"),
+                "target": str(tmp_path / f"{name} out.wav"),
+                "target_lufs": -16.0, "gain_db": 0.0, "speech": True, "mono": True}
+
+    # Vakiokokoiset palat (de-click minuutti, GPU 2^21 näytettä) pienemmiksi:
+    # kolmen minuutin raidalla ne näyttäisivät raidan kerrannaisilta.
+    from speechmix import chain
+
+    monkeypatch.setattr(chain, "_DECLICK_CHUNK", 5 * RATE)
+    monkeypatch.setattr(chain, "_GPU_CHUNK", 1 << 17)
+    stems.process_stem(job("warm"), settings, None)
+    tracemalloc.start()
+    stems.process_stem(job("mic"), settings, None)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert peak < 7.0 * audio.nbytes, peak / audio.nbytes
+
+
+def test_the_stem_count_says_why(monkeypatch):
+    """v5b:ssä (2026-10-08) loki ei kertonut miksi stemit menivät yksi
+    kerrallaan. Päätös kerrotaan aina, luvuin."""
+    monkeypatch.delenv("SPEECHMIX_PARALLEL_STEMS", raising=False)
+    said = []
+    size = GB // 2
+    assert stems.parallel_count([size, size], available=2 * GB, report=said.append) == 1
+    assert "1 stem at a time" in said[0] and "GB" in said[0]
+    said.clear()
+    plenty = 512 * GB
+    assert stems.parallel_count([size, size], available=plenty, report=said.append) == 2
+    assert "2 stems at a time" in said[0]
+
+
+def test_two_47_minute_stems_fit_in_16_gb_free(monkeypatch):
+    """Mitattu 20 min oikeaa puhetta, de-click päällä, kaksi stemiä yhtä
+    aikaa: RSS-huippu 13,9 × yhden raidan float32-koko eli ~7 per stemi.
+    Kerroin 15 vaati kahdelle 47 min stemille ~20 GB vapaata, eikä v5b
+    saanut rinnakkaisuutta."""
+    monkeypatch.delenv("SPEECHMIX_PARALLEL_STEMS", raising=False)
+    stem = 47 * 60 * 48000 * 4
+    assert stems.parallel_count([stem, stem], available=16 * GB) == 2

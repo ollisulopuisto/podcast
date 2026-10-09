@@ -72,6 +72,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--rms", action="store_true", help="RMS-tarkistus Auto-Silencelle"
     )
     parser.add_argument(
+        "--transcribe-only",
+        action="store_true",
+        help="vain litterointi, ei Auto-Silencea (tulos: <jakso> litteroitu.nhsx)",
+    )
+    parser.add_argument(
         "--thr", type=int, default=-35, help="RMS-kynnys desibeleinä (oletus: -35)"
     )
     parser.add_argument(
@@ -94,6 +99,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="tarkista apuohjelmat ja ympäristömuuttujat",
     )
+    parser.add_argument(
+        "--login",
+        action="store_true",
+        help="kirjaudu Googleen Colab CLI:n kautta (ensimmäisellä kerralla)",
+    )
     parser.add_argument("--version", action="version", version=__version__)
     return parser
 
@@ -113,6 +123,7 @@ def options_from_args(args: argparse.Namespace) -> RunOptions:
         preset=args.preset if args.preset != "remote" else env_opts.preset,
         transfer=transfer,
         rms=args.rms or env_opts.rms,
+        silence=not args.transcribe_only and env_opts.silence,
         thr=args.thr if args.thr != -35 else env_opts.thr,
         tail=args.tail if args.tail != 1.0 else env_opts.tail,
         gap=args.gap if args.gap != 1.0 else env_opts.gap,
@@ -186,6 +197,17 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.login:
+        # ``colab`` kysyy tunnuksen itse: URL selaimeen, koodi takaisin
+        # tähän terminaaliin. Sen token kelpaa Colabiin ja Driveen, joten
+        # gcloudia ei tarvita. Mikä tahansa tunnistusta vaativa komento
+        # käynnistää kirjautumisen; ``usage`` ei luo virtuaalikonetta.
+        import subprocess
+
+        from .onboarding import colab_env
+
+        return subprocess.run(["colab", "usage"], check=False, env=colab_env()).returncode
 
     if args.stop:
         print(f"Suljetaan Colab-istunto '{args.session}'...")

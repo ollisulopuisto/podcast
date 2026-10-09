@@ -262,3 +262,28 @@ def test_headless_run_resets_session_when_requested(tmp_path, capsys, monkeypatc
     assert code == 0
     assert stopped == ["vst-pipeline"]
     assert any(c[:2] == ["colab", "new"] for c in calls[0])
+
+
+def test_login_signs_in_through_the_bundled_colab(monkeypatch):
+    """Ensimmäinen kirjautuminen ilman gcloudia: ``colab`` kysyy Google-
+    tunnuksen itse (selaimen URL ja koodi), ja sen token kelpaa sekä Colabiin
+    että Driveen. ``--login`` ajaa sen uvx:n ympäristön ``colab``illa."""
+    seen = []
+    monkeypatch.setattr("colabtranscribe.onboarding.bundled_colab", lambda: "/env/bin/colab")
+
+    def run(cmd, check=False, env=None):
+        seen.append((cmd, env["PATH"].split(":")[0]))
+        return type("R", (), {"returncode": 0})()
+
+    monkeypatch.setattr("subprocess.run", run)
+    assert cli.main(["--login"]) == 0
+    assert seen == [(["colab", "usage"], "/env/bin")]
+
+
+def test_transcribe_only_flag_reaches_the_remote_command(tmp_path, capsys):
+    (tmp_path / "puhe.wav").write_bytes(b"")
+    code = cli.main(["--input", str(tmp_path), "--transcribe-only", "--dry-run"])
+    assert code == 0
+    out = capsys.readouterr().out
+    line = next(x for x in out.splitlines() if "python3 /content/pipeline.py" in x)
+    assert "--no-silence" in line
