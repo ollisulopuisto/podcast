@@ -8,7 +8,7 @@ loivenevasti. Yksi luiska ei osaa sitä. Lyhyinä paloina se osaa: palojen
 välissä käyrä kulkee pisteestä pisteeseen, ja palojen raised-cosine-mutka
 jää toleranssin alle.
 
-Pilkkominen on ahne: jokainen luiska venytetään niin pitkäksi kuin se
+``segments``in pilkkominen on ahne: jokainen luiska venytetään niin pitkäksi kuin se
 pysyy toleranssissa. Tasanne ei tarvitse luiskaa lainkaan, koska taso jää
 edellisen luiskan päätearvoon.
 """
@@ -110,6 +110,127 @@ def segments(points: list[tuple[float, float]]) -> list[Segment]:
             out.append(Segment(start, pts[j][0] - start, pts[j][1]))
         i = j
     return _merge_holds(out)
+
+
+#: Sovituksen hakuväli, s. Luiskan alku ja pituus haetaan tällä tarkkuudella.
+FIT_GRID_S = 0.05
+
+
+def long_segments(points: list[tuple[float, float]]) -> list[Segment]:
+    """Käyrä luiskiksi: jokainen yhtäjaksoinen muutos on yksi luiska, yli
+    ``RISE_TWO_RAMPS_DB``:n nousu kaksi.
+
+    ``segments`` pilkkoo nousun lyhyiksi paloiksi, ja raised-cosine-luiskan
+    nollanopeus joka liitoksessa kuuluu sätkimisenä (vst s13e03 INTRO: 21
+    luiskaa, nousu 11,7 dB / 1,9 s, 17 % ajasta lähes nollanopeudella).
+    Täällä jokainen tasanteiden välinen vaihe saa yhden luiskan, jonka alku
+    ja pituus haetaan niin että pahin poikkeama kuuluvalla alueella on
+    pienin. Hindenburgin luiska on lineaarista amplitudia, käyttäjän nousu
+    suoraa desibeleinä, joten poikkeama jää: mitattu 13,7 dB pahimmillaan
+    8,5 s nousussa hiljaisuudesta (alku 1,5 s, pituus 7,0 s). Siksi nousu
+    saa kaksi luiskaa (``_fit_two``): liitoksen taso on käyrän arvo
+    liitoskohdassa, ja pysähdys liitoksessa on sekunnin luokan luiskilla
+    kaukana sätkimisnopeudesta.
+    """
+    import numpy as np
+
+    pts = [(float(t), _clean(db)) for t, db in points]
+    if not pts:
+        return []
+    out = [Segment(0.0, FIRST_RAMP_S, pts[0][1])]
+    times = np.array([t for t, _ in pts])
+    wants = np.array([d for _, d in pts])
+    i = 0
+    while i < len(pts) - 1:
+        if pts[i + 1][1] == pts[i][1]:
+            i += 1
+            continue
+        j = i + 1
+        while j + 1 < len(pts) and pts[j + 1][1] != pts[j][1]:
+            j += 1
+        rising = wants[j] - wants[i] >= RISE_TWO_RAMPS_DB
+        out.extend(_fit_two(times, wants, i, j) if rising else [_fit_run(times, wants, i, j)])
+        i = j
+    return _merge_holds(out)
+
+
+#: Tätä suurempi nousu saa kaksi luiskaa. Käyttäjän nousu on suora
+#: desibeleinä, ja yksi amplitudiluiska poikkeaa siitä 13,7 dB (vst s13e03,
+#: −68 → −8 dB, 8,5 s). Kaksi luiskaa liittyy vain kerran, joten
+#: sätkimistä ei synny.
+RISE_TWO_RAMPS_DB = 30.0
+#: Kahden luiskan haku on kolmen muuttujan haku, joten ruudukko on karkeampi.
+FIT_TWO_GRID_S = 0.1
+
+
+def _fit_two(times, wants, i: int, j: int) -> list[Segment]:
+    """Kaksi peräkkäistä luiskaa nousulle: alku, liitos ja loppu haetaan.
+
+    Liitoksen taso on käyrän arvo liitoskohdassa, joten haettavia on vain
+    kolme aikaa. Kriteeri on sama kuin ``_fit_run``: pahin poikkeama
+    kuuluvalla alueella pienin.
+    """
+    import numpy as np
+
+    g0, g1 = _lin(float(wants[i])), _lin(float(wants[j]))
+    t0, t1 = float(times[i]), float(times[j])
+    window = times[i : j + 1]
+    want = wants[i : j + 1]
+    steps = max(3, round((t1 - t0) / FIT_TWO_GRID_S))
+    first = max(t0, FIRST_RAMP_S)
+    grid = [t0 + k * FIT_TWO_GRID_S for k in range(steps + 1)]
+    level = [_lin(float(np.interp(t, times[i : j + 1], want))) for t in grid]
+    audible_want = want >= AUDIBLE_DB
+    best = (math.inf, None)
+    for a in range(steps - 1):
+        start = max(grid[a], first)
+        for m in range(a + 1, steps):
+            if grid[m] - start < FIT_TWO_GRID_S:
+                continue
+            x = np.clip((window - start) / (grid[m] - start), 0.0, 1.0)
+            gm = level[m]
+            first_part = g0 + (gm - g0) * (1.0 - np.cos(np.pi * x)) / 2.0
+            for e in range(m + 1, steps + 1):
+                y = np.clip((window - grid[m]) / (grid[e] - grid[m]), 0.0, 1.0)
+                second = gm + (g1 - gm) * (1.0 - np.cos(np.pi * y)) / 2.0
+                gain = np.where(window < grid[m], first_part, second)
+                got = 20.0 * np.log10(np.maximum(gain, 1e-12))
+                audible = audible_want | (got >= AUDIBLE_DB)
+                err = float(np.max(np.where(audible, np.abs(got - want), 0.0)))
+                if err < best[0]:
+                    best = (err, (start, a, m, e))
+    start, a, m, e = best[1]
+    junction_db = _clean(20.0 * math.log10(max(level[m], 1e-12)))
+    return [
+        Segment(start, grid[m] - start, junction_db),
+        Segment(grid[m], grid[e] - grid[m], float(wants[j])),
+    ]
+
+
+def _fit_run(times, wants, i: int, j: int) -> Segment:
+    """Yksi luiska pisteestä ``i`` pisteeseen ``j``: paras alku ja pituus."""
+    import numpy as np
+
+    g0, g1 = _lin(float(wants[i])), _lin(float(wants[j]))
+    t0, t1 = float(times[i]), float(times[j])
+    window = times[i : j + 1]
+    want = wants[i : j + 1]
+    steps = max(1, round((t1 - t0) / FIT_GRID_S))
+    best = (math.inf, max(t0, FIRST_RAMP_S), t1 - max(t0, FIRST_RAMP_S))
+    for a in range(steps):
+        start = max(t0 + a * FIT_GRID_S, FIRST_RAMP_S)
+        for b in range(a + 1, steps + 1):
+            end = t0 + b * FIT_GRID_S
+            if end - start < FIT_GRID_S:
+                continue
+            x = np.clip((window - start) / (end - start), 0.0, 1.0)
+            gain = g0 + (g1 - g0) * (1.0 - np.cos(np.pi * x)) / 2.0
+            got = 20.0 * np.log10(np.maximum(gain, 1e-12))
+            audible = (want >= AUDIBLE_DB) | (got >= AUDIBLE_DB)
+            err = float(np.max(np.where(audible, np.abs(got - want), 0.0)))
+            if err < best[0]:
+                best = (err, start, end - start)
+    return Segment(best[1], best[2], float(wants[j]))
 
 
 def _flat(points, i: int, j: int) -> bool:

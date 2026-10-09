@@ -2109,7 +2109,7 @@ wheels = [
 
 [[package]]
 name = "nhsx"
-version = "2026.10.9.1"
+version = "2026.10.9.2"
 source = { editable = "packages/nhsx" }
 dependencies = [
     { name = "lxml" },

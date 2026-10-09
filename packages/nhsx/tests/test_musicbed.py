@@ -117,3 +117,12 @@ def test_without_cold_open_the_bed_starts_from_silence():
 def test_bed_with_no_gap_in_the_speech_is_refused():
     bed = {"region": (10.0, 30.0), "speech": [(0.0, 60.0)]}
     assert musicbed.curve(*bed["region"], bed["speech"]) is None
+
+
+def test_end_bed_is_written_as_a_rise_and_a_fall_only():
+    """Käyttäjä: «yksi pitkä nousu». INTRO-pohjan 21 luiskaa sätkivät."""
+    from nhsx import fades
+
+    curve = _curve(END)
+    segs = fades.long_segments([(t, db - 10.0) for t, db in curve])
+    assert len(segs) <= 4, segs

@@ -58,6 +58,9 @@ fraction of autoraffkat's UI: no picture, no cuts, no Final Cut export.
 
 - The Swift NHSX viewer does not yet apply `FadeIn`/`FadeOut`
   (`viewer/Sources/NhsxKit/Mix.swift`); `nhsx-render` and automixer do.
+- Export the music files without fades burned in, so automixer's bed
+  behaviour (`automixer-beds`, `nhsx.musicbed`) can be matched against the
+  by-ear fades on identical material.
 - An own cleanup model in place of dxRevive (reverb, noise, artefacts) —
   the long-term goal for the plug-in slot. Level and dynamics stay in the
   chain.
