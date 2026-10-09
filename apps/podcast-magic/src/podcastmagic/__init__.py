@@ -4,4 +4,4 @@ Yksi ikkuna, monta moduulia. Moduulit eivät tunne toisiaan: yhteistä on vain
 ``.nhsx``-tiedosto, jota ne vuorotellen lukevat ja kirjoittavat.
 """
 
-__version__ = "2026.9.2.2"
+__version__ = "2026.10.9.1"
