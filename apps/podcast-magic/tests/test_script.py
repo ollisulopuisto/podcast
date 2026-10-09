@@ -143,3 +143,50 @@ def test_a_broken_session_is_a_stated_error(tmp_path):
     client = TestClient(create_app(start_dir=str(tmp_path)))
     response = client.post("/api/script/run", json={"session": str(broken)})
     assert response.status_code == 400
+
+
+def two_regions_then_a_reply(tmp_path: Path) -> Path:
+    """Olli puhuu kahdessa peräkkäisessä alueessa, sitten Panu, sitten Olli."""
+    path = tmp_path / "vuorot.nhsx"
+    path.write_text(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<Session Name="vuorot">
+  <AudioPool Path="">
+    <File Id="1" Name="olli.wav" Path="olli.wav">
+      <Transcription><p>
+        <w s="1.000" l="0.400" sp="UU">Ensin</w>
+        <w s="6.000" l="0.400" sp="UU">sitten</w>
+        <w s="20.000" l="0.400" sp="UU">lopuksi</w>
+      </p></Transcription>
+    </File>
+    <File Id="2" Name="panu.wav" Path="panu.wav">
+      <Transcription><p><w s="11.000" l="0.300" sp="UU">Joo</w></p></Transcription>
+    </File>
+  </AudioPool>
+  <Tracks>
+    <Track Name="Olli">
+      <Region Ref="1" Start="0.000" Length="3.000" Offset="0.000"/>
+      <Region Ref="1" Start="5.000" Length="3.000" Offset="5.000"/>
+      <Region Ref="1" Start="19.000" Length="3.000" Offset="19.000"/>
+    </Track>
+    <Track Name="Panu">
+      <Region Ref="2" Start="10.000" Length="3.000" Offset="10.000"/>
+    </Track>
+  </Tracks>
+</Session>""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_consecutive_regions_of_one_track_are_one_turn(tmp_path):
+    """Puhuja on vuoro, ei joukko alueita: Hindenburg pilkkoo raidan
+    hiljaisuuksista, ja joka palasta oma rivi toisti nimen kolmesti."""
+    text = core.script(core.read(str(two_regions_then_a_reply(tmp_path))))
+    assert text == (
+        "[00:00] **Olli:** Ensin sitten\n"
+        "\n"
+        "[00:10] **Panu:** Joo\n"
+        "\n"
+        "[00:19] **Olli:** lopuksi\n"
+    )

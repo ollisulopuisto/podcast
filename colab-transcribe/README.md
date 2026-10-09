@@ -13,6 +13,9 @@ every region where nobody speaks (Auto-Silence), and downloads the results:
 `<jakso> litteroitu.nhsx` and `<jakso>_processed.nhsx`.
 To transcribe without Auto-Silence, use `--transcribe-only` (or switch
 Auto-Silence off in the TUI): you then get only `<jakso> litteroitu.nhsx`.
+A readable script of the finished session is written next to it
+(`<jakso>_processed.md`, or `<jakso> litteroitu.md` with `--transcribe-only`):
+one paragraph per speaker turn, the track name as the speaker.
 
 ## Run it
 

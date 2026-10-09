@@ -270,6 +270,9 @@ class Globals:
     # jota ei kaikille jaksoille tehdä, ja pois päältä vienti on
     # täsmälleen entisensä. Rajat eivät ole säätimiä — ks. ``reframe.py``.
     vertical: bool = False
+    # Leveä (Laaja) kuva pystyviennin reaktioihin. Oletus pois: kaksi
+    # neliötä pinottuna korvaa sen, kun molemmat ovat ruudulla yhtä aikaa.
+    wide_reactions: bool = False
     # Painot. Näitä on tarkoitus säätää, ja siksi mittaukset ovat
     # välimuistissa pisteiden sijaan: säätö ei maksa uutta purkua.
     # Portin läpäisseiden järjestys. Suoruus edellä; loput pieninä, koska

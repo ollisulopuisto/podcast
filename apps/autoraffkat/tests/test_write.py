@@ -865,12 +865,12 @@ def _with_reactions(fixture_dir, spans, settings=None, reframer=None):
 
 
 def test_a_vertical_reaction_shot_is_filled_and_framed(fixture_dir):
-    """Pystyviennissä reaktiokuva on täyttö ja kuuntelijan kehys, kuten
-    muutkin kuvat.
+    """Pystyviennissä reaktiokuva ei saa jäädä 16:9-kaistaleena keskelle
+    ruutua: ilman täyttöä tai rajausta se tuli pystykuvan päälle letterboxina
+    (hmh hannes vertical v3, 2026-09-25).
 
-    Ilman sitä omalla lanellaan oleva 16:9-kuva tuli pystykuvan päälle
-    letterboxina: vaakasuora kaistale keskellä ruutua (hmh hannes vertical
-    v3, 2026-09-25).
+    Kun reaktio ja pohjakuva ovat ruudulla yhtä aikaa, reaktio on neliö
+    pinossa, joten täyttöä ei käytetä vaan kuva rajataan keskeltä neliöksi.
     """
     stub = _StubReframer()
     _, xml = _with_reactions(fixture_dir, [("Guest", 8.0, 9.6, 2.1)],
@@ -878,9 +878,66 @@ def test_a_vertical_reaction_shot_is_filled_and_framed(fixture_dir):
     root = ET.fromstring(xml)
     clip = next(c for c in root.iter("mc-clip") if "reaktio" in (c.get("name") or ""))
     source = clip.find("mc-source")
-    assert source.find("adjust-conform").get("type") == "fill"
-    assert source.find("adjust-transform") is not None
-    assert ("CLOSE_B 01.mp4", 8.0, 9.6) in stub.calls
+    assert source.find("adjust-conform").get("type") == "none"
+    crop = source.find("adjust-crop/crop-rect")
+    assert abs(float(crop.get("left")) - 21.875) < 0.01
+    assert abs(float(crop.get("right")) - 21.875) < 0.01
+    assert abs(float(crop.get("top"))) < 0.01
+    assert abs(float(crop.get("bottom"))) < 0.01
+    assert abs(abs(_stack_y(source)) - 28.125) < 0.01
+    # Neliö rajataan lähteen keskeltä, ei kasvoihin: reframer ei kysy siitä.
+    assert not any(name.startswith("CLOSE_B") for name, _a, _b in stub.calls)
+
+
+def _stack_y(source) -> float:
+    return float(source.find("adjust-transform").get("position").split()[1])
+
+
+def test_two_videos_on_screen_stack_into_two_squares(fixture_dir):
+    """Kaksi kuvaa samaan aikaan ruudussa: pystyssä kaksi 1080×1080 neliötä,
+    toinen toisen päällä.
+
+    Ruudun korkeus on 1920 px ja neliön 1080 px, joten keskipisteet ovat
+    ±540 px = ±28.125 % (1 % = 19.2 px). Ne eivät mene päällekkäin eivätkä
+    jätä väliin rakoa. Vaakasuunnassa 1920 px leveästä lähdekuvasta jää
+    keskeltä 1080 px: 21.875 % pois kummaltakin reunalta.
+    """
+    spans = [("Guest", 8.0, 9.6, 2.1), ("Guest", 20.0, 21.6, 2.1)]
+    _, xml = _with_reactions(fixture_dir, spans,
+                             settings=_vertical_settings(), reframer=_StubReframer())
+    reactions = [c for c in ET.fromstring(xml).iter("mc-clip")
+                 if "reaktio" in (c.get("name") or "")]
+    assert len(reactions) == 2
+    ys = []
+    for clip in reactions:
+        source = clip.find("mc-source")
+        crop = source.find("adjust-crop/crop-rect")
+        assert crop is not None, "reaktiokuvaa ei rajattu neliöksi"
+        assert abs(float(crop.get("left")) - 21.875) < 0.01
+        assert abs(float(crop.get("right")) - 21.875) < 0.01
+        assert abs(float(crop.get("top"))) < 0.01
+        assert abs(float(crop.get("bottom"))) < 0.01
+        y = _stack_y(source)
+        assert abs(abs(y) - 28.125) < 0.01
+        ys.append(y)
+    # Järjestys vaihtuu: A päällä, sitten B päällä.
+    assert ys[0] == -ys[1]
+
+
+def test_the_base_square_takes_the_other_half_of_the_stack(fixture_dir):
+    """Pohjakuva on se toinen puoli: kun reaktio on ylhäällä, pohja on
+    alhaalla, ja seuraavassa pinossa päinvastoin."""
+    spans = [("Guest", 8.0, 9.6, 2.1), ("Guest", 20.0, 21.6, 2.1)]
+    _, xml = _with_reactions(fixture_dir, spans,
+                             settings=_vertical_settings(), reframer=_StubReframer())
+    root = ET.fromstring(xml)
+    reactions = [c for c in root.iter("mc-clip") if "reaktio" in (c.get("name") or "")]
+    reaction_ys = [_stack_y(c.find("mc-source")) for c in reactions]
+    base_ys = [_stack_y(s) for s in root.findall(".//spine/mc-clip/mc-source")
+               if s.find("adjust-crop/crop-rect") is not None]
+    assert len(base_ys) >= 2, "pohjakuvaa ei rajattu pinoa varten"
+    for reaction_y, base_y in zip(reaction_ys, base_ys, strict=False):
+        assert abs(reaction_y + base_y) < 0.01
 
 
 def test_reactions_go_on_their_own_lane_not_into_the_multicam(fixture_dir):
@@ -1882,3 +1939,12 @@ def test_the_writer_hands_over_a_shot_list_matching_the_xml(fixture_dir):
         assert abs(shot.file_start - at) < 1e-6
         part = "01" if at < 18 else "02"
         assert shot.path.endswith(f"{part}.mp4"), (shot.path, at)
+
+
+def test_a_single_speaker_keeps_the_nine_sixteen_fill(fixture_dir):
+    """Yksi puhuja ruudussa: pystykrop ennallaan, ei neliöitä eikä pinoa."""
+    _, xml = _multicam_cut(fixture_dir, settings=_vertical_settings())
+    root = ET.fromstring(xml)
+    assert root.iter("adjust-crop") is not None
+    assert not list(root.iter("adjust-crop"))
+    assert not any("reaktio" in (c.get("name") or "") for c in root.iter("mc-clip"))

@@ -72,3 +72,33 @@ def test_a_broken_json_is_a_stated_error(tmp_path, capsys):
 
 def test_a_missing_file_is_a_stated_error(tmp_path, capsys):
     assert module.main([str(tmp_path / "ei ole.json")]) == 2
+
+
+def test_a_hindenburg_session_becomes_speaker_turns(tmp_path):
+    """Sama komento lukee ``.nhsx``-istunnon: raidan nimi on puhujan nimi ja
+    peräkkäiset alueet samalta raidalta ovat yksi vuoro."""
+    from test_script import two_regions_then_a_reply
+
+    session = two_regions_then_a_reply(tmp_path)
+    assert module.main([str(session)]) == 0
+    text = (tmp_path / "vuorot.md").read_text(encoding="utf-8")
+    assert text.splitlines()[0] == "[00:00] **Olli:** Ensin sitten"
+    assert "**Panu:** Joo" in text
+    assert "**Olli:** lopuksi" in text
+
+
+def test_the_session_is_told_apart_by_its_suffix_not_its_case(tmp_path):
+    from test_script import two_regions_then_a_reply
+
+    session = two_regions_then_a_reply(tmp_path)
+    shouted = session.rename(tmp_path / "VUOROT.NHSX")
+    assert module.main([str(shouted)]) == 0
+    assert "**Panu:**" in (tmp_path / "VUOROT.md").read_text(encoding="utf-8")
+
+
+def test_a_broken_session_is_a_stated_error(tmp_path, capsys):
+    broken = tmp_path / "rikki.nhsx"
+    broken.write_text("<Session>", encoding="utf-8")
+    assert module.main([str(broken)]) == 2
+    assert capsys.readouterr().err.strip()
+    assert not (tmp_path / "rikki.md").exists()

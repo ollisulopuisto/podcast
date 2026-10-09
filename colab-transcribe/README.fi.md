@@ -13,6 +13,9 @@ vaimentaa jokaisen kohdan jossa kukaan ei puhu (Auto-Silence) ja lataa
 tulokset takaisin: `<jakso> litteroitu.nhsx` ja `<jakso>_processed.nhsx`.
 Pelkkä litterointi ilman Auto-Silencea: `--transcribe-only` (tai TUI:ssa
 Auto-Silence pois päältä), jolloin tulos on vain `<jakso> litteroitu.nhsx`.
+Valmiin istunnon luettava käsikirjoitus tulee viereen (`<jakso>_processed.md`,
+tai `<jakso> litteroitu.md` kun `--transcribe-only`): yksi kappale per
+puheenvuoro, puhujana raidan nimi.
 
 ## Ajaminen
 

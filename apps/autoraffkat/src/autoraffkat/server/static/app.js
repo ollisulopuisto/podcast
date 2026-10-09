@@ -1071,6 +1071,21 @@ function renderGlobals() {
     body: (body) => { verticalBody(body, video, reacting); },
   }).row);
 
+  /* Pystyviennin reaktiot ovat oletuksena pinoja (kaksi neliötä). Laaja
+     kuva on valinnainen paluu entiseen. */
+  if (state.globals.vertical) {
+    rows.append(settingRow({
+      key: 'wide_reactions',
+      label: T('vertical.wide.title'),
+      hint: T('vertical.wide.hint'),
+      value: state.globals.wide_reactions ? T('panning.on') : T('audio.off'),
+      toggle: {
+        checked: state.globals.wide_reactions,
+        onChange: (on) => { state.globals.wide_reactions = on; renderGlobals(); schedule(0); },
+      },
+    }).row);
+  }
+
   const overlapChosen = OVERLAP_RULES()
     .find(([value]) => value === state.globals.overlap_rule);
   rows.append(settingRow({

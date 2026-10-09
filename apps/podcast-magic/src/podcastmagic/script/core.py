@@ -1,9 +1,10 @@
 """Litteroinnista luettava käsikirjoitus.
 
 Sanat ja niiden ajat tulevat ``nhsx/read.py``:ltä; jäljellä on sijoitus
-aikajanalle ja markdown. Jokainen alue, jolla on sanoja, on yksi rivi:
-aikaleima on regionin paikka **aikajanalla**, ja tekstin antavat sanat
-joiden tiedostoaika osuu alueen ikkunaan ``[Offset, Offset + Length)``.
+aikajanalle ja markdown. Jokainen alue, jolla on sanoja, tuo tekstiä
+puhujan vuoroon: aikaleima on regionin paikka **aikajanalla**, ja tekstin
+antavat sanat joiden tiedostoaika osuu alueen ikkunaan
+``[Offset, Offset + Length)``.
 Sama tiedosto voi olla aikajanalla useammin kuin kerran, ja joka kerralla
 samat sanat kuuluvat eri kohtaan jaksoa.
 """
@@ -21,7 +22,13 @@ def _stamp(seconds: float) -> str:
 
 
 def script(session: Session) -> str:
-    """Käsikirjoitus markdownina. Puhujan vaihtuessa väliin tyhjä rivi."""
+    """Käsikirjoitus markdownina: yksi kappale per puheenvuoro.
+
+    Puhujan nimi on raidan nimi. Peräkkäiset alueet samalta raidalta ovat
+    yksi vuoro, koska Hindenburg pilkkoo raidan hiljaisuuksista ja joka
+    palasta oma rivi toistaisi nimen. Vuoron aikaleima on sen ensimmäisen
+    alueen; puhujan vaihtuessa väliin tulee tyhjä rivi.
+    """
     entries: list[tuple[float, str, str]] = []
     for track in session.tracks:
         for region in track.regions:
@@ -40,12 +47,11 @@ def script(session: Session) -> str:
             )
 
     entries.sort(key=lambda entry: entry[0])
-    out: list[str] = []
-    speaker = None
+    turns: list[tuple[float, str, list[str]]] = []
     for start, name, text in entries:
-        if name != speaker:
-            if out:
-                out.append("")
-            speaker = name
-        out.append(f"{_stamp(start)} **{name}:** {text}")
-    return "\n".join(out) + ("\n" if out else "")
+        if turns and turns[-1][1] == name:
+            turns[-1][2].append(text)
+        else:
+            turns.append((start, name, [text]))
+    out = [f"{_stamp(start)} **{name}:** {' '.join(parts)}" for start, name, parts in turns]
+    return "\n\n".join(out) + ("\n" if out else "")

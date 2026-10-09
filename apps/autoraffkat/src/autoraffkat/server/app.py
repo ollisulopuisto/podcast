@@ -790,6 +790,8 @@ class AppState:
             # rikkuneelta.
             if g.vertical and not was and self.video_missing():
                 self.start_measure_video()
+        if "wide_reactions" in raw:
+            g.wide_reactions = bool(raw["wide_reactions"])
         if raw.get("overlap_rule") in OVERLAP_RULES:
             g.overlap_rule = raw["overlap_rule"]
         if raw.get("long_take_rule") in LONGTAKE_RULES:
