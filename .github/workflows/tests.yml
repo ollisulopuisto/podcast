@@ -1,16 +1,37 @@
 name: tests
 
 # macOS, koska ffmpegin lisäksi testataan Finderin valintaa ja Visionia.
-on: [push, pull_request]
+#
+# Push vain mainiin: haara jolla on PR ajoi ennen samat testit kahdesti
+# (push ja pull_request), ja macOS-minuutti on kymmenen Linux-minuutin hinta.
+# Haara ilman PR:ää ei saa ajoa; `workflow_dispatch` on sitä varten.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Uusi commit samaan haaraan mitätöi edellisen ajon. Mainilla ajoa ei
+# peruta: jokaisen mainiin menneen commitin tulos halutaan nähdä.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: macos-latest
+    timeout-minutes: 30
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
       - run: brew install ffmpeg
 
       # Node on podcast-magicin käyttöliittymän savutestiä varten. Ilman sitä
@@ -46,28 +67,38 @@ jobs:
       - name: workspace
         run: uv run pytest tests -q
 
+      # Alla jokaisella sviitillä on `if: !cancelled()`: yksi punainen sviitti ei
+      # piilota seuraavien tulosta, joten yksi ajo kertoo kaiken. Ajo on silti
+      # punainen — tämä ei ole `continue-on-error`.
       - name: speechmix
+        if: ${{ !cancelled() }}
         run: uv run --directory packages/speechmix pytest -q
 
       # Hindenburg-istunnon lukija ja aluesijoittelu. Sen testit eivät
       # ajautuneet CI:ssä lainkaan, vaikka podcast-magic ja automixer
       # lukevat istunnot sen kautta.
       - name: nhsx
+        if: ${{ !cancelled() }}
         run: uv run --directory packages/nhsx pytest -q
 
       - name: autoraffkat
+        if: ${{ !cancelled() }}
         run: uv run --directory apps/autoraffkat pytest -q
 
       - name: automixer
+        if: ${{ !cancelled() }}
         run: uv run --directory apps/automixer pytest -q
 
       - name: podcast-magic
+        if: ${{ !cancelled() }}
         run: uv run --directory apps/podcast-magic pytest -q
 
       - name: colab-transcribe
+        if: ${{ !cancelled() }}
         run: uv run --directory colab-transcribe pytest -q
 
       - name: fcp-subs-whisper
+        if: ${{ !cancelled() }}
         run: uv run --directory apps/fcp-subs-whisper pytest -q
 
 
@@ -75,6 +106,7 @@ jobs:
       # puuttuu node, eikä siitä sanota mitään — joten sen ajaminen
       # tarkistetaan erikseen eikä luoteta yllä olevaan riviin.
       - name: podcast-magic — savutesti myös ajettiin
+        if: ${{ !cancelled() }}
         run: |
           uv run --directory apps/podcast-magic \
             pytest tests/test_ui.py -q --no-header -rs | tee /tmp/ui.log
@@ -91,6 +123,7 @@ jobs:
       # `Report.peak` kertoi oikean huipun, koska se mitataan liukuluvuista
       # ennen pakkausta. Vasta oikea renderöinti näytti sen.
       - name: podcast-magic — renderöinti ajettiin oikealla ffmpegillä
+        if: ${{ !cancelled() }}
         run: |
           uv run --directory apps/podcast-magic \
             pytest tests/test_render_endtoend.py -q --no-header -rs | tee /tmp/e2e.log
@@ -103,6 +136,7 @@ jobs:
       # läpi kummankin puuttuessa, koska ne käyttävät valemoottoria; tämä on
       # se kohta joka lukee oikean tilanteen ajurilta.
       - name: podcast-magic — molemmat moottorit tuotavissa
+        if: ${{ !cancelled() }}
         run: |
           uv run --directory apps/podcast-magic python -c "
           from podcastmagic.transcribe.backends import infos
