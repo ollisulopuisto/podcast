@@ -14,7 +14,7 @@ from pathlib import Path
 
 from . import __version__, driver, session
 from .onboarding import check_environment
-from .options import DEFAULT_PROMPT, GPUS, PRESETS, TRANSFERS, RunOptions
+from .options import DEFAULT_PROMPT, GPUS, PRESETS, SOURCES, TRANSFERS, RunOptions
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -42,6 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=TRANSFERS,
         default=None,
         help="siirtotapa: drive (nopea Google Drive, oletus) tai direct (suora Colab-lataus)",
+    )
+    parser.add_argument(
+        "--source",
+        choices=SOURCES,
+        default=None,
+        help="mitä litteroidaan: tracks (raidat, oletus) tai downmix (koko miksaus ilman puhujia)",
     )
     parser.add_argument(
         "--no-drive",
@@ -122,6 +128,7 @@ def options_from_args(args: argparse.Namespace) -> RunOptions:
         output_dir=args.output if args.output != "output" else env_opts.output_dir,
         preset=args.preset if args.preset != "remote" else env_opts.preset,
         transfer=transfer,
+        source=args.source if args.source is not None else env_opts.source,
         rms=args.rms or env_opts.rms,
         silence=not args.transcribe_only and env_opts.silence,
         thr=args.thr if args.thr != -35 else env_opts.thr,
@@ -191,7 +198,6 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
             for path in transcripts:
                 print(f"  {path}")
     return code
-
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -307,6 +307,7 @@ def test_upload_archive_with_cache_skips_when_cached(tmp_path: Path):
         ),
         patch("colabtranscribe.gdrive.prune_expired_cache") as mock_prune,
         patch("colabtranscribe.gdrive.list_cache_files") as mock_list,
+        patch("colabtranscribe.gdrive.delete_file_or_folder"),
         patch("colabtranscribe.gdrive.upload_resumable") as mock_upload,
         patch(
             "colabtranscribe.gdrive.copy_drive_file", return_value="sess-tar-id"
@@ -405,3 +406,42 @@ def test_get_quota_project_fallback(monkeypatch):
     mock_urlopen = MagicMock(side_effect=Exception("Network error"))
     with patch("urllib.request.urlopen", mock_urlopen):
         assert gdrive.get_quota_project(token="bad-tok") == "g-drive-move-all-files"
+
+
+def test_stale_input_tar_in_the_session_folder_is_deleted_before_the_copy(tmp_path: Path):
+    """Drive sallii samannimiset tiedostot. Kaatuneen ajon jälkeen vanha
+    ``input.tar`` jää istuntokansioon, ja uusi kopio sen viereen: Colab näki
+    vanhan paketin, eikä mikään kertonut siitä."""
+    in_dir = tmp_path / "input"
+    in_dir.mkdir()
+    (in_dir / "a.wav").write_bytes(b"content")
+    order = []
+
+    def fake_list(folder_id, token=""):
+        if folder_id == "sess-id":
+            return [
+                {"id": "old-1", "name": "input.tar"},
+                {"id": "other", "name": "muu.txt"},
+            ]
+        return [{"id": "cached-tar-id", "name": "x.tar", "md5Checksum": "DUMMY"}]
+
+    with (
+        patch("colabtranscribe.gdrive.get_drive_token", return_value="t"),
+        patch(
+            "colabtranscribe.gdrive.ensure_folder",
+            side_effect=["root-id", "cache-id", "sess-id"],
+        ),
+        patch("colabtranscribe.gdrive.prune_expired_cache"),
+        patch("colabtranscribe.gdrive.list_cache_files", side_effect=fake_list),
+        patch(
+            "colabtranscribe.gdrive.delete_file_or_folder",
+            side_effect=lambda fid, token="": order.append(("delete", fid)),
+        ),
+        patch(
+            "colabtranscribe.gdrive.copy_drive_file",
+            side_effect=lambda *a, **k: order.append(("copy",)) or "new",
+        ),
+        patch("colabtranscribe.gdrive.compute_file_hash", return_value="DUMMY"),
+    ):
+        gdrive.upload_archive_with_cache(in_dir, "vst-sess")
+    assert order == [("delete", "old-1"), ("copy",)]

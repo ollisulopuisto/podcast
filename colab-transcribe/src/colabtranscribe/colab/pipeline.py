@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import subprocess
+from itertools import pairwise
 
 from lxml import etree
 
@@ -487,6 +488,253 @@ def write_script(nhsx_path):
     return output_path
 
 
+# 7. Koko miksauksen litterointi ilman puhujia (--source downmix)
+#
+# DRIFT: tämä osio on käsin tehty snapshot kolmesta lähteestä, koska skripti
+# ei voi tuoda työtilaa (ks. CLAUDE.md, "Downmix on snapshot"):
+#   - podcast-magicin transcribe/downmix.py (gain_mix, paragraph_lines, run)
+#   - packages/nhsx mix.py (Gain/ClipGain/Volume/Muted, ohjelman kesto)
+#   - packages/nhsx read.py `locate` (äänipoolin tiedoston haku levyltä)
+#   - podcast-magicin nhsx/write.py `paragraphs` (PARAGRAPH_GAP, _MAX_WORDS)
+# Vain gain-summaus: ei panorointia, ramppeja eikä häivytyksiä. Yhtäläisyys
+# podcast-magicin kanssa on testattu vain kappalejaon ja tekstin osalta.
+DOWNMIX_RATE = 16000  # Whisperin oma näytteenottotaajuus
+PARAGRAPH_GAP = 1.2  # s; sama kuin podcast-magicin nhsx/write.py
+PARAGRAPH_MAX_WORDS = 80
+
+
+class _Word:
+    """Sana: teksti sekä alku- ja loppuaika sekunteina."""
+
+    def __init__(self, text, start, end):
+        self.text = text
+        self.start = start
+        self.end = end
+
+
+def _truthy(value):
+    return (value or "").strip().lower() in {"true", "1", "yes"}
+
+
+def _number(value, default):
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+def _db_to_linear(db):
+    return 10 ** (db / 20.0)
+
+
+def _level(elem):
+    """``ClipGain`` voittaa ``Gain``in eikä summaudu sen kanssa (mitattu)."""
+    level = elem.get("ClipGain")
+    if level is None:
+        level = elem.get("Gain")
+    return _db_to_linear(_number(level, 0.0))
+
+
+def _locate(raw, name, audio_dirs):
+    """Äänipoolin tiedosto levyltä: absoluuttinen, juuri+polku, juuri+nimi, haku."""
+    if os.path.isabs(raw) and os.path.isfile(raw):
+        return raw
+    for root_dir in audio_dirs:
+        for candidate in (os.path.join(root_dir, raw), os.path.join(root_dir, name)):
+            if os.path.isfile(candidate):
+                return candidate
+    for root_dir in audio_dirs:
+        for dirpath, _, filenames in os.walk(root_dir):
+            if name in filenames:
+                return os.path.join(dirpath, name)
+    return ""
+
+
+def read_mix(nhsx_path, audio_dir):
+    """Istunnon kuultavat leikkeet: ``(clips, duration, missing)``.
+
+    Leike on ``(polku, start, length, offset, gain)``. Kesto lasketaan
+    **kaikista** alueista, myös mykistetyistä, jotta aikajana on yhtä pitkä
+    kuin Hindenburgissa.
+    """
+    with open(nhsx_path, "r", encoding="utf-8") as f:
+        raw = f.read()
+    _reject_doctype(raw, os.path.basename(nhsx_path))
+    tree = etree.ElementTree(etree.fromstring(raw.encode("utf-8"), _SAFE_PARSER))
+
+    pool = _first_named(tree, "AudioPool")
+    files = {}
+    if pool is not None:
+        for file_elem in _children_named(pool, "File"):
+            files.setdefault(file_elem.get("Id", ""), file_elem)
+
+    session_dir = os.path.dirname(os.path.abspath(nhsx_path))
+    pool_path = (pool.get("Path") or "").strip() if pool is not None else ""
+    pool_dir = os.path.join(session_dir, pool_path) if pool_path else session_dir
+    audio_dirs = [d for d in (audio_dir, pool_dir, session_dir) if d]
+
+    clips, missing, duration = [], [], 0.0
+    for track in _iter_named(tree, "Track"):
+        track_gain = _level(track) * _db_to_linear(_number(track.get("Volume"), 0.0))
+        track_muted = _truthy(track.get("Muted"))
+        for region in _children_named(track, "Region"):
+            start = time_to_seconds(region.get("Start"))
+            length = time_to_seconds(region.get("Length"))
+            offset = time_to_seconds(region.get("Offset"))
+            duration = max(duration, start + length)
+            if length <= 0 or track_muted or _truthy(region.get("Muted")):
+                continue
+            file_elem = files.get(region.get("Ref", ""))
+            if file_elem is None:
+                continue
+            raw_path = file_elem.get("Path") or file_elem.get("Name", "")
+            name = os.path.basename(raw_path) or file_elem.get("Name", "")
+            path = _locate(raw_path, name, audio_dirs)
+            if not path:
+                if name not in missing:
+                    missing.append(name)
+                continue
+            clips.append((path, start, length, offset, _level(region) * track_gain))
+    return clips, duration, missing
+
+
+def decode_mono(path, offset, length, rate):
+    """Leikkeen kohta monona float32-näytteinä ffmpegillä (``-ss`` ennen ``-i``:tä)."""
+    import numpy as np
+
+    cmd = [
+        "ffmpeg", "-v", "error", "-ss", f"{offset:.6f}", "-t", f"{length:.6f}",
+        "-i", path, "-vn", "-ac", "1", "-ar", str(rate), "-f", "f32le", "-",
+    ]
+    result = subprocess.run(cmd, check=True, capture_output=True, timeout=WHISPER_TIMEOUT)
+    return np.frombuffer(result.stdout, dtype="<f4")
+
+
+def gain_mix(clips, duration, rate=DOWNMIX_RATE, decode=None):
+    """Monomiksaus: leikkeen näytteet kerrottuna gainilla ja summattuna.
+
+    Ei panorointia, ramppeja eikä häivytyksiä. Lyhyt lähde täytetään
+    hiljaisuudella. numpy on mukana jo faster-whisperin riippuvuutena.
+    """
+    import numpy as np
+
+    decode = decode or decode_mono  # haetaan kutsuhetkellä, jotta testi voi korvata sen
+    total = int(round(duration * rate))
+    out = np.zeros(total, dtype=np.float32)
+    for path, start, length, offset, gain in clips:
+        first = int(round(start * rate))
+        count = int(round(length * rate))
+        if count <= 0 or first >= total:
+            continue
+        samples = np.asarray(decode(path, offset, length, rate), dtype=np.float32)
+        samples = samples.reshape(-1)[:count]
+        end = min(total, first + count)
+        n = min(samples.shape[0], end - first)
+        out[first : first + n] += samples[:n] * np.float32(gain)
+    return out
+
+
+def paragraphs(words, gap=PARAGRAPH_GAP, max_words=PARAGRAPH_MAX_WORDS):
+    if not words:
+        return []
+    groups = [[words[0]]]
+    for previous, word in pairwise(words):
+        if word.start - previous.end >= gap or len(groups[-1]) >= max_words:
+            groups.append([word])
+        else:
+            groups[-1].append(word)
+    return groups
+
+
+def paragraph_lines(words):
+    """``[MM:SS] teksti`` per kappale, kappaleet tyhjällä rivillä erotettuna."""
+    lines = [
+        f"{_stamp(group[0].start)} " + " ".join(w.text.strip() for w in group)
+        for group in paragraphs(list(words))
+    ]
+    if not lines:
+        return ""
+    return "\n\n".join(lines) + "\n"
+
+
+def transcribe_samples(samples, rate, initial_prompt):
+    """Litteroi näytteet samalla whisper-ctranslate2-kutsulla kuin raidat."""
+    import tempfile
+    import wave
+
+    import numpy as np
+
+    with tempfile.TemporaryDirectory() as tmp:
+        wav_path = os.path.join(tmp, "downmix.wav")
+        pcm = (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2")
+        with wave.open(wav_path, "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(rate)
+            wav.writeframes(pcm.tobytes())
+        cmd = [
+            "whisper-ctranslate2", wav_path, "--batched", "True",
+            "--compute_type", "auto", "--word_timestamps", "True",
+            "--vad_filter", "True", "--model", "turbo", "--language", "fi",
+            "--initial_prompt", initial_prompt, "--output_dir", tmp,
+            "--output_format", "json", "--suppress_tokens", "",
+            "--suppress_blank", "False", "--condition_on_previous_text", "False",
+        ]
+        subprocess.run(cmd, check=True, timeout=WHISPER_TIMEOUT)
+        with open(os.path.join(tmp, "downmix.json"), "r", encoding="utf-8") as f:
+            data = json.load(f)
+    words = []
+    for segment in data.get("segments", []):
+        for word in segment.get("words", []):
+            try:
+                start, end = float(word["start"]), float(word["end"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            text = (word.get("word") or "").strip()
+            if text:
+                words.append(_Word(text, start, end))
+    return words
+
+
+def run_downmix(input_dir, output_dir, initial_prompt):
+    """Jokaisen ``.nhsx``:n miksaus kerran litteroituna: ``<nimi> downmix.md``."""
+    found = sorted(f for f in os.listdir(input_dir) if f.lower().endswith(".nhsx"))
+    # Alkuperäinen istunto ensin; vaimennettu vain jos muuta ei ole.
+    sessions = [f for f in found if not f.lower().endswith("_processed.nhsx")] or found
+    if not sessions:
+        # Hiljainen onnistuminen ilman tulosta näyttäisi onnistuneelta ajolta.
+        raise RuntimeError(
+            f"Syötekansiosta {input_dir} ei löydy yhtään .nhsx-istuntoa. "
+            "Downmix tarvitsee istunnon, ei pelkkiä äänitiedostoja."
+        )
+    for filename in sessions:
+        path = os.path.join(input_dir, filename)
+        clips, duration, missing = read_mix(path, input_dir)
+        if missing:
+            raise RuntimeError(
+                "Miksaukseen tarvittavia äänitiedostoja ei löydy levyltä: "
+                f"{', '.join(missing)}. Anna äänipoolin hakemisto."
+            )
+        print(f"Miksaus: {duration / 60:.1f} min — kootaan gaineilla…", flush=True)
+        samples = gain_mix(clips, duration)
+        print("Litteroidaan miksaus…", flush=True)
+        words = transcribe_samples(samples, DOWNMIX_RATE, initial_prompt)
+        if not words:
+            print(
+                "  VAROITUS: miksauksessa ei tunnistettu yhtään sanaa. "
+                "Onko siinä puhetta, ja onko kieli oikein? Tiedostoa ei kirjoitettu.",
+                flush=True,
+            )
+            continue
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, _swap_suffix(filename, ".nhsx", " downmix.md"))
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(paragraph_lines(words))
+        print(f"Käsikirjoitus luotu: {output_path} ({len(words)} sanaa)", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Hindenburg Litterointi ja Auto-Silence CLI"
@@ -520,6 +768,12 @@ def main():
         action="store_true",
         help="vain litterointi: Auto-Silence jätetään pois",
     )
+    parser.add_argument(
+        "--source",
+        choices=["tracks", "downmix"],
+        default="tracks",
+        help="downmix: koko miksaus litteroidaan kerran ilman puhujia",
+    )
     args = parser.parse_args()
 
     # Esiasetusten logiikka
@@ -542,6 +796,10 @@ def main():
     print("[vaihe 1/4] Asennetaan riippuvuudet (apt ja pip)...", flush=True)
     install_dependencies()
     print("[vaihe 1/4] Riippuvuudet asennettu.", flush=True)
+    if args.source == "downmix":
+        run_downmix(input_dir, output_dir, args.prompt)
+        print("\nKoko putki suoritettu onnistuneesti.", flush=True)
+        return
     run_transcription(input_dir, output_dir, args.prompt)
     print("[vaihe 3/4] Injektoidaan litteroinnit .nhsx-rakenteeseen...", flush=True)
     generated_files = inject_transcriptions_to_nhsx(input_dir, output_dir)

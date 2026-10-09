@@ -130,6 +130,33 @@ def test_resolved_output_dir_when_input_is_file(tmp_path):
     assert options.resolved_output_dir() == tmp_path / "output"
 
 
+def test_source_default_is_tracks_and_writes_no_flag():
+    from colabtranscribe.options import RunOptions, pipeline_args
+
+    assert RunOptions().source == "tracks"
+    assert "--source" not in pipeline_args(RunOptions())
+
+
+def test_downmix_source_is_passed_on():
+    from colabtranscribe.options import RunOptions, pipeline_args
+
+    args = pipeline_args(RunOptions(source="downmix"))
+    i = args.index("--source")
+    assert args[i + 1] == "downmix"
+
+
+def test_unknown_source_is_rejected():
+    from colabtranscribe.options import RunOptions
+
+    with pytest.raises(ValueError, match="source"):
+        RunOptions(source="stereo")
+
+
+def test_source_from_env(monkeypatch):
+    from colabtranscribe.options import RunOptions
+
+    monkeypatch.setenv("COLAB_SOURCE", "downmix")
+    assert RunOptions.from_env().source == "downmix"
 
 
 def test_transcribe_only_tells_the_script_to_skip_silence():

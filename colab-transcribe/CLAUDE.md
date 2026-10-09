@@ -34,6 +34,27 @@ muotoilu muuttuu `script/core.py`:ssä, testi kaatuu tänne, ja muutos
 siirretään käsin. Teksti syntyy Colabissa ja tulee alas muiden tulosten
 mukana, joten paikallinen puoli ei muutu eikä saa uusia riippuvuuksia.
 
+## Downmix on snapshot
+
+`--source downmix` litteroi koko miksauksen kerran ilman puhujia ja palauttaa
+`<nimi> downmix.md`:n. Miksaus on **vain gain-summaus**: `ClipGain` voittaa
+`Gain`in, raidan `Volume` (dB) kerrotaan mukaan, mykistetyt raidat ja alueet
+ohitetaan; panorointi, ramppi ja häivytys jätetään pois. Whisper ottaa monon,
+joten ne eivät tuo mitään.
+
+Osio on käsin kopioitu neljästä lähteestä, eikä mikään commit tavoita sitä:
+podcast-magicin `transcribe/downmix.py`, `packages/nhsx`:n `mix.py` ja
+`read.locate` sekä podcast-magicin `nhsx/write.py`:n `paragraphs` (kynnys
+1,2 s, enintään 80 sanaa). Driftin vaara on sama kuin muulla skriptillä.
+Testi vartioi vain tekstiä: `test_downmix_text_matches_podcast_magics`
+vertaa `paragraph_lines`ia alkuperäiseen. Gain-säännöt ja tiedostohaku ovat
+pinnattu omilla testeillään mutta **ei** vertailtu alkuperäiseen, joten
+muutos `mix.py`:ssä ei kaada mitään täällä — siirrä se käsin.
+
+numpy ei ole pinnattu: se tulee faster-whisperin mukana. Ajuri kertoo
+valmiin tiedoston `Käsikirjoitus luotu:` -rivillä; `.md` tulee alas koko
+tulostekansion mukana, joten uutta `driver.parse_*`-markeria ei tarvita.
+
 ## Luettu XML on aina kovennettu
 
 Kaikki `.nhsx`:n luenta kulkee saman kovennetun parserin läpi
