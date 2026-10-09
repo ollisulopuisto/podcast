@@ -784,8 +784,12 @@ def _merge_multicam_spans(
     angles_of: dict[str, list[str]],
     program_start: Fraction,
     frame_duration: Fraction,
+    keep_apart: frozenset = frozenset(),
 ) -> list[tuple[Segment, int, int]]:
     """Yhdistää peräkkäiset samasta videolähteestä/kulmasta tulevat kehysvälit.
+
+    ``keep_apart``: rajat, joita ei yhdistetä vaikka lähde olisi sama. Pinon
+    reunassa kuva vaihtuu puolikkaan verran, vaikka lähde pysyy samana.
 
     Jos kaksi peräkkäistä jaksoa viittaavat samaan multicamiin ja sen samaan
     videokulmaan, ne yhdistetään yhdeksi klipiksi ennen FCPXML-vientiä. Tämä
@@ -805,7 +809,7 @@ def _merge_multicam_spans(
             own = set(mc.angle_ids)
             video_angle = next((x for x in angles_of.get(seg.angle, []) if x in own), "")
 
-        if merged and merged[-1][2] == a:
+        if merged and merged[-1][2] == a and a not in keep_apart:
             prev_seg, prev_a, _ = merged[-1]
             prev_at = program_start + frame_duration * prev_a
             prev_mc = timeline.multicam_at(prev_at)
@@ -947,15 +951,24 @@ def _framing_request(move: movement.Move, seg, settings, piece: bool = False) ->
 
 
 def _record(shots, a: int, b: int, item, file_start, shot, move: movement.Move,
-            settings, lane: int = 0) -> None:
+            settings, lane: int = 0, square: int = 0) -> None:
     """Kuva renderöinnin listaan: samat luvut jotka ``_transform_lines``
-    kirjoittaa XML:ään, ks. ``render.py``."""
+    kirjoittaa XML:ään, ks. ``render.py``. ``square`` on pinon merkki
+    (``_square_lines``): silloin kuva on natiivikokoinen neliö."""
     if shots is None:
         return
     from ..render import Shot
 
     if item is None:
         shots.append(Shot(a, b, lane=lane))
+        return
+    if square:
+        shots.append(Shot(
+            start=a, end=b, path=item.path or "", file_start=float(file_start),
+            width=item.width, height=item.height,
+            scale0=1.0, scale1=1.0, pos_x=0.0, pos_y=square * SQUARE_Y,
+            fill=False, lane=lane, crop=SQUARE_CROP,
+        ))
         return
     base = shot.scale if shot else 1.0
     shots.append(Shot(
@@ -1573,10 +1586,88 @@ def _room_lines(
 # positiivinen on vapaa — ja kuva peittää spinen vain ylempänä.
 REACTION_LANE = 1
 
+# Pinottu pari pystyviennissä: kaksi 1080 px neliötä 1920 px korkean kuvan
+# päällä. Lähde on 1920×1080, joten neliö jättää 420 px = 21.875 % pois
+# kummaltakin reunalta (crop-rect on prosentteja leveydestä, oletettu, ei
+# mitattu). Keskipisteet ovat ±540 px = ±28.125 % (1 % = 19.2 px korkeudesta).
+SQUARE_CROP = 21.875
+SQUARE_Y = 28.125
+
+
+def _reaction_span(reaction, program_start, program_end, frame_duration):
+    """Reaktion osuus ohjelmasta: (alku, loppu, kesto kehyksinä), tai None
+    kun siitä ei jää mitään näytettäväksi."""
+    start = max(reaction.start, program_start)
+    end = min(reaction.end, program_end)
+    if end <= start:
+        return None
+    dur = to_frames(end - start, frame_duration)
+    if dur <= 0:
+        return None
+    return start, end, dur
+
+
+def _stack_plan(reactions, roles, timeline, angles_of, program_start, program_end,
+                frame_duration, settings) -> dict[int, tuple[int, int, int]]:
+    """Mitkä reaktiot ovat pinoja: ``{reaktion indeksi: (a, b, merkki)}``,
+    ``a`` ja ``b`` kehyksinä ohjelman alusta.
+
+    Pino on kaksi kuvaa yhtä aikaa ruudussa, joten joka reaktio, joka
+    piirretään lanelle 1, on pino. Laaja kuva jää vain jos ``wide_reactions``
+    on päällä. Merkki vuorottelee: ensimmäinen reaktio on ylhäällä (+1),
+    seuraava alhaalla (−1). Ilman pystyvientiä pinoja ei ole.
+
+    Ehdot ovat samat kuin ``_reaction_clips``in, koska pino joka ei piirry
+    jättäisi pohjakuvan puolikkaan tyhjäksi.
+    """
+    if settings is None or not settings.globals.vertical or roles is None:
+        return {}
+    plan: dict[int, tuple[int, int, int]] = {}
+    for index, reaction in enumerate(reactions):
+        shot_key = getattr(reaction, "shot", "")
+        if settings.globals.wide_reactions and shot_key == roles.wide_key:
+            continue
+        key = shot_key or roles.closes.get(reaction.speaker)
+        span = _reaction_span(reaction, program_start, program_end, frame_duration)
+        if not key or span is None:
+            continue
+        start, _end, dur = span
+        mc = timeline.multicam_at(start)
+        own = set(mc.angle_ids) if mc is not None else set()
+        if not any(x in own for x in angles_of.get(key, [])):
+            continue
+        a = to_frames(start - program_start, frame_duration)
+        sign = 1 if len(plan) % 2 == 0 else -1
+        plan[index] = (a, a + dur, sign)
+    return plan
+
+
+def _square_of(stacks, a: int, b: int) -> int:
+    """Pohjakuvan merkki spanille ``[a, b)``: vastakkainen puoli pinon
+    reaktiolle, jonka päälle span osuu. 0 kun span ei ole pinon alla."""
+    for sa, sb, sign in stacks.values():
+        if sa <= a and b <= sb:
+            return -sign
+    return 0
+
+
+def _square_lines(sign: int, indent: str) -> list[str]:
+    """Neliö yhdelle kuvalle pinossa: lähde natiivikokoisena (``none``, ei
+    täyttöä), reunat rajattu ja kuva ``sign`` × ``SQUARE_Y`` ylös tai alas."""
+    return [
+        f'{indent}<adjust-conform type="none"/>',
+        f'{indent}<adjust-crop mode="crop">',
+        f'{indent}  <crop-rect left="{_number(SQUARE_CROP)}" top="0" '
+        f'right="{_number(SQUARE_CROP)}" bottom="0"/>',
+        f'{indent}</adjust-crop>',
+        f'{indent}<adjust-transform position="0 {_number(sign * SQUARE_Y)}"/>',
+    ]
+
 
 def _reaction_clips(
     reactions, roles, angles_of, mc, frame_duration, program_start, program_end,
     timeline=None, reframer=None, vertical: bool = False, settings=None, shots=None,
+    stacks=None,
 ):
     """Reaktiokuvat sisäkkäisinä ``mc-clip``einä omalle lanelleen.
 
@@ -1641,8 +1732,12 @@ def _reaction_clips(
             f'duration="{frames_str(dur, frame_duration)}">'
         )
         transform: list[str] = []
-        if vertical:
-            shot = None
+        shot = None
+        sign = stacks[index][2] if stacks and index in stacks else 0
+        if sign:
+            # Pinossa kuva on neliö eikä sitä kehystetä reframerilla.
+            transform = _square_lines(sign, "                  ")
+        elif vertical:
             part = next((i for i in (timeline.track_media(key) if timeline else [])
                          if i.placement_at(start)), None)
             if reframer is not None and part is not None:
@@ -1657,7 +1752,8 @@ def _reaction_clips(
             if part is not None:
                 first = to_frames(start - program_start, frame_duration)
                 _record(shots, first, first + dur, part, part.file_time_at(start),
-                        shot if vertical else None, _NO_MOVE, settings, lane=1)
+                        shot if vertical else None, _NO_MOVE, settings, lane=1,
+                        square=sign)
         if transform:
             lines += [
                 f'                <mc-source angleID={quoteattr(angle_id)} '
@@ -1726,12 +1822,24 @@ def build_multicam_fcpxml(
     tc_frames = to_frames(timeline.tc_start, frame_duration)
 
     spans = _quantize(segments, program_start, program_frames, frame_duration)
-    spans = _split_spans(
-        spans, _boundaries(timeline, program_start, frame_duration, program_frames)
-    )
     angles_of = {t.key: t.angle_ids for t in timeline.tracks}
+    # Pinottu pari: spinen kuva pitää katkaista reaktion alussa ja lopussa,
+    # koska sen ruutu vaihtuu pinon toiseen puoliskoon. Katkaisukohdat ovat
+    # samat kuin ``_merge``ssä, joten yhdistäminen ei kumoa niitä.
+    vertical = settings is not None and settings.globals.vertical
+    stacks = _stack_plan(reactions, roles, timeline, angles_of, program_start,
+                         program_end, frame_duration, settings)
+    stack_marks = sorted({
+        x for a, b, _ in stacks.values() for x in (a, b) if 0 < x < program_frames
+    })
+    spans = _split_spans(
+        spans,
+        sorted(set(_boundaries(timeline, program_start, frame_duration,
+                               program_frames)) | set(stack_marks)),
+    )
     spans = _merge_multicam_spans(
-        spans, timeline, angles_of, program_start, frame_duration
+        spans, timeline, angles_of, program_start, frame_duration,
+        keep_apart=frozenset(stack_marks),
     )
     if not spans:
         raise WriteError(t("write.cuts_collapsed"))
@@ -1844,16 +1952,24 @@ def build_multicam_fcpxml(
             f'start="{frames_str(start_frames, frame_duration)}"',
             f'duration="{frames_str(b - a, frame_duration)}"',
         ]
+        # Pinon alla oleva kuva saa pinon toisen puoliskon. Spinen palat on
+        # katkaistu pinon rajoista, joten palanen on kokonaan pinon sisällä
+        # tai kokonaan sen ulkopuolella.
+        square = _square_of(stacks, a, b) if vertical else 0
         _record(shots, a, b, part, part.file_time_at(at) if part else 0, shot,
-                _move_after(shot, moves[index] if moves else _NO_MOVE), settings)
+                _move_after(shot, moves[index] if moves else _NO_MOVE), settings,
+                square=square)
+        if square:
+            base_transform = _square_lines(square, "                ")
+        else:
+            base_transform = _transform_lines(
+                shot, _move_after(shot, moves[index] if moves else _NO_MOVE),
+                b - a, frame_duration, "                ",
+                conform=vertical, origin=start_frames)
         sources = _mc_sources(
             video_angle, audio_angles, mc.angle_roles, raw_angles, pans,
             ducks, (at, program_start + frame_duration * b), mc, frame_duration,
-            transform=_transform_lines(
-                shot, _move_after(shot, moves[index] if moves else _NO_MOVE),
-                b - a, frame_duration, "                ",
-                conform=settings is not None and settings.globals.vertical,
-                origin=start_frames),
+            transform=base_transform,
             video_speakers=video_speakers,
             video_silent=silent(video_angle, video_speakers) if video_angle else [],
         )
@@ -1878,8 +1994,8 @@ def build_multicam_fcpxml(
                 reactions, roles, angles_of, mc,
                 frame_duration, program_start, program_end,
                 timeline=timeline, reframer=reframer,
-                vertical=settings is not None and settings.globals.vertical,
-                settings=settings, shots=shots,
+                vertical=vertical, settings=settings, shots=shots,
+                stacks=stacks,
             )
         if not attached_room and room_ids:
             attached_room = True

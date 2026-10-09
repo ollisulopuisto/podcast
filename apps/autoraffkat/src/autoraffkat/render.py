@@ -44,6 +44,10 @@ class Shot:
     pos_y: float = 0.0
     fill: bool = False          # Spatial Conform «Fill» (pystyvienti), muuten «Fit»
     lane: int = 0
+    # Vaakasuora rajaus prosentteina lähteen leveydestä, molemmilta puolilta.
+    # Neliöpino: 21.875 % per puoli, jolloin jäljelle jää 1080×1080 natiivi-
+    # skaalassa. Sama luku kuin ``fcpxml/write.py:SQUARE_CROP``.
+    crop: float = 0.0
 
 
 def base_factor(shot: Shot, pw: int, ph: int) -> float:

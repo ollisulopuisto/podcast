@@ -76,6 +76,8 @@ const STRINGS = {
     'vertical.title': 'Pystyvienti',
     'vertical.hint': '1080×1920-projekti ja mitattu kehystys jo vientiin — ei Smart Conform -kierrota.',
     'vertical.unmeasured': 'Kuvia ei mitattu',
+    'vertical.wide.title': 'Laaja kuva reaktioissa',
+    'vertical.wide.hint': 'Oletuksena kaksi neliötä pinottuna. Päällä: laaja kuva kuten ennen.',
     'why.vertical': 'Jokainen kuva asetetaan Spatial Conformiin «Fill», ja päälle kirjoitetaan '
       + 'mitattu kehystys. Lähikuvat tasataan: suurimmat kasvot 100 %, muut zoomataan samankokoisiksi '
       + '(enintään 110 %), joten kuva ja vastakuva vastaavat toisiaan. Laajat ja ryhmäkuvat pilkotaan '
@@ -459,6 +461,8 @@ const STRINGS = {
     'vertical.title': 'Vertical export',
     'vertical.hint': 'A 1080×1920 project with measured reframing already in the export — no Smart Conform round-trip.',
     'vertical.unmeasured': 'No video measured',
+    'vertical.wide.title': 'Wide shot for reactions',
+    'vertical.wide.hint': 'Off by default: two squares stacked. On: the wide shot, as before.',
     'why.vertical': 'Every picture is set to Spatial Conform «Fill», with a measured framing on top. '
       + 'Close-ups are evened out: the biggest face stays at 100 %, the others zoom to match (at most '
       + '110 %), so shot and reverse shot correspond. Wides and group shots are split by speaker and '
