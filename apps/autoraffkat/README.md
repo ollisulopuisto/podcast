@@ -335,6 +335,27 @@ stood up and sat down differently. Unmeasured clips stay centred in the fill rat
 than guessed, and the export warns about unmeasured close-ups. Composes with micro-movement, which multiplies
 on top of the reframe.
 
+**Layout** (vertical export only): *One picture* is the default, the picture
+cuts to whoever is talking. *Wide on top* and *Wide at the bottom* show two
+pictures at once: the wide across the full width in a 16:9 panel of its own
+(1080×608, so nothing is cropped from it), and the speaker's close-up filling
+the rest of the screen (1080×1312), framed on the face like any vertical
+close-up. The wide stays on screen the whole time and the lower picture cuts
+as usual; where the cut chooses the wide itself, the lower panel shows it
+framed on whoever is talking. Reaction shots replace only the close-up panel.
+Micro-movement is off in these layouts, because a zoom would change the
+panel's aspect ratio. Written for multicam sources; the export name carries
+`widetop` or `widebottom`.
+
+*Automatic* mixes them over the episode. A shot held for 12 s or more is one
+person's turn and stays a single picture filling the screen; shorter shots are
+a quick exchange and get the wide on top. A stretch has to last at least 20 s
+to keep its layout (a short stretch joins its longer neighbour), so the
+structure never flickers. Reaction shots follow the layout of the shot they
+sit on: over a held shot they are the second square of a stacked pair, in the
+middle of an exchange they replace the lower panel. Both numbers are taste,
+not measurement, and live in `autolayout.py`. The name carries `autolayout`.
+
 ## Tuning
 
 | Symptom | Fix |

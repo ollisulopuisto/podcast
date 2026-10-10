@@ -180,7 +180,8 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
               face_w: float = 0.0, others=(),
               keep: tuple[float, float] | None = None,
               headroom: float = 1.0, lead: float = 0.0,
-              keep_pad: float | None = None) -> Reframe | None:
+              keep_pad: float | None = None,
+              frame: tuple[int, int] = (PROJECT_W, PROJECT_H)) -> Reframe | None:
     """Yhden kuvan kehys kasvojen paikasta, täytön päälle.
 
     ``fx`` on kasvojen keskipiste lähteen leveydestä (0 = vasen reuna),
@@ -188,18 +189,23 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
     pystysuunnassa ``eyeline``lle jos zoomi antaa liikkumavaraa. Siirto
     rajataan niin ettei rajausikkuna koskaan astu sisällön ulkopuolelle.
     Palauttaa ``None`` kun kehystettävää ei ole: mitat puuttuvat tai lähde
-    ei ole projektia leveämpi eikä zoomia ole.
+    ei ole kehystä leveämpi eikä zoomia ole.
+
+    ``frame`` on kehys johon kuva täytetään: oletuksena koko projekti,
+    asettelussa yhden paneelin koko. Sijainnin yksikkö on prosentti
+    *kehyksen* korkeudesta, ja ``layout.window_of`` lukee sen samoin.
     """
     if not width or not height:
         return None
-    fill = max(PROJECT_W / width, PROJECT_H / height)
+    frame_w, frame_h = frame
+    fill = max(frame_w / width, frame_h / height)
     shown_w = width * fill * zoom
     shown_h = height * fill * zoom
-    if shown_w <= PROJECT_W + 1e-6 and zoom <= 1.0:
+    if shown_w <= frame_w + 1e-6 and zoom <= 1.0:
         return None
-    slack_x = max(0.0, (shown_w - PROJECT_W) / 2)
-    slack_y = max(0.0, (shown_h - PROJECT_H) / 2)
-    half = PROJECT_W / shown_w / 2
+    slack_x = max(0.0, (shown_w - frame_w) / 2)
+    slack_y = max(0.0, (shown_h - frame_h) / 2)
+    half = frame_w / shown_w / 2
     reach = slack_x / shown_w
     # ``lead``: kasvojen paikka rajauksessa keskeltä, rajauksen leveyksinä
     # (negatiivinen = vasemmalle). Nolla keskittää. Siirto ei saa viedä
@@ -236,10 +242,10 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
     # Kuvan nosto ylös siirtää kasvoja ylös: kasvojen etäisyys keskeltä
     # (alas positiivinen) on ``(fy - 0,5) * korkeus - nosto``.
     target = fy if eyeline is None else eyeline
-    lift = (fy - 0.5) * shown_h - (target - 0.5) * PROJECT_H
+    lift = (fy - 0.5) * shown_h - (target - 0.5) * frame_h
     lift = min(slack_y, max(-slack_y, lift))
-    return Reframe(scale=float(zoom), pos_x=move_x / PROJECT_H * 100,
-                   pos_y=lift / PROJECT_H * 100)
+    return Reframe(scale=float(zoom), pos_x=move_x / frame_h * 100,
+                   pos_y=lift / frame_h * 100)
 
 
 # Puhujan kasvojen ympärille jätettävä tila, kasvon leveydestä, kun rajausta
@@ -309,8 +315,12 @@ class Reframer:
 
     def __init__(self, tables: dict, look: Look | None = None,
                  crowd: dict | None = None, crowd_tables: dict | None = None,
-                 names: list[str] | None = None):
+                 names: list[str] | None = None,
+                 frame: tuple[int, int] = (PROJECT_W, PROJECT_H)):
         self.tables = tables
+        # Kehys johon kuvat täytetään: koko projekti, tai asettelun
+        # lähikuvapaneeli. Kaikki kysymykset lasketaan sillä.
+        self.frame = frame
         self.look = look or Look()
         # Laajat ja ryhmäkuvat: median avain -> ``seats.FileSeats`` ja
         # joukkotaulukko, sekä puhujien nimet ruudukon järjestyksessä.
@@ -337,8 +347,13 @@ class Reframer:
         extra: float = 1.0,
         off_axis: bool = False,
         own: bool = False,
+        frame: tuple[int, int] | None = None,
     ) -> Reframe | None:
         """Kehys yhdelle klipille: mediaanikasvo klipin omilta riveiltä.
+
+        ``frame`` ohittaa kehystäjän oman kehyksen tämän kysymyksen ajaksi:
+        automaattisessa asettelussa samaa kehystäjää kysytään koko ruudun
+        ja paneelin mitoilla vuorotellen.
 
         ``t0``/``t1`` ovat aikajanan sekunteja; ne käännetään tiedoston
         sekunteiksi sijoituksen kautta (``file_time_at``), ja taulukon
@@ -352,8 +367,9 @@ class Reframer:
         keskipisteen ympäri, joten 100 %:lle laskettu sijainti veisi
         sivussa olevat kasvot zoomatessa pois keskiviivalta.
         """
+        frame = frame or self.frame
         if item.key in self.crowd:
-            return self._crowd_shot(item, t0, t1, focus, headroom, extra)
+            return self._crowd_shot(item, t0, t1, focus, headroom, extra, frame)
         table = self.tables.get(item.key)
         if table is None or "x" not in table or not item.width or not item.height:
             return None
@@ -402,7 +418,7 @@ class Reframer:
             # sivussa, ja pusku keskipisteen ympäri söi vielä ~20 px
             # (Mikko 148, 51, 117, 180, 182: 15–29 px reunasta, video files
             # a6d8732).
-            keep_pad=FACE_MARGIN if lead else KEEP_PAD,
+            keep_pad=FACE_MARGIN if lead else KEEP_PAD, frame=frame,
         )
 
 
@@ -418,7 +434,8 @@ class Reframer:
         return level_at(xs, middle), level_at(ys, middle)
 
     def _crowd_shot(self, item, t0: float, t1: float, focus: str,
-                    headroom: float = 1.0, extra: float = 1.0) -> Reframe | None:
+                    headroom: float = 1.0, extra: float = 1.0,
+                    frame: tuple[int, int] | None = None) -> Reframe | None:
         """Laaja tai ryhmäkuva: puhujan kasvoille, naapurit kokonaan sisään tai ulos.
 
         Ilman puhujaa (päätykuva, tauko) tai kun puhuja ei ole tässä
@@ -454,7 +471,7 @@ class Reframer:
         zoom *= extra
         return plan_shot(x, y, item.width, item.height, zoom=zoom,
                          eyeline=self.look.eyeline, face_w=seat.w, others=others,
-                         keep=keep, headroom=headroom)
+                         keep=keep, headroom=headroom, frame=frame or self.frame)
 
 
 def focus_segments(segments: list, grid, crowd: dict[str, list[int]],

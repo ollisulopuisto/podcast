@@ -20,6 +20,7 @@ import subprocess
 import sys
 import threading
 
+from .layout import LAYOUT_TAGS
 from .model import LONGTAKE_RULES, OVERLAP_RULES, RHYTHM_PRESETS
 from .project import LEGACY_OUTPUT_SUFFIXES, OUTPUT_SUFFIX
 
@@ -49,7 +50,7 @@ def resolve(path: str) -> str:
 # "haastattelu-cut down.fcpxml" katoaisi lähdevalikosta.
 _TAG_WORDS = (
     *RHYTHM_PRESETS, *OVERLAP_RULES, *LONGTAKE_RULES,
-    "audio", "move", "shorts", "vertical",
+    "audio", "move", "shorts", "vertical", *LAYOUT_TAGS.values(),
 )
 
 # Oma vienti tunnuksineen: "jakso-cut.fcpxml", "jakso-cut hectic audio.fcpxml",

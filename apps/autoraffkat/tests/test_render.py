@@ -460,3 +460,95 @@ def test_two_squares_stack_with_each_picture_in_its_own_half(tmp_path):
     assert abs(lower.mean() - (700 - 420)) < 3
     # Neliöt kohtaavat 960 px:n kohdalla eikä väliin jää mustaa juovaa.
     assert np.flatnonzero(frame[955] > 128).size and np.flatnonzero(frame[965] > 128).size
+
+
+# ------------------------------------------------------------------ asettelu
+
+CLOSE_PANEL = (0, 608, 1080, 1312)
+WIDE_PANEL = (0, 0, 1080, 608)
+
+
+def _panel_shot(path, panel, *, start=0, end=50, lane=0, partner=None, file_start=0.0):
+    return Shot(start, end, str(path), file_start, 1920, 1080, fill=True, lane=lane,
+                panel=panel, partner=partner)
+
+
+def test_a_panel_reaction_replaces_the_closeup_but_keeps_its_wide():
+    """Reaktio vaihtaa alapaneelin kuvan; ylhäällä on koko ajan laaja.
+    Palat ja niiden kumppanit leikataan samoista kohdista."""
+    wide = _panel_shot("wide.mp4", WIDE_PANEL)
+    base = _panel_shot("close.mp4", CLOSE_PANEL, partner=wide)
+    reaction = _panel_shot("other.mp4", CLOSE_PANEL, start=10, end=30, lane=1,
+                           partner=_panel_shot("wide.mp4", WIDE_PANEL, start=10, end=30,
+                                               file_start=0.4))
+    flat = render.flatten([base, reaction], render.Fraction(1, 25))
+    assert [(s.start, s.end, s.path) for s in flat] == [
+        (0, 10, "close.mp4"), (10, 30, "other.mp4"), (30, 50, "close.mp4")]
+    assert all(s.partner is not None and s.partner.path == "wide.mp4" for s in flat)
+    assert all(s.panel == CLOSE_PANEL for s in flat)
+    # Kumppani jatkuu tiedostossa samasta kohdasta kuin pala.
+    assert [round(s.partner.file_start, 3) for s in flat] == [0.0, 0.4, 1.2]
+
+
+@needs_ffmpeg
+def test_wide_on_top_and_closeup_below_each_land_in_their_panel(tmp_path):
+    """Merkki: laajassa viiva 1300 px:ssä, lähikuvassa 960 px:ssä (keskellä).
+    Ylhäällä viiva on 1300 × 1080/1918,4 ≈ 732 px:ssä; alhaalla lähikuva
+    täyttää paneelin korkeuden (889 px:n ikkuna → ×1,2148), joten keskellä
+    oleva viiva on 540 px:ssä. Paneelien rajalla ei ole mustaa."""
+    wide, close = tmp_path / "wide.mp4", tmp_path / "close.mp4"
+    _bar_source(wide, x=1300)
+    _bar_source(close, x=960)
+    shot = _panel_shot(close, CLOSE_PANEL, partner=_panel_shot(wide, WIDE_PANEL))
+    out = tmp_path / "out.mp4"
+    render.render_video([shot], 1080, 1920, render.Fraction(1, 25), 50, str(out))
+    frame = _frame(out, 25)
+    top = np.flatnonzero(frame[300] > 128)
+    bottom = np.flatnonzero(frame[1200] > 128)
+    assert len(top) and len(bottom)
+    assert abs(top.mean() - 1300 * 1080 / 1918.4) < 3
+    assert abs(bottom.mean() - 540) < 3
+    # Rajan molemmin puolin on kuvaa: 607 ja 608 ovat eri paneelien rivit.
+    assert np.flatnonzero(frame[600] > 128).size and np.flatnonzero(frame[615] > 128).size
+    # Lähikuva täyttää paneelinsa loppuun asti, ei vain alkua: viimeinen rivi
+    # (paneelin alareuna) on yhä kuvaa, ja viiva on yhä keskellä.
+    last = np.flatnonzero(frame[1915] > 128)
+    assert len(last) and abs(last.mean() - 540) < 3
+
+
+@needs_ffmpeg
+def test_the_wide_panel_can_be_below(tmp_path):
+    """Laaja alhaalla: sama merkki, paneelit vaihtavat paikkaa."""
+    wide, close = tmp_path / "wide.mp4", tmp_path / "close.mp4"
+    _bar_source(wide, x=1300)
+    _bar_source(close, x=960)
+    shot = _panel_shot(close, (0, 0, 1080, 1312),
+                       partner=_panel_shot(wide, (0, 1312, 1080, 608)))
+    out = tmp_path / "out.mp4"
+    render.render_video([shot], 1080, 1920, render.Fraction(1, 25), 50, str(out))
+    frame = _frame(out, 25)
+    assert abs(np.flatnonzero(frame[300] > 128).mean() - 540) < 3
+    assert abs(np.flatnonzero(frame[1600] > 128).mean() - 1300 * 1080 / 1918.4) < 3
+
+
+@needs_ffmpeg
+def test_a_programme_can_switch_between_a_full_screen_picture_and_panels(tmp_path):
+    """Automaattinen asettelu: ensin kuva täyttää ruudun, sitten paneelit.
+    Sama kuvajono, kaksi eri rakennetta; leikkauskohta on tarkka ja kumpikin
+    kuva on omassa asemassaan."""
+    wide, close = tmp_path / "wide.mp4", tmp_path / "close.mp4"
+    _bar_source(wide, x=1300, seconds=4)
+    _bar_source(close, x=960, seconds=4)
+    full = Shot(0, 25, str(close), 0.0, 1920, 1080, fill=True)
+    panels = _panel_shot(close, CLOSE_PANEL, start=25, end=50,
+                         partner=_panel_shot(wide, WIDE_PANEL, start=25, end=50,
+                                             file_start=1.0), file_start=1.0)
+    out = tmp_path / "out.mp4"
+    render.render_video([full, panels], 1080, 1920, render.Fraction(1, 25), 50, str(out))
+    first, second = _frame(out, 10), _frame(out, 40)
+    # Täysi kuva: viiva keskellä koko korkeudelta, myös ruudun yläreunassa.
+    assert abs(np.flatnonzero(first[100] > 128).mean() - 540) < 3
+    assert abs(np.flatnonzero(first[1800] > 128).mean() - 540) < 3
+    # Paneelit: ylhäällä laajan viiva, alhaalla lähikuvan.
+    assert abs(np.flatnonzero(second[300] > 128).mean() - 1300 * 1080 / 1918.4) < 3
+    assert abs(np.flatnonzero(second[1200] > 128).mean() - 540) < 3

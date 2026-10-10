@@ -254,6 +254,53 @@ microphone's bleed of the louder speaker, worsening the comb by exactly that
 much. A gentle level rider per track with the loudness set on the programme
 avoids it; our chain does not, which is part of why de-bleeding is needed.
 
+## A layout is panels, and one number says what each panel shows
+
+`layout.py` divides the 1080×1920 screen into panels (`Panel`: x, y, w, h in
+project pixels). `window_of` says which part of the source a panel shows,
+from the reframer's scale and position taken in the *panel's* frame —
+`Reframer(frame=…)` and `plan_shot(frame=…)` — and `fcp_panel` turns that
+window into Final Cut's crop, scale and position. The render reads the same
+window (`Shot.panel` → `video_filter` at the panel's size), so the export and
+the MP4 are one calculation read twice. Keep it that way: a second copy of the
+geometry in `render.py` is how they would start to disagree silently.
+
+**The wide is 16:9 across the full width, so it is 1080×608 and nothing is
+cropped from it.** The height comes from the width, never from a setting.
+Reframer numbers are percent of the *frame's* height, and both the 1080×1920
+project and the 1080×1312 close-up panel fill by the source's height, so the
+same face gives the same numbers in either; that is why a test spies on
+what `plan_shot` was given instead of comparing results.
+
+In a layout the spine carries the close-up and the wide is a connected clip on
+lane 1, one per part, attached to the first spine clip of that part and
+running across the cuts (so the timeline shows no edit points on top of an
+unchanging picture). Reactions go on lane 2 and replace only the lower panel;
+the reaction stack (two squares) does not exist in a layout. A span whose part
+has no wide, or whose source has no size, falls back to a full-screen picture
+rather than leaving black on top. Micro-movement is off in layouts: a zoom
+change would take the panel's aspect ratio with it.
+
+**Automatic layout changes per shot, so the reframer is asked per shot.**
+`autolayout.plan` turns shot durations into `single` / `wide_top` — a hold
+(12 s or more) is one person's turn, a shorter shot is an exchange — and
+folds any stretch under 20 s into its longer neighbour so the structure
+cannot flicker. Both numbers are taste, not measurement. The same reframer
+answers for both kinds of shot: `from_item(frame=…)` overrides its default
+frame (the whole project) for a paneled shot only, which is why `app.py` does
+not set a frame on the reframer itself. Two places must know where the layout
+changes: `_merge_multicam_spans` (`keep_apart`) — two shots of the same camera
+on either side of a change would otherwise merge into one clip with one
+transform — and `_stack_plan`, which drops a reaction hosted by a paneled
+shot, because that reaction replaces the lower panel instead of becoming half
+of a stack.
+
+`adjust-crop`, `adjust-conform`, `adjust-transform` is the DTD's order, and
+Final Cut rejects the whole import for the wrong one. It was written from
+memory of the DTD, not read from Final Cut's own file, and the crop's unit and
+the pivot of the scale are assumptions too: check by importing a layout export
+before trusting any of it.
+
 ## Where people sit is measured, not configured
 
 `staging.py` derives the seating order from the same Vision measurements the

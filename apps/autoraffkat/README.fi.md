@@ -334,6 +334,26 @@ asentoon. Mittaamattomat kuvat jäävät täytön keskelle
 arvaamisen sijaan, ja vienti varoittaa mittaamattomista lähikuvista. Yhdistettävissä mikroliikkeen
 kanssa, joka kertautuu kehystyksen päälle.
 
+**Asettelu** (vain pystyviennissä): *Yksi kuva* on oletus, kuva vaihtuu
+puhujan mukaan. *Laaja ylhäällä* ja *Laaja alhaalla* näyttävät kaksi kuvaa
+yhtä aikaa: laaja koko leveydeltä omassa 16:9-paneelissaan (1080×608, joten
+siitä ei leikata mitään) ja puhujan lähikuva loppuruudun täyttäen (1080×1312),
+kehystettynä kasvoihin kuten muutkin pystyviennin lähikuvat. Laaja pysyy
+ruudulla koko ajan ja alakuva vaihtuu entiseen tapaan; kun leikkaus valitsee
+itse laajan, alapaneeli näyttää sen puhujaan kehystettynä. Reaktiokuvat
+vaihtavat vain lähikuvapaneelin. Mikroliike on näissä asetteluissa pois,
+koska zoomi muuttaisi paneelin kuvasuhdetta. Toimii monikameralähteellä;
+viennin nimessä on `widetop` tai `widebottom`.
+
+*Automaattinen* sekoittaa niitä jakson aikana. Vähintään 12 s kestävä kuva on
+yhden ihmisen puheenvuoro ja pysyy yhtenä kuvana koko ruudulla; lyhyemmät
+kuvat ovat nopeaa vuorottelua ja saavat laajan ylhäälle. Jakson pitää kestää
+vähintään 20 s säilyttääkseen asettelunsa (lyhyempi liittyy pidempään
+naapuriinsa), joten rakenne ei välky. Reaktiokuvat seuraavat isäntäkuvansa
+asettelua: pidon päällä ne ovat neliöparin toinen puoli, vuorottelun keskellä
+ne vaihtavat alapaneelin. Molemmat luvut ovat makuasioita, eivät mittauksia, ja
+ne ovat `autolayout.py`:ssä. Nimessä on `autolayout`.
+
 ## Säätäminen
 
 | Oire | Korjaus |

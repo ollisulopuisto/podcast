@@ -392,6 +392,20 @@ for (const lang of ['fi', 'en']) {
       if (!host.children.some((c) => c.tagName === 'BUTTON')) {
         throw new Error('pystyviennin osiosta puuttuu mittauspainike');
       }
+      /* Pystyviennin asettelu: kolme valintaa, ja valinta menee asetuksiin
+         palvelimelle. */
+      const layoutHost = context.document.createElement('div');
+      context.layoutBody(layoutHost);
+      const layoutRadios = [];
+      const findRadios = (el) => { (el.children || []).forEach((c) => {
+        if (c.tagName === 'INPUT' && c.type === 'radio') layoutRadios.push(c);
+        findRadios(c);
+      }); };
+      findRadios(layoutHost);
+      if (layoutRadios.length !== 4) {
+        throw new Error(`asetteluvalintoja ${layoutRadios.length}, ei 4`);
+      }
+      vm.runInContext("state.globals.vertical_layout = 'single';", context);
       /* Mikroliikkeen tyyli: rauhallinen tai shorts, ja valinta menee
          asetuksiin palvelimelle. */
       const style = context.document.createElement('div');

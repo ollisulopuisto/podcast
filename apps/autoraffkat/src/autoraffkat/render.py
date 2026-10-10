@@ -53,6 +53,10 @@ class Shot:
     # kumpaakaan ei peitetä. Vain ``path``, ``file_start``, mitat, ``pos_y``
     # ja ``crop`` luetaan; ``start``/``end`` ovat pinon omat.
     partner: "Shot | None" = None
+    # Asettelun paneeli ``(x, y, leveys, korkeus)`` projektin pikseleinä: kuva
+    # täytetään siihen eikä koko ruutuun, ja ``video_filter`` lasketaan
+    # paneelin mitoilla. ``None`` on koko ruutu.
+    panel: "tuple[int, int, int, int] | None" = None
 
 
 def base_factor(shot: Shot, pw: int, ph: int) -> float:
@@ -200,6 +204,10 @@ def flatten(shots: list[Shot], frame_duration: Fraction) -> list[Shot]:
     **Pino ei peitä.** Kun reaktio on rajattu neliö (``crop``) ja sen alla
     oleva kuva myös, ne ovat saman ruudun kaksi puoliskoa: reaktion palalle
     jää alla oleva kuva ``partner``ina eikä sitä katkaista pois.
+
+    **Paneelit** (``Shot.panel``): reaktio vaihtaa vain oman paneelinsa
+    kuvan. Sen laaja on sen oma ``partner``, ja pala kantaa sen mukanaan
+    sellaisenaan, joten peitto ei koskaan pyyhi ylhäällä olevaa laajaa.
     """
     base = sorted((s for s in shots if s.lane == 0), key=lambda s: s.start)
     over = sorted((s for s in shots if s.lane != 0), key=lambda s: s.start)
@@ -208,9 +216,13 @@ def flatten(shots: list[Shot], frame_duration: Fraction) -> list[Shot]:
     def piece(shot: Shot, a: int, b: int) -> Shot:
         span = max(1, shot.end - shot.start - 1)
         at = lambda k: shot.scale0 + (shot.scale1 - shot.scale0) * (k - shot.start) / span  # noqa: E731
+        # Paneelin kumppani leikataan samasta kohdasta: laaja jatkuu
+        # tiedostossa siitä mihin pala jää.
+        partner = piece(shot.partner, a, b) if shot.partner is not None else None
         return Shot(a, b, shot.path, shot.file_start + (a - shot.start) * seconds,
                     shot.width, shot.height, at(a), at(b - 1) if b - a > 1 else at(a),
-                    shot.pos_x, shot.pos_y, shot.fill, shot.lane, shot.crop)
+                    shot.pos_x, shot.pos_y, shot.fill, shot.lane, shot.crop,
+                    partner, shot.panel)
 
     out: list[Shot] = []
     for shot in base:
@@ -331,8 +343,37 @@ def _stack_graph(shot: Shot, pw: int, ph: int, fps: str) -> tuple[list[str], str
     return inputs, ";".join(graph)
 
 
+def _panel_graph(shot: Shot, pw: int, ph: int, fps: str,
+                 frames: int) -> tuple[list[str], str]:
+    """Asettelun kuva yhtenä suodinverkkona: ``(syötteet, filter_complex)``.
+
+    Jokainen paneeli kulkee samasta ``video_filter``istä kuin koko ruudun
+    kuva, mutta paneelin mitoilla, ja päätyy mustalle pohjalle omaan
+    paikkaansa. Tyhjä paneeli (``path`` puuttuu) jää mustaksi.
+    """
+    tiles = [t for t in (shot, shot.partner)
+             if t is not None and t.panel is not None and t.path]
+    inputs: list[str] = []
+    graph = [f"color=c=black:s={pw}x{ph}:r={fps}[bg0]"]
+    last = "bg0"
+    for i, tile in enumerate(tiles):
+        x, y, w, h = tile.panel
+        inputs += ["-ss", f"{tile.file_start:.6f}", "-i", tile.path]
+        graph.append(f"[{i}:v]{video_filter(tile, w, h, frames, fps)}[t{i}]")
+        graph.append(f"[{last}][t{i}]overlay=x={x}:y={y}[bg{i + 1}]")
+        last = f"bg{i + 1}"
+    graph.append(f"[{last}]setsar=1,format=yuv420p[out]")
+    return inputs, ";".join(graph)
+
+
 def _encode(shot: Shot, pw: int, ph: int, fps: str, target: str, stop=None) -> None:
     frames = shot.end - shot.start
+    if shot.panel is not None:
+        inputs, graph = _panel_graph(shot, pw, ph, fps, frames)
+        _run([_ffmpeg(), "-nostdin", "-v", "error", "-y", *inputs,
+              "-filter_complex", graph, "-map", "[out]", "-frames:v", str(frames),
+              "-an", *encoder()[1], "-r", fps, "-f", "mpegts", target], stop)
+        return
     if shot.crop and (shot.partner is not None or shot.path):
         inputs, graph = _stack_graph(shot, pw, ph, fps)
         _run([_ffmpeg(), "-nostdin", "-v", "error", "-y", *inputs,

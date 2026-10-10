@@ -25,7 +25,7 @@ import threading
 import time
 from fractions import Fraction
 
-from .render import Shot, Stopped, base_factor, flatten
+from .render import Shot, Stopped, _source_window, base_factor, flatten
 
 # Montako vientiä rinnakkain. Mitattuna M1 Maxilla 60 s:n zoomikuvalla:
 # yksi 5,3 s (11× reaaliaika), kaksi 7,6 s (16×), neljä 16,3 s (15×) —
@@ -209,6 +209,20 @@ def _picture_layer(shot: Shot, track, at, span, frames: int,
     reach = frames / max(1, frames - 1)
     end = shot.scale0 + (shot.scale1 - shot.scale0) * reach
     pref = source.preferredTransform()
+    if shot.panel is not None:
+        # Paneeli: lähteen ikkuna (sama jonka ffmpeg-polku rajaa) kuvataan
+        # paneelin suorakulmioon, ja ikkunan ulkopuoli leikataan pois
+        # rajausikkunalla. Ei mikroliikettä asettelussa, joten alku ja loppu
+        # ovat sama muunnos.
+        px, py, panel_w, panel_h = shot.panel
+        wx, wy, ww, wh = _source_window(shot, panel_w, panel_h, shot.scale0)
+        k = panel_w / ww
+        placed = Quartz.CGAffineTransformMake(k, 0.0, 0.0, k, px - k * wx, py - k * wy)
+        start_t = end_t = Quartz.CGAffineTransformConcat(pref, placed)
+        layer.setTransformRampFromStartTransform_toEndTransform_timeRange_(
+            start_t, end_t, span)
+        layer.setCropRectangle_atTime_(((wx, wy), (ww, wh)), at)
+        return layer
     start_t = Quartz.CGAffineTransformConcat(pref, transform(shot, pw, ph, shot.scale0))
     end_t = Quartz.CGAffineTransformConcat(pref, transform(shot, pw, ph, end))
     layer.setTransformRampFromStartTransform_toEndTransform_timeRange_(

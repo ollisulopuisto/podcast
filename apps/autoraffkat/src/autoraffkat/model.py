@@ -9,6 +9,10 @@ from fractions import Fraction
 from speechmix import chain, masks
 from speechmix.masks import HOP  # noqa: F401  ruudukon askel, kirjastosta
 
+from .layout import (  # noqa: F401  LAYOUTS: muiden moduulien käyttöön
+    LAYOUT_SINGLE,
+    LAYOUTS,
+)
 from .timeline import ZERO
 
 ROLE_WIDE = "wide"
@@ -273,6 +277,10 @@ class Globals:
     # Leveä (Laaja) kuva pystyviennin reaktioihin. Oletus pois: kaksi
     # neliötä pinottuna korvaa sen, kun molemmat ovat ruudulla yhtä aikaa.
     wide_reactions: bool = False
+    # Pystyviennin asettelu (``layout.py``): yksi kuva koko ruudulla, tai
+    # laaja ja puhujan lähikuva yhtä aikaa, laaja ylhäällä tai alhaalla.
+    # Vaikuttaa vain pystyviennissä.
+    vertical_layout: str = LAYOUT_SINGLE
     # Painot. Näitä on tarkoitus säätää, ja siksi mittaukset ovat
     # välimuistissa pisteiden sijaan: säätö ei maksa uutta purkua.
     # Portin läpäisseiden järjestys. Suoruus edellä; loput pieninä, koska
