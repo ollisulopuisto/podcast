@@ -13,6 +13,7 @@ import os
 import time
 from dataclasses import dataclass, field
 
+from .layout import LAYOUT_TAGS
 from .model import (
     LONGTAKE_RETURN,
     OVERLAP_WIDE,
@@ -108,6 +109,10 @@ def name_tag(settings: ProjectSettings) -> str:
     # tämä on.
     if g.vertical:
         parts.append("vertical")
+        # Asettelu vaihtaa koko kuvan rakenteen (kaksi kuvaa yhtä aikaa),
+        # joten sama jakso eri asettelulla on eri tiedosto.
+        if g.vertical_layout in LAYOUT_TAGS:
+            parts.append(LAYOUT_TAGS[g.vertical_layout])
     if settings.audio.enabled:
         parts.append("audio")
     return " ".join(parts)

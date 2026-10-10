@@ -312,3 +312,23 @@ def test_name_tag_mentions_vertical(tmp_path):
     assert project.next_output_path(str(xml), "broadcast vertical") == str(
         tmp_path / "jakso-cut broadcast vertical.fcpxml"
     )
+
+
+def test_name_tag_mentions_the_layout_only_when_it_is_not_the_default(tmp_path):
+    """Sama jakso kahdella asettelulla on kaksi tiedostoa, ja ``single`` on
+    oletus eikä kirjoita nimeen mitään. Tunniste on sana jonka ``pick``
+    tunnistaa omaksi viennikseen, ettei se tarjoudu lähteeksi."""
+    from autoraffkat import pick
+
+    single = ProjectSettings(globals=Globals(vertical=True))
+    top = ProjectSettings(globals=Globals(vertical=True, vertical_layout="wide_top"))
+    bottom = ProjectSettings(globals=Globals(vertical=True, vertical_layout="wide_bottom"))
+    assert project.name_tag(single) == "broadcast vertical"
+    assert project.name_tag(top) == "broadcast vertical widetop"
+    assert project.name_tag(bottom) == "broadcast vertical widebottom"
+    for tag in (project.name_tag(top), project.name_tag(bottom)):
+        written = project.next_output_path(str(tmp_path / "jakso.fcpxml"), tag)
+        assert pick._is_output(written)
+    # Asettelu ilman pystyvientiä ei vaikuta mihinkään.
+    flat = ProjectSettings(globals=Globals(vertical=False, vertical_layout="wide_top"))
+    assert project.name_tag(flat) == "broadcast"

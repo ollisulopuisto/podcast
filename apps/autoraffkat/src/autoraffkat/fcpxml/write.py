@@ -18,6 +18,7 @@ from urllib.request import pathname2url
 from xml.sax.saxutils import escape, quoteattr
 
 from .. import __version__, movement, reframe
+from .. import layout as screen_layout
 from ..audio.mix import ROOM_ROLE
 from ..decide import WIDE_LABEL
 from ..i18n import t
@@ -271,6 +272,7 @@ def settings_metadata(settings: "ProjectSettings", source: str = "") -> list[str
         _md("long_take_rule", g.long_take_rule),
         _md("movement", "1" if g.movement else "0", "boolean"),
         _md("vertical", "1" if g.vertical else "0", "boolean"),
+        _md("vertical_layout", g.vertical_layout),
         _md("audio.enabled", "1" if settings.audio.enabled else "0", "boolean"),
         _md(
             "settings",
@@ -951,16 +953,28 @@ def _framing_request(move: movement.Move, seg, settings, piece: bool = False) ->
 
 
 def _record(shots, a: int, b: int, item, file_start, shot, move: movement.Move,
-            settings, lane: int = 0, square: int = 0) -> None:
+            settings, lane: int = 0, square: int = 0, panel=None, partner=None) -> None:
     """Kuva renderöinnin listaan: samat luvut jotka ``_transform_lines``
     kirjoittaa XML:ään, ks. ``render.py``. ``square`` on pinon merkki
-    (``_square_lines``): silloin kuva on natiivikokoinen neliö."""
+    (``_square_lines``): silloin kuva on natiivikokoinen neliö. ``panel``
+    on asettelun paneeli (``layout.Panel``): kuva täytetään paneeliin ja
+    ``partner`` on toinen paneeli samalla ajalla."""
     if shots is None:
         return
     from ..render import Shot
 
     if item is None:
         shots.append(Shot(a, b, lane=lane))
+        return
+    if panel is not None:
+        shots.append(Shot(
+            start=a, end=b, path=item.path or "", file_start=float(file_start),
+            width=item.width, height=item.height,
+            scale0=shot.scale if shot else 1.0, scale1=shot.scale if shot else 1.0,
+            pos_x=shot.pos_x if shot else 0.0, pos_y=shot.pos_y if shot else 0.0,
+            fill=True, lane=lane, panel=(panel.x, panel.y, panel.w, panel.h),
+            partner=partner,
+        ))
         return
     if square:
         shots.append(Shot(
@@ -1623,7 +1637,7 @@ def _stack_plan(reactions, roles, timeline, angles_of, program_start, program_en
     if settings is None or not settings.globals.vertical or roles is None:
         return {}
     plan: dict[int, tuple[int, int, int]] = {}
-    for index, reaction in enumerate(reactions):
+    for index, reaction in enumerate(reactions or []):
         shot_key = getattr(reaction, "shot", "")
         if settings.globals.wide_reactions and shot_key == roles.wide_key:
             continue
@@ -1655,19 +1669,110 @@ def _square_lines(sign: int, indent: str) -> list[str]:
     """Neliö yhdelle kuvalle pinossa: lähde natiivikokoisena (``none``, ei
     täyttöä), reunat rajattu ja kuva ``sign`` × ``SQUARE_Y`` ylös tai alas."""
     return [
-        f'{indent}<adjust-conform type="none"/>',
         f'{indent}<adjust-crop mode="crop">',
         f'{indent}  <crop-rect left="{_number(SQUARE_CROP)}" top="0" '
         f'right="{_number(SQUARE_CROP)}" bottom="0"/>',
         f'{indent}</adjust-crop>',
+        f'{indent}<adjust-conform type="none"/>',
         f'{indent}<adjust-transform position="0 {_number(sign * SQUARE_Y)}"/>',
+    ]
+
+
+def _panel_lines(fcp: "screen_layout.FcpPanel", indent: str) -> list[str]:
+    """Kuva paneeliin: rajaus, natiivikoko (``none``) ja siirto.
+
+    **Järjestys on DTD:n**: ``adjust-crop``, ``adjust-conform``,
+    ``adjust-transform``. Final Cut hylkää väärän järjestyksen koko tuonnin
+    kuten ``tcFormat``in. Luvut tulevat ``layout.fcp_panel``ista, joten
+    ne ovat samat jotka renderöinti piirtää; rajauksen yksikkö on oletus
+    eikä sitä ole tuotu Final Cutiin.
+    """
+    return [
+        f'{indent}<adjust-crop mode="crop">',
+        f'{indent}  <crop-rect left="{_number(fcp.left)}" top="{_number(fcp.top)}" '
+        f'right="{_number(fcp.right)}" bottom="{_number(fcp.bottom)}"/>',
+        f'{indent}</adjust-crop>',
+        f'{indent}<adjust-conform type="none"/>',
+        f'{indent}<adjust-transform scale="{_number(fcp.scale)} {_number(fcp.scale)}" '
+        f'position="{_number(fcp.pos_x)} {_number(fcp.pos_y)}"/>',
+    ]
+
+
+def _panel_of(item, shot, panel: "screen_layout.Panel"):
+    """Kuvan paneelin Final Cut -muoto, tai ``None`` kun lähteen mitat puuttuvat."""
+    if item is None or not item.width or not item.height:
+        return None
+    window = screen_layout.window_of(
+        item.width, item.height, panel.w, panel.h,
+        shot.scale if shot else 1.0, shot.pos_x if shot else 0.0,
+        shot.pos_y if shot else 0.0)
+    return screen_layout.fcp_panel(panel, window, item.width, item.height)
+
+
+def _screen_panels(settings, roles):
+    """Asettelun paneelit, tai ``None``: ei pystyvientiä, asettelu ``single``
+    tai laajaa ei ole nimetty (silloin ei ole mitä näyttää ylhäällä)."""
+    if settings is None or not settings.globals.vertical or roles is None:
+        return None
+    if not getattr(roles, "wide_key", ""):
+        return None
+    return screen_layout.panels(settings.globals.vertical_layout)
+
+
+# Asettelussa laaja on lanella 1 ja reaktiot sen päällä lanella 2: kaksi
+# liitettyä klippiä samalla lanella ei saa olla yhtä aikaa.
+WIDE_LANE = 1
+LAYOUT_REACTION_LANE = 2
+
+
+def _wide_item(timeline, roles, at):
+    """Laajan raidan media-alkio joka kattaa hetken ``at``, tai ``None``."""
+    return next((i for i in timeline.track_media(roles.wide_key)
+                 if i.placement_at(at)), None)
+
+
+def _wide_shot(timeline, roles, panels, a: int, b: int, at):
+    """Laaja paneelinaan renderöintiä varten, tai ``None``."""
+    item = _wide_item(timeline, roles, at)
+    if item is None or not item.width or not item.height:
+        return None
+    from ..render import Shot
+
+    p = panels.wide
+    return Shot(start=a, end=b, path=item.path or "", file_start=float(item.file_time_at(at)),
+                width=item.width, height=item.height, fill=True,
+                panel=(p.x, p.y, p.w, p.h))
+
+
+def _wide_clip(mc, wide_angle: str, item, panels, source: int, dur: int,
+               frame_duration: Fraction) -> list[str]:
+    """Laaja omalle lanelleen ylhäällä: yksi liitetty klippi osaa kohden.
+
+    Rakenne on reaktioklipin: sisäkkäinen ``mc-clip`` joka valitsee kulman
+    ``angleID``:llä ja jonka ääni on pois (``srcEnable="video"``).
+    Sama klippi jatkuu yli leikkausten, joten aikajanalla ei ole turhia
+    leikkauskohtia laajan päällä.
+    """
+    fcp = _panel_of(item, None, panels.wide)
+    return [
+        f'              <mc-clip lane="{WIDE_LANE}" ref={quoteattr(mc.media_id)} '
+        f'name="Laaja paneeli" '
+        f'offset="{frames_str(source, frame_duration)}" '
+        f'start="{frames_str(source, frame_duration)}" '
+        f'duration="{frames_str(dur, frame_duration)}">',
+        f'                <mc-source angleID={quoteattr(wide_angle)} srcEnable="video">',
+        *_panel_lines(fcp, "                  "),
+        "                </mc-source>",
+        f'                <keyword start="{frames_str(source, frame_duration)}" '
+        f'duration="{frames_str(dur, frame_duration)}" value="Laaja paneeli"/>',
+        "              </mc-clip>",
     ]
 
 
 def _reaction_clips(
     reactions, roles, angles_of, mc, frame_duration, program_start, program_end,
     timeline=None, reframer=None, vertical: bool = False, settings=None, shots=None,
-    stacks=None,
+    stacks=None, panels=None,
 ):
     """Reaktiokuvat sisäkkäisinä ``mc-clip``einä omalle lanelleen.
 
@@ -1703,6 +1808,9 @@ def _reaction_clips(
     """
     lines: list[str] = []
     own = set(mc.angle_ids)
+    # Asettelussa reaktio vaihtaa alapaneelin kuvan ja laaja pysyy
+    # ylhäällä lanella 1, joten reaktio on lanella 2.
+    lane = LAYOUT_REACTION_LANE if panels is not None else REACTION_LANE
     for index, reaction in enumerate(reactions):
         # ``shot`` on se raita joka näytetään, ``speaker`` se jonka kasvot
         # mitattiin. Ne eroavat kun sama kasvo osuisi kahdesti peräkkäin,
@@ -1724,7 +1832,7 @@ def _reaction_clips(
         if dur <= 0:
             continue
         lines.append(
-            f'              <mc-clip lane="{REACTION_LANE}" '
+            f'              <mc-clip lane="{lane}" '
             f"ref={quoteattr(mc.media_id)} "
             f"name={quoteattr(f'{shown} reaktio {index + 1:02d}')} "
             f'offset="{frames_str(source, frame_duration)}" '
@@ -1737,6 +1845,14 @@ def _reaction_clips(
         if sign:
             # Pinossa kuva on neliö eikä sitä kehystetä reframerilla.
             transform = _square_lines(sign, "                  ")
+        elif panels is not None:
+            part = next((i for i in (timeline.track_media(key) if timeline else [])
+                         if i.placement_at(start)), None)
+            if reframer is not None and part is not None:
+                focus = reaction.speaker if key == roles.wide_key else ""
+                shot = reframer.from_item(part, float(start), float(end), focus=focus)
+            fcp = _panel_of(part, shot, panels.close)
+            transform = _panel_lines(fcp, "                  ") if fcp else []
         elif vertical:
             part = next((i for i in (timeline.track_media(key) if timeline else [])
                          if i.placement_at(start)), None)
@@ -1752,8 +1868,12 @@ def _reaction_clips(
             if part is not None:
                 first = to_frames(start - program_start, frame_duration)
                 _record(shots, first, first + dur, part, part.file_time_at(start),
-                        shot if vertical else None, _NO_MOVE, settings, lane=1,
-                        square=sign)
+                        shot if vertical else None, _NO_MOVE, settings, lane=lane,
+                        square=sign,
+                        panel=panels.close if panels is not None else None,
+                        partner=(_wide_shot(timeline, roles, panels, first,
+                                            first + dur, start)
+                                 if panels is not None else None))
         if transform:
             lines += [
                 f'                <mc-source angleID={quoteattr(angle_id)} '
@@ -1827,8 +1947,12 @@ def build_multicam_fcpxml(
     # koska sen ruutu vaihtuu pinon toiseen puoliskoon. Katkaisukohdat ovat
     # samat kuin ``_merge``ssä, joten yhdistäminen ei kumoa niitä.
     vertical = settings is not None and settings.globals.vertical
-    stacks = _stack_plan(reactions, roles, timeline, angles_of, program_start,
-                         program_end, frame_duration, settings)
+    # Asettelu (laaja + lähikuva yhtä aikaa) ja reaktioiden neliöpino ovat
+    # kaksi eri tapaa näyttää kaksi kuvaa; asettelussa pinoa ei ole.
+    panels = _screen_panels(settings, roles)
+    stacks = ({} if panels is not None else
+              _stack_plan(reactions, roles, timeline, angles_of, program_start,
+                          program_end, frame_duration, settings))
     stack_marks = sorted({
         x for a, b, _ in stacks.values() for x in (a, b) if 0 < x < program_frames
     })
@@ -1887,8 +2011,36 @@ def build_multicam_fcpxml(
     # joten reaktioklippi viittaa niihin sellaisenaan eikä uutta resurssia
     # tarvita. Tunnetut id:t poimitaan sieltä, jotta viittaus tuntemattomaan
     # assettiin jää tekemättä sen sijaan että se rikkoisi tuonnin.
-    moves = _movement_plan(spans, frame_duration, settings)
+    # Mikroliike on koko ruudun punch-in; paneelissa zoomin muutos veisi
+    # paneelin kuvasuhteen mukanaan, joten asettelussa sitä ei ole.
+    moves = [] if panels is not None else _movement_plan(spans, frame_duration, settings)
     pieces = _pieces(spans)
+    # Mitkä spanit saavat paneelit: laaja ja lähikuva löytyvät osasta ja
+    # lähteen mitat tunnetaan. Muut jäävät koko ruudun kuviksi, ettei
+    # ylhäälle jää mustaa. Peräkkäiset spanit samasta osasta jakavat yhden
+    # laajan klipin, joka kiinnitetään ensimmäiseen.
+    wide_of: dict[int, tuple[str, object]] = {}
+    group_end: dict[int, int] = {}
+    if panels is not None:
+        run_first, run_media = None, None
+        for i, (seg_i, a_i, b_i) in enumerate(spans):
+            at_i = program_start + frame_duration * a_i
+            mc_i = timeline.multicam_at(at_i)
+            wide_i = _wide_item(timeline, roles, at_i) if mc_i is not None else None
+            angle_i = (next((x for x in angles_of.get(roles.wide_key, [])
+                             if x in set(mc_i.angle_ids)), "")
+                       if mc_i is not None else "")
+            part_i = next((p for p in timeline.track_media(seg_i.angle)
+                           if p.placement_at(at_i)), None)
+            if not (angle_i and wide_i and part_i and part_i.width and part_i.height):
+                run_first, run_media = None, None
+                continue
+            wide_of[i] = (angle_i, wide_i)
+            if run_first is not None and run_media == mc_i.media_id:
+                group_end[run_first] = b_i
+            else:
+                run_first, run_media = i, mc_i.media_id
+                group_end[i] = b_i
     for index, (seg, a, b) in enumerate(spans):
         at = program_start + frame_duration * a
         mc = timeline.multicam_at(at)
@@ -1956,10 +2108,17 @@ def build_multicam_fcpxml(
         # katkaistu pinon rajoista, joten palanen on kokonaan pinon sisällä
         # tai kokonaan sen ulkopuolella.
         square = _square_of(stacks, a, b) if vertical else 0
+        paneled = index in wide_of
         _record(shots, a, b, part, part.file_time_at(at) if part else 0, shot,
                 _move_after(shot, moves[index] if moves else _NO_MOVE), settings,
-                square=square)
-        if square:
+                square=square,
+                panel=panels.close if paneled else None,
+                partner=(_wide_shot(timeline, roles, panels, a, b, at)
+                         if paneled else None))
+        if paneled:
+            base_transform = _panel_lines(_panel_of(part, shot, panels.close),
+                                          "                ")
+        elif square:
             base_transform = _square_lines(square, "                ")
         else:
             base_transform = _transform_lines(
@@ -1973,6 +2132,11 @@ def build_multicam_fcpxml(
             video_speakers=video_speakers,
             video_silent=silent(video_angle, video_speakers) if video_angle else [],
         )
+        if index in group_end:
+            wide_angle, wide_item = wide_of[index]
+            sources = sources + _wide_clip(
+                mc, wide_angle, wide_item, panels, start_frames,
+                group_end[index] - a, frame_duration)
         # Puhujan nimi avainsanaksi. Selaimessa monikameraklipin nimi on
         # median oma («A-osa»), joten kaikki kuvat näyttävät samalta;
         # avainsana on se paikka jossa Final Cut erottaa ne. Lisätään
@@ -1995,7 +2159,7 @@ def build_multicam_fcpxml(
                 frame_duration, program_start, program_end,
                 timeline=timeline, reframer=reframer,
                 vertical=vertical, settings=settings, shots=shots,
-                stacks=stacks,
+                stacks=stacks, panels=panels,
             )
         if not attached_room and room_ids:
             attached_room = True

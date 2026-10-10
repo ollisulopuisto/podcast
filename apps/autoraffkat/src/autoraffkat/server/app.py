@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from speechmix import chain, editor
 from speechmix.chain import ChainError
 
-from .. import i18n, pick, probe, project, reactions, reframe, staging, thumbs
+from .. import i18n, layout, pick, probe, project, reactions, reframe, staging, thumbs
 from ..analysis import Analysis, AnalysisError, analyze, build_grid, resolve_roles
 from ..audio import mix
 from ..decide import WIDE_LABEL, decide
@@ -40,6 +40,7 @@ from ..fcpxml.write import (
 from ..i18n import LANGUAGES, t
 from ..model import (
     DEFAULT_PROJECT_NAME,
+    LAYOUTS,
     LONGTAKE_RULES,
     LOUDNESS_TARGETS,
     OVERLAP_RULES,
@@ -792,6 +793,8 @@ class AppState:
                 self.start_measure_video()
         if "wide_reactions" in raw:
             g.wide_reactions = bool(raw["wide_reactions"])
+        if raw.get("vertical_layout") in LAYOUTS:
+            g.vertical_layout = raw["vertical_layout"]
         if raw.get("overlap_rule") in OVERLAP_RULES:
             g.overlap_rule = raw["overlap_rule"]
         if raw.get("long_take_rule") in LONGTAKE_RULES:
@@ -1706,10 +1709,16 @@ def create_app(state: AppState) -> FastAPI:
                     segments = reframe.focus_segments(
                         decision.segments, _grid, followed,
                         state.settings.globals.min_shot)
+                    # Asettelussa lähikuva täytetään paneeliinsa eikä koko
+                    # ruutuun; kehystäjä kysyy paneelin mitoilla.
+                    panels = (layout.panels(state.settings.globals.vertical_layout)
+                              if roles.wide_key else None)
                     reframer = reframe.Reframer(
                         closes, reframe.look(closes, state.timeline, roles),
                         crowd=found, crowd_tables=state.crowd_tables,
-                        names=[lane.name for lane in _grid.speakers])
+                        names=[lane.name for lane in _grid.speakers],
+                        frame=((panels.close.w, panels.close.h) if panels
+                               else (reframe.PROJECT_W, reframe.PROJECT_H)))
                     framed = reframe.framed_count(
                         reframer, state.timeline, segments)
                     if not state.video_tables:

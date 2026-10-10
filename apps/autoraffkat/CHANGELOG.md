@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.10.1] - 2026-10-10
+
+### Added
+- **Vertical layouts: wide on top (or at the bottom) with the speaker's close-up filling the rest.** A new *Layout* row under *Vertical export*: *One picture* (as before), *Wide on top*, *Wide at the bottom*. The wide sits in a 16:9 panel of its own across the full width (1080×608, nothing cropped), the close-up fills the remaining 1080×1312 and is framed on the face. The Final Cut export writes the close-up on the spine and the wide as one connected clip on lane 1 per part; reaction shots go on lane 2 and replace only the close-up panel. The MP4 render draws the same panels (ffmpeg and AVFoundation). The export name carries `widetop` / `widebottom`. Micro-movement is off in these layouts. New `layout.py` holds the panel geometry and its translation to Final Cut's units, so export and render cannot disagree.
+- **The reaction stack is drawn in the rendered MP4.** The two squares written by the FCPXML export were missing from the render (`Shot.crop` was set and never read).
+
+### Fixed
+- The vertical export with no reaction list crashed in the stack planner (`reactions=None`).
+- `adjust-crop` is written before `adjust-conform` and `adjust-transform`, the DTD's order, in the reaction stack. **Written from memory of the DTD, not checked against Final Cut's own file**; the layouts follow the same order.
+
+### Not yet checked
+- The AVFoundation drawing of panels and the stack has not been run (developed on Linux).
+- The crop unit (percent of width left and right, of height top and bottom) and that Final Cut scales a cropped clip around the uncropped clip's centre are assumptions until a layout export has been imported into Final Cut.
+
 ## [2026.10.8.2] - 2026-10-08
 
 ### Changed

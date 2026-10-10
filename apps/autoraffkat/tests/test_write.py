@@ -1948,3 +1948,151 @@ def test_a_single_speaker_keeps_the_nine_sixteen_fill(fixture_dir):
     assert root.iter("adjust-crop") is not None
     assert not list(root.iter("adjust-crop"))
     assert not any("reaktio" in (c.get("name") or "") for c in root.iter("mc-clip"))
+
+
+# ---------------------------------------------------------------- asettelu
+
+
+def _layout_settings(layout="wide_top"):
+    from autoraffkat.model import Globals
+    from autoraffkat.project import ProjectSettings
+
+    return ProjectSettings(globals=Globals(vertical=True, vertical_layout=layout))
+
+
+def _layout_cut(fixture_dir, layout="wide_top", reactions=(), reframer=None, shots=None):
+    from autoraffkat.reactions import Reaction
+
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    xml = build_multicam_fcpxml(
+        tl,
+        [Segment("WIDE", "Laaja", 0.0, 4.0),
+         Segment("CLOSE_A", "Host", 4.0, 12.0),
+         Segment("CLOSE_B", "Guest", 12.0, 30.0),
+         Segment("WIDE", "Laaja", 30.0, 36.0)],
+        [("host Track1", "Host"), ("guest Track2", "Guest")],
+        Fraction(0), Fraction(36), "Asettelutesti",
+        source="multicam.fcpxml", roles=_roles_for(tl),
+        reactions=[Reaction(*r) for r in reactions],
+        settings=_layout_settings(layout),
+        reframer=reframer if reframer is not None else _StubReframer(scale=1.0, pos_x=0.0),
+        shots=shots,
+    )
+    return tl, xml
+
+
+def _transform_of(source):
+    node = source.find("adjust-transform")
+    px, py = (float(v) for v in node.get("position").split())
+    return float(node.get("scale").split()[0]), px, py
+
+
+def test_layout_wide_top_puts_the_closeup_in_the_lower_panel(fixture_dir):
+    """Spinen kuva on lähikuva alapaneelissa: natiivikokoinen (konformi
+    ``none``), rajattu paneelin kuvasuhteeseen ja siirretty paneelin kohdalle.
+
+    Lähde 1920×1080 → 1080×1312: ikkuna on 889 px leveä, skaala 1,2148 ja
+    paneelin keskipiste 304 px projektin keskeltä alas = −15,83 %.
+    """
+    _, xml = _layout_cut(fixture_dir)
+    source = next(s for s in ET.fromstring(xml).findall(".//spine/mc-clip/mc-source")
+                  if s.get("srcEnable") != "audio")
+    assert source.find("adjust-conform").get("type") == "none"
+    crop = source.find("adjust-crop/crop-rect")
+    assert abs(float(crop.get("left")) - float(crop.get("right"))) < 0.01
+    assert abs(float(crop.get("left")) - (1920 - 889.0) / 2 / 1920 * 100) < 0.1
+    scale, px, py = _transform_of(source)
+    assert abs(scale - 1080 / 889.0) < 0.001
+    assert abs(px) < 0.01
+    assert abs(py - (-304 / 19.2)) < 0.01
+
+
+def test_layout_wide_top_writes_the_wide_on_lane_one_above_the_spine(fixture_dir):
+    """Laaja on omalla lanellaan, ylhäällä, ja se jatkuu yli leikkausten:
+    yksi liitetty klippi osaa kohden, ei yksi per leikkaus."""
+    _, xml = _layout_cut(fixture_dir)
+    root = ET.fromstring(xml)
+    wides = [c for c in root.iter("mc-clip")
+             if c.get("lane") == "1" and "laaja" in (c.get("name") or "").lower()]
+    assert len(wides) == 2   # fixturessa kaksi osaa
+    for clip in wides:
+        source = clip.find("mc-source")
+        assert source.get("srcEnable") == "video"   # ääni tulee käsitellyistä mikeistä
+        assert source.find("adjust-conform").get("type") == "none"
+        scale, _px, py = _transform_of(source)
+        assert abs(scale - 1080 / 1918.4) < 0.001
+        assert abs(py - (656 / 19.2)) < 0.01     # paneelin keskipiste 656 px ylös
+
+
+def test_layout_children_follow_the_dtd_order(fixture_dir):
+    """DTD: ``adjust-crop`` ennen ``adjust-conform``ia ennen
+    ``adjust-transform``ia. Final Cut hylkää väärän järjestyksen koko tuonnin."""
+    _, xml = _layout_cut(fixture_dir)
+    for source in ET.fromstring(xml).iter("mc-source"):
+        tags = [c.tag for c in source if c.tag.startswith("adjust-")]
+        if "adjust-crop" in tags:
+            assert tags == ["adjust-crop", "adjust-conform", "adjust-transform"]
+
+
+def test_layout_wide_bottom_swaps_the_panels(fixture_dir):
+    _, top = _layout_cut(fixture_dir, "wide_top")
+    _, bottom = _layout_cut(fixture_dir, "wide_bottom")
+    top_y = _transform_of(next(s for s in ET.fromstring(top).findall(".//spine/mc-clip/mc-source")
+                               if s.find("adjust-crop") is not None))[2]
+    bottom_y = _transform_of(next(s for s in ET.fromstring(bottom).findall(".//spine/mc-clip/mc-source")
+                                  if s.find("adjust-crop") is not None))[2]
+    assert abs(top_y + bottom_y) < 0.01 and top_y < 0 < bottom_y
+
+
+def test_layout_single_is_the_old_export(fixture_dir):
+    """Oletus ei saa muuttaa vientiä: ``single`` on tavallinen pystyvienti."""
+    _, single = _layout_cut(fixture_dir, "single")
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    old = build_multicam_fcpxml(
+        tl,
+        [Segment("WIDE", "Laaja", 0.0, 4.0), Segment("CLOSE_A", "Host", 4.0, 12.0),
+         Segment("CLOSE_B", "Guest", 12.0, 30.0), Segment("WIDE", "Laaja", 30.0, 36.0)],
+        [("host Track1", "Host"), ("guest Track2", "Guest")],
+        Fraction(0), Fraction(36), "Asettelutesti",
+        source="multicam.fcpxml", roles=_roles_for(tl),
+        settings=_layout_settings("single"),
+        reframer=_StubReframer(scale=1.0, pos_x=0.0),
+    )
+    assert single == old
+    assert 'type="none"' not in single
+
+
+def test_layout_asks_the_reframer_for_closeups_only_once_per_cut(fixture_dir):
+    """Lähikuva kehystetään yhden kerran leikkausta kohden, kuten ennenkin."""
+    stub = _StubReframer(scale=1.0, pos_x=0.0)
+    _layout_cut(fixture_dir, reframer=stub)
+    assert any(name.startswith("CLOSE_A") for name, _a, _b in stub.calls)
+
+
+def test_layout_records_both_panels_for_the_render(fixture_dir):
+    """Renderöinti saa saman geometrian: lähikuva paneelinaan ja laaja sen
+    kumppanina."""
+    shots = []
+    _layout_cut(fixture_dir, shots=shots)
+    close = [s for s in shots if s.lane == 0 and s.path]
+    assert close
+    for shot in close:
+        assert shot.panel == (0, 608, 1080, 1312)
+        assert shot.partner is not None
+        assert shot.partner.panel == (0, 0, 1080, 608)
+        assert "WIDE" in shot.partner.path
+
+
+def test_layout_reactions_replace_the_closeup_panel_not_the_wide(fixture_dir):
+    """Reaktio tulee alapaneeliin lanelle 2 (lane 1 on laaja), eikä
+    neliöpinoa synny: laaja pysyy ylhäällä koko ajan."""
+    _, xml = _layout_cut(fixture_dir, reactions=[("Guest", 8.0, 9.6, 2.1)])
+    root = ET.fromstring(xml)
+    reaction = next(c for c in root.iter("mc-clip") if "reaktio" in (c.get("name") or ""))
+    assert reaction.get("lane") == "2"
+    source = reaction.find("mc-source")
+    assert source.find("adjust-crop") is not None
+    assert abs(_transform_of(source)[2] - (-304 / 19.2)) < 0.01
+    # Ei pinon neliöitä: yhdelläkään kuvalla ei ole 21,875 %:n rajausta.
+    for crop in root.iter("crop-rect"):
+        assert abs(float(crop.get("left")) - 21.875) > 0.5

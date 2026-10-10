@@ -582,3 +582,45 @@ def test_an_off_axis_zooming_shot_keeps_a_margin_at_its_end_scale():
         centre = 0.5 - shot.pos_x * 19.2 / shown
         assert centre - half <= a - room + 1e-6, m
         assert b + room <= centre + half + 1e-6, m
+
+
+def test_a_panel_frame_centres_the_face_in_the_panel_not_the_project():
+    """Asettelun lähikuvapaneeli on 1080×1312, ei 1080×1920: kehys lasketaan
+    sen mitoilla, ja ikkuna jonka luvut rajaavat on kasvojen ympärillä."""
+    from autoraffkat import layout
+
+    r = reframe.plan_shot(0.3, 0.45, 1920, 1080, frame=(1080, 1312))
+    assert r is not None
+    x, _y, w, h = layout.window_of(1920, 1080, 1080, 1312, r.scale, r.pos_x, r.pos_y)
+    assert abs((x + w / 2) - 0.3 * 1920) < 1.0   # kasvot ikkunan keskellä
+    assert w / h == 1080 / 1312
+
+
+def test_the_default_frame_is_still_the_project():
+    assert reframe.plan_shot(0.3, 0.5, 1920, 1080) == reframe.plan_shot(
+        0.3, 0.5, 1920, 1080, frame=(reframe.PROJECT_W, reframe.PROJECT_H))
+
+
+def test_a_reframer_asks_with_its_own_frame(monkeypatch):
+    """``Reframer(frame=…)`` ohjaa jokaisen kysymyksen paneelin mitoille.
+
+    Luvut eivät erota kehyksiä toisistaan niin kauan kuin kumpikin täyttyy
+    lähteen korkeudesta (sijainti on prosentteja kehyksen korkeudesta), joten
+    tässä katsotaan mitä ``plan_shot``ille annettiin.
+    """
+    seen = []
+    real = reframe.plan_shot
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("frame"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(reframe, "plan_shot", spy)
+    table = {"times": np.arange(0.0, 10.0), "found": np.ones(10, dtype=bool),
+             "x": np.full(10, 0.2), "y": np.full(10, 0.3), "w": np.full(10, 0.2),
+             "h": np.full(10, 0.3)}
+    item = MediaItem(key="A", name="A", path="", src="", width=1920, height=1080,
+                     placements=[Placement(ZERO, ZERO, Fraction(10))])
+    reframe.Reframer({"A": table}, frame=(1080, 1312)).from_item(item, 2.0, 8.0)
+    reframe.Reframer({"A": table}).from_item(item, 2.0, 8.0)
+    assert seen == [(1080, 1312), (reframe.PROJECT_W, reframe.PROJECT_H)]

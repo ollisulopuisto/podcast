@@ -119,6 +119,14 @@ const OVERLAP_RULES = () => [
   ['louder', T('overlap.louder'), T('overlap.louderHint')],
 ];
 
+/* Pystyviennin asettelu: yksi kuva koko ruudulla, tai laaja ja puhujan
+   lähikuva yhtä aikaa (laaja ylhäällä tai alhaalla). */
+const VERTICAL_LAYOUTS = () => [
+  ['single', T('layout.single'), T('layout.singleHint')],
+  ['wide_top', T('layout.wideTop'), T('layout.wideTopHint')],
+  ['wide_bottom', T('layout.wideBottom'), T('layout.wideBottomHint')],
+];
+
 let state = null;               // /api/state
 let latest = null;              // viimeisin laskettu tulos
 let lastSeats = '{}';           // viimeksi piirretyt istujat
@@ -1071,9 +1079,23 @@ function renderGlobals() {
     body: (body) => { verticalBody(body, video, reacting); },
   }).row);
 
-  /* Pystyviennin reaktiot ovat oletuksena pinoja (kaksi neliötä). Laaja
-     kuva on valinnainen paluu entiseen. */
+  /* Asettelu: miten pystykuva jaetaan. Vain pystyviennissä. */
   if (state.globals.vertical) {
+    const chosen = VERTICAL_LAYOUTS()
+      .find(([value]) => value === state.globals.vertical_layout);
+    rows.append(settingRow({
+      key: 'vertical_layout',
+      label: T('layout.title'),
+      hint: T('layout.hint'),
+      value: chosen ? chosen[1] : '',
+      body: (body) => { layoutBody(body); },
+    }).row);
+  }
+
+  /* Pystyviennin reaktiot ovat oletuksena pinoja (kaksi neliötä). Laaja
+     kuva on valinnainen paluu entiseen. Asettelussa pinoa ei ole: reaktio
+     vaihtaa vain lähikuvapaneelin kuvan. */
+  if (state.globals.vertical && state.globals.vertical_layout === 'single') {
     rows.append(settingRow({
       key: 'wide_reactions',
       label: T('vertical.wide.title'),
@@ -1395,6 +1417,27 @@ function longTakeBody(longtake) {
     longRules.append(label);
   });
 
+}
+
+function layoutBody(host) {
+  const rules = document.createElement('div');
+  rules.className = 'rules';
+  host.append(rules);
+  VERTICAL_LAYOUTS().forEach(([value, title, hint]) => {
+    const label = document.createElement('label');
+    const radio = document.createElement('input');
+    radio.type = 'radio'; radio.name = 'vertical_layout'; radio.value = value;
+    radio.checked = state.globals.vertical_layout === value;
+    radio.addEventListener('change', () => {
+      state.globals.vertical_layout = value;
+      renderGlobals();
+      schedule(0);
+    });
+    const text = document.createElement('span');
+    text.innerHTML = `${title} <span class="hint">${hint}</span>`;
+    label.append(radio, text);
+    rules.append(label);
+  });
 }
 
 function overlapBody(host) {
