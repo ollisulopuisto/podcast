@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from speechmix import chain, editor
 from speechmix.chain import ChainError
 
-from .. import i18n, layout, pick, probe, project, reactions, reframe, staging, thumbs
+from .. import i18n, pick, probe, project, reactions, reframe, staging, thumbs
 from ..analysis import Analysis, AnalysisError, analyze, build_grid, resolve_roles
 from ..audio import mix
 from ..decide import WIDE_LABEL, decide
@@ -1709,16 +1709,14 @@ def create_app(state: AppState) -> FastAPI:
                     segments = reframe.focus_segments(
                         decision.segments, _grid, followed,
                         state.settings.globals.min_shot)
-                    # Asettelussa lähikuva täytetään paneeliinsa eikä koko
-                    # ruutuun; kehystäjä kysyy paneelin mitoilla.
-                    panels = (layout.panels(state.settings.globals.vertical_layout)
-                              if roles.wide_key else None)
+                    # Kehystäjän oletuskehys on koko ruutu; asettelun
+                    # paneelikuvat kysyvät paneelin kehyksellä itse
+                    # (``from_item(frame=…)``), koska samassa viennissä on
+                    # sekä paneeli- että koko ruudun kuvia.
                     reframer = reframe.Reframer(
                         closes, reframe.look(closes, state.timeline, roles),
                         crowd=found, crowd_tables=state.crowd_tables,
-                        names=[lane.name for lane in _grid.speakers],
-                        frame=((panels.close.w, panels.close.h) if panels
-                               else (reframe.PROJECT_W, reframe.PROJECT_H)))
+                        names=[lane.name for lane in _grid.speakers])
                     framed = reframe.framed_count(
                         reframer, state.timeline, segments)
                     if not state.video_tables:

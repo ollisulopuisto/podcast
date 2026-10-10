@@ -624,3 +624,28 @@ def test_a_reframer_asks_with_its_own_frame(monkeypatch):
     reframe.Reframer({"A": table}, frame=(1080, 1312)).from_item(item, 2.0, 8.0)
     reframe.Reframer({"A": table}).from_item(item, 2.0, 8.0)
     assert seen == [(1080, 1312), (reframe.PROJECT_W, reframe.PROJECT_H)]
+
+
+def test_a_question_can_override_the_reframers_frame(monkeypatch):
+    """Automaattisessa asettelussa samaa kehystäjää kysytään kahdella
+    kehyksellä: koko ruudulla jaksolla projektin, paneelijaksolla paneelin.
+    ``from_item(frame=…)`` ohittaa oletuksen vain sillä kysymyksellä."""
+    seen = []
+    real = reframe.plan_shot
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("frame"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(reframe, "plan_shot", spy)
+    table = {"times": np.arange(0.0, 10.0), "found": np.ones(10, dtype=bool),
+             "x": np.full(10, 0.2), "y": np.full(10, 0.3), "w": np.full(10, 0.2),
+             "h": np.full(10, 0.3)}
+    item = MediaItem(key="A", name="A", path="", src="", width=1920, height=1080,
+                     placements=[Placement(ZERO, ZERO, Fraction(10))])
+    framer = reframe.Reframer({"A": table})
+    framer.from_item(item, 2.0, 8.0)
+    framer.from_item(item, 2.0, 8.0, frame=(1080, 1312))
+    framer.from_item(item, 2.0, 8.0)
+    assert seen == [(reframe.PROJECT_W, reframe.PROJECT_H), (1080, 1312),
+                    (reframe.PROJECT_W, reframe.PROJECT_H)]

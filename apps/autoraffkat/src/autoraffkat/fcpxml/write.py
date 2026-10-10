@@ -11,13 +11,14 @@ from __future__ import annotations
 import json
 import os
 import re
+from bisect import bisect_right
 from dataclasses import replace
 from fractions import Fraction
 from typing import TYPE_CHECKING
 from urllib.request import pathname2url
 from xml.sax.saxutils import escape, quoteattr
 
-from .. import __version__, movement, reframe
+from .. import __version__, autolayout, movement, reframe
 from .. import layout as screen_layout
 from ..audio.mix import ROOM_ROLE
 from ..decide import WIDE_LABEL
@@ -1622,7 +1623,8 @@ def _reaction_span(reaction, program_start, program_end, frame_duration):
 
 
 def _stack_plan(reactions, roles, timeline, angles_of, program_start, program_end,
-                frame_duration, settings) -> dict[int, tuple[int, int, int]]:
+                frame_duration, settings,
+                panels_at=None) -> dict[int, tuple[int, int, int]]:
     """Mitkä reaktiot ovat pinoja: ``{reaktion indeksi: (a, b, merkki)}``,
     ``a`` ja ``b`` kehyksinä ohjelman alusta.
 
@@ -1630,6 +1632,9 @@ def _stack_plan(reactions, roles, timeline, angles_of, program_start, program_en
     piirretään lanelle 1, on pino. Laaja kuva jää vain jos ``wide_reactions``
     on päällä. Merkki vuorottelee: ensimmäinen reaktio on ylhäällä (+1),
     seuraava alhaalla (−1). Ilman pystyvientiä pinoja ei ole.
+
+    ``panels_at``: reaktio jonka isäntäkuva on paneeliasettelussa ei ole
+    pino vaan vaihtaa alapaneelin kuvan, joten se jää pois.
 
     Ehdot ovat samat kuin ``_reaction_clips``in, koska pino joka ei piirry
     jättäisi pohjakuvan puolikkaan tyhjäksi.
@@ -1651,6 +1656,8 @@ def _stack_plan(reactions, roles, timeline, angles_of, program_start, program_en
         if not any(x in own for x in angles_of.get(key, [])):
             continue
         a = to_frames(start - program_start, frame_duration)
+        if panels_at is not None and panels_at(a) is not None:
+            continue
         sign = 1 if len(plan) % 2 == 0 else -1
         plan[index] = (a, a + dur, sign)
     return plan
@@ -1709,14 +1716,36 @@ def _panel_of(item, shot, panel: "screen_layout.Panel"):
     return screen_layout.fcp_panel(panel, window, item.width, item.height)
 
 
-def _screen_panels(settings, roles):
-    """Asettelun paneelit, tai ``None``: ei pystyvientiä, asettelu ``single``
-    tai laajaa ei ole nimetty (silloin ei ole mitä näyttää ylhäällä)."""
+def _layout_plan(settings, roles, spans, frame_duration: Fraction):
+    """Asettelun paneelit hetkittäin: ``(panels_at, marks)``.
+
+    ``panels_at(frame)`` palauttaa kehyksen asettelun paneelit tai ``None``
+    kun kuva täyttää ruudun. Kiinteässä asettelussa vastaus on sama joka
+    kohdassa; ``auto`` jakaa jakson kuvien kestoista (``autolayout.plan``).
+    ``marks`` ovat kehykset joissa asettelu vaihtuu: niissä spine on
+    katkaistava vaikka kulma pysyisi samana, ja yhdistäminen pitää
+    ne erillään. Ei pystyvientiä tai laajaa ei ole nimetty: ei paneeleita
+    (ylhäälle ei ole mitä laittaa).
+    """
+    none = (lambda _frame: None), frozenset()
     if settings is None or not settings.globals.vertical or roles is None:
-        return None
+        return none
     if not getattr(roles, "wide_key", ""):
-        return None
-    return screen_layout.panels(settings.globals.vertical_layout)
+        return none
+    layout = settings.globals.vertical_layout
+    if layout == screen_layout.LAYOUT_AUTO:
+        panels = screen_layout.panels(screen_layout.LAYOUT_WIDE_TOP)
+        plan = autolayout.plan([float(frame_duration * (b - a)) for _s, a, b in spans])
+        starts = [a for _s, a, _b in spans]
+        marks = frozenset(starts[i] for i in autolayout.changes(plan))
+
+        def at(frame: int):
+            index = max(0, bisect_right(starts, frame) - 1)
+            return panels if plan[index] == screen_layout.LAYOUT_WIDE_TOP else None
+
+        return at, marks
+    fixed = screen_layout.panels(layout)
+    return (lambda _frame: fixed), frozenset()
 
 
 # Asettelussa laaja on lanella 1 ja reaktiot sen päällä lanella 2: kaksi
@@ -1808,9 +1837,8 @@ def _reaction_clips(
     """
     lines: list[str] = []
     own = set(mc.angle_ids)
-    # Asettelussa reaktio vaihtaa alapaneelin kuvan ja laaja pysyy
-    # ylhäällä lanella 1, joten reaktio on lanella 2.
-    lane = LAYOUT_REACTION_LANE if panels is not None else REACTION_LANE
+    # ``panels`` on kiinteä asettelu tai funktio kehys → paneelit (``auto``).
+    panels_for = panels if callable(panels) else (lambda _frame, p=panels: p)
     for index, reaction in enumerate(reactions):
         # ``shot`` on se raita joka näytetään, ``speaker`` se jonka kasvot
         # mitattiin. Ne eroavat kun sama kasvo osuisi kahdesti peräkkäin,
@@ -1831,6 +1859,11 @@ def _reaction_clips(
         dur = to_frames(end - start, frame_duration)
         if dur <= 0:
             continue
+        # Asettelussa reaktio vaihtaa alapaneelin kuvan ja laaja pysyy
+        # ylhäällä lanella 1, joten reaktio on lanella 2.
+        first = to_frames(start - program_start, frame_duration)
+        here = panels_for(first)
+        lane = LAYOUT_REACTION_LANE if here is not None else REACTION_LANE
         lines.append(
             f'              <mc-clip lane="{lane}" '
             f"ref={quoteattr(mc.media_id)} "
@@ -1845,13 +1878,14 @@ def _reaction_clips(
         if sign:
             # Pinossa kuva on neliö eikä sitä kehystetä reframerilla.
             transform = _square_lines(sign, "                  ")
-        elif panels is not None:
+        elif here is not None:
             part = next((i for i in (timeline.track_media(key) if timeline else [])
                          if i.placement_at(start)), None)
             if reframer is not None and part is not None:
                 focus = reaction.speaker if key == roles.wide_key else ""
-                shot = reframer.from_item(part, float(start), float(end), focus=focus)
-            fcp = _panel_of(part, shot, panels.close)
+                shot = reframer.from_item(part, float(start), float(end), focus=focus,
+                                          frame=(here.close.w, here.close.h))
+            fcp = _panel_of(part, shot, here.close)
             transform = _panel_lines(fcp, "                  ") if fcp else []
         elif vertical:
             part = next((i for i in (timeline.track_media(key) if timeline else [])
@@ -1866,14 +1900,13 @@ def _reaction_clips(
             part = next((i for i in (timeline.track_media(key) if timeline else [])
                          if i.placement_at(start)), None)
             if part is not None:
-                first = to_frames(start - program_start, frame_duration)
                 _record(shots, first, first + dur, part, part.file_time_at(start),
                         shot if vertical else None, _NO_MOVE, settings, lane=lane,
                         square=sign,
-                        panel=panels.close if panels is not None else None,
-                        partner=(_wide_shot(timeline, roles, panels, first,
+                        panel=here.close if here is not None else None,
+                        partner=(_wide_shot(timeline, roles, here, first,
                                             first + dur, start)
-                                 if panels is not None else None))
+                                 if here is not None else None))
         if transform:
             lines += [
                 f'                <mc-source angleID={quoteattr(angle_id)} '
@@ -1948,11 +1981,11 @@ def build_multicam_fcpxml(
     # samat kuin ``_merge``ssä, joten yhdistäminen ei kumoa niitä.
     vertical = settings is not None and settings.globals.vertical
     # Asettelu (laaja + lähikuva yhtä aikaa) ja reaktioiden neliöpino ovat
-    # kaksi eri tapaa näyttää kaksi kuvaa; asettelussa pinoa ei ole.
-    panels = _screen_panels(settings, roles)
-    stacks = ({} if panels is not None else
-              _stack_plan(reactions, roles, timeline, angles_of, program_start,
-                          program_end, frame_duration, settings))
+    # kaksi eri tapaa näyttää kaksi kuvaa: paneeliasettelun kuvassa pinoa ei
+    # ole, ja ``auto`` valitsee kummankin kohta kohdalta.
+    panels_at, layout_marks = _layout_plan(settings, roles, spans, frame_duration)
+    stacks = _stack_plan(reactions, roles, timeline, angles_of, program_start,
+                         program_end, frame_duration, settings, panels_at=panels_at)
     stack_marks = sorted({
         x for a, b, _ in stacks.values() for x in (a, b) if 0 < x < program_frames
     })
@@ -1963,7 +1996,7 @@ def build_multicam_fcpxml(
     )
     spans = _merge_multicam_spans(
         spans, timeline, angles_of, program_start, frame_duration,
-        keep_apart=frozenset(stack_marks),
+        keep_apart=frozenset(stack_marks) | layout_marks,
     )
     if not spans:
         raise WriteError(t("write.cuts_collapsed"))
@@ -2012,8 +2045,8 @@ def build_multicam_fcpxml(
     # tarvita. Tunnetut id:t poimitaan sieltä, jotta viittaus tuntemattomaan
     # assettiin jää tekemättä sen sijaan että se rikkoisi tuonnin.
     # Mikroliike on koko ruudun punch-in; paneelissa zoomin muutos veisi
-    # paneelin kuvasuhteen mukanaan, joten asettelussa sitä ei ole.
-    moves = [] if panels is not None else _movement_plan(spans, frame_duration, settings)
+    # paneelin kuvasuhteen mukanaan, joten paneelikuvilla sitä ei ole.
+    moves = _movement_plan(spans, frame_duration, settings)
     pieces = _pieces(spans)
     # Mitkä spanit saavat paneelit: laaja ja lähikuva löytyvät osasta ja
     # lähteen mitat tunnetaan. Muut jäävät koko ruudun kuviksi, ettei
@@ -2021,9 +2054,12 @@ def build_multicam_fcpxml(
     # laajan klipin, joka kiinnitetään ensimmäiseen.
     wide_of: dict[int, tuple[str, object]] = {}
     group_end: dict[int, int] = {}
-    if panels is not None:
+    if any(panels_at(a_i) is not None for _s, a_i, _b in spans):
         run_first, run_media = None, None
         for i, (seg_i, a_i, b_i) in enumerate(spans):
+            if panels_at(a_i) is None:
+                run_first, run_media = None, None
+                continue
             at_i = program_start + frame_duration * a_i
             mc_i = timeline.multicam_at(at_i)
             wide_i = _wide_item(timeline, roles, at_i) if mc_i is not None else None
@@ -2061,12 +2097,18 @@ def build_multicam_fcpxml(
             (i for i in timeline.track_media(seg.angle) if i.placement_at(at)),
             None,
         )
+        # Paneelikuvalla ei ole mikroliikettä eikä koko ruudun kehystä:
+        # kehys on alapaneelin, ja liike jää pois.
+        span_panels = panels_at(a) if index in wide_of else None
+        span_move = (_NO_MOVE if span_panels is not None
+                     else (moves[index] if moves else _NO_MOVE))
         if reframer is not None and part is not None:
-            move = moves[index] if moves else _NO_MOVE
+            frame_kw = ({"frame": (span_panels.close.w, span_panels.close.h)}
+                        if span_panels is not None else {})
             shot = reframer.from_item(
                 part, float(at), float(program_start + frame_duration * b),
-                focus=seg.focus, **_framing_request(move, seg, settings,
-                                                    pieces[index]))
+                focus=seg.focus, **_framing_request(span_move, seg, settings,
+                                                    pieces[index]), **frame_kw)
 
         own = set(mc.angle_ids)
         video_angle = next((x for x in angles_of.get(seg.angle, []) if x in own), "")
@@ -2108,21 +2150,21 @@ def build_multicam_fcpxml(
         # katkaistu pinon rajoista, joten palanen on kokonaan pinon sisällä
         # tai kokonaan sen ulkopuolella.
         square = _square_of(stacks, a, b) if vertical else 0
-        paneled = index in wide_of
+        paneled = span_panels is not None
         _record(shots, a, b, part, part.file_time_at(at) if part else 0, shot,
-                _move_after(shot, moves[index] if moves else _NO_MOVE), settings,
+                _move_after(shot, span_move), settings,
                 square=square,
-                panel=panels.close if paneled else None,
-                partner=(_wide_shot(timeline, roles, panels, a, b, at)
+                panel=span_panels.close if paneled else None,
+                partner=(_wide_shot(timeline, roles, span_panels, a, b, at)
                          if paneled else None))
         if paneled:
-            base_transform = _panel_lines(_panel_of(part, shot, panels.close),
+            base_transform = _panel_lines(_panel_of(part, shot, span_panels.close),
                                           "                ")
         elif square:
             base_transform = _square_lines(square, "                ")
         else:
             base_transform = _transform_lines(
-                shot, _move_after(shot, moves[index] if moves else _NO_MOVE),
+                shot, _move_after(shot, span_move),
                 b - a, frame_duration, "                ",
                 conform=vertical, origin=start_frames)
         sources = _mc_sources(
@@ -2135,7 +2177,7 @@ def build_multicam_fcpxml(
         if index in group_end:
             wide_angle, wide_item = wide_of[index]
             sources = sources + _wide_clip(
-                mc, wide_angle, wide_item, panels, start_frames,
+                mc, wide_angle, wide_item, panels_at(a), start_frames,
                 group_end[index] - a, frame_duration)
         # Puhujan nimi avainsanaksi. Selaimessa monikameraklipin nimi on
         # median oma («A-osa»), joten kaikki kuvat näyttävät samalta;
@@ -2159,7 +2201,7 @@ def build_multicam_fcpxml(
                 frame_duration, program_start, program_end,
                 timeline=timeline, reframer=reframer,
                 vertical=vertical, settings=settings, shots=shots,
-                stacks=stacks, panels=panels,
+                stacks=stacks, panels=panels_at,
             )
         if not attached_room and room_ids:
             attached_room = True

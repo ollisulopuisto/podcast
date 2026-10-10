@@ -402,8 +402,8 @@ for (const lang of ['fi', 'en']) {
         findRadios(c);
       }); };
       findRadios(layoutHost);
-      if (layoutRadios.length !== 3) {
-        throw new Error(`asetteluvalintoja ${layoutRadios.length}, ei 3`);
+      if (layoutRadios.length !== 4) {
+        throw new Error(`asetteluvalintoja ${layoutRadios.length}, ei 4`);
       }
       vm.runInContext("state.globals.vertical_layout = 'single';", context);
       /* Mikroliikkeen tyyli: rauhallinen tai shorts, ja valinta menee

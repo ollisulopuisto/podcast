@@ -281,6 +281,20 @@ has no wide, or whose source has no size, falls back to a full-screen picture
 rather than leaving black on top. Micro-movement is off in layouts: a zoom
 change would take the panel's aspect ratio with it.
 
+**Automatic layout changes per shot, so the reframer is asked per shot.**
+`autolayout.plan` turns shot durations into `single` / `wide_top` — a hold
+(12 s or more) is one person's turn, a shorter shot is an exchange — and
+folds any stretch under 20 s into its longer neighbour so the structure
+cannot flicker. Both numbers are taste, not measurement. The same reframer
+answers for both kinds of shot: `from_item(frame=…)` overrides its default
+frame (the whole project) for a paneled shot only, which is why `app.py` does
+not set a frame on the reframer itself. Two places must know where the layout
+changes: `_merge_multicam_spans` (`keep_apart`) — two shots of the same camera
+on either side of a change would otherwise merge into one clip with one
+transform — and `_stack_plan`, which drops a reaction hosted by a paneled
+shot, because that reaction replaces the lower panel instead of becoming half
+of a stack.
+
 `adjust-crop`, `adjust-conform`, `adjust-transform` is the DTD's order, and
 Final Cut rejects the whole import for the wrong one. It was written from
 memory of the DTD, not read from Final Cut's own file, and the crop's unit and

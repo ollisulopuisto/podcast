@@ -1577,10 +1577,11 @@ class _StubReframer:
         self.pos_x = pos_x
 
     def from_item(self, item, t0, t1, focus="", headroom=1.0, extra=1.0, off_axis=False,
-                  own=False):
+                  own=False, frame=None):
         from autoraffkat import reframe
 
         self.calls.append((item.key, round(t0, 3), round(t1, 3)))
+        self.frames = [*getattr(self, "frames", []), frame]
         self.focus = [*getattr(self, "focus", []), focus]
         self.asked = [*getattr(self, "asked", []), (round(extra, 4), off_axis)]
         self.own = [*getattr(self, "own", []), own]
@@ -1960,16 +1961,17 @@ def _layout_settings(layout="wide_top"):
     return ProjectSettings(globals=Globals(vertical=True, vertical_layout=layout))
 
 
-def _layout_cut(fixture_dir, layout="wide_top", reactions=(), reframer=None, shots=None):
+def _layout_cut(fixture_dir, layout="wide_top", reactions=(), reframer=None, shots=None,
+                segments=None):
     from autoraffkat.reactions import Reaction
 
     tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
     xml = build_multicam_fcpxml(
         tl,
-        [Segment("WIDE", "Laaja", 0.0, 4.0),
-         Segment("CLOSE_A", "Host", 4.0, 12.0),
-         Segment("CLOSE_B", "Guest", 12.0, 30.0),
-         Segment("WIDE", "Laaja", 30.0, 36.0)],
+        segments or [Segment("WIDE", "Laaja", 0.0, 4.0),
+                     Segment("CLOSE_A", "Host", 4.0, 12.0),
+                     Segment("CLOSE_B", "Guest", 12.0, 30.0),
+                     Segment("WIDE", "Laaja", 30.0, 36.0)],
         [("host Track1", "Host"), ("guest Track2", "Guest")],
         Fraction(0), Fraction(36), "Asettelutesti",
         source="multicam.fcpxml", roles=_roles_for(tl),
@@ -2096,3 +2098,104 @@ def test_layout_reactions_replace_the_closeup_panel_not_the_wide(fixture_dir):
     # Ei pinon neliöitä: yhdelläkään kuvalla ei ole 21,875 %:n rajausta.
     for crop in root.iter("crop-rect"):
         assert abs(float(crop.get("left")) - 21.875) > 0.5
+
+
+# ------------------------------------------------------- automaattinen asettelu
+
+
+@pytest.fixture
+def auto_numbers(monkeypatch):
+    """Automaattisen asettelun makuarvot testin omiksi: pito 10 s, jakso
+    vähintään 10 s. Kuvat 6 + 6 s ovat vuorottelua ja 24 s on pito."""
+    from autoraffkat import autolayout
+
+    monkeypatch.setattr(autolayout, "HOLD", 10.0)
+    monkeypatch.setattr(autolayout, "MIN_RUN", 10.0)
+
+
+_AUTO_SEGMENTS = [Segment("CLOSE_B", "Guest", 0.0, 6.0),
+                  Segment("CLOSE_A", "Host", 6.0, 12.0),
+                  Segment("CLOSE_A", "Host", 12.0, 36.0)]
+
+
+def test_auto_layout_changes_with_the_situation(fixture_dir, auto_numbers):
+    """Vuorottelu 0–12 s: paneelit (``none``-konformi, rajaus). Pito 12–36 s:
+    kuva täyttää ruudun (``fill``). Spine katkeaa asettelun rajalla vaikka
+    kulma on sama molemmin puolin: yhdistäminen söisi vaihdon."""
+    _, xml = _layout_cut(fixture_dir, "auto", segments=_AUTO_SEGMENTS)
+    clips = ET.fromstring(xml).findall(".//spine/mc-clip")
+    kinds = []
+    for clip in clips:
+        source = next(s for s in clip.findall("mc-source") if s.get("srcEnable") != "audio")
+        conform = source.find("adjust-conform")
+        kinds.append((float(parse_time(clip.get("offset"))),
+                      conform.get("type") if conform is not None else None))
+    early = [t for off, t in kinds if off < 12]
+    late = [t for off, t in kinds if off >= 12]
+    assert early and set(early) == {"none"}
+    assert late and set(late) == {"fill"}
+    # Sama kulma (CLOSE_A) 6–12 s ja 12–36 s: kaksi eri klippiä, ei yhtä.
+    assert any(off == 12 for off, _t in kinds)
+
+
+def test_auto_layout_writes_the_wide_only_for_the_exchange(fixture_dir, auto_numbers):
+    """Laaja on lanella 1 vain vuorottelun ajan: 12 sekuntia, ei koko jaksoa."""
+    _, xml = _layout_cut(fixture_dir, "auto", segments=_AUTO_SEGMENTS)
+    wides = [c for c in ET.fromstring(xml).iter("mc-clip")
+             if c.get("lane") == "1" and "laaja" in (c.get("name") or "").lower()]
+    assert len(wides) == 1
+    assert parse_time(wides[0].get("duration")) == Fraction(12)
+
+
+def test_auto_layout_asks_the_reframer_with_the_right_frame(fixture_dir, auto_numbers):
+    """Paneelijaksolla paneelin kehys, pitoon koko ruudun (``None`` = oletus)."""
+    stub = _StubReframer(scale=1.0, pos_x=0.0)
+    _layout_cut(fixture_dir, "auto", segments=_AUTO_SEGMENTS, reframer=stub)
+    assert (1080, 1312) in stub.frames
+    assert None in stub.frames
+    for (_key, t0, _t1), frame in zip(stub.calls, stub.frames, strict=True):
+        assert (frame == (1080, 1312)) == (t0 < 12.0)
+
+
+def test_auto_layout_reactions_follow_their_host(fixture_dir, auto_numbers):
+    """Vuorottelun keskellä reaktio vaihtaa alapaneelin (lane 2); pidon
+    aikana se on neliöpinon toinen puoli (lane 1, 21,875 %:n rajaus)."""
+    _, xml = _layout_cut(fixture_dir, "auto", segments=_AUTO_SEGMENTS,
+                         reactions=[("Guest", 8.0, 9.6, 2.1), ("Guest", 20.0, 21.6, 2.1)])
+    reactions = sorted(
+        (c for c in ET.fromstring(xml).iter("mc-clip") if "reaktio" in (c.get("name") or "")),
+        key=lambda c: parse_time(c.get("offset")))
+    assert [c.get("lane") for c in reactions] == ["2", "1"]
+    exchange, hold = (c.find("mc-source/adjust-crop/crop-rect") for c in reactions)
+    assert abs(float(exchange.get("left")) - 21.875) > 0.5      # paneeli, ei neliö
+    assert abs(float(hold.get("left")) - 21.875) < 0.01          # pinon neliö
+
+
+def test_auto_layout_records_panels_only_where_they_are_drawn(fixture_dir, auto_numbers):
+    shots = []
+    _layout_cut(fixture_dir, "auto", segments=_AUTO_SEGMENTS, shots=shots)
+    base = [s for s in shots if s.lane == 0 and s.path]
+    assert base
+    for shot in base:
+        assert (shot.panel is not None) == (shot.start < 12 * 25)
+        assert (shot.partner is not None) == (shot.panel is not None)
+
+
+def test_auto_layout_needs_a_named_wide(fixture_dir, auto_numbers):
+    """Ilman laajaa ei ole mitä näyttää ylhäällä: kaikki jää yhdeksi kuvaksi."""
+    from autoraffkat.model import ROLE_CLOSE, ROLE_MIC, TrackConfig
+
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    from autoraffkat.analysis import resolve_roles
+
+    roles = resolve_roles(tl, {
+        "CLOSE_A": TrackConfig(role=ROLE_CLOSE, speaker="Host"),
+        "CLOSE_B": TrackConfig(role=ROLE_CLOSE, speaker="Guest"),
+        "host Track1": TrackConfig(role=ROLE_MIC, speaker="Host"),
+        "guest Track2": TrackConfig(role=ROLE_MIC, speaker="Guest"),
+    })
+    xml = build_multicam_fcpxml(
+        tl, _AUTO_SEGMENTS, [("host Track1", "Host"), ("guest Track2", "Guest")],
+        Fraction(0), Fraction(36), "Ilman laajaa", source="multicam.fcpxml", roles=roles,
+        settings=_layout_settings("auto"), reframer=_StubReframer(scale=1.0, pos_x=0.0))
+    assert 'type="none"' not in xml

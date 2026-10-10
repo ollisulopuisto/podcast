@@ -347,8 +347,13 @@ class Reframer:
         extra: float = 1.0,
         off_axis: bool = False,
         own: bool = False,
+        frame: tuple[int, int] | None = None,
     ) -> Reframe | None:
         """Kehys yhdelle klipille: mediaanikasvo klipin omilta riveiltä.
+
+        ``frame`` ohittaa kehystäjän oman kehyksen tämän kysymyksen ajaksi:
+        automaattisessa asettelussa samaa kehystäjää kysytään koko ruudun
+        ja paneelin mitoilla vuorotellen.
 
         ``t0``/``t1`` ovat aikajanan sekunteja; ne käännetään tiedoston
         sekunteiksi sijoituksen kautta (``file_time_at``), ja taulukon
@@ -362,8 +367,9 @@ class Reframer:
         keskipisteen ympäri, joten 100 %:lle laskettu sijainti veisi
         sivussa olevat kasvot zoomatessa pois keskiviivalta.
         """
+        frame = frame or self.frame
         if item.key in self.crowd:
-            return self._crowd_shot(item, t0, t1, focus, headroom, extra)
+            return self._crowd_shot(item, t0, t1, focus, headroom, extra, frame)
         table = self.tables.get(item.key)
         if table is None or "x" not in table or not item.width or not item.height:
             return None
@@ -412,7 +418,7 @@ class Reframer:
             # sivussa, ja pusku keskipisteen ympäri söi vielä ~20 px
             # (Mikko 148, 51, 117, 180, 182: 15–29 px reunasta, video files
             # a6d8732).
-            keep_pad=FACE_MARGIN if lead else KEEP_PAD, frame=self.frame,
+            keep_pad=FACE_MARGIN if lead else KEEP_PAD, frame=frame,
         )
 
 
@@ -428,7 +434,8 @@ class Reframer:
         return level_at(xs, middle), level_at(ys, middle)
 
     def _crowd_shot(self, item, t0: float, t1: float, focus: str,
-                    headroom: float = 1.0, extra: float = 1.0) -> Reframe | None:
+                    headroom: float = 1.0, extra: float = 1.0,
+                    frame: tuple[int, int] | None = None) -> Reframe | None:
         """Laaja tai ryhmäkuva: puhujan kasvoille, naapurit kokonaan sisään tai ulos.
 
         Ilman puhujaa (päätykuva, tauko) tai kun puhuja ei ole tässä
@@ -464,7 +471,7 @@ class Reframer:
         zoom *= extra
         return plan_shot(x, y, item.width, item.height, zoom=zoom,
                          eyeline=self.look.eyeline, face_w=seat.w, others=others,
-                         keep=keep, headroom=headroom, frame=self.frame)
+                         keep=keep, headroom=headroom, frame=frame or self.frame)
 
 
 def focus_segments(segments: list, grid, crowd: dict[str, list[int]],

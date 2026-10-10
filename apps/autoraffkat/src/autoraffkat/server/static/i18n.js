@@ -86,6 +86,8 @@ const STRINGS = {
     'layout.wideTopHint': 'Laaja koko leveydeltä ylhäällä, puhujan lähikuva alla.',
     'layout.wideBottom': 'Laaja alhaalla',
     'layout.wideBottomHint': 'Puhujan lähikuva ylhäällä, laaja koko leveydeltä alla.',
+    'layout.auto': 'Automaattinen',
+    'layout.autoHint': 'Pitkät puheenvuorot yhdellä kuvalla, nopea vuorottelu laaja ylhäällä, reaktiot oman kuvansa mukaan.',
     'why.vertical': 'Jokainen kuva asetetaan Spatial Conformiin «Fill», ja päälle kirjoitetaan '
       + 'mitattu kehystys. Lähikuvat tasataan: suurimmat kasvot 100 %, muut zoomataan samankokoisiksi '
       + '(enintään 110 %), joten kuva ja vastakuva vastaavat toisiaan. Laajat ja ryhmäkuvat pilkotaan '
@@ -479,6 +481,8 @@ const STRINGS = {
     'layout.wideTopHint': 'The wide across the full width on top, the speaker\'s close-up below.',
     'layout.wideBottom': 'Wide at the bottom',
     'layout.wideBottomHint': 'The speaker\'s close-up on top, the wide across the full width below.',
+    'layout.auto': 'Automatic',
+    'layout.autoHint': 'Long turns as one picture, quick exchanges with the wide on top, reactions follow their picture.',
     'why.vertical': 'Every picture is set to Spatial Conform «Fill», with a measured framing on top. '
       + 'Close-ups are evened out: the biggest face stays at 100 %, the others zoom to match (at most '
       + '110 %), so shot and reverse shot correspond. Wides and group shots are split by speaker and '

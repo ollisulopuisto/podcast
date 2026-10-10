@@ -23,11 +23,15 @@ PROJECT_H = 1920
 LAYOUT_SINGLE = "single"
 LAYOUT_WIDE_TOP = "wide_top"
 LAYOUT_WIDE_BOTTOM = "wide_bottom"
-LAYOUTS = (LAYOUT_SINGLE, LAYOUT_WIDE_TOP, LAYOUT_WIDE_BOTTOM)
+# Asettelu vaihtuu jakson mukana: ks. ``autolayout.py``. Ei paneeleita itsessään,
+# koska jokaisella kuvalla on oma asettelunsa.
+LAYOUT_AUTO = "auto"
+LAYOUTS = (LAYOUT_SINGLE, LAYOUT_WIDE_TOP, LAYOUT_WIDE_BOTTOM, LAYOUT_AUTO)
 
 # Sana jolla asettelu kirjoitetaan viennin nimeen (``project.name_tag``);
 # ``single`` ei kirjoita mitään, koska se on oletus.
-LAYOUT_TAGS = {LAYOUT_WIDE_TOP: "widetop", LAYOUT_WIDE_BOTTOM: "widebottom"}
+LAYOUT_TAGS = {LAYOUT_WIDE_TOP: "widetop", LAYOUT_WIDE_BOTTOM: "widebottom",
+               LAYOUT_AUTO: "autolayout"}
 
 # Laaja kuva on 16:9 ja täyttää leveyden. 1080 × 9/16 = 607,5; parillinen
 # korkeus 608 on lähin kokonaisluku, ja sen 0,5 px:n erolla lähde rajataan

@@ -326,7 +326,9 @@ def test_name_tag_mentions_the_layout_only_when_it_is_not_the_default(tmp_path):
     assert project.name_tag(single) == "broadcast vertical"
     assert project.name_tag(top) == "broadcast vertical widetop"
     assert project.name_tag(bottom) == "broadcast vertical widebottom"
-    for tag in (project.name_tag(top), project.name_tag(bottom)):
+    auto = ProjectSettings(globals=Globals(vertical=True, vertical_layout="auto"))
+    assert project.name_tag(auto) == "broadcast vertical autolayout"
+    for tag in (project.name_tag(top), project.name_tag(bottom), project.name_tag(auto)):
         written = project.next_output_path(str(tmp_path / "jakso.fcpxml"), tag)
         assert pick._is_output(written)
     # Asettelu ilman pystyvientiä ei vaikuta mihinkään.

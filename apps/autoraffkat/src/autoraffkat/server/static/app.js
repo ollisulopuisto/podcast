@@ -125,6 +125,7 @@ const VERTICAL_LAYOUTS = () => [
   ['single', T('layout.single'), T('layout.singleHint')],
   ['wide_top', T('layout.wideTop'), T('layout.wideTopHint')],
   ['wide_bottom', T('layout.wideBottom'), T('layout.wideBottomHint')],
+  ['auto', T('layout.auto'), T('layout.autoHint')],
 ];
 
 let state = null;               // /api/state

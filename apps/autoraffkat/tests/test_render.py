@@ -529,3 +529,26 @@ def test_the_wide_panel_can_be_below(tmp_path):
     frame = _frame(out, 25)
     assert abs(np.flatnonzero(frame[300] > 128).mean() - 540) < 3
     assert abs(np.flatnonzero(frame[1600] > 128).mean() - 1300 * 1080 / 1918.4) < 3
+
+
+@needs_ffmpeg
+def test_a_programme_can_switch_between_a_full_screen_picture_and_panels(tmp_path):
+    """Automaattinen asettelu: ensin kuva täyttää ruudun, sitten paneelit.
+    Sama kuvajono, kaksi eri rakennetta; leikkauskohta on tarkka ja kumpikin
+    kuva on omassa asemassaan."""
+    wide, close = tmp_path / "wide.mp4", tmp_path / "close.mp4"
+    _bar_source(wide, x=1300, seconds=4)
+    _bar_source(close, x=960, seconds=4)
+    full = Shot(0, 25, str(close), 0.0, 1920, 1080, fill=True)
+    panels = _panel_shot(close, CLOSE_PANEL, start=25, end=50,
+                         partner=_panel_shot(wide, WIDE_PANEL, start=25, end=50,
+                                             file_start=1.0), file_start=1.0)
+    out = tmp_path / "out.mp4"
+    render.render_video([full, panels], 1080, 1920, render.Fraction(1, 25), 50, str(out))
+    first, second = _frame(out, 10), _frame(out, 40)
+    # Täysi kuva: viiva keskellä koko korkeudelta, myös ruudun yläreunassa.
+    assert abs(np.flatnonzero(first[100] > 128).mean() - 540) < 3
+    assert abs(np.flatnonzero(first[1800] > 128).mean() - 540) < 3
+    # Paneelit: ylhäällä laajan viiva, alhaalla lähikuvan.
+    assert abs(np.flatnonzero(second[300] > 128).mean() - 1300 * 1080 / 1918.4) < 3
+    assert abs(np.flatnonzero(second[1200] > 128).mean() - 540) < 3
