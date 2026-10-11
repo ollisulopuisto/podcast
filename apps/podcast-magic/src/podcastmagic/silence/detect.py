@@ -37,6 +37,9 @@ class TrackResult:
     # Monelta sanalta taso tosiasiassa mitattiin. Eri asia kuin «tarkistus
     # on päällä»: ilman ääntä levyllä tarkistus on päällä eikä mittaa mitään.
     words_levelled: int = 0
+    # Sanat jotka olivat käsin vaimennetun alueen sisällä (``learn``): käyttäjän
+    # oma päätös on tosi, eikä Whisperin kuulema sana avaa sitä.
+    words_hand_muted: int = 0
     missing_audio: list[str] = field(default_factory=list)
 
 
@@ -70,6 +73,13 @@ class AudioCache:
         while len(self._data) > self.MAXSIZE:
             self._data.popitem(last=False)
         return samples
+
+
+def is_muted(region) -> bool:
+    """Onko alue vaimennettu: ``Muted="True"`` (käsin tai aiemmasta ajosta)."""
+    elem = getattr(region, "elem", None)
+    value = elem.get("Muted") if elem is not None else None
+    return str(value or "").strip().lower() in ("1", "true")
 
 
 def region_words(session: Session, region: RegionInfo):
@@ -233,11 +243,19 @@ def speech_intervals(
     cache: AudioCache | None = None,
     extra_dir: str = "",
     dominance=None,
+    calibration=None,
 ) -> TrackResult:
     """Yhden raidan puhejaksot aikajanalla.
 
     ``dominance`` on ``dominant_words``in tälle raidalle antama lista: tosi
     siellä missä sana on omaa puhetta. Ilman sitä käyttäydytään kuten ennen.
+
+    ``calibration`` (``calibrate.Calibration``) on tämän raidan käsin
+    vaimennetuista alueista opittu kynnys: kun siinä on kynnys, sana jonka taso
+    jää sen alle on hiljainen, pohja + herkkyys -sääntö jää käyttämättä.
+    Ilman kynnystä (ei opittu) raita ajetaan tavallisella säännöllä. Kun
+    ``settings.learn`` on päällä, käsin vaimennetun alueen sanat eivät avaa
+    sitä: ne lasketaan mutta eivät koskaan päädy kuuluviin jaksoihin.
     """
     result = TrackResult(name=track.name)
     cache = cache or AudioCache()
@@ -245,9 +263,16 @@ def speech_intervals(
     floors: dict[str, float] = {}
 
     for region in track.regions:
+        hand_muted = settings.learn and is_muted(region)
         for word, file_info, start, end in region_words(session, region):
             index = result.words_seen
             result.words_seen += 1
+
+            # Käyttäjän oma vaimennus ennen kaikkea muuta: se on tieto, ei
+            # arvaus, ja kynnys on opittu juuri tällaisista alueista.
+            if hand_muted:
+                result.words_hand_muted += 1
+                continue
 
             # Vuototarkistus ennen kynnystä: se on tarkempi vastaus samaan
             # kysymykseen, ja lukema kertoo kumpi sanan pudotti.
@@ -274,7 +299,11 @@ def speech_intervals(
                         if path not in floors:
                             floors[path] = noise_floor_of(samples)
                         level = audio_io.dbfs(samples, word.start, word.end)
-                        if level < floors[path] + settings.sensitivity:
+                        if calibration is not None and calibration.threshold is not None:
+                            limit = calibration.threshold
+                        else:
+                            limit = floors[path] + settings.sensitivity
+                        if level < limit:
                             result.words_quiet += 1
                             continue
 

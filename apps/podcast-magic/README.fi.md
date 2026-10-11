@@ -193,6 +193,32 @@ takia: tiedon puute ei ole päätös vaientaa. Sama sääntö kuin puuttuvalla
 tiedostolla. Yhdellä raidalla ei ole mihin verrata, joten vertailua ei ajeta
 ja se sanotaan lokissa.
 
+### Kynnyksen oppiminen omista vaimennuksista
+
+Esivalinta **Opi omista vaimennuksistani** (tai valintaruutu *Opi kynnys käsin
+vaimennetuista kohdista*) korvaa «pohja + herkkyys» -säännön sillä, mitä olet
+ohjelmalle näyttänyt. Avaa litteroitu istunto Hindenburgissa, vaimenna alun
+minuutin tai parin kohdat joissa kukaan ei puhu, tallenna ja aja. Ohjelma
+mittaa jokaisen raidan vaimennettujen kohtien tason sanan mittaisilla
+ikkunoilla ja käyttää siitä korkeaa persentiiliä (90., ja päälle 1 dB)
+kynnyksenä: raidan omaa vaimennettua ainesta hiljaisempi sana ei ole puhetta.
+
+Vaimennetut kohdat eivät ole yksi luku. Niissä on huoneen hälyä, toisen
+puhujan vuotoa — ja yskäisyjä, naurua, tuolin kolahduksia. Maksimi olisi
+yskäisy ja vaientaisi kaiken muun paitsi huutamisen; persentiili ohittaa
+harvinaiset piikit niin kauan kuin ne ovat alle kymmenesosa vaimennetusta
+ajasta. Kynnys, joka osuu raidan vaimentamattoman puheen tasolle (sen
+hiljaisin neljännes, 3 dB:n sisällä), hylätään ja syy kirjoitetaan lokiin,
+koska se tarkoittaa että puhetta on vaimennettu vahingossa ja tulos leikkaisi
+kaiken. Raita jolla on alle 3 s vaimennettua ääntä tai ei lainkaan ajetaan
+tavallisella säännöllä ja se sanotaan. Istunto jossa ei ole yhtään vaimennettua
+kohtaa pysähtyy selitykseen sen sijaan että ajaisi kuin olisi oppinut jotain.
+
+Käsin vaimentamasi kohdat pysyvät vaiti: Whisperin niissä kuulemat sanat eivät
+avaa niitä uudestaan. Luvut (90, 1 dB, 0,3 s:n ikkunat, 3 s, 3 dB) ovat
+makuasioita eivätkä mittauksia, ja ne ovat tiedostossa `silence/calibrate.py`;
+katso ensimmäisen oikean istunnon loki.
+
 Sama päätös samasta mittauksesta kuin autoraffkatin ``duck_dominance_db``,
 jossa se ohjaa vaimennusta eikä vaientamista.
 

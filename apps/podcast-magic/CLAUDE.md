@@ -140,6 +140,33 @@ liu'utettavan vahvistuskäyrän ruudukolla; tämä antaa sanakohtaisen kyllä/ei
 koska vaimennus tarvitsee tiedon siitä mikä alue jää auki. Jos ero katoaa,
 tämä kuuluu `speechmix`iin — se ei kuulu sinne ennen sitä.
 
+## Kynnys voidaan opettaa käsin vaimennetuista alueista
+
+`silence/calibrate.py`: käyttäjä vaimentaa Hindenburgissa alun minuutin tai
+parin kohdat joissa kukaan ei puhu, ja ohjelma käyttää niiden tasoa raidan
+kynnyksenä pohja + herkkyys -säännön sijaan (`Settings.learn`, esivalinta
+`learned`). Kolme asiaa, jotka on helppo tehdä väärin:
+
+* **Taso ei ole yksi luku.** Vaimennetussa alueessa on kohinaa, vuotoa ja
+  yskäisyjä. Maksimi on yskäisy; korkea persentiili (`PERCENTILE`) ohittaa
+  piikit kunhan niitä on alle 100 − `PERCENTILE` prosenttia. Mitataan sanan
+  mittaisilla ikkunoilla samalla `audio.dbfs`:llä kuin sana, muuten luvut
+  eivät ole vertailukelpoisia.
+* **Opittu kynnys tarkistetaan puhetta vasten.** Vahingossa vaimennettu
+  puhe antaa kynnyksen joka vaientaa kaiken, ja liikaa vaimennettu on
+  pahempi virhe kuin liian vähän. Kynnys joka ei jää vaimentamattomien
+  sanojen hiljaisimman neljänneksen (`GUARD_DB`) alle hylätään ja syy
+  kirjoitetaan lokiin; raita ajetaan tavallisella säännöllä.
+* **Käsin vaimennettu alue pysyy vaiti.** `speech_intervals` ohittaa
+  sanat jotka ovat `Muted`-alueen sisällä kun `learn` on päällä, muuten
+  `split_track` avaisi alueen uudestaan jos Whisper kuuli siinä sanan. Ilman
+  `learn`ia käytös on ennallaan.
+
+Luvut (`PERCENTILE`, `MARGIN_DB`, `WINDOW`, `MIN_SECONDS`, `GUARD_DB`) ovat
+makuarvoja, ei mittauksia. Istunto jossa ei ole yhtään vaimennettua aluetta
+pysähtyy virheeseen eikä aja kuin olisi oppinut: ominaisuus joka ei
+tuottanut mitään sanoo sen.
+
 ## Kaksi säädintä sulkee taukoja, ja suurempi ratkaisee
 
 `audible_zones` sulkee tauon jos se on lyhyempi kuin `gap` **tai** lyhyempi
