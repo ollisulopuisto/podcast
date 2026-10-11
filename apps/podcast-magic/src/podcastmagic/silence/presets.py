@@ -58,19 +58,25 @@ class Settings:
     # Sama luku kuin maskeilla, samasta mittauksesta: sama päätös samasta
     # äänestä pitää tehdä samoin, ja nyt myös samasta paikasta luettuna.
     dominance: float = masks.DUCK_DOMINANCE_DB
+    # Opi kynnys istunnon käsin vaimennetuista alueista (``calibrate.py``):
+    # tason tarkistus käyttää pohja + herkkyys -säännön sijaan niiden tasoa.
+    # Vaatii tason tarkistuksen, joten ``learn`` laittaa ``rms``:n päälle.
+    learn: bool = False
 
     @classmethod
     def from_dict(cls, raw: dict | None) -> "Settings":
         raw = raw or {}
         base = cls()
+        learn = bool(raw.get("learn", base.learn))
         return cls(
             tail=_clamp(_number(raw.get("tail"), base.tail), 0.0, 5.0),
             gap=_clamp(_number(raw.get("gap"), base.gap), 0.0, 5.0),
-            rms=bool(raw.get("rms", base.rms)),
+            rms=bool(raw.get("rms", base.rms)) or learn,
             sensitivity=_clamp(
                 _number(raw.get("sensitivity"), base.sensitivity), 0.0, 24.0
             ),
             dominance=_clamp(_number(raw.get("dominance"), base.dominance), 0.0, 60.0),
+            learn=learn,
         )
 
     def to_dict(self) -> dict:
@@ -101,6 +107,10 @@ PRESETS: dict[str, Settings] = {
     "remote": Settings(tail=1.0, gap=1.0, rms=False),
     # Sama huone: tässä vertailu raitojen välillä on koko ratkaisu.
     "bleed": Settings(tail=0.4, gap=0.4, rms=True),
+    # Kynnys opitaan siitä mitä käyttäjä on istunnon alussa itse vaimentanut.
+    # Muuten kuin `bleed`: sama huone, mutta ei arvausta siitä mikä taso on
+    # puhetta.
+    "learned": Settings(tail=0.4, gap=0.4, rms=True, learn=True),
 }
 
 DEFAULT_PRESET = "remote"

@@ -182,6 +182,54 @@ comparison does not run and says so in the log.
 This is the same decision, from the same measurement, as `duck_dominance_db`
 in autoraffkat — where it drives ducking rather than muting.
 
+### Learning the threshold from your own muting
+
+The preset **Learn from my own muting** (or the checkbox *Learn the threshold
+from hand-muted stretches*) replaces "noise floor + sensitivity" with what you
+have shown the program. Open the transcribed session in Hindenburg, mute the
+stretches in the first minute or two where nobody talks, save, and run. For
+each track the program measures the level of its muted stretches, in windows
+as long as a word, and uses a high percentile of that (90th, plus 1 dB) as
+the threshold: a word quieter than the track's own muted material is not
+speech.
+
+Muted stretches are never one number. They hold room noise, the other
+person's bleed — and coughs, laughs, a chair. A maximum would be the cough
+and silence nothing but shouting; a percentile ignores the rare spikes as long
+as they are under a tenth of the muted time. A threshold that lands at the
+level of the track's unmuted speech (its quietest quarter, within 3 dB) is
+refused with the reason in the log, because it means speech was muted by
+mistake and the result would cut everything. A track with under 3 s of muted
+audio, or none, runs on the usual rule and says so. A session with no muted
+stretch at all stops with an explanation instead of running as if it had
+learned something.
+
+Stretches you muted by hand stay muted: words Whisper heard inside them do not
+open them again. The numbers (90, 1 dB, 0.3 s windows, 3 s, 3 dB) are taste,
+not measurements, and live in `silence/calibrate.py`; check the log of the
+first real session.
+
+### Sidechain: what the other tracks tell
+
+Your edits say more than the muted stretches alone. Only the time up to the end
+of your last muted region counts as edited. Inside it, two things are read off
+the other tracks:
+
+* **Muted while someone else speaks.** When track B is muted and track A has an
+  unmuted word at the same moment, B's level there is bleed. It raises B's
+  threshold (the same 90th percentile, needs 4 windows or more), and the
+  difference between A's and B's level becomes B's *dominance margin*: B opens
+  only when it is within that many dB of the loudest track.
+* **Not muted while someone else speaks.** B's unmuted words are speech even
+  when A talks too, so B's threshold is never set above the quietest of them
+  (minus 0.5 dB). Overlapping speech stays in.
+
+The margin is the midpoint of the 95th percentile of B's speech gaps and the
+10th percentile of its bleed gaps. If the two overlap, the speech side wins
+(speech gap + 1 dB) and the log says `erotu`. A track with no bleed evidence
+gets no margin. The log lists threshold, margin and what was clamped for each
+track.
+
 ## When the script view's cursor sticks
 
 Hindenburg has two views on the same transcription. The timeline draws the

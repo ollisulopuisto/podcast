@@ -140,6 +140,55 @@ liu'utettavan vahvistuskäyrän ruudukolla; tämä antaa sanakohtaisen kyllä/ei
 koska vaimennus tarvitsee tiedon siitä mikä alue jää auki. Jos ero katoaa,
 tämä kuuluu `speechmix`iin — se ei kuulu sinne ennen sitä.
 
+## Kynnys voidaan opettaa käsin vaimennetuista alueista
+
+`silence/calibrate.py`: käyttäjä vaimentaa Hindenburgissa alun minuutin tai
+parin kohdat joissa kukaan ei puhu, ja ohjelma käyttää niiden tasoa raidan
+kynnyksenä pohja + herkkyys -säännön sijaan (`Settings.learn`, esivalinta
+`learned`). Kolme asiaa, jotka on helppo tehdä väärin:
+
+* **Taso ei ole yksi luku.** Vaimennetussa alueessa on kohinaa, vuotoa ja
+  yskäisyjä. Maksimi on yskäisy; korkea persentiili (`PERCENTILE`) ohittaa
+  piikit kunhan niitä on alle 100 − `PERCENTILE` prosenttia. Mitataan sanan
+  mittaisilla ikkunoilla samalla `audio.dbfs`:llä kuin sana, muuten luvut
+  eivät ole vertailukelpoisia.
+* **Opittu kynnys tarkistetaan puhetta vasten.** Vahingossa vaimennettu
+  puhe antaa kynnyksen joka vaientaa kaiken, ja liikaa vaimennettu on
+  pahempi virhe kuin liian vähän. Kynnys joka ei jää vaimentamattomien
+  sanojen hiljaisimman neljänneksen (`GUARD_DB`) alle hylätään ja syy
+  kirjoitetaan lokiin; raita ajetaan tavallisella säännöllä.
+* **Käsin vaimennettu alue pysyy vaiti.** `speech_intervals` ohittaa
+  sanat jotka ovat `Muted`-alueen sisällä kun `learn` on päällä, muuten
+  `split_track` avaisi alueen uudestaan jos Whisper kuuli siinä sanan. Ilman
+  `learn`ia käytös on ennallaan.
+
+### Sidechain
+
+Muiden raitojen vaimennukset ovat todiste samalta ajalta (`horizon`: viimeisen
+vaimennetun alueen loppu; sen jälkeen ei tiedetä mitään). Kaksi suuntaa:
+
+* **Vuoto.** Raita B vaimennettu ja jollain toisella raidalla vaimentamaton
+  sana aktiivisena: B:n taso on vuotoa (`MIN_BLEED_FRAMES` ikkunaa nostaa
+  kynnystä) ja `loudest_other − own` on vuotoero.
+* **Puhe.** B:n vaimentamattomat sanat horisontissa, kun muut ovat aktiivisia
+  (`MIN_SPEECH_WORDS` sanaa): puheero. Kynnys ei saa ylittää hiljaisinta
+  vaimentamatonta sanaa (`KEEP_MARGIN_DB`), koska usealla voi puhua yhtä aikaa
+  eikä vaimentamattomuus ole tilaa jossa puhe on jo tapahtunut.
+
+`Calibration.dominance` on puheerojen p95 (`SPEECH_GAP_PERCENTILE`) ja
+vuotoerojen p10 (`BLEED_GAP_PERCENTILE`) puoliväli. Jos ne menevät
+päällekkäin, puhe voittaa (`GAP_MARGIN_DB`) ja `gap_note` on «erotu»; jos
+puhenäytteitä ei ole, raja on vuotoero miinus 2 dB. `dominant_words` ottaa
+rajan raitakohtaisena taulukkona (`margins`; `inf` = sääntö pois). Raja
+opitaan riippumatta siitä hylättiinkö kynnys.
+
+Luvut (`PERCENTILE`, `MARGIN_DB`, `WINDOW`, `MIN_SECONDS`, `GUARD_DB`,
+`MIN_BLEED_FRAMES`, `MIN_SPEECH_WORDS`, `BLEED_GAP_PERCENTILE`,
+`SPEECH_GAP_PERCENTILE`, `GAP_MARGIN_DB`, `KEEP_MARGIN_DB`) ovat
+makuarvoja, ei mittauksia. Istunto jossa ei ole yhtään vaimennettua aluetta
+pysähtyy virheeseen eikä aja kuin olisi oppinut: ominaisuus joka ei
+tuottanut mitään sanoo sen.
+
 ## Kaksi säädintä sulkee taukoja, ja suurempi ratkaisee
 
 `audible_zones` sulkee tauon jos se on lyhyempi kuin `gap` **tai** lyhyempi

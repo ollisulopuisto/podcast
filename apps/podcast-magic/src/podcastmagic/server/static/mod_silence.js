@@ -18,6 +18,7 @@
       rms: root.querySelector('#si-rms').checked,
       sensitivity: Number(root.querySelector('#si-sensitivity').value),
       dominance: Number(root.querySelector('#si-dominance').value),
+      learn: root.querySelector('#si-learn').checked,
     };
   }
 
@@ -122,6 +123,15 @@
             PM.el('span', { class: 'why', text: PM.t('si.rmsWhy') }),
           ]),
         ]),
+        /* Opi kynnys istunnon käsin vaimennetuista alueista: tason tarkistus
+           käyttää niiden tasoa pohja + herkkyys -säännön sijaan. */
+        PM.el('label', { class: 'check' }, [
+          PM.el('input', { type: 'checkbox', id: 'si-learn', ...(saved.learn ? { checked: true } : {}) }),
+          PM.el('span', { class: 'body' }, [
+            PM.el('span', { text: PM.t('si.learn') }),
+            PM.el('span', { class: 'why', text: PM.t('si.learnWhy') }),
+          ]),
+        ]),
         // 0–24 dB pohjan yli. Ylärajaksi 24 samasta syystä kuin
         // `dominance`illa: sitä leveämpi kaista ei enää erottele mitään.
         slider('si-sensitivity', PM.t('si.sensitivity'), PM.t('si.sensitivityWhy'),
@@ -149,6 +159,7 @@
           input.dispatchEvent(new Event('input'));
         }
         root.querySelector('#si-rms').checked = preset.rms;
+        root.querySelector('#si-learn').checked = !!preset.learn;
         state.settings = values(root);
         schedule(root);
       });
@@ -191,7 +202,8 @@
         && Math.abs(preset.gap - settings.gap) < 0.001
         && Math.abs(preset.sensitivity - settings.sensitivity) < 0.001
         && Math.abs(preset.dominance - settings.dominance) < 0.001
-        && !!preset.rms === !!settings.rms;
+        && !!preset.rms === !!settings.rms
+        && !!preset.learn === !!settings.learn;
       if (same) return name;
     }
     return 'custom';

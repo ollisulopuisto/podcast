@@ -8,6 +8,7 @@ from .. import nhsx
 from ..jobs import Progress
 from ..nhsx.write import next_free_path
 from .apply import audible_zones, has_region_children, split_track
+from .calibrate import calibrate
 from .detect import AudioCache, dominant_words, speech_intervals
 from .presets import Settings
 
@@ -75,7 +76,9 @@ def run(
             "vaimennus lukee puhejaksot sanojen aikaleimoista."
         )
 
-    if settings.rms:
+    if settings.learn:
+        progress.log("Tason tarkistus päällä, kynnys opitaan käsin vaimennetuista alueista")
+    elif settings.rms:
         progress.log(
             f"Tason tarkistus päällä, herkkyys {settings.sensitivity:.0f} dB "
             "raidan oman pohjakohinan yli"
@@ -85,12 +88,51 @@ def run(
 
     cache = AudioCache()
 
+    # Kynnys opitaan istunnon käsin vaimennetuista alueista ennen raitojen
+    # kierrosta. Ilman yhtään vaimennettua aluetta ei ole mitä oppia, ja se
+    # sanotaan: tulos olisi muuten tavallinen ajo vaikka käyttöliittymä
+    # lupasi opitun kynnyksen.
+    calibrations = {}
+    if settings.learn:
+        calibrations = calibrate(session, cache, extra_dir)
+        if not any(c.muted_seconds > 0 for c in calibrations.values()):
+            raise RuntimeError(
+                "Istunnossa ei ole yhtään käsin vaimennettua aluetta, josta "
+                "kynnyksen voisi oppia. Avaa istunto Hindenburgissa, vaimenna "
+                "alun minuutin tai parin kohdat joissa kukaan ei puhu, tallenna, "
+                "ja aja uudestaan. Mitään ei kirjoitettu."
+            )
+        for name, found in calibrations.items():
+            if found.threshold is not None:
+                progress.log(
+                    f"  {name}: kynnys {found.threshold:.1f} dBFS opittu "
+                    f"{found.muted_seconds:.0f} sekunnista vaimennettua ääntä"
+                )
+                if found.clamp_note:
+                    progress.log(f"    {found.clamp_note}")
+                if found.dominance is not None:
+                    progress.log(
+                        f"    ero-raja {found.dominance:.1f} dB opittu: vuoto "
+                        f"{found.bleed_gap:.1f} dB, puhe "
+                        + (f"{found.speech_gap:.1f} dB" if found.speech_gap is not None
+                           else "ei mitattu")
+                    )
+                if found.gap_note:
+                    progress.log(f"    {found.gap_note}")
+            else:
+                progress.log(
+                    f"  {name}: kynnystä ei opittu ({found.reason}) — "
+                    "käytetään pohjaa + herkkyyttä"
+                )
+
     # Vuotovertailu ennen raitojen kierrosta, koska se on raitojen välinen
     # kysymys: sana kuuluu sille jonka mikillä se on kovimmillaan. Yhden
     # raidan silmukka ei voi vastata siihen, koska se ei näe muita.
     dominance = {}
-    if settings.rms and settings.dominance > 0:
-        dominance = dominant_words(session, settings, cache, extra_dir)
+    margins = {name: c.dominance for name, c in calibrations.items()
+               if c.dominance is not None}
+    if settings.rms and (settings.dominance > 0 or margins):
+        dominance = dominant_words(session, settings, cache, extra_dir, margins=margins)
         if dominance:
             progress.log(
                 f"Vuotovertailu päällä, kaista {settings.dominance:.0f} dB "
@@ -117,6 +159,7 @@ def run(
         result = speech_intervals(
             session, track, settings, cache, extra_dir,
             dominance=dominance.get(track.name),
+            calibration=calibrations.get(track.name),
         )
 
         if result.words_seen == 0:
@@ -147,6 +190,8 @@ def run(
         heard, muted = split_track(track.elem, zones)
         quiet_note = f", {result.words_quiet} liian hiljaista" if settings.rms else ""
         bled_note = f", {result.words_bled} vuotoa" if result.words_bled else ""
+        if result.words_hand_muted:
+            bled_note += f", {result.words_hand_muted} käsin vaimennettua"
         progress.log(
             f"  {track.name}: {result.words_seen} sanaa{quiet_note}{bled_note} → "
             f"{len(zones)} kuuluvaa jaksoa, {heard} palaa auki ja {muted} vaiti"
