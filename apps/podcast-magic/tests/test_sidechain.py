@@ -212,3 +212,14 @@ def test_the_run_drops_bleed_by_the_learned_gap_and_says_so(separable):
     assert audible(45.2), "päällekkäinen puhe vaimeni"
     assert audible(12.2) and audible(30.2)
     assert any("ero-raja" in line for line in job.log)
+
+
+def test_only_stretches_with_sound_on_two_channels_count_as_evidence(separable):
+    """Ollin vaimennetulla ajalla 0–10 Panu puhuu vain 2–4,5 s, ja loput
+    (esim. intro tai tauko, jolloin ääntä on yhdellä kanavalla tai ei yhdelläkään)
+    eivät ole todiste mistään. Vuotokehyksiä on siis vain puheen aikaiset
+    (2,5 s ÷ 0,15 s askel ≈ 17), ei 10 s ÷ 0,15 s ≈ 66, ja vuodon ero on
+    vuodon eikä hiljaisuuden ero."""
+    found = calibrate.calibrate(nhsx.read(separable), AudioCache())["Olli"]
+    assert 10 <= found.bleed_frames <= 20, found.bleed_frames
+    assert found.bleed_gap == pytest.approx(20.0, abs=1.0)
