@@ -108,6 +108,17 @@ def run(
                     f"  {name}: kynnys {found.threshold:.1f} dBFS opittu "
                     f"{found.muted_seconds:.0f} sekunnista vaimennettua ääntä"
                 )
+                if found.clamp_note:
+                    progress.log(f"    {found.clamp_note}")
+                if found.dominance is not None:
+                    progress.log(
+                        f"    ero-raja {found.dominance:.1f} dB opittu: vuoto "
+                        f"{found.bleed_gap:.1f} dB, puhe "
+                        + (f"{found.speech_gap:.1f} dB" if found.speech_gap is not None
+                           else "ei mitattu")
+                    )
+                if found.gap_note:
+                    progress.log(f"    {found.gap_note}")
             else:
                 progress.log(
                     f"  {name}: kynnystä ei opittu ({found.reason}) — "
@@ -118,8 +129,10 @@ def run(
     # kysymys: sana kuuluu sille jonka mikillä se on kovimmillaan. Yhden
     # raidan silmukka ei voi vastata siihen, koska se ei näe muita.
     dominance = {}
-    if settings.rms and settings.dominance > 0:
-        dominance = dominant_words(session, settings, cache, extra_dir)
+    margins = {name: c.dominance for name, c in calibrations.items()
+               if c.dominance is not None}
+    if settings.rms and (settings.dominance > 0 or margins):
+        dominance = dominant_words(session, settings, cache, extra_dir, margins=margins)
         if dominance:
             progress.log(
                 f"Vuotovertailu päällä, kaista {settings.dominance:.0f} dB "

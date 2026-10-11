@@ -159,8 +159,14 @@ def dominant_words(
     settings,
     cache: AudioCache | None = None,
     extra_dir: str = "",
+    margins: dict | None = None,
 ) -> dict:
     """Raita -> onko sen jokainen sana omaa puhetta vai vuotoa.
+
+    ``margins`` (raita -> desibeliä) korvaa ``settings.dominance``in raidoille
+    joille käyttäjän vaimennuksista on opittu oma ero-raja
+    (``calibrate.Calibration.dominance``). Muilla raidoilla käytetään
+    oletusta.
 
     **Tämä on kopio, ei tuonti.** Sama päätös samalla vakiolla on jo
     ``speechmix.grid.speech_grid``issa (``DOMINANCE_DB = 6.0``,
@@ -187,7 +193,8 @@ def dominant_words(
     Tyhjä tulos tarkoittaa «sääntöä ei sovelleta»: yksi raita, ei sanoja,
     tai ``dominance`` nollassa. Yhdellä mikillä ei ole mihin verrata.
     """
-    if settings.dominance <= 0 or len(session.tracks) < 2:
+    margins = margins or {}
+    if (settings.dominance <= 0 and not margins) or len(session.tracks) < 2:
         return {}
     windows = probe_windows(session)
     if not windows:
@@ -227,7 +234,12 @@ def dominant_words(
     # jakso on pahempi virhe kuin liian vähän vaimennettu, koska
     # jälkimmäisen kuulee kerran ja edellisestä puuttuu puhetta.
     loudest = np.where(measured, levels, -np.inf).max(axis=0)
-    keep = ~measured | (levels >= loudest - settings.dominance)
+    # Raitakohtainen kaista; ``inf`` on «sääntö pois» raidalle jolle ei ole
+    # omaa rajaa eikä oletusta.
+    margin = np.array([
+        margins.get(t.name, settings.dominance if settings.dominance > 0 else np.inf)
+        for t in session.tracks])[:, None]
+    keep = ~measured | (levels >= loudest - margin)
 
     out = {}
     for row, track in enumerate(session.tracks):

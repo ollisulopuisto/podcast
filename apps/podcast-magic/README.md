@@ -209,6 +209,27 @@ open them again. The numbers (90, 1 dB, 0.3 s windows, 3 s, 3 dB) are taste,
 not measurements, and live in `silence/calibrate.py`; check the log of the
 first real session.
 
+### Sidechain: what the other tracks tell
+
+Your edits say more than the muted stretches alone. Only the time up to the end
+of your last muted region counts as edited. Inside it, two things are read off
+the other tracks:
+
+* **Muted while someone else speaks.** When track B is muted and track A has an
+  unmuted word at the same moment, B's level there is bleed. It raises B's
+  threshold (the same 90th percentile, needs 4 windows or more), and the
+  difference between A's and B's level becomes B's *dominance margin*: B opens
+  only when it is within that many dB of the loudest track.
+* **Not muted while someone else speaks.** B's unmuted words are speech even
+  when A talks too, so B's threshold is never set above the quietest of them
+  (minus 0.5 dB). Overlapping speech stays in.
+
+The margin is the midpoint of the 95th percentile of B's speech gaps and the
+10th percentile of its bleed gaps. If the two overlap, the speech side wins
+(speech gap + 1 dB) and the log says `erotu`. A track with no bleed evidence
+gets no margin. The log lists threshold, margin and what was clamped for each
+track.
+
 ## When the script view's cursor sticks
 
 Hindenburg has two views on the same transcription. The timeline draws the

@@ -219,6 +219,27 @@ avaa niitä uudestaan. Luvut (90, 1 dB, 0,3 s:n ikkunat, 3 s, 3 dB) ovat
 makuasioita eivätkä mittauksia, ja ne ovat tiedostossa `silence/calibrate.py`;
 katso ensimmäisen oikean istunnon loki.
 
+### Sidechain: mitä muut raidat kertovat
+
+Muokkaukset kertovat enemmän kuin pelkät vaimennetut kohdat. Muokatuksi
+lasketaan vain aika viimeisen vaimennetun alueen loppuun. Sen sisällä muista
+raidoista luetaan kaksi asiaa:
+
+* **Vaimennettu kun joku muu puhuu.** Kun raita B on vaimennettu ja raidalla A
+  on samalla hetkellä vaimentamaton sana, B:n taso on vuotoa. Se nostaa B:n
+  kynnystä (sama 90. persentiili, vähintään 4 ikkunaa), ja A:n ja B:n tasojen
+  ero on B:n *dominanssiraja*: B aukeaa vain jos se on enintään sen verran
+  desibelejä kovimman raidan alapuolella.
+* **Ei vaimennettu kun joku muu puhuu.** B:n vaimentamattomat sanat ovat
+  puhetta, vaikka A puhuisi samaan aikaan, joten B:n kynnystä ei aseteta
+  hiljaisinta niistä (miinus 0,5 dB) korkeammaksi. Päällekkäinen puhe pysyy
+  mukana.
+
+Raja on B:n puheerojen 95. persentiilin ja vuotoerojen 10. persentiilin
+puolivälissä. Jos ne menevät päällekkäin, puhe voittaa (puheero + 1 dB) ja
+lokiin tulee `erotu`. Raita jolla ei ole vuotonäyttöä ei saa rajaa. Loki
+kertoo jokaisen raidan kynnyksen, rajan ja sen mitä rajattiin.
+
 Sama päätös samasta mittauksesta kuin autoraffkatin ``duck_dominance_db``,
 jossa se ohjaa vaimennusta eikä vaientamista.
 
