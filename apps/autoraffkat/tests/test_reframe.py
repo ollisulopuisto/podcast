@@ -649,3 +649,35 @@ def test_a_question_can_override_the_reframers_frame(monkeypatch):
     framer.from_item(item, 2.0, 8.0)
     assert seen == [(reframe.PROJECT_W, reframe.PROJECT_H), (1080, 1312),
                     (reframe.PROJECT_W, reframe.PROJECT_H)]
+
+
+def _face_in_frame(shot, fy, face_h, zoom, frame):
+    """Kasvolaatikon keskipiste ja korkeus kehyksen korkeuden osina."""
+    frame_w, frame_h = frame
+    shown_h = 1080 * max(frame_w / 1920, frame_h / 1080) * zoom
+    centre = 0.5 + (fy - 0.5) * shown_h / frame_h - shot.pos_y / 100
+    return centre, face_h * shown_h / frame_h
+
+
+def test_a_large_face_in_a_panel_keeps_headroom_above_the_hair():
+    """Käyttäjän ruutukaappaus 2026-10-11 (leveä ylhäällä, lähikuva alla):
+    kasvolaatikko (otsa–leuka) oli ~38 % paneelin korkeudesta ja keskipiste
+    ~30 %:ssa, joten hiukset koskivat paneelin yläreunaa. Silmälinja on
+    kameran, ei kehyksen: se oli mitattu kuvasta jossa kasvot ovat pienet.
+    Hiusten yläreunan pitää jäädä paneelin sisään, ``HEADROOM_MIN`` verran."""
+    frame = (1080, 1312)
+    shot = reframe.plan_shot(0.5, 0.30, 1920, 1080, zoom=1.6, eyeline=0.30,
+                             face_h=0.24, frame=frame)
+    centre, face = _face_in_frame(shot, 0.30, 0.24, 1.6, frame)
+    top_of_hair = centre - face / 2 - reframe.HAIR * face
+    assert top_of_hair >= reframe.HEADROOM_MIN - 1e-6, top_of_hair
+
+
+def test_a_small_face_keeps_the_cameras_own_eyeline():
+    """Täyden ruudun pienet kasvot ovat jo kaukana reunasta: sääntö ei saa
+    liikuttaa niitä."""
+    frame = (1080, 1920)
+    plain = reframe.plan_shot(0.5, 0.35, 1920, 1080, zoom=1.3, eyeline=0.35, frame=frame)
+    with_face = reframe.plan_shot(0.5, 0.35, 1920, 1080, zoom=1.3, eyeline=0.35,
+                                  face_h=0.10, frame=frame)
+    assert with_face.pos_y == plain.pos_y

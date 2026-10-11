@@ -181,7 +181,8 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
               keep: tuple[float, float] | None = None,
               headroom: float = 1.0, lead: float = 0.0,
               keep_pad: float | None = None,
-              frame: tuple[int, int] = (PROJECT_W, PROJECT_H)) -> Reframe | None:
+              frame: tuple[int, int] = (PROJECT_W, PROJECT_H),
+              face_h: float = 0.0) -> Reframe | None:
     """Yhden kuvan kehys kasvojen paikasta, täytön päälle.
 
     ``fx`` on kasvojen keskipiste lähteen leveydestä (0 = vasen reuna),
@@ -194,6 +195,12 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
     ``frame`` on kehys johon kuva täytetään: oletuksena koko projekti,
     asettelussa yhden paneelin koko. Sijainnin yksikkö on prosentti
     *kehyksen* korkeudesta, ja ``layout.window_of`` lukee sen samoin.
+
+    ``face_h`` on kasvolaatikon korkeus lähteen korkeudesta. Silmälinja on
+    mitattu kameran omasta kuvasta, jossa kasvot ovat pienet; paneelissa
+    sama kasvo voi täyttää kolmanneksen kehyksestä, ja silloin sama silmälinja
+    vie hiukset reunan yli. Kasvolaatikon keskipistettä lasketaan alas
+    niin että hiusten yläreuna jää ``HEADROOM_MIN`` kehyksen sisään.
     """
     if not width or not height:
         return None
@@ -242,11 +249,23 @@ def plan_shot(fx: float, fy: float, width: int, height: int,
     # Kuvan nosto ylös siirtää kasvoja ylös: kasvojen etäisyys keskeltä
     # (alas positiivinen) on ``(fy - 0,5) * korkeus - nosto``.
     target = fy if eyeline is None else eyeline
+    if face_h > 0:
+        face = face_h * shown_h / frame_h
+        target = max(target, HEADROOM_MIN + (0.5 + HAIR) * face)
     lift = (fy - 0.5) * shown_h - (target - 0.5) * frame_h
     lift = min(slack_y, max(-slack_y, lift))
     return Reframe(scale=float(zoom), pos_x=move_x / frame_h * 100,
                    pos_y=lift / frame_h * 100)
 
+
+# Hiusten yläreunan vähimmäisetäisyys kehyksen yläreunasta, kehyksen
+# korkeudesta, ja hiusten korkeus kasvolaatikon (otsa–leuka) yläpuolella
+# kasvolaatikon korkeudesta. Molemmat arvioita käyttäjän ruutukaappauksesta
+# 2026-10-11: laatikko ~330 px paneelin 859 px:stä (38 %), hiukset ~0,35
+# laatikon korkeudesta sen yläpuolella ja nolla tilaa reunaan. Ei mitattu
+# usealta kasvolta; tarkista seuraavasta pystyviennistä.
+HEADROOM_MIN = 0.08
+HAIR = 0.35
 
 # Puhujan kasvojen ympärille jätettävä tila, kasvon leveydestä, kun rajausta
 # siirretään naapurin takia: kasvot eivät saa päätyä reunaan kiinni.
@@ -386,11 +405,12 @@ class Reframer:
         found = table["found"]
         if int(np.count_nonzero(found)) < MIN_SAMPLES:
             return None
-        x, y, _h = _faces(table)
+        x, y, h = _faces(table)
         xs, ys = self._levels(item.key, table["times"][found], x, y)
         middle = (float(f0) + float(f1)) / 2
         fx, fy = level_at(xs, middle), level_at(ys, middle)
         face_w = float(np.median(table["w"][found]))
+        face_h = float(np.median(h))
         if own:
             # Pilkotun kuvan pala: sommittelu vaihtuu joka palassa joka
             # tapauksessa, joten pala kehystetään omien kasvojensa mukaan eikä
@@ -401,6 +421,7 @@ class Reframer:
                 fx = float(np.median(table["x"][here] + table["w"][here] / 2))
                 fy = float(np.median(1.0 - (table["y"][here] + table["h"][here] / 2)))
                 face_w = float(np.median(table["w"][here]))
+                face_h = float(np.median(table["h"][here]))
         lead = 0.0
         if off_axis and "turn" in table:
             # Katsoo oikealle (turn > 0) -> kasvot vasemmalle, tilaa oikealle.
@@ -419,6 +440,7 @@ class Reframer:
             # (Mikko 148, 51, 117, 180, 182: 15–29 px reunasta, video files
             # a6d8732).
             keep_pad=FACE_MARGIN if lead else KEEP_PAD, frame=frame,
+            face_h=face_h,
         )
 
 
@@ -471,7 +493,8 @@ class Reframer:
         zoom *= extra
         return plan_shot(x, y, item.width, item.height, zoom=zoom,
                          eyeline=self.look.eyeline, face_w=seat.w, others=others,
-                         keep=keep, headroom=headroom, frame=frame or self.frame)
+                         keep=keep, headroom=headroom, frame=frame or self.frame,
+                         face_h=h)
 
 
 def focus_segments(segments: list, grid, crowd: dict[str, list[int]],
