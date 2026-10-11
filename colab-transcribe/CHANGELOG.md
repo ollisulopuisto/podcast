@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [Unreleased]
+
+### Added
+- **`--preset learned`: the silence threshold is learned from the stretches you muted by hand** (`colab/pipeline.py`, also offered in the TUI's preset list). Mute the quiet stretches at the start of the session in Hindenburg before the run; each track's threshold is the level of its muted audio. Port of podcast-magic's `silence/calibrate.py`: threshold with leak from other tracks, the speech guard, and the cap from words you left unmuted. Hand-muted regions stay muted. The levels are measured with the same ffmpeg decode and RMS as podcast-magic, once per file. A session with no muted region stops with an explanation and writes nothing.
+- **Not ported:** the leak comparison between tracks (`dominance`) and the learned gap limit. This script has no word-by-word comparison against other tracks at all, so there is nothing to apply the limit to.
+- Held to podcast-magic by `test_the_learned_threshold_matches_podcast_magics`.
+
 ## [2026.10.9.1] - 2026-10-09
 
 ### Added

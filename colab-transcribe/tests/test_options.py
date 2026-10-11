@@ -29,7 +29,7 @@ def test_gpu_choices():
 
 
 def test_preset_choices():
-    assert set(PRESETS) == {"remote", "intra-mic"}
+    assert set(PRESETS) == {"remote", "intra-mic", "learned"}
 
 
 def test_unknown_gpu_is_rejected():

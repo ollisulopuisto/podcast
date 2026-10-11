@@ -71,6 +71,18 @@ tauko 1,0 s) ja `intra-mic` (RMS-tarkistus päällä, häntä 0,4 s, tauko
 0,4 s). `--thr`, `--tail`, `--gap`, `--rms` ja `--prompt` korvaavat
 esiasetuksen lukua.
 
+`learned` opettaa vaimennuskynnyksen omasta vaimennuksestasi. Avaa istunto
+ennen ajoa Hindenburgissa, vaimenna alun minuutin tai parin kohdat joissa
+kukaan ei puhu (litterointia ei tarvita siihen), tallenna ja aja
+`--preset learned`. Raidan kynnys on sen vaimennettujen kohtien taso (90.
+persentiili + 1 dB, joten yskäisy ei aseta sitä), korotettuna jos toisen
+raidan puhe vuotaa vaimennettuun mikkiin. Käsin vaimennetut alueet pysyvät
+vaimennettuina. Raita jolla on alle 3 s vaimennettua ääntä, tai jonka
+vaimennettu taso on yhtä kova kuin sen puhe, ajetaan `--thr`:llä ja lokissa
+lukee miksi; istunto jossa ei ole yhtään vaimennettua aluetta pysähtyy
+kirjoittamatta mitään. Luvut ovat makuasioita eikä niitä ole mitattu, ja
+kynnys on podcast-magicin snapshot — ks. CLAUDE.md.
+
 ## Vaatimukset
 
 * [uv](https://docs.astral.sh/uv/) (`brew install uv`). `colab`-komentorivityökalu on riippuvuus ja tulee `uvx`:n mukana, kiinnitettynä versioon jossa on Googlen oma `jupyter-kernel-client`.

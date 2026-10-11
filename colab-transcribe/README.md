@@ -69,6 +69,17 @@ Presets are the Colab script's: `remote` (tail 1.0 s, gap 1.0 s) and
 `intra-mic` (RMS check on, tail 0.4 s, gap 0.4 s). `--thr`, `--tail`,
 `--gap`, `--rms` and `--prompt` override after the preset.
 
+`learned` learns the silence threshold from your own muting. Before the run,
+open the session in Hindenburg and mute the stretches where nobody talks in
+the first minute or two (a transcript is not needed for that), save, and run
+with `--preset learned`. Each track's threshold is the level of its muted
+stretches (90th percentile + 1 dB, so a cough does not set it), raised when
+another track's speech leaks into the muted mic. Regions you muted by hand stay
+muted. A track with under 3 s of muted audio, or whose muted level is as loud
+as its speech, falls back to `--thr` and the log says why; a session with no
+muted region at all stops without writing anything. The numbers are taste, not
+measured, and the threshold is a snapshot of podcast-magic's — see CLAUDE.md.
+
 ## Requirements
 
 * [uv](https://docs.astral.sh/uv/) (`brew install uv`). The `colab` command-line tool is a dependency and comes with `uvx`, pinned to a version with Google's own `jupyter-kernel-client`.

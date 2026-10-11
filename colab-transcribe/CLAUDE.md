@@ -55,6 +55,36 @@ numpy ei ole pinnattu: se tulee faster-whisperin mukana. Ajuri kertoo
 valmiin tiedoston `Käsikirjoitus luotu:` -rivillä; `.md` tulee alas koko
 tulostekansion mukana, joten uutta `driver.parse_*`-markeria ei tarvita.
 
+## Opittu kynnys on snapshot
+
+`--preset learned` opettaa kynnyksen käsin vaimennetuista alueista:
+`calibrate_tree` on kopio podcast-magicin `silence/calibrate.py`:stä, ja
+`test_the_learned_threshold_matches_podcast_magics` ajaa molemmat samalle
+istunnolle ja äänelle ja vaatii saman luvun (1e-6). Testin ääni on
+**ramppi**, ei kaksiarvoinen: kaksiarvoisella aineistolla persentiilin
+muuttaminen 90:stä 80:een ei muuttanut mitään eikä testi huomannut sitä.
+
+Mitä ei kopioitu: vuotovertailu (`dominance`) ja opittu ero-raja raitojen
+välillä. Tässä skriptissä ei ole sanakohtaista vertailua toisiin raitoihin
+lainkaan, joten ero-rajalle ei olisi käyttöä. Se on oma ominaisuutensa, ei
+osa tätä.
+
+Kaksi eroa podcast-magiciin, tahallisia:
+
+* `_Levels` pitää kaikki puretut tiedostot muistissa. podcast-magicin
+  `AudioCache` pitää kaksi, ja kynnys vertaa jokaisen ikkunan kohdalla myös
+  muita raitoja: kolmella raidalla se purkaisi joka haun uudestaan.
+  `test_every_track_is_decoded_once_however_many_tracks_there_are` vartioi.
+* Opitussa tilassa taso mitataan samalla mittarilla kuin kynnys (`_Levels`,
+  ffmpeg ja RMS), ei pydubilla, ja raita jolta kynnystä ei opittu ajetaan
+  kiinteällä `--thr`:llä samalla mittarilla.
+
+Käyttäjä vaimentaa istunnon alun **ennen ajoa**, litteroimattomaan
+istuntoon: kynnys luetaan vain äänestä ja vaimennuksista, ja litteroinnin
+sanat tulevat mukaan vasta puhevartijaan ja päästettävän sanan kattoon.
+Luvut ovat podcast-magicissa makuarvoja, ja sama tarkistamatta oikealla
+istunnolla.
+
 ## Luettu XML on aina kovennettu
 
 Kaikki `.nhsx`:n luenta kulkee saman kovennetun parserin läpi

@@ -17,7 +17,7 @@ GPUS = ("T4", "L4", "A100")
 
 #: Skriptin tuntemat esiasetukset. Niiden numerot asuvat pilvessä ajettavassa
 #: skriptissa, ei täällä — täällä on vain valinta.
-PRESETS = ("remote", "intra-mic")
+PRESETS = ("remote", "intra-mic", "learned")
 
 #: Tuetut siirtotavat. "drive" käyttää Google Drivea ja liitosta (nopea),
 #: "direct" käyttää Colabin hidasta suoraa upload-tunnelia tiedosto kerrallaan.
