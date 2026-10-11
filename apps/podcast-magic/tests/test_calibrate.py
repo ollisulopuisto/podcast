@@ -202,3 +202,68 @@ def test_the_learned_preset_and_old_settings():
     assert PRESETS["bleed"].learn is False and PRESETS["remote"].learn is False
     old = Settings.from_dict({"tail": 0.4, "gap": 0.4, "rms": True})
     assert old.learn is False
+
+
+def _setup(tmp_path, monkeypatch, regions, words, spans, seconds=70):
+    path = tmp_path / "s.nhsx"
+    path.write_text(session_xml(regions, words), encoding="utf-8")
+    (tmp_path / "olli.wav").write_bytes(b"")
+    samples = audio(spans, seconds=seconds)
+    monkeypatch.setattr("podcastmagic.silence.detect.audio_io.decode_pcm", lambda p: samples)
+    return nhsx.read(path)
+
+
+def test_speech_level_is_taken_from_words_the_user_left_unmuted(tmp_path, monkeypatch):
+    """Käyttäjän muokkaama aika kertoo mikä on puhetta: sen vaimentamatta
+    jättämät sanat. Muokatun ajan jälkeen litteroidut sanat voivat olla
+    kanavan kohinaa (Perttu, 07 uutiset: sanat 1.–3. minuutilla −49 dBFS,
+    puhe −25…−31), eivätkä ne saa laskea 'puheen tasoa' kohinan tasolle ja
+    saada oikeaa kynnystä hylätyksi."""
+    regions = (
+        '<Region Ref="1" Start="0.000" Length="10.000" Offset="0.000" Muted="True"/>'
+        '<Region Ref="1" Start="10.000" Length="10.000" Offset="10.000"/>'
+        '<Region Ref="1" Start="20.000" Length="5.000" Offset="20.000" Muted="True"/>'
+        '<Region Ref="1" Start="25.000" Length="45.000" Offset="25.000"/>'
+    )
+    vetted = [12.0, 14.0, 16.0]
+    noise = [26.0 + 1.2 * i for i in range(30)]          # kohinaa, -60 dBFS
+    session = _setup(tmp_path, monkeypatch, regions,
+                     "".join(word(t) for t in vetted + noise),
+                     [(1.0, 5.0, 0.03)] + [(t, t + 0.5, 0.2) for t in vetted])
+    found = calibrate.calibrate(session, AudioCache())["Olli"]
+    assert found.threshold is not None, found.reason
+    assert found.speech_level == pytest.approx(dbfs(0.2), abs=0.5)
+
+
+def test_without_vetted_words_the_speech_level_is_not_the_quiet_end(tmp_path, monkeypatch):
+    """Ei yhtään vaimentamatta jätettyä sanaa muokatulla ajalla: puhetaso
+    mitataan litteroiduista sanoista, mutta niiden hiljaisin neljännes on
+    usein kohinaa. 15 kohinasanaa + 25 puhesanaa: p25 olisi −60 dBFS."""
+    regions = (
+        '<Region Ref="1" Start="0.000" Length="10.000" Offset="0.000" Muted="True"/>'
+        '<Region Ref="1" Start="10.000" Length="60.000" Offset="10.000"/>'
+    )
+    starts = [12.0 + 1.4 * i for i in range(40)]
+    loud = starts[15:]
+    session = _setup(tmp_path, monkeypatch, regions,
+                     "".join(word(t) for t in starts),
+                     [(1.0, 5.0, 0.03)] + [(t, t + 0.5, 0.2) for t in loud])
+    found = calibrate.calibrate(session, AudioCache())["Olli"]
+    assert found.threshold is not None, found.reason
+
+
+def test_a_turn_cut_into_many_pieces_is_one_block(tmp_path, monkeypatch):
+    """Yksi puheenvuoro voi olla pätkitty moneen alueeseen. 125 palaa à
+    0,08 s on alle ikkunan (ja alle 0,1 s), joten kukin pala yksin ei anna
+    yhtään mittausta; yhtenä lohkona ne ovat 10 s."""
+    pieces = "".join(
+        f'<Region Ref="1" Start="{i * 0.08:.3f}" Length="0.080" '
+        f'Offset="{i * 0.08:.3f}" Muted="True"/>' for i in range(125))
+    regions = pieces + '<Region Ref="1" Start="10.000" Length="50.000" Offset="10.000"/>'
+    session = _setup(tmp_path, monkeypatch, regions,
+                     "".join(word(t) for t in (12.0, 14.0, 20.0, 30.0)),
+                     [(1.0, 5.0, 0.03)] + [(t, t + 0.5, 0.2) for t in (12.0, 14.0, 20.0, 30.0)])
+    found = calibrate.calibrate(session, AudioCache())["Olli"]
+    assert found.threshold is not None, found.reason
+    assert found.muted_seconds == pytest.approx(10.0)
+    assert found.frames > 30

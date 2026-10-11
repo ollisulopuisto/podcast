@@ -23,7 +23,7 @@ tarkoittaisi eri asiaa.
 **Opittu kynnys tarkistetaan puhetta vasten.** Jos käyttäjä on vaimentanut
 vahingossa puhetta, kynnys on puheen tasolla ja vaientaisi kaiken: liikaa
 vaimennettu jakso on pahempi virhe kuin liian vähän vaimennettu. Kynnys, joka
-ei jää selvästi vaimentamattomien sanojen hiljaisimman neljänneksen alle
+ei jää selvästi vaimentamattomien sanojen tason alle
 (``GUARD_DB``), hylätään ja sanotaan miksi, ja raita ajetaan tavallisella
 säännöllä (pohja + herkkyys).
 
@@ -81,9 +81,23 @@ MARGIN_DB = 1.0
 MIN_SECONDS = 3.0
 
 # Kuinka monta vaimentamatonta sanaa mitataan puheen tasoksi, ja kuinka paljon
-# kynnyksen pitää jäädä sen hiljaisimman neljänneksen alle. Makuarvot.
+# kynnyksen pitää jäädä puheen tason alle. Makuarvot.
 SPEECH_WORDS = 400
 GUARD_DB = 3.0
+
+# Puheen taso on muokatulla ajalla vaimentamatta jätettyjen sanojen hiljaisin
+# neljännes (käyttäjä on kuullut ne ja jättänyt puheeksi). Jos niitä ei ole,
+# taso mitataan litteroidusta alusta, jossa on kohinasanoja: 07 uutiset,
+# Perttu, sanat 60–180 s mediaani −49 dBFS (kohina, puhe −25…−31) ja Olli
+# 180–300 s −54 dBFS. Silloin hiljaisin neljännes on kohinaa ja kynnys
+# (Perttu −38,7, Olli −43,9 dBFS) näytti olevan 'puheen tasolla'; yläneljännes
+# on puhetta.
+SPEECH_PERCENTILE_VETTED = 25.0
+SPEECH_PERCENTILE_TRANSCRIPT = 75.0
+
+# Peräkkäiset vaimennetut palat ovat yksi lohko: yksi puheenvuoro on voitu
+# pätkiä moneen alueeseen. Rako alle tämän (s) ei erota lohkoja. Makuarvo.
+BLOCK_GAP = 0.01
 
 
 # Vuotokehyksiä (vaimennettu, toinen puhuu) pitää olla näin monta, jotta niistä
@@ -115,7 +129,7 @@ class Calibration:
     threshold: float | None = None   # dBFS sanan ikkunassa; ``None`` = ei opittu
     muted_seconds: float = 0.0
     frames: int = 0
-    speech_p25: float | None = None
+    speech_level: float | None = None
     reason: str = ""
     # Sidechain: kuinka monta desibeliä kovimman toisen raidan alle sana saa
     # jäädä ja olla silti puhetta. ``None`` = ei opittu, käytetään oletusta.
@@ -183,6 +197,18 @@ def _active(words: list[tuple[float, float]], starts: list[float],
     return any(w_start < end and w_end > begin for w_start, w_end in words[low:high])
 
 
+def _muted_blocks(track: TrackInfo) -> list[tuple[float, float]]:
+    """Vaimennetut alueet lohkoina (alku, pituus): vierekkäiset yhdistetty."""
+    spans = sorted((r.start, r.end) for r in track.regions if is_muted(r))
+    blocks: list[list[float]] = []
+    for start, end in spans:
+        if blocks and start <= blocks[-1][1] + BLOCK_GAP:
+            blocks[-1][1] = max(blocks[-1][1], end)
+        else:
+            blocks.append([start, end])
+    return [(a, b - a) for a, b in blocks]
+
+
 def _windows(start: float, length: float):
     if length < 0.1:
         return
@@ -240,11 +266,9 @@ def calibrate(session: Session, cache: AudioCache | None = None,
         muted_levels: list[float] = []
         bleed_levels: list[float] = []
         bleed_gaps: list[float] = []
-        for region in track.regions:
-            if not is_muted(region):
-                continue
-            found.muted_seconds += region.length
-            for begin, end in _windows(region.start, region.length):
+        for block_start, block_length in _muted_blocks(track):
+            found.muted_seconds += block_length
+            for begin, end in _windows(block_start, block_length):
                 mine = levels.at(track, begin, end)
                 if mine is None:
                     continue
@@ -303,15 +327,19 @@ def calibrate(session: Session, cache: AudioCache | None = None,
             threshold = max(threshold,
                             float(np.percentile(bleed_levels, PERCENTILE)) + MARGIN_DB)
 
-        speech = _speech_levels(session, track, cache, extra_dir)
-        if speech:
-            found.speech_p25 = float(np.percentile(speech, 25))
-            if threshold >= found.speech_p25 - GUARD_DB:
-                found.reason = (
-                    f"vaimennettujen alueiden taso ({threshold:.1f} dBFS) on puheen "
-                    f"tasolla ({found.speech_p25:.1f} dBFS) — vaimennettiinko puhetta?")
-                out[track.name] = found
-                continue
+        if len(speech_levels) >= MIN_SPEECH_WORDS:
+            found.speech_level = float(np.percentile(speech_levels, SPEECH_PERCENTILE_VETTED))
+        else:
+            speech = _speech_levels(session, track, cache, extra_dir)
+            if speech:
+                found.speech_level = float(
+                    np.percentile(speech, SPEECH_PERCENTILE_TRANSCRIPT))
+        if found.speech_level is not None and threshold >= found.speech_level - GUARD_DB:
+            found.reason = (
+                f"vaimennettujen alueiden taso ({threshold:.1f} dBFS) on puheen "
+                f"tasolla ({found.speech_level:.1f} dBFS) — vaimennettiinko puhetta?")
+            out[track.name] = found
+            continue
 
         # Päästettävä on päästettävä: muokatulla ajalla vaimentamatta jätetty
         # sana on käyttäjän oma päätös, eikä kynnys saa jäädä sen yläpuolelle.
