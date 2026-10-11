@@ -680,18 +680,24 @@ class AppState:
             return {}
         return staging.pans(dict(self.seating))
 
-    def reactions_now(self, grid, roles, program_start) -> list:
+    def reactions_now(self, grid, roles, program_start, decision) -> list:
         """Ehdotetut reaktiokuvat nykyisillä asetuksilla ja mittauksilla.
 
         Nopea: lukee valmiit taulukot eikä avaa tiedostoja. Tyhjä lista jos
         asetus on pois tai mittauksia ei ole — jälkimmäisestä kerrotaan
         viennin varoituksena, ei tässä.
+
+        ``decision`` on se leikkaus joka viedään, ei uusi ``decide``-kutsu:
+        vienti leikkaa mitatuilla reaktiohetkillä (``marks``), ja ilman niitä
+        laskettu leikkaus katkeaa eri kohdista. Sitä vasten ``fits`` päästi
+        pp 56:ssa Wancken reaktion Wancken oman lähikuvan päälle (25:32), ja
+        reaktion loppu näkyi kehystyshyppynä samassa kasvossa.
         """
         if not self.settings.globals.reactions or not self.video_tables:
             return []
         return reactions.find(grid, roles, self.timeline, self.video_tables,
                               self.settings.globals, float(program_start),
-                              decision=decide(grid, self.settings.globals))
+                              decision=decision)
 
     # ---------------------------------------------------------- päätös
 
@@ -1682,7 +1688,8 @@ def create_app(state: AppState) -> FastAPI:
                 if state.settings.globals.panning and not state.pans_now():
                     warnings.append(t("export.pan_none"))
 
-                shots = state.reactions_now(_grid, roles, program_start)
+                shots = state.reactions_now(_grid, roles, program_start,
+                                            decision)
                 if state.settings.globals.reactions and not shots:
                     warnings.append(t("video.none_measured")
                                     if not state.video_tables

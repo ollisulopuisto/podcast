@@ -1405,6 +1405,61 @@ def test_reactions_on_without_measurements_warns_instead_of_silence(scratch_xml)
         exported["warnings"]
 
 
+def test_exported_reactions_are_placed_against_the_exported_cut(scratch_xml,
+                                                                monkeypatch):
+    """Reaktiokuvien sijoitusehdot tarkistetaan sitä leikkausta vasten joka viedään.
+
+    Vienti leikkaa ``decide(..., marks=...)``:lla — mitatut reaktiohetket
+    siirtävät katkaisukohtia. Sijoitus kutsui ``decide``:a uudestaan ilman
+    niitä, ja ``fits`` tarkisti reaktion eri leikkausta vasten kuin se joka
+    kirjoitettiin. Mitattuna pp 56:ssa: Wancken reaktio 25:31,0–25:33,2
+    Nymanin kuvan päällä, mutta viedyssä leikkauksessa Wancken oma lähikuva
+    alkoi 25:32 sen alla — eri kehystys, ja reaktion loppu näkyi hyppynä
+    samassa kasvossa.
+    """
+    import numpy as np
+
+    from autoraffkat import reactions as reactions_module
+    from autoraffkat.server import app as app_module
+
+    state = AppState(xml_path=str(scratch_xml("multicam.fcpxml")))
+    state.load()
+    while not state.progress.get("ready"):
+        time.sleep(0.05)
+    state.settings.tracks = _multicam_tracks()
+    state.settings.globals.reactions = True
+    state.video_tables = {"stand-in": {}}
+
+    marks = np.zeros((1, 1), dtype=bool)
+    monkeypatch.setattr(AppState, "reaction_marks",
+                        lambda self, grid, roles, program_start: marks)
+
+    with_marks = []
+    real_decide = app_module.decide
+
+    def spy_decide(grid, g, marks=None):
+        decision = real_decide(grid, g)
+        if marks is not None:
+            with_marks.append(decision)
+        return decision
+
+    placed_against = []
+
+    def spy_find(*args, decision=None, **kwargs):
+        placed_against.append(decision)
+        return []
+
+    monkeypatch.setattr(app_module, "decide", spy_decide)
+    monkeypatch.setattr(reactions_module, "find", spy_find)
+
+    client = TestClient(create_app(state))
+    exported = client.post("/api/export", json={}).json()
+    assert exported.get("ok"), exported
+    assert placed_against, "export never placed reactions"
+    assert all(any(d is m for m in with_marks) for d in placed_against), \
+        "a reaction was placed against a cut the export does not write"
+
+
 def test_measuring_video_returns_only_its_own_state(scratch_xml):
     """Mittausvastaus ei saa kantaa asetuksia mukanaan.
 
