@@ -109,6 +109,61 @@ def test_the_cache_returns_the_same_table_without_decoding(clip, monkeypatch, tm
     assert np.array_equal(first["found"], again["found"])
 
 
+def test_the_seating_sample_is_cached(clip, monkeypatch, tmp_path):
+    """Istumajärjestyksen otos on levyllä, ei laskettu joka latauksella.
+
+    Mitattuna 22,9 s neljälle tiedostolle sarjassa, ja se ajettiin joka
+    kerta kun jakso avattiin panorointi päällä ilman täyttä mittausta.
+    """
+    monkeypatch.setattr(measure, "cache_dir", lambda: tmp_path)
+    first = measure.sample_table(str(clip), Stub())
+
+    def explode(*args, **kwargs):
+        raise AssertionError("otettiin uudestaan vaikka välimuisti oli")
+
+    monkeypatch.setattr(measure, "sample_file", explode)
+    again = measure.sample_table(str(clip), Stub())
+    assert np.array_equal(first["times"], again["times"])
+    assert np.array_equal(first["found"], again["found"])
+
+
+def test_a_cached_sample_is_not_a_measurement(clip, monkeypatch, tmp_path):
+    """Kaksikymmentäneljä ruutua ei ole täysi mittaus.
+
+    Jos otos kävisi täydestä taulukosta, reaktiokerros ja kehystys lukisivat
+    sen ja tulos olisi kelvollinen, hyväksytty ja väärä — eikä täyttä
+    mittausta käynnistettäisi koskaan.
+    """
+    monkeypatch.setattr(measure, "cache_dir", lambda: tmp_path)
+    measure.sample_table(str(clip), Stub())
+    assert not measure.is_cached(str(clip), Stub())
+    full = measure.table(str(clip), Stub())
+    assert len(full["times"]) != measure.SEATING_FRAMES
+
+
+class Turning(Stub):
+    """Tynkä jolla on istumajärjestyksen tarvitsema ``turn``."""
+
+    fields = (*Stub.fields, "turn")
+
+
+def test_seating_reads_the_cached_sample(clip, monkeypatch, tmp_path):
+    monkeypatch.setattr(measure, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(analyse, "close_up_files",
+                        lambda grid, roles, timeline: [("A", "k", str(clip))])
+    calls = []
+    real = measure.sample_file
+
+    def counting(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(measure, "sample_file", counting)
+    analyse.seating(None, None, None, Turning())
+    analyse.seating(None, None, None, Turning())
+    assert len(calls) == 1
+
+
 def test_a_broken_cache_file_is_recomputed(clip, monkeypatch, tmp_path):
     """Rikkinäinen välimuisti ei saa olla umpikuja."""
     monkeypatch.setattr(measure, "cache_dir", lambda: tmp_path)

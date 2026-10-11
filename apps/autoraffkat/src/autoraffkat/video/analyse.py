@@ -94,7 +94,7 @@ def seating(grid, roles, timeline, detector, tables=None) -> dict:
         if table is None:
             table = (measure.table(path, detector)
                      if measure.is_cached(path, detector)
-                     else measure.sample_file(path, detector))
+                     else measure.sample_table(path, detector))
         return staging.side(table)
 
     files = close_up_files(grid, roles, timeline)

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.11.2] - 2026-10-11
+
+### Fixed
+- **A reaction shot could sit across a cut to the same person's own close-up**, and when it ended the picture jumped to a differently framed shot of the same face (pp 56 at 25:33). The export cuts with the measured reaction moments, but the reaction shots were checked against a cut computed without them, so the "never over the speaker's own close-up" and "clear of the cut" rules were tested against cuts that were not the ones written. They are now checked against the exported cut.
+- **The panel close-up keeps headroom above the hair.** In a layout the same face fills a much larger part of the frame, and the eyeline taken from the camera's own picture pushed the top of the head past the edge. The numbers are estimated from one screenshot, not measured on several faces.
+
+### Changed
+- **The seating sample for panning is cached on disk.** It was taken again every time an episode was opened with panning on and no full video measurement (22.9 s for four files serial). It is its own cache entry and never counts as the full measurement.
+
 ## [2026.10.10.1] - 2026-10-10
 
 ### Added

@@ -66,8 +66,21 @@ CROWD = "joukko"
 # purku on sama joka tapauksessa, kasvot putoavat viidesosaan.
 CROWD_EVERY = 5
 
+# Istumajärjestyksen otos on kolmas oma mittauksensa: kourallinen ruutuja
+# ei ole täysi taulukko, ja jos se kävisi sellaisesta, reaktiokerros ja
+# kehystys lukisivat sen eikä täyttä mittausta käynnistettäisi koskaan.
+SAMPLE = "otos"
 
-def cache_key(path: str, detector: detect.Detector, crowd: bool = False) -> str:
+
+def _variant(crowd: bool, sample: bool) -> str:
+    if crowd:
+        return CROWD
+    # Ruutumäärä avaimessa: eri kokoinen otos on eri mittaus.
+    return f"{SAMPLE}{SEATING_FRAMES}" if sample else ""
+
+
+def cache_key(path: str, detector: detect.Detector, crowd: bool = False,
+              sample: bool = False) -> str:
     """Polku, koko, muokkausaika, purkuleveys — ja tunnistimen nimi ja versio.
 
     Tunnistin on avaimessa siksi, että sen vaihtaminen tuottaa eri sarakkeet
@@ -75,9 +88,10 @@ def cache_key(path: str, detector: detect.Detector, crowd: bool = False) -> str:
     tulos olisi kelvollinen, hyväksytty ja väärä.
     """
     stat = os.stat(path)
+    variant = _variant(crowd, sample)
     raw = (f"{os.path.abspath(path)}|{stat.st_size}|{stat.st_mtime_ns}"
            f"|{WIDTH}|{CACHE_VERSION}|{detector.name}|{detector.version}"
-           + (f"|{CROWD}" if crowd else ""))
+           + (f"|{variant}" if variant else ""))
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
@@ -97,14 +111,15 @@ def _index() -> dict:
         return {}
 
 
-def _index_name(path: str, crowd: bool = False) -> str:
-    return os.path.abspath(path) + (f"#{CROWD}" if crowd else "")
+def _index_name(path: str, crowd: bool = False, sample: bool = False) -> str:
+    variant = _variant(crowd, sample)
+    return os.path.abspath(path) + (f"#{variant}" if variant else "")
 
 
-def remember(path: str, key: str, crowd: bool = False) -> None:
+def remember(path: str, key: str, crowd: bool = False, sample: bool = False) -> None:
     """Merkitsee polun viimeisimmän avaimen muistiin."""
     index = _index()
-    index[_index_name(path, crowd)] = key
+    index[_index_name(path, crowd, sample)] = key
     tmp = cache_dir() / (INDEX_NAME + ".tmp")
     try:
         tmp.write_text(json.dumps(index, ensure_ascii=False), "utf-8")
@@ -113,7 +128,8 @@ def remember(path: str, key: str, crowd: bool = False) -> None:
         tmp.unlink(missing_ok=True)
 
 
-def known_key(path: str, detector: "detect.Detector", crowd: bool = False) -> str | None:
+def known_key(path: str, detector: "detect.Detector", crowd: bool = False,
+              sample: bool = False) -> str | None:
     """Avain tälle polulle: tuore jos media on saatavilla, muuten viimeisin.
 
     Tuoreus tarkistetaan aina kun se **voidaan** tarkistaa. Vasta kun
@@ -121,9 +137,9 @@ def known_key(path: str, detector: "detect.Detector", crowd: bool = False) -> st
     tuoreempi mittaus vaan ei mittausta lainkaan.
     """
     try:
-        return cache_key(path, detector, crowd)
+        return cache_key(path, detector, crowd, sample)
     except OSError:
-        return _index().get(_index_name(path, crowd))
+        return _index().get(_index_name(path, crowd, sample))
 
 
 def duration(path: str) -> float:
@@ -251,7 +267,7 @@ SEATING_FRAMES = 24
 
 def sample_file(path: str, detector: detect.Detector,
                 count: int = SEATING_FRAMES) -> dict:
-    """Mittaa muutaman tasavälein poimitun ruudun. Ei välimuistia.
+    """Mittaa muutaman tasavälein poimitun ruudun. Välimuisti: ``sample_table``.
 
     Kevyt sukulainen ``measure_file``ille: sen työ on purkaa **kaikki**
     avainruudut, mikä on minuutteja ja koko reaktiokerroksen hinta. Paikan
@@ -395,7 +411,25 @@ def table(path: str, detector: detect.Detector, progress=None,
     väliaikaisnimeen tallennus loisi väärän tiedoston ja uudelleennimeäminen
     epäonnistuisi hiljaa. Sama ansa kuin verhokäyrällä, ks. audio/envelope.py.
     """
-    key = known_key(path, detector, crowd)
+    return _cached(path, detector,
+                   lambda: measure_file(path, detector, progress, crowd=crowd),
+                   crowd=crowd)
+
+
+def sample_table(path: str, detector: detect.Detector) -> dict:
+    """Istumajärjestyksen otos välimuistista, tai otetaan ja talletetaan.
+
+    Otos maksaa mitattuna 22,9 s neljälle tiedostolle sarjassa, ja ilman
+    tätä se otettiin joka kerta kun jakso avattiin panorointi päällä.
+    """
+    return _cached(path, detector, lambda: sample_file(path, detector),
+                   sample=True)
+
+
+def _cached(path: str, detector: detect.Detector, compute,
+            crowd: bool = False, sample: bool = False) -> dict:
+    """Yhteinen levyvälimuisti ``table``lle ja ``sample_table``lle."""
+    key = known_key(path, detector, crowd, sample)
     target = cache_dir() / f"{key}.npz" if key else None
     if target is not None and target.exists():
         try:
@@ -404,22 +438,22 @@ def table(path: str, detector: detect.Detector, progress=None,
                 # muuten vanhat mittaukset jäisivät ikuisesti indeksin
                 # ulkopuolelle, ja levyn irrottaminen veisi ne mukanaan.
                 # Yksi kytketty ajo riittää kirjaamaan koko välimuistin.
-                remember(path, target.stem, crowd)
+                remember(path, target.stem, crowd, sample)
                 return {name: data[name] for name in data.files}
         except (OSError, ValueError):
             target.unlink(missing_ok=True)   # rikkinäinen välimuisti lasketaan uusiksi
 
-    result = measure_file(path, detector, progress, crowd=crowd)
+    result = compute()
     if target is None:
         # Mediaa ei ole eikä mittausta muistissa: tänne ei pitäisi päätyä,
-        # koska `measure_file` on jo kaatunut. Varmistus siltä varalta.
+        # koska mittaus on jo kaatunut. Varmistus siltä varalta.
         return result
     tmp = target.with_suffix(".tmp")
     try:
         with open(tmp, "wb") as handle:
             np.savez(handle, **result)
         tmp.replace(target)
-        remember(path, target.stem, crowd)
+        remember(path, target.stem, crowd, sample)
     except OSError:
         tmp.unlink(missing_ok=True)
     return result

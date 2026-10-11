@@ -356,6 +356,11 @@ timestamps at all: `-ss` finds the nearest keyframe by itself, and a seating
 position is not tied to a moment. `measure.duration` reads one header field
 instead, and the scan went from over 300 s to **22.9 s serial**, four files
 in parallel after that.
+The sample is cached on disk (`measure.sample_table`) as its **own** entry —
+`otos24` in the key and the path index, like `CROWD`. Sharing the full
+table's key would have been the quiet failure: `is_cached` would say yes,
+reactions and reframing would read 24 frames as a measurement, and the full
+scan would never start.
 
 Both switches start their own scan. A feature that silently requires another
 feature's button to have been pressed is a feature that looks broken, so
