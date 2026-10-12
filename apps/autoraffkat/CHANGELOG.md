@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
-## [Unreleased]
+## [2026.10.12.1] - 2026-10-12
 
 ### Fixed
 - **A vertical export with a single full-screen picture has no wide at all.** The wide was a 16:9 shot cropped to 9:16, a third of the room and half a person. Overlapping speech, long-take breaks and the opening and closing wide now keep the previous close-up instead. In the layouts, where the wide is shown whole, nothing changes.
@@ -46,7 +46,7 @@ and this project adheres to Calendar Versioning (CalVer).
 - **Audio processing works on two microphones at once when the Mac has the memory for it** (shared pipeline, speechmix 2026.10.8.1): about 1.6× faster on a two-mic episode, same files out. The progress bar counts both. Camera audio is extracted before the run starts. dxRevive still processes one file at a time.
 - Shared pipeline memory work: the chain's peak per microphone roughly halved, de-bleed's dropped from 6× to under 4× the track size, and the chain is 3.4× faster than on 2026-10-07 morning (see speechmix's CHANGELOG).
 
-## [Unreleased]
+## [2026.10.12.1] - 2026-10-12
 
 ### Added
 - **`--verbose` / `-v`** prints the steps inside each long audio stage with their durations (e.g. under "dynamics": de-esser, multiband, limiter, PSR guard; under "plugin": each parallel piece). Off by default.
