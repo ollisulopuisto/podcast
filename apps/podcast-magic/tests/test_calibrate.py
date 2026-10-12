@@ -110,6 +110,41 @@ def test_without_learning_the_same_word_passes(edited):
     assert 40 in [round(a) for a, _b in result.intervals]
 
 
+def test_every_file_is_decoded_once_however_many_tracks_there_are(tmp_path, monkeypatch):
+    """Kynnys vertaa jokaisen ikkunan kohdalla myös muita raitoja. Välimuistin
+    kahden tiedoston katto purkaisi kolmella raidalla joka haun uudestaan:
+    neljä tiedostoa kiertää kahden paikan läpi eikä yksikään osu.
+
+    Raita ``a`` vaimennettu alku, muut puhuvat sen aikana vaimentamattomina."""
+    regions = {
+        "a": ('<Region Ref="1" Start="0.000" Length="10.000" Offset="0.000" Muted="True"/>'
+              '<Region Ref="1" Start="10.000" Length="50.000" Offset="10.000"/>'),
+    }
+    for number, name in enumerate(("b", "c", "d"), 2):
+        regions[name] = f'<Region Ref="{number}" Start="0.000" Length="60.000" Offset="0.000"/>'
+    tracks, files, arrays = "", "", {}
+    for number, name in enumerate(("a", "b", "c", "d"), 1):
+        tracks += f'<Track Name="{name}">{regions[name]}</Track>'
+        words = word(2.0, 1.0) + word(5.0, 1.0) + word(20.0 + number)
+        files += (f'<File Id="{number}" Name="{name}.wav" Path="{name}.wav">'
+                  f"<Transcription><p>{words}</p></Transcription></File>")
+        arrays[f"{name}.wav"] = audio([(1.0, 8.0, 0.02), (2.0, 3.0, 0.2), (5.0, 6.0, 0.2)])
+        (tmp_path / f"{name}.wav").write_bytes(b"")
+    path = tmp_path / "monta.nhsx"
+    path.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Session Name="monta"><AudioPool Path="">{files}</AudioPool><Tracks>{tracks}</Tracks></Session>""",
+                    encoding="utf-8")
+    calls = []
+
+    def counting(file_path):
+        calls.append(file_path.rsplit("/", 1)[-1])
+        return arrays[file_path.rsplit("/", 1)[-1]]
+
+    monkeypatch.setattr("podcastmagic.silence.detect.audio_io.decode_pcm", counting)
+    calibrate.calibrate(nhsx.read(path), AudioCache())
+    assert sorted(calls) == ["a.wav", "b.wav", "c.wav", "d.wav"], calls
+
+
 def test_a_hand_muted_region_stays_muted_even_where_words_were_heard(tmp_path, monkeypatch):
     """Käyttäjän oma vaimennus on tosi: sanat sen sisällä eivät avaa sitä."""
     path = tmp_path / "kasin.nhsx"

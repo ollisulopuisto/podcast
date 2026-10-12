@@ -215,8 +215,19 @@ def _speech_levels(session: Session, track: TrackInfo, cache: AudioCache,
 
 def calibrate(session: Session, cache: AudioCache | None = None,
               extra_dir: str = "") -> dict[str, Calibration]:
-    """Raita -> opittu kynnys ja ero-raja. Raidalla jolla ei ole opittavaa on syy."""
+    """Raita -> opittu kynnys ja ero-raja. Raidalla jolla ei ole opittavaa on syy.
+
+    Kaikki tiedostot pidetään muistissa laskennan ajan (``AudioCache.unbounded``):
+    jokaisen ikkunan kohdalla verrataan myös muita raitoja, ja kahden tiedoston
+    katolla kolmen raidan kierto purkaisi joka haun uudestaan.
+    """
     cache = cache or AudioCache()
+    with cache.unbounded():
+        return _calibrate(session, cache, extra_dir)
+
+
+def _calibrate(session: Session, cache: AudioCache, extra_dir: str
+               ) -> dict[str, Calibration]:
     levels = _Levels(session, cache, extra_dir)
     edited = horizon(session)
     words = {t.name: _unmuted_words(session, t, edited) for t in session.tracks}

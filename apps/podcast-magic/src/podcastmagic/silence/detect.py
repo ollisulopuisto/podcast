@@ -10,6 +10,7 @@ alueittain eikä tiedostoittain.
 from __future__ import annotations
 
 from collections import OrderedDict
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -59,6 +60,25 @@ class AudioCache:
 
     def __init__(self) -> None:
         self._data: "OrderedDict[str, np.ndarray | None]" = OrderedDict()
+        self._limit: int | None = self.MAXSIZE
+
+    @contextmanager
+    def unbounded(self):
+        """Pitää kaikki tiedostot muistissa blokin ajan, ja palaa sen jälkeen kattoon.
+
+        Raita kerrallaan etenevälle ajolle kaksi riittää. Kynnyksen opettaminen
+        vertaa jokaisen ikkunan kohdalla myös muita raitoja, ja silloin kolmen
+        tiedoston kierto kahden paikan läpi ei osu kertaakaan: jokainen haku
+        purkaa tunnin äänen uudestaan. Mitattuna neljällä raidalla jokainen
+        tiedosto purettiin useaan kertaan.
+        """
+        self._limit = None
+        try:
+            yield self
+        finally:
+            self._limit = self.MAXSIZE
+            while len(self._data) > self._limit:
+                self._data.popitem(last=False)
 
     def get(self, path: str) -> np.ndarray | None:
         if path in self._data:
@@ -70,7 +90,7 @@ class AudioCache:
         except Exception:
             samples = None
         self._data[path] = samples
-        while len(self._data) > self.MAXSIZE:
+        while self._limit is not None and len(self._data) > self._limit:
             self._data.popitem(last=False)
         return samples
 
