@@ -456,6 +456,13 @@ different shots. A shot too short to split — under two minimums — becomes
 wide whole, because one decent shot beats two flashes, and a programme with
 no room for three shots is honestly all wide.
 
+**Exception: a vertical export with one full-screen picture has no wide at
+all** (`decide._without_wide`, `reactions._vary`). There the wide is a 16:9
+shot cropped to 9:16 — a third of the room; pp 56 opened on one, and 26 of
+87 stacked reactions were the wide cropped to a square. The user, 2026-10-12:
+always the close-up. The previous close-up is held instead. Layouts show the
+wide whole, so the bookends stay there.
+
 Note what it does **not** override: `wide_every=0` still means "never break
 a long take to the wide". Two different rules, and the tests read the middle
 of the cut (`middle()` in `test_decide.py`) so that every other rule is

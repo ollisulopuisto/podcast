@@ -1080,3 +1080,51 @@ def test_the_preview_names_the_group_shots():
     bar = build(grid, decide(grid, GROUP_GLOBALS), columns=40)
     assert bar["groups"] == [{"label": "1 & 2", "index": 3, "covers": ["1", "2"]}]
     assert 3 in bar["chosen"]
+
+
+def test_a_single_screen_vertical_cut_does_not_open_or_close_on_the_wide():
+    """Pystyssä laaja on rajaus: ohjelma ei saa alkaa eikä päättyä siihen.
+
+    pp 56:n viennissä ensimmäinen kuva oli «Laaja 01», 16:9-laaja rajattuna
+    pystyyn (täyttö + 1,1-zoom, sijainti −54,8): kolmannes huoneesta ja
+    puoli ihmistä. Päätykuvasääntö on vaakaleikkauksen konventio. Asettelussa
+    (laaja ylhäällä) laaja näkyy kokonaisena, ja siellä sääntö pätee.
+    """
+    base = {"min_shot": 1.0, "lead": 0.0, "confirm": 0.2, "min_overlap": 0.4,
+            "wide_every": 0.0}
+    grid = grid_for([(2, 8)], [(10, 16)])
+
+    flat = decide(grid, Globals(**base))
+    assert (flat.segments[0].angle, flat.segments[-1].angle) == ("W", "W")
+
+    single = decide(grid, Globals(**base, vertical=True))
+    assert "W" not in (single.segments[0].angle, single.segments[-1].angle)
+
+    paneled = decide(grid, Globals(**base, vertical=True, vertical_layout="wide_top"))
+    assert (paneled.segments[0].angle, paneled.segments[-1].angle) == ("W", "W")
+
+
+def test_a_single_screen_vertical_cut_has_no_wide_at_all():
+    """Pystyssä laajaa ei rajata: sen paikalla pysyy lähikuva.
+
+    Päällekkäispuhe laajaan, pitkän puheenvuoron katkaisu laajaan ja
+    päätykuvat tuottavat kaikki laajan, ja pystyssä se on rajaus (kolmannes
+    huoneesta). Käyttäjä 2026-10-12: «ei laatikoida laajasta kuvasta,
+    otetaan mieluummin aina lähis». Asettelussa laaja näkyy kokonaisena, ja
+    siellä se säilyy.
+    """
+    base = {"min_shot": 1.0, "lead": 0.0, "confirm": 0.2, "min_overlap": 0.4,
+            "wide_every": 4.0, "wide_hold": 1.5}
+    grid = grid_for([(2, 20), (24, 30)], [(10, 14), (30, 36)])
+
+    flat = decide(grid, Globals(**base))
+    assert "W" in {s.angle for s in flat.segments}
+
+    single = decide(grid, Globals(**base, vertical=True))
+    assert {s.angle for s in single.segments} <= {"CA", "CB"}
+    assert single.segments[0].start == flat.segments[0].start
+    assert single.segments[-1].end == flat.segments[-1].end
+    assert all(a.end == b.start for a, b in zip(single.segments, single.segments[1:]))
+
+    paneled = decide(grid, Globals(**base, vertical=True, vertical_layout="wide_top"))
+    assert "W" in {s.angle for s in paneled.segments}

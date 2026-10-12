@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [Unreleased]
+
+### Fixed
+- **A vertical export with a single full-screen picture has no wide at all.** The wide was a 16:9 shot cropped to 9:16, a third of the room and half a person. Overlapping speech, long-take breaks and the opening and closing wide now keep the previous close-up instead. In the layouts, where the wide is shown whole, nothing changes.
+- **Stacked reactions are never the wide cropped into a square.** When the same face would have come up twice in a row, the second one was swapped for the wide (26 of 87 stacked reactions in pp 56). With "wide in reactions" off, vertical exports now keep the face.
+
 ## [2026.10.11.2] - 2026-10-11
 
 ### Fixed

@@ -32,6 +32,7 @@ from speechmix.masks import (
 
 from .model import (
     HOP,
+    LAYOUT_SINGLE,
     LONGTAKE_REACTION,
     LONGTAKE_REACTION_WIDE,
     LONGTAKE_STAY,
@@ -670,6 +671,26 @@ def _bookend_wide(
     return out
 
 
+def _without_wide(segments: list[Segment], wide_key: str) -> list[Segment]:
+    """Laajan paikalla pysyy edellinen lähikuva (alussa seuraava).
+
+    Pystyssä laaja on rajaus eikä laaja kuva, ja käyttäjä halusi mieluummin
+    aina lähikuvan (2026-10-12). Laajan tuottavat päällekkäispuhe, pitkän
+    puheenvuoron katkaisu ja päätykuvat; kaikki korvautuvat samalla tavalla
+    kuin «Pidä nykyinen». Jos lähikuvia ei ole lainkaan, mitään ei vaihdeta.
+    """
+    if not wide_key or all(s.angle == wide_key for s in segments):
+        return segments
+    out = list(segments)
+    for index, seg in enumerate(out):
+        if seg.angle != wide_key:
+            continue
+        donor = next((o for o in reversed(out[:index]) if o.angle != wide_key),
+                     None) or next(o for o in out[index:] if o.angle != wide_key)
+        out[index] = Segment(donor.angle, donor.label, seg.start, seg.end)
+    return out
+
+
 def _merge(segments: list[Segment]) -> list[Segment]:
     """Yhdistää peräkkäiset saman kuvan jaksot ja pudottaa tyhjät."""
     merged: list[Segment] = []
@@ -692,7 +713,12 @@ def decide(grid: Grid, g: Globals, marks=None) -> Decision:
     """
     want, active = _want_array(grid, g)
     tempo = _compute_tempo(active, grid.n)
-    if grid.wide_key:
+    # Pysty ilman asettelua: laaja on rajaus, ei laaja kuva (pp 56: ensimmäinen
+    # kuva oli laaja rajattuna pystyyn, kolmannes huoneesta). Alku- ja
+    # loppulaajaa ei silloin ole; asettelussa laaja näkyy kokonaisena ja
+    # sääntö pätee.
+    bookends = not (g.vertical and g.vertical_layout == LAYOUT_SINGLE)
+    if grid.wide_key and bookends:
         initial_target = WIDE
     else:
         initial_target = next(
@@ -730,7 +756,10 @@ def decide(grid: Grid, g: Globals, marks=None) -> Decision:
     segments = _merge(segments)
     segments = _force_wide(segments, g, WIDE_LABEL, grid.wide_key,
                            grid=grid, marks=marks)
-    segments = _merge(_bookend_wide(segments, g, WIDE_LABEL, grid.wide_key))
+    if bookends:
+        segments = _merge(_bookend_wide(segments, g, WIDE_LABEL, grid.wide_key))
+    else:
+        segments = _merge(_without_wide(segments, grid.wide_key))
 
     # Esikatselua varten: mikä kuva milläkin hetkellä.
     chosen = np.full(grid.n, WIDE, dtype=np.int32)

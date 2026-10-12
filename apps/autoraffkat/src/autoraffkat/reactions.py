@@ -32,7 +32,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .decide import _compute_tempo, _runs
-from .model import HOP
+from .model import HOP, LAYOUT_SINGLE
 
 # Pään asennon sallittu poikkeama perusasennosta. Yksikkö on nenän siirtymä
 # silmien välimatkaan suhteutettuna, ei radiaani.
@@ -272,7 +272,8 @@ def find(grid, roles, timeline, tables: dict, settings, program_start: float,
     speakers = getattr(grid, "speakers", None) or []
     if speakers and getattr(grid, "n", 0):
         tempo = _compute_tempo(np.stack([lane.on for lane in speakers]), grid.n)
-    return _vary(_thin(found, settings, tempo, program_start), grid, decision)
+    return _vary(_thin(found, settings, tempo, program_start), grid, decision,
+                 settings)
 
 
 def _snap(grid, at: float, program_start: float) -> float:
@@ -384,7 +385,8 @@ def marks(grid, roles, timeline, tables: dict, settings,
     return out if out.any() else None
 
 
-def _vary(found: list[Reaction], grid, decision) -> list[Reaction]:
+def _vary(found: list[Reaction], grid, decision,
+          settings=None) -> list[Reaction]:
     """Sama kasvo kahdesti peräkkäin: toinen kerta laajana.
 
     Mittaus kertoo **milloin** kannattaa leikata; mitä ruudulle pannaan on
@@ -398,9 +400,18 @@ def _vary(found: list[Reaction], grid, decision) -> list[Reaction]:
     näkyvät pienenä — joten se on toiston purkaja eikä vuorottelu. Jos
     isäntäkuva on jo laaja, mitään ei vaihdeta: se olisi leikkaus samaan
     kuvaan.
+
+    Pystyvientiin laajaa ei vaihdeta: pinon puolikas on neliö, ja laajasta
+    se on rajaus. Mitattu pp 56:ssa, ``wide_reactions`` pois: 26 reaktiota
+    87:stä oli laaja neliöksi leikattuna. Laaja jää kun ``wide_reactions``
+    on päällä, koska silloin se näkyy laajana.
     """
     wide = getattr(grid, "wide_key", "")
     if not wide or decision is None:
+        return found
+    if (settings is not None and settings.vertical
+            and not settings.wide_reactions
+            and settings.vertical_layout == LAYOUT_SINGLE):
         return found
     previous = ""
     for reaction in found:

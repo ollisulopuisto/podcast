@@ -322,6 +322,12 @@ reverse shot mirror each other when the cut goes back and forth. The
 framing comes from the same measurement the reaction shots use (turn on
 **Measure video** once; the toggle starts it for you).
 
+With *One picture* the vertical export has no wide at all: a wide cropped
+to 9:16 is a third of the room, so overlapping speech, long-take breaks and
+the opening and closing wide keep the previous close-up instead, and
+reaction squares are never the wide. In the layouts the wide is shown whole
+and these rules apply as usual.
+
 Wides and group shots follow the speaker: in the vertical export they are
 split where the speaker changes, and each piece is framed on that person's
 face. Which face is whom is measured from the mouths — the one that opens

@@ -321,6 +321,12 @@ pysyy 100 %:ssa, muut zoomataan kunnes kasvot ovat samankokoiset (enintään
 Kehystys tulee samasta mittauksesta kuin reaktiokuvat (paina kerran «Mittaa
 kuva»; kytkin käynnistää mittauksen itse).
 
+Asettelulla *Yksi kuva* pystyviennissä ei ole laajaa lainkaan: pystyyn
+rajattu laaja on kolmannes huoneesta, joten päällekkäispuhe, pitkän
+puheenvuoron katkaisu sekä alku- ja loppulaaja jättävät edellisen lähikuvan,
+eivätkä reaktioneliöt ole koskaan laaja. Asetteluissa laaja näkyy
+kokonaisena ja säännöt pätevät entiseen tapaan.
+
 Laajat ja ryhmäkuvat seuraavat puhujaa: pystyviennissä ne pilkotaan
 puhujan vaihtuessa, ja kukin pala rajataan hänen kasvoilleen. Kuka on kukin
 kasvo mitataan suusta — se joka aukeaa kun mikki puhuu — erikseen

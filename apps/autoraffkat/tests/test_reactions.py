@@ -576,3 +576,27 @@ def test_the_same_face_twice_in_a_row_becomes_the_wide():
         wide_key = ""
     plain = [reactions.Reaction("Nyman", t, t + 2.2, 1.0) for t in (10.0, 40.0)]
     assert [r.shot for r in reactions._vary(plain, NoWide(), host)] == ["", ""]
+
+
+def test_a_stacked_vertical_export_never_swaps_in_the_wide():
+    """Pystyssä pinon puolikas on neliö: laajasta se on rajaus, ei kuva.
+
+    Mitattu pp 56:n viennissä (reaction_wide, pysty, ``wide_reactions``
+    pois): 26 reaktiota 87:stä oli «Laaja reaktio», eli laaja rajattuna
+    neliöksi lähikuvien väliin. Toiston purku laajalla kuuluu vain
+    tilanteisiin joissa laaja näkyy laajana: vaaka, tai ``wide_reactions``
+    päällä.
+    """
+    class Grid:
+        wide_key = "camWide"
+
+    host = _Dec(_Seg("Wancke", 0.0, 300.0))
+
+    def run(settings):
+        found = [reactions.Reaction("Nyman", t, t + 2.2, 1.0)
+                 for t in (10.0, 40.0, 70.0)]
+        return [r.shot for r in reactions._vary(found, Grid(), host, settings)]
+
+    assert run(Globals(vertical=True)) == ["", "", ""]
+    assert run(Globals(vertical=True, wide_reactions=True)) == ["", "camWide", ""]
+    assert run(Globals(vertical=False)) == ["", "camWide", ""]
