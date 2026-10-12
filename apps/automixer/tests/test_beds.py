@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 import pyloudnorm as pyln
+import pytest
 import soundfile as sf
 
 from automixer import cli_beds
@@ -51,9 +52,9 @@ def _write(tmp_path, music_name="VIKIS MID BED.wav", region_extra="",
     return path
 
 
-def _run(monkeypatch, path):
+def _run(monkeypatch, path, *extra):
     monkeypatch.setattr(cli_beds, "CACHE_DIR", None)
-    monkeypatch.setattr("sys.argv", ["automixer-beds", str(path)])
+    monkeypatch.setattr("sys.argv", ["automixer-beds", str(path), *extra])
     cli_beds.main()
 
 
@@ -131,3 +132,69 @@ def test_the_plateau_is_measured_with_the_shared_meter(tmp_path):
     got = cli_beds._plateau_gain(str(tmp_path / "bed.wav"), 0.0, curve)
     want = cli_beds.PLATEAU_LUFS - Meter(RATE).integrated_loudness(music[RATE:5 * RATE])
     assert abs(got - want) < 1e-6
+
+
+def _two_beds(tmp_path):
+    """Kaksi musiikkiraitaa: ``musa`` (häivytykset ajossa) ja ``musa valmis``
+    (äänitiedostoon poltetut häivytykset, ei ``<Fade>``-tietoja istunnossa)."""
+    sf.write(tmp_path / "olli.wav", _speech(45, ((0, 10), (25, 40))), RATE)
+    sf.write(tmp_path / "VIKIS MID BED.wav", _music(30), RATE)
+    sf.write(tmp_path / "BAKED BED.wav", _music(30), RATE)
+    path = tmp_path / "jakso.nhsx"
+    path.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Session Samplerate="48000">
+  <AudioPool Path="" Location="{tmp_path}">
+    <File Id="1" Name="olli.wav"/>
+    <File Id="2" Name="VIKIS MID BED.wav" Channels="2"/>
+    <File Id="3" Name="BAKED BED.wav" Channels="2"/>
+  </AudioPool>
+  <Tracks>
+    <Track Name="Olli"><Region Ref="1" Length="45.000" IsMusic="False"/></Track>
+    <Track Name="musa"><Region Ref="2" Start="02.000" Length="28.000"/></Track>
+    <Track Name="musa valmis"><Region Ref="3" Start="02.000" Length="28.000" FadeIn="01.000" FadeOut="02.000"/></Track>
+  </Tracks>
+</Session>""", encoding="utf-8")
+    return path
+
+
+def _clip(path, track):
+    return next(c for c in plan(read(path)).clips if c.speaker == track)
+
+
+def test_a_track_marked_to_leave_keeps_its_own_fades(tmp_path, monkeypatch, capsys):
+    """Pohjat joissa häivytykset on poltettu äänitiedostoon: automixer-beds ei saa
+    kirjoittaa niiden päälle omaa käyrää, tai häivytys tulee kahdesti."""
+    path = _two_beds(tmp_path)
+    _run(monkeypatch, path, "--leave", "musa valmis")
+    out = tmp_path / "jakso beds.nhsx"
+    kept = _clip(out, "musa valmis")
+    assert kept.fade_in == 1.0 and kept.fade_out == 2.0 and kept.ramps == ()
+    # Toinen raita saa käyränsä kuten ennenkin.
+    assert _clip(out, "musa").ramps
+    said = capsys.readouterr().out
+    assert "musa valmis" in said and "left alone" in said
+
+
+def test_leaving_matches_the_track_name_without_regard_to_case(tmp_path, monkeypatch):
+    path = _two_beds(tmp_path)
+    _run(monkeypatch, path, "--leave", "MUSA VALMIS")
+    assert _clip(tmp_path / "jakso beds.nhsx", "musa valmis").ramps == ()
+
+
+def test_a_name_that_is_no_music_track_is_an_error_not_a_silent_no_op(
+        tmp_path, monkeypatch, capsys):
+    """Kirjoitusvirhe nimessä jättäisi raidan käsittelyyn ja häivytyksen
+    kahdesti, eikä mikään kertoisi miksi."""
+    path = _two_beds(tmp_path)
+    with pytest.raises(SystemExit):
+        _run(monkeypatch, path, "--leave", "musa valmiis")
+    err = capsys.readouterr().err
+    assert "musa valmiis" in err and "musa valmis" in err   # kertoo myös vaihtoehdot
+    assert not (tmp_path / "jakso beds.nhsx").exists()
+
+
+def test_leaving_every_music_track_writes_nothing(tmp_path, monkeypatch, capsys):
+    path = _two_beds(tmp_path)
+    _run(monkeypatch, path, "--leave", "musa", "--leave", "musa valmis")
+    assert not (tmp_path / "jakso beds.nhsx").exists()
+    assert "nothing to write" in capsys.readouterr().out

@@ -5,6 +5,11 @@ All notable changes to automixer are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [Unreleased]
+
+### Added
+- **`automixer-beds --leave TRACK`: leave a music track's fades alone.** For beds exported with their fades already in the audio (or fades you drew yourself), `automixer-beds` no longer has to write its own curve over them, which played the fade twice. Repeatable, case-insensitive. A name that matches no music track is an error that lists the music tracks, not a silent no-op; if every music track is left alone nothing is written. The mixer itself needed no change: it plays the session's own fades and adds no rides to music.
+
 ## [2026.10.9.1] - 2026-10-09
 
 ### Fixed

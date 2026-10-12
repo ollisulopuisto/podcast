@@ -81,6 +81,11 @@ def main() -> None:
         description="Write music-bed fades, timed to the speech, into a new .nhsx."
     )
     parser.add_argument("session", help="Hindenburg session (.nhsx)")
+    parser.add_argument(
+        "--leave", action="append", default=[], metavar="TRACK",
+        help="Music track to leave alone: its fades are already in the audio (or are "
+             "your own), so none are written over them. Repeatable; case-insensitive.",
+    )
     args = parser.parse_args()
 
     source = Path(args.session)
@@ -90,10 +95,28 @@ def main() -> None:
     if not music:
         print("No music track found (name with MUSA/MUSIC/…, or IsMusic regions).")
         return
+    # Raita jota ei löydy on virhe eikä ohitus: kirjoitusvirhe nimessä jättäisi
+    # raidan käsittelyyn, ja häivytys tulisi poltetun päälle toistamiseen
+    # ilman että mikään kertoisi miksi.
+    leave = {name.lower() for name in args.leave}
+    unknown = [n for n in args.leave if n.lower() not in {t.name.lower() for t in music}]
+    if unknown:
+        parser.error(
+            f"--leave: no music track named {', '.join(repr(n) for n in unknown)}. "
+            f"Music tracks: {', '.join(repr(t.name) for t in music)}."
+        )
     print(f"Speech: {', '.join(speech)}. Music: {', '.join(t.name for t in music)}.")
     spans = activity.speech_intervals(session, speech, envelope=_envelope)
 
+    todo = [t for t in music if t.name.lower() not in leave]
     for track in music:
+        if track.name.lower() in leave:
+            print(f"  {track.name}: left alone, its fades are kept as they are.")
+    if not todo:
+        print("Every music track was left alone, nothing to write.")
+        return
+
+    for track in todo:
         for region in track.regions:
             info = session.file_by_id(region.ref)
             name = info.name if info else region.ref
