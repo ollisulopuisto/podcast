@@ -546,7 +546,7 @@ wheels = [
 
 [[package]]
 name = "colab-transcribe"
-version = "2026.10.9.1"
+version = "2026.10.12.1"
 source = { editable = "colab-transcribe" }
 dependencies = [
     { name = "google-colab-cli" },
@@ -2688,7 +2688,7 @@ wheels = [
 
 [[package]]
 name = "podcast-magic"
-version = "2026.10.11.1"
+version = "2026.10.12.1"
 source = { editable = "apps/podcast-magic" }
 dependencies = [
     { name = "fastapi" },
