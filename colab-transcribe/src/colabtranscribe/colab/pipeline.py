@@ -471,7 +471,7 @@ def run_auto_silence(nhsx_path, audio_folder, rms_enabled, threshold, tail, gap,
     return output_path
 
 
-# 5b. Opittu kynnys: kopio podcast-magicin silence/calibrate.py:stä
+# 5b. Opittu kynnys
 #
 # Kynnys opitaan siitä, mitä käyttäjä on istunnossa itse vaimentanut: ne
 # alueet mitataan sanan mittaisilla ikkunoilla, ja kynnys on niiden tason
@@ -479,28 +479,17 @@ def run_auto_silence(nhsx_path, audio_folder, rms_enabled, threshold, tail, gap,
 # Hindenburgissa ENNEN ajoa — litterointi ei ole siihen tarpeen, koska ne
 # luetaan vain äänestä.
 #
-# **Tämä on kopio, ei tuonti** (ks. CLAUDE.md): skripti ei voi tuoda
-# työtilaa. ``test_the_learned_threshold_matches_podcast_magics`` ajaa
-# molemmat samalle istunnolle ja äänelle. Kopioitu on kynnys, vuototaso
-# (toisen raidan puhe nostaa kynnystä), puhevartija ja päästettävän sanan
-# katto. **Ei kopioitu:** vuotovertailu (``dominance``, ero-raja raitojen
-# välillä): tässä skriptissä ei ole sanakohtaista vertailua toisiin raitoihin
-# lainkaan, joten opittu ero-raja ei olisi mihin käyttää.
+# **Laskenta ei ole tässä tiedostossa.** Se on ``silencelearn``-kirjastossa,
+# yksi tiedosto ja pelkkä standardikirjasto, jonka ajuri lataa tämän skriptin
+# viereen (``driver.LEARN_MODULE``) ja jonka myös podcast-magic tuo. Tässä on
+# vain se mikä on tämän skriptin: lxml-puu kirjaston syötteeksi ja ffmpeg
+# sen tasokyselyille.
 #
-# Mikään luvuista ei ole mitattu: makuarvoja podcast-magicissa, ja sama
-# tarkistamatta ensimmäisellä oikealla istunnolla.
+# Käyttöön otettu kirjasto laskee myös ero-rajan raitojen välillä
+# (``Calibration.dominance``), mutta **tämä skripti ei käytä sitä**: täällä ei
+# ole sanakohtaista vertailua toisiin raitoihin, joten rajalle ei ole
+# paikkaa. Se on oma ominaisuutensa.
 LEARN_RATE = 16000
-LEARN_FLOOR_DB = -120.0  # speechmix.dsp.FLOOR_DB
-LEARN_WINDOW = 0.3
-LEARN_HOP = 0.15
-LEARN_PERCENTILE = 90.0
-LEARN_MARGIN_DB = 1.0
-LEARN_MIN_SECONDS = 3.0
-LEARN_SPEECH_WORDS = 400
-LEARN_GUARD_DB = 3.0
-LEARN_MIN_BLEED_FRAMES = 4
-LEARN_MIN_SPEECH_WORDS = 3
-LEARN_KEEP_MARGIN_DB = 0.5
 
 
 def _hand_muted(region):
@@ -548,9 +537,9 @@ def _audio_dirs(tree, nhsx_path, audio_folder):
 
 
 class _Levels:
-    """Tasot tiedostoittain. Jokainen tiedosto puretaan kerran ja pidetään muistissa.
+    """Sanat ja tasot tiedostoittain: ``silencelearn.Source`` tälle skriptille.
 
-    Ei kattoa, toisin kuin podcast-magicin ``AudioCache`` (kaksi tiedostoa):
+    Jokainen tiedosto puretaan kerran ja pidetään muistissa, ilman kattoa:
     kynnys vertaa jokaisen ikkunan kohdalla myös muita raitoja, ja kolmella
     raidalla kahden tiedoston katto purkaisi joka haun uudestaan. Colabissa
     on muistia: tunti 16 kHz:llä on 115 MB int16:na.
@@ -564,7 +553,7 @@ class _Levels:
                           if fe.get("Id")}
         self.audio_dirs = audio_dirs
         self._samples = {}
-        self.missing = set()
+        self._missing = set()
 
     def samples(self, file_elem):
         key = file_elem.get("Id")
@@ -581,209 +570,54 @@ class _Levels:
                     # käsitellään silti.
                     found = None
             if found is None:
-                self.missing.add(name)
+                self._missing.add(name)
             self._samples[key] = found
         return self._samples[key]
 
     def dbfs(self, file_elem, start, end):
-        """Taso tiedoston ajassa, lattialla ``LEARN_FLOOR_DB``; ``None`` jos ääntä ei ole."""
+        """Taso tiedoston ajassa; ``None`` jos ääntä ei ole. Lattia on kirjaston."""
         samples = self.samples(file_elem)
         if samples is None:
             return None
-        return max(_dbfs(samples, start, end), LEARN_FLOOR_DB)
+        return _dbfs(samples, start, end)
 
+    # silencelearn.Source
+    def words(self, ref):
+        file_elem = self.files.get(ref)
+        transcription = (_first_named(file_elem, "Transcription")
+                         if file_elem is not None else None)
+        if transcription is None:
+            return []
+        return [(time_to_seconds(w.get("s")), time_to_seconds(w.get("l")))
+                for w in _iter_named(transcription, "w") if (w.text or "").strip()]
 
-class _Calibration:
-    """Yhden raidan opittu kynnys, tai syy miksi sitä ei ole."""
+    def level(self, ref, start, end):
+        file_elem = self.files.get(ref)
+        return None if file_elem is None else self.dbfs(file_elem, start, end)
 
-    def __init__(self):
-        self.threshold = None        # dBFS sanan ikkunassa; None = ei opittu
-        self.muted_seconds = 0.0
-        self.speech_p25 = None
-        self.reason = ""
-        self.clamp_note = ""
-
-
-def _learn_regions(track_elem):
-    out = []
-    for r in _children_named(track_elem, "Region"):
-        start = time_to_seconds(r.get("Start"))
-        length = time_to_seconds(r.get("Length"))
-        out.append({
-            "ref": r.get("Ref"), "start": start, "length": length,
-            "end": start + length, "offset": time_to_seconds(r.get("Offset", "0")),
-            "muted": _hand_muted(r),
-        })
-    return sorted(out, key=lambda r: r["start"])
-
-
-def _learn_words(files, region):
-    """Alueeseen osuvat sanat: ``(tiedosto, tiedostoaika, pituus, alku, loppu)`` aikajanalla.
-
-    Sanan loppu leikataan alueen loppuun, kuten podcast-magicin ``region_words``.
-    """
-    file_elem = files.get(region["ref"])
-    if file_elem is None:
-        return
-    transcription = _first_named(file_elem, "Transcription")
-    if transcription is None:
-        return
-    for w in _iter_named(transcription, "w"):
-        if not (w.text or "").strip():
-            continue
-        ws = time_to_seconds(w.get("s"))
-        wl = time_to_seconds(w.get("l"))
-        if ws < region["offset"] or ws >= region["offset"] + region["length"]:
-            continue
-        start = region["start"] + (ws - region["offset"])
-        end = min(region["end"], start + wl)
-        if end <= start:
-            continue
-        yield file_elem, ws, wl, start, end
-
-
-def _learn_windows(start, length):
-    if length < 0.1:
-        return
-    if length <= LEARN_WINDOW:
-        yield start, start + length
-        return
-    t = start
-    while t + LEARN_WINDOW <= start + length + 1e-9:
-        yield t, t + LEARN_WINDOW
-        t += LEARN_HOP
+    def missing(self):
+        return bool(self._missing)
 
 
 def calibrate_tree(tree, audio_dirs, levels=None):
-    """Raita -> ``_Calibration``. Raidalla jolla ei ole opittavaa on syy."""
-    from bisect import bisect_left, bisect_right
-
-    import numpy as np
+    """Raita -> ``silencelearn.Calibration``. Raidalla jolla ei ole opittavaa on syy."""
+    import silencelearn
 
     levels = levels or _Levels(tree, audio_dirs)
-    tracks = [(t.get("Name", "Nimetön"), _learn_regions(t))
-              for t in _iter_named(tree, "Track")]
-    # Muokattu aika: viimeisen vaimennetun alueen loppu. Sen jälkeen kaikki on
-    # vaimentamatta vain koska kukaan ei ole vielä katsonut.
-    horizon = max((r["end"] for _n, rs in tracks for r in rs if r["muted"]),
-                  default=0.0)
-
-    words, starts = {}, {}
-    for name, regions in tracks:
-        found = []
-        for region in regions:
-            if region["muted"]:
-                continue
-            for _f, _ws, _wl, start, end in _learn_words(levels.files, region):
-                if start < horizon:
-                    found.append((start, end))
-        words[name] = sorted(found)
-        starts[name] = [w[0] for w in words[name]]
-
-    def level_at(regions, begin, end):
-        region = next((r for r in regions if r["start"] <= begin < r["end"]), None)
-        if region is None:
-            return None
-        file_elem = levels.files.get(region["ref"])
-        if file_elem is None:
-            return None
-        file_start = region["offset"] + (begin - region["start"])
-        return levels.dbfs(file_elem, file_start, file_start + (end - begin))
-
-    def active(name, begin, end):
-        ws = words[name]
-        low = bisect_left(starts[name], begin - 1.0)       # sanat ovat alle sekunnin
-        high = bisect_right(starts[name], end)
-        return any(a < end and b > begin for a, b in ws[low:high])
-
-    def loudest_other(own, begin, end):
-        found = None
-        for name, regions in tracks:
-            if name == own or not active(name, begin, end):
-                continue
-            level = level_at(regions, begin, end)
-            if level is not None and (found is None or level > found):
-                found = level
-        return found
-
-    out = {}
-    for name, regions in tracks:
-        found = _Calibration()
-        muted_levels, bleed_levels = [], []
-        for region in regions:
-            if not region["muted"]:
-                continue
-            found.muted_seconds += region["length"]
-            for begin, end in _learn_windows(region["start"], region["length"]):
-                mine = level_at(regions, begin, end)
-                if mine is None:
-                    continue
-                muted_levels.append(mine)
-                if loudest_other(name, begin, end) is not None:
-                    bleed_levels.append(mine)
-
-        if not muted_levels:
-            found.reason = ("ääntä ei löytynyt" if levels.missing
-                            else "ei käsin vaimennettuja alueita")
-            out[name] = found
-            continue
-        if found.muted_seconds < LEARN_MIN_SECONDS:
-            found.reason = (f"vaimennettua ääntä vain {found.muted_seconds:.1f} s — "
-                            f"liian vähän, vähintään {LEARN_MIN_SECONDS:.0f} s")
-            out[name] = found
-            continue
-
-        # Päästettävä tieto: muokatulla ajalla vaimentamatta jätetyt sanat.
-        speech_levels = []
-        for begin, end in words[name]:
-            mine = level_at(regions, begin, end)
-            if mine is not None:
-                speech_levels.append(mine)
-
-        threshold = float(np.percentile(muted_levels, LEARN_PERCENTILE)) + LEARN_MARGIN_DB
-        if len(bleed_levels) >= LEARN_MIN_BLEED_FRAMES:
-            # Vuoto mitataan erikseen: harvinainen vuoto ei näy koko
-            # vaimennetun ajan persentiilissä, mutta se on juuri se mitä
-            # kynnyksen pitää estää.
-            threshold = max(threshold, float(np.percentile(bleed_levels, LEARN_PERCENTILE))
-                            + LEARN_MARGIN_DB)
-
-        # Kynnys tarkistetaan puhetta vasten: vahingossa vaimennettu puhe
-        # antaisi kynnyksen joka vaientaa kaiken.
-        speech = []
-        for region in regions:
-            if region["muted"]:
-                continue
-            for file_elem, ws, wl, _s, _e in _learn_words(levels.files, region):
-                level = levels.dbfs(file_elem, ws, ws + wl)
-                if level is None:
-                    continue
-                speech.append(level)
-                if len(speech) >= LEARN_SPEECH_WORDS:
-                    break
-            if len(speech) >= LEARN_SPEECH_WORDS:
-                break
-        if speech:
-            found.speech_p25 = float(np.percentile(speech, 25))
-            if threshold >= found.speech_p25 - LEARN_GUARD_DB:
-                found.reason = (
-                    f"vaimennettujen alueiden taso ({threshold:.1f} dBFS) on puheen "
-                    f"tasolla ({found.speech_p25:.1f} dBFS) — vaimennettiinko puhetta?")
-                out[name] = found
-                continue
-
-        # Päästettävä on päästettävä: vaimentamatta jätetty sana on käyttäjän
-        # oma päätös, eikä kynnys saa jäädä sen yläpuolelle.
-        if len(speech_levels) >= LEARN_MIN_SPEECH_WORDS:
-            ceiling = min(speech_levels) - LEARN_KEEP_MARGIN_DB
-            if threshold > ceiling:
-                found.clamp_note = (
-                    f"kynnys {threshold:.1f} → {ceiling:.1f} dBFS: vaimentamatta "
-                    "jätetty sana on sen alla")
-                threshold = ceiling
-        found.threshold = threshold
-        out[name] = found
-    return out
+    tracks = [
+        silencelearn.Track(
+            track.get("Name", "Nimetön"),
+            [silencelearn.Region(
+                region.get("Ref", ""),
+                time_to_seconds(region.get("Start")),
+                time_to_seconds(region.get("Length")),
+                time_to_seconds(region.get("Offset", "0")),
+                _hand_muted(region),
+            ) for region in _children_named(track, "Region")],
+        )
+        for track in _iter_named(tree, "Track")
+    ]
+    return silencelearn.calibrate(tracks, levels)
 
 
 # 6. Käsikirjoitus valmiista istunnosta

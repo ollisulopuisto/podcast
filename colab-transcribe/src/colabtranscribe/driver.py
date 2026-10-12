@@ -20,11 +20,20 @@ import webbrowser
 from collections.abc import Callable
 from pathlib import Path
 
+import silencelearn
+
 from .options import RunOptions, pipeline_args
 
 #: Ladattava ketju. Se kulkee paketin mukana, joten ajuri löytää sen myös
 #: asennettuna eikä sovellushakemistosta käsin ajettuna eroa ole.
 PIPELINE_SCRIPT = Path(__file__).parent / "colab" / "pipeline.py"
+
+#: Skriptin viereen ladattava kirjasto: yksi tiedosto, pelkkä standardikirjasto.
+#: Skripti ei voi tuoda työtilaa, mutta se voi tuoda tämän, koska ``/content``
+#: on sen ``sys.path``issa. Polku tulee asennetusta paketista, ei kopiosta —
+#: jos tähän tulisi oma kopio, olisimme takaisin siinä mistä paketti pelasti.
+LEARN_MODULE = Path(silencelearn.__file__)
+LEARN_REMOTE = "/content/silencelearn.py"
 
 REMOTE_INPUT = "/content/input"
 REMOTE_OUTPUT = "/content/output"
@@ -120,6 +129,7 @@ def plan_commands(
                     str(PIPELINE_SCRIPT),
                     "/content/pipeline.py",
                 ],
+                ["colab", "upload", "-s", options.session, str(LEARN_MODULE), LEARN_REMOTE],
                 ["drive", "upload", str(input_source), drive_rel],
                 [
                     "colab",
@@ -164,6 +174,7 @@ def plan_commands(
                 str(PIPELINE_SCRIPT),
                 "/content/pipeline.py",
             ],
+            ["colab", "upload", "-s", options.session, str(LEARN_MODULE), LEARN_REMOTE],
         ]
     )
 

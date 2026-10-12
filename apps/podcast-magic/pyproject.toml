@@ -21,6 +21,9 @@ dependencies = [
     "speechmix",
     # Hindenburgin istunnon luku ja aluesijoittelu, jaettu automixerin kanssa.
     "nhsx",
+    # Kynnyksen oppiminen käsin vaimennetuista alueista: yksi tiedosto joka
+    # ladataan myös Colabiin, joten sitä ei ole kopioitu tänne.
+    "silencelearn",
     "numpy>=2.4.2",
     "lxml>=5.0",
     "fastapi>=0.115",
@@ -47,6 +50,7 @@ faster = ["faster-whisper>=1.1.0"]
 [tool.uv.sources]
 speechmix = { workspace = true }
 nhsx = { workspace = true }
+silencelearn = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

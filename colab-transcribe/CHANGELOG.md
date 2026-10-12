@@ -8,9 +8,10 @@ and this project adheres to Calendar Versioning (CalVer).
 ## [Unreleased]
 
 ### Added
-- **`--preset learned`: the silence threshold is learned from the stretches you muted by hand** (`colab/pipeline.py`, also offered in the TUI's preset list). Mute the quiet stretches at the start of the session in Hindenburg before the run; each track's threshold is the level of its muted audio. Port of podcast-magic's `silence/calibrate.py`: threshold with leak from other tracks, the speech guard, and the cap from words you left unmuted. Hand-muted regions stay muted. The levels are measured with the same ffmpeg decode and RMS as podcast-magic, once per file. A session with no muted region stops with an explanation and writes nothing.
-- **Not ported:** the leak comparison between tracks (`dominance`) and the learned gap limit. This script has no word-by-word comparison against other tracks at all, so there is nothing to apply the limit to.
-- Held to podcast-magic by `test_the_learned_threshold_matches_podcast_magics`.
+- **`--preset learned`: the silence threshold is learned from the stretches you muted by hand** (`colab/pipeline.py`, also offered in the TUI's preset list). Mute the quiet stretches at the start of the session in Hindenburg before the run; each track's threshold is the level of its muted audio. The calculation is the shared `silencelearn` library (one file, standard library only, also used by podcast-magic): threshold with leak from other tracks, the speech guard, and the cap from words you left unmuted. Hand-muted regions stay muted. The levels are measured with the same ffmpeg decode and RMS as podcast-magic, once per file. A session with no muted region stops with an explanation and writes nothing.
+- **The library is uploaded, not copied.** The driver uploads `silencelearn.py` to `/content` next to `pipeline.py` (both transfer modes), so podcast-magic and this script cannot drift apart on the calculation. This is the first piece of the Colab script that is shipped instead of snapshotted; the others (script writer, downmix, reader hardening) still are.
+- **Not applied:** the learned leak-gap limit (`dominance`). The library computes it, but this script has no word-by-word comparison against other tracks, so there is nothing to apply it to.
+- `test_the_learned_threshold_matches_podcast_magics` now holds the two *adapters* (lxml + ffmpeg here, nhsx + `AudioCache` there) to the same numbers.
 
 ## [2026.10.9.1] - 2026-10-09
 

@@ -81,6 +81,12 @@ jobs:
         if: ${{ !cancelled() }}
         run: uv run --directory packages/nhsx pytest -q
 
+      # Kynnyksen oppiminen: ladataan sellaisenaan Colabiin, joten sen testit
+      # vartioivat myös sitä ettei se tuo mitään standardikirjaston ulkopuolelta.
+      - name: silencelearn
+        if: ${{ !cancelled() }}
+        run: uv run --directory packages/silencelearn pytest -q
+
       - name: autoraffkat
         if: ${{ !cancelled() }}
         run: uv run --directory apps/autoraffkat pytest -q

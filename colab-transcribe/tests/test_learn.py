@@ -1,12 +1,12 @@
-"""Opittu kynnys Colabissa: snapshot podcast-magicin ``silence/calibrate.py``:stä.
+"""Opittu kynnys Colabissa: ``silencelearn``-kirjasto ja tämän skriptin sovitin.
 
-Skripti ei voi tuoda työtilaa, joten kynnyksen laskenta on kopio. Sama
-sopimus kuin käsikirjoituksella: ``test_the_learned_threshold_matches_
-podcast_magics`` ajaa samalle istunnolle ja samalle äänelle molemmat ja
-vaatii saman luvun, eli muutos podcast-magicin puolella kaatuu täällä.
+Laskenta on kirjastossa, jonka myös podcast-magic tuo; täällä testataan sovitinta,
+joka antaa kirjastolle lxml-puusta sanat ja ffmpeg-tasot. Koska sovittimia on
+kaksi (tämä ja podcast-magicin), ``test_the_learned_threshold_matches_podcast_
+magics`` ajaa molemmat samalle istunnolle ja äänelle ja vaatii saman luvun.
 
-Ääni annetaan molemmille valmiina taulukkona, ei levyltä: testi mittaa
-laskentaa eikä ffmpegiä.
+Ääni annetaan valmiina taulukkona, ei levyltä: testi mittaa laskentaa eikä
+ffmpegiä.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 from lxml import etree
 
+import silencelearn
 from colabtranscribe.colab import pipeline
 
 RATE = 16000
@@ -105,7 +106,7 @@ def test_the_threshold_is_the_level_of_the_muted_clips_not_of_the_cough(
     found = calibrate(olli(tmp_path), monkeypatch, {"olli.wav": OLLI_AUDIO})["Olli"]
     assert found.threshold is not None, found.reason
     leak = 20 * np.log10(0.03)
-    assert abs(found.threshold - (leak + pipeline.LEARN_MARGIN_DB)) < 1.0
+    assert abs(found.threshold - (leak + silencelearn.MARGIN_DB)) < 1.0
     assert found.threshold < 20 * np.log10(0.4) - 15       # ei yskäisyn tasolla
     assert found.muted_seconds == pytest.approx(10.0)
 
@@ -154,7 +155,7 @@ def test_a_word_left_unmuted_is_never_below_the_threshold(tmp_path, monkeypatch)
                      (20.0, 20.5, 0.4), (24.0, 24.5, 0.045)], seconds=70)
     found = calibrate(path, monkeypatch, {"olli.wav": samples})["Olli"]
     assert found.threshold is not None, found.reason
-    assert found.threshold <= 20 * np.log10(0.045) - pipeline.LEARN_KEEP_MARGIN_DB + 0.01
+    assert found.threshold <= 20 * np.log10(0.045) - silencelearn.KEEP_MARGIN_DB + 0.01
     assert found.clamp_note
 
 
@@ -178,12 +179,13 @@ def test_leak_from_another_track_raises_the_threshold(tmp_path, monkeypatch):
     found = calibrate(path, monkeypatch,
                       {"olli.wav": olli_audio, "panu.wav": panu_audio})["Olli"]
     assert found.threshold is not None, found.reason
-    assert found.threshold >= 20 * np.log10(0.01) + pipeline.LEARN_MARGIN_DB - 0.5
+    assert found.threshold >= 20 * np.log10(0.01) + silencelearn.MARGIN_DB - 0.5
 
 
 def test_the_learned_threshold_matches_podcast_magics(tmp_path, monkeypatch):
-    """Snapshot ei seuraa muutoksia itsestään (ks. CLAUDE.md): sama istunto,
-    sama ääni, sama kynnys molemmista."""
+    """Kirjasto on yhteinen, mutta sovittimia on kaksi: sanojen luku, alueiden
+    poiminta ja ``dbfs`` ovat kummassakin omansa. Sama istunto, sama ääni, sama
+    kynnys molemmista."""
     from podcastmagic import nhsx
     from podcastmagic.silence import calibrate as original
     from podcastmagic.silence.detect import AudioCache

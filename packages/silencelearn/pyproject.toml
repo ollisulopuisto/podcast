@@ -1,0 +1,35 @@
+# Opittu kynnys käsin vaimennetuista alueista, ilman riippuvuuksia.
+#
+# Yksi tiedosto ja pelkkä standardikirjasto, koska se ladataan sellaisenaan
+# Colabiin colab-transcriben skriptin viereen: Colabissa ei ole työtilaa.
+# `test_the_library_imports_nothing_but_the_standard_library` vartioi.
+
+[project]
+name = "silencelearn"
+version = "2026.10.12.1"
+description = "Silence threshold learned from hand-muted regions (stdlib only, shipped to Colab as one file)"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+authors = [{ name = "Olli Sulopuisto" }]
+keywords = ["hindenburg", "nhsx", "silence", "threshold", "podcast"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio",
+]
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src/silencelearn.py"]
+sources = ["src"]
+# Ilman tätä muokattava asennus ei löydä moduulia: tiedosto on `src/`:ssä
+# eikä paketissa, ja asennus onnistuu tyhjänä.
+dev-mode-dirs = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

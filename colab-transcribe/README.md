@@ -78,7 +78,7 @@ another track's speech leaks into the muted mic. Regions you muted by hand stay
 muted. A track with under 3 s of muted audio, or whose muted level is as loud
 as its speech, falls back to `--thr` and the log says why; a session with no
 muted region at all stops without writing anything. The numbers are taste, not
-measured, and the threshold is a snapshot of podcast-magic's — see CLAUDE.md.
+measured. The calculation is the `silencelearn` library, which is uploaded to Colab next to the script.
 
 ## Requirements
 

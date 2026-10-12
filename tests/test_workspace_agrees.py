@@ -66,7 +66,7 @@ def root() -> dict:
     return toml(ROOT / "pyproject.toml")
 
 
-def test_the_members_are_the_seven_we_think_they_are():
+def test_the_members_are_the_eight_we_think_they_are():
     """Sattumalta tyhjä luettelo tekisi jokaisesta alla olevasta testin joka ei testaa mitään.
 
     colab-transcribe on jäsen vaikka ei ole `apps/`issa — se on juuressa
@@ -75,6 +75,11 @@ def test_the_members_are_the_seven_we_think_they_are():
 
     nhsx on uusi jaettu paketti Hindenburg-parserille, se on `packages/`issa.
     fcp-subs-whisper on FCP-tekstityssovellus `apps/`issa.
+
+    silencelearn on kynnyksen oppiminen käsin vaimennetuista alueista:
+    yksi tiedosto ja pelkkä standardikirjasto, koska se ladataan sellaisenaan
+    Colabiin. Sitä ennen sama laskenta oli kopiona colab-transcriben
+    skriptissä ja pidettiin yhdenmukaisena vertailutestillä.
     """
     assert [name(m) for m in MEMBERS] == [
         "automixer",
@@ -83,6 +88,7 @@ def test_the_members_are_the_seven_we_think_they_are():
         "fcp-subs-whisper",
         "nhsx",
         "podcast-magic",
+        "silencelearn",
         "speechmix",
     ]
 

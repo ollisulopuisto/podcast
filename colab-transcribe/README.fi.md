@@ -81,7 +81,7 @@ vaimennettuina. Raita jolla on alle 3 s vaimennettua ääntä, tai jonka
 vaimennettu taso on yhtä kova kuin sen puhe, ajetaan `--thr`:llä ja lokissa
 lukee miksi; istunto jossa ei ole yhtään vaimennettua aluetta pysähtyy
 kirjoittamatta mitään. Luvut ovat makuasioita eikä niitä ole mitattu, ja
-kynnys on podcast-magicin snapshot — ks. CLAUDE.md.
+laskenta on `silencelearn`-kirjasto, joka ladataan Colabiin skriptin viereen.
 
 ## Vaatimukset
 

@@ -142,10 +142,23 @@ tämä kuuluu `speechmix`iin — se ei kuulu sinne ennen sitä.
 
 ## Kynnys voidaan opettaa käsin vaimennetuista alueista
 
-`silence/calibrate.py`: käyttäjä vaimentaa Hindenburgissa alun minuutin tai
-parin kohdat joissa kukaan ei puhu, ja ohjelma käyttää niiden tasoa raidan
-kynnyksenä pohja + herkkyys -säännön sijaan (`Settings.learn`, esivalinta
-`learned`). Kolme asiaa, jotka on helppo tehdä väärin:
+Laskenta on `packages/silencelearn`issa (yksi tiedosto, pelkkä
+standardikirjasto); `silence/calibrate.py` on vain sovitin: istunnon alueet
+kirjaston raidoiksi ja `Source`, joka vastaa sanoihin ja tasoihin `nhsx`:llä
+ja `AudioCache`lla. Syy kirjastoon: colab-transcriben Colab-skripti ei voi
+tuoda työtilaa, joten sama laskenta oli kopiona siellä; nyt ajuri lataa
+kirjastotiedoston Colabiin sellaisenaan. Luvut ja perustelut ovat kirjastossa.
+
+Käyttäjä vaimentaa Hindenburgissa alun minuutin tai parin kohdat joissa kukaan
+ei puhu, ja ohjelma käyttää niiden tasoa raidan kynnyksenä pohja + herkkyys
+-säännön sijaan (`Settings.learn`, esivalinta `learned`). Neljä asiaa, jotka
+on helppo tehdä väärin:
+
+* **Kaikki tiedostot muistiin laskennan ajaksi.** `AudioCache` pitää kaksi
+  tiedostoa, ja kynnys vertaa jokaisen ikkunan kohdalla myös muita raitoja:
+  neljällä raidalla kierto ei osunut kertaakaan ja jokainen haku purki
+  tunnin äänen uudestaan. `AudioCache.unbounded()` ja
+  `test_every_file_is_decoded_once_however_many_tracks_there_are`.
 
 * **Taso ei ole yksi luku.** Vaimennetussa alueessa on kohinaa, vuotoa ja
   yskäisyjä. Maksimi on yskäisy; korkea persentiili (`PERCENTILE`) ohittaa

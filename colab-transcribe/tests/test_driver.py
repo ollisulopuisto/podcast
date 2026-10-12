@@ -11,6 +11,8 @@ import shlex
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from colabtranscribe import driver
 from colabtranscribe.options import RunOptions
 
@@ -22,6 +24,26 @@ def test_pipeline_script_ships_with_the_package():
     assert script.is_file()
     assert script.name == "pipeline.py"
     assert "whisper-ctranslate2" in script.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("transfer", ["drive", "direct"])
+def test_the_library_is_uploaded_beside_the_script_before_it_runs(tmp_path: Path, transfer):
+    """Skripti tuo ``silencelearn``in, eikä Colabissa ole työtilaa: kirjasto on
+    ladattava ``/content``iin ennen kuin skripti ajetaan, ja samalla nimellä
+    jolla se tuodaan. Ilman sitä ``--preset learned`` kaatuu tuontiin pilvessä,
+    eikä mikään paikallinen testi huomaa."""
+    import silencelearn
+
+    options = RunOptions(input_dir=str(tmp_path), transfer=transfer)
+    commands = driver.plan_commands(options, ["a.wav"])
+    uploads = [c for c in commands if c[1] == "upload"]
+    library = [c for c in uploads if c[-1] == "/content/silencelearn.py"]
+    assert len(library) == 1, uploads
+    assert library[0][4] == str(Path(silencelearn.__file__)) == str(driver.LEARN_MODULE)
+    assert Path(library[0][-1]).stem == "silencelearn"
+    run = next(i for i, c in enumerate(commands)
+               if c[1] == "exec" and "python3 /content/pipeline.py" in c[-1])
+    assert commands.index(library[0]) < run
 
 
 def test_plan_sequence_direct(tmp_path: Path):
@@ -38,14 +60,17 @@ def test_plan_sequence_direct(tmp_path: Path):
     assert heads[2] == ["colab", "upload", "-s"]
     assert str(driver.PIPELINE_SCRIPT) in commands[2]
     assert commands[2][-1] == "/content/pipeline.py"
+    # kirjasto skriptin viereen
+    assert heads[3] == ["colab", "upload", "-s"]
+    assert commands[3][-1] == "/content/silencelearn.py"
     # alipolku tehdään ennen kuin siihen ladataan
-    assert heads[3] == ["colab", "exec", "-s"]
-    assert "/content/input/pool" in commands[3][-1]
-    assert heads[4] == ["colab", "upload", "-s"]
+    assert heads[4] == ["colab", "exec", "-s"]
+    assert "/content/input/pool" in commands[4][-1]
+    assert heads[5] == ["colab", "upload", "-s"]
     # lähde on absoluuttinen: aliprosessi ei peri TUI:n työhakemistoa eikä
     # kannata arvata mistä se käynnistettiin
-    assert commands[4][4] == str(tmp_path / "pool/a.wav")
-    assert commands[4][-1] == "/content/input/pool/a.wav"
+    assert commands[5][4] == str(tmp_path / "pool/a.wav")
+    assert commands[5][-1] == "/content/input/pool/a.wav"
     assert heads[-2] == ["colab", "download", "-s"]
     assert heads[-1] == ["colab", "stop", "-s"]
     assert options.session in commands[0] and options.session in commands[-1]
@@ -62,13 +87,15 @@ def test_plan_sequence_drive(tmp_path: Path):
     assert heads[1] == ["colab", "drivemount"]
     assert heads[2] == ["colab", "exec"]
     assert heads[3] == ["colab", "upload"]
-    assert heads[4] == ["drive", "upload"]
-    assert commands[4][2] == str(tmp_path)
-    assert f"ColabTranscribe/{options.session}/input.tar" in commands[4][3]
+    assert heads[4] == ["colab", "upload"]
+    assert commands[4][-1] == "/content/silencelearn.py"
+    assert heads[5] == ["drive", "upload"]
+    assert commands[5][2] == str(tmp_path)
+    assert f"ColabTranscribe/{options.session}/input.tar" in commands[5][3]
     # purkaminen Colabissa
-    assert heads[5] == ["colab", "exec"]
-    assert "tar -xf" in commands[5][-1]
-    assert f"ColabTranscribe/{options.session}/input.tar" in commands[5][-1]
+    assert heads[6] == ["colab", "exec"]
+    assert "tar -xf" in commands[6][-1]
+    assert f"ColabTranscribe/{options.session}/input.tar" in commands[6][-1]
     # suoritus
     assert any("pipeline.py" in c[-1] for c in commands if c[1] == "exec")
     # lataus alas

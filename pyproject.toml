@@ -93,6 +93,7 @@ known-first-party = [
     "fcp_subs_whisper",
     "nhsx",
     "podcastmagic",
+    "silencelearn",
     "speechmix",
 ]
 

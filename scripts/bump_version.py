@@ -111,11 +111,16 @@ def edits(member: Path, version: str) -> list[tuple[Path, str]]:
 
     targets = [(member / "pyproject.toml", VERSION_IN_PYPROJECT, True)]
 
-    (package,) = (member / "src").iterdir()
-    init = package / "__init__.py"
+    # Yksimoduulinen paketti (`silencelearn`: `src/silencelearn.py`) ei ole
+    # hakemisto, ja sen viereen syntyy `src/__pycache__`. Kumpikaan ei ole
+    # paketti jonka `__init__.py`:stä numeroa etsittäisiin.
+    (package,) = [p for p in (member / "src").iterdir()
+                  if p.is_dir() and p.name != "__pycache__"] or [None]
+    init = package / "__init__.py" if package is not None else None
     # automixer johtaa versionsa `importlib.metadata`sta, joten sillä ei ole
     # kirjoitettua numeroa nostettavaksi. Se ei ole virhe, se on toinen tapa.
-    if init.exists() and re.search(VERSION_IN_INIT, init.read_text(encoding="utf-8")):
+    if (init is not None and init.exists()
+            and re.search(VERSION_IN_INIT, init.read_text(encoding="utf-8"))):
         targets.append((init, VERSION_IN_INIT, True))
 
     # Vain `.app`in kokoavat `.spec`it. Sovelluksella voi olla useampi:

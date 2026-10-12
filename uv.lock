@@ -18,6 +18,7 @@ members = [
     "fcp-subs-whisper",
     "nhsx",
     "podcast-magic",
+    "silencelearn",
     "speechmix",
 ]
 
@@ -550,6 +551,7 @@ source = { editable = "colab-transcribe" }
 dependencies = [
     { name = "google-colab-cli" },
     { name = "jupyter-kernel-client" },
+    { name = "silencelearn" },
     { name = "textual" },
 ]
 
@@ -557,6 +559,7 @@ dependencies = [
 requires-dist = [
     { name = "google-colab-cli", git = "https://github.com/googlecolab/google-colab-cli?rev=930275e62970df10055f411c8e28ca61755dcfc7" },
     { name = "jupyter-kernel-client", git = "https://github.com/googlecolab/jupyter-kernel-client.git?rev=f18e982c3265df5e923aa9def101ab3fd737e139" },
+    { name = "silencelearn", editable = "packages/silencelearn" },
     { name = "textual", specifier = ">=8.0.0" },
 ]
 
@@ -2693,6 +2696,7 @@ dependencies = [
     { name = "nhsx" },
     { name = "numpy" },
     { name = "pywebview" },
+    { name = "silencelearn" },
     { name = "speechmix" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -2720,6 +2724,7 @@ requires-dist = [
     { name = "nhsx", editable = "packages/nhsx" },
     { name = "numpy", specifier = ">=2.4.2" },
     { name = "pywebview", specifier = ">=6.0" },
+    { name = "silencelearn", editable = "packages/silencelearn" },
     { name = "speechmix", editable = "packages/speechmix" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
@@ -3947,6 +3952,11 @@ sdist = { url = "https://files.pythonhosted.org/packages/58/15/8b3609fd3830ef7b2
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e0/f9/0595336914c5619e5f28a1fb793285925a8cd4b432c9da0a987836c7f822/shellingham-1.5.4-py2.py3-none-any.whl", hash = "sha256:7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686", size = 9755, upload-time = "2023-10-24T04:13:38.866Z" },
 ]
+
+[[package]]
+name = "silencelearn"
+version = "2026.10.12.1"
+source = { editable = "packages/silencelearn" }
 
 [[package]]
 name = "six"

@@ -22,6 +22,9 @@ Siksi tämä sovellus ei myöskään seiso `apps/`issa sen enempää kuin se
 ottaisi `speechmix`ia: se on juuressa `viewer/`in tapaan, mutta
 pyproject.tomlilla, ja listattu eksplisiittisesti työtilan jäseneksi.
 
+Poikkeus: `silencelearn` (ks. «Opittu kynnys ladataan, ei kopioida»). Se on
+työtilan paketti, mutta ajuri lataa sen Colabiin tiedostona.
+
 ## Käsikirjoitus on snapshot, ja sen drift on testi
 
 `pipeline.write_script` kirjoittaa valmiista istunnosta `.md`:n (puhujan
@@ -55,35 +58,46 @@ numpy ei ole pinnattu: se tulee faster-whisperin mukana. Ajuri kertoo
 valmiin tiedoston `Käsikirjoitus luotu:` -rivillä; `.md` tulee alas koko
 tulostekansion mukana, joten uutta `driver.parse_*`-markeria ei tarvita.
 
-## Opittu kynnys on snapshot
+## Opittu kynnys ladataan, ei kopioida
 
-`--preset learned` opettaa kynnyksen käsin vaimennetuista alueista:
-`calibrate_tree` on kopio podcast-magicin `silence/calibrate.py`:stä, ja
-`test_the_learned_threshold_matches_podcast_magics` ajaa molemmat samalle
-istunnolle ja äänelle ja vaatii saman luvun (1e-6). Testin ääni on
-**ramppi**, ei kaksiarvoinen: kaksiarvoisella aineistolla persentiilin
-muuttaminen 90:stä 80:een ei muuttanut mitään eikä testi huomannut sitä.
+`--preset learned` opettaa kynnyksen käsin vaimennetuista alueista, ja
+laskenta on `packages/silencelearn`issa: **yksi tiedosto, pelkkä
+standardikirjasto**. Ajuri lataa sen Colabiin skriptin viereen
+(`driver.LEARN_MODULE` -> `/content/silencelearn.py`, kummassakin
+siirtotavassa) ja skripti tuo sen `calibrate_tree`ssä; `/content` on skriptin
+`sys.path`issa, koska se ajetaan sieltä. podcast-magic tuo saman tiedoston,
+joten kopiota ei ole eikä sen driftiä tarvitse vartioida.
 
-Mitä ei kopioitu: vuotovertailu (`dominance`) ja opittu ero-raja raitojen
-välillä. Tässä skriptissä ei ole sanakohtaista vertailua toisiin raitoihin
-lainkaan, joten ero-rajalle ei olisi käyttöä. Se on oma ominaisuutensa, ei
-osa tätä.
+Tämä on ainoa osa skriptiä jota ladataan eikä kopioida — käsikirjoitus,
+downmix ja lukijan kovennus ovat yhä snapshoteja alla. Se on myös ainoa
+työtilan paketti jonka tämä sovellus ottaa (`pyproject.toml`), ja siksi että
+se ei tuo mitään mukanaan: ei numpya, ei lxml:ää. Jos kirjastoon tulee tuonti
+standardikirjaston ulkopuolelta, Colab kaatuu tuontiin eikä mikään paikallinen
+ajo huomaa; `test_the_library_imports_nothing_but_the_standard_library`
+(silencelearn) vartioi sitä, ja `test_the_library_is_uploaded_beside_the_
+script_before_it_runs` sitä että tiedosto lähtee mukaan.
 
-Kaksi eroa podcast-magiciin, tahallisia:
+Täällä on vain tämän skriptin puoli: `_Levels` antaa kirjastolle sanat
+(lxml) ja tasot (ffmpeg, 16 kHz mono, RMS) ja pitää jokaisen puretun
+tiedoston muistissa ilman kattoa. `test_the_learned_threshold_matches_
+podcast_magics` ajaa tämän sovittimen ja podcast-magicin sovittimen samalle
+istunnolle ja äänelle ja vaatii saman luvun: kirjasto on yhteinen, mutta
+`_dbfs`, sanojen luku ja alueiden poiminta ovat kahdessa paikassa. Testin
+ääni on **ramppi**, ei kaksiarvoinen: kaksiarvoisella aineistolla
+persentiilin muuttaminen 90:stä 80:een ei muuttanut mitään eikä testi
+huomannut sitä.
 
-* `_Levels` pitää kaikki puretut tiedostot muistissa. podcast-magicin
-  `AudioCache` pitää kaksi, ja kynnys vertaa jokaisen ikkunan kohdalla myös
-  muita raitoja: kolmella raidalla se purkaisi joka haun uudestaan.
-  `test_every_track_is_decoded_once_however_many_tracks_there_are` vartioi.
-* Opitussa tilassa taso mitataan samalla mittarilla kuin kynnys (`_Levels`,
-  ffmpeg ja RMS), ei pydubilla, ja raita jolta kynnystä ei opittu ajetaan
-  kiinteällä `--thr`:llä samalla mittarilla.
+Mitä ei käytetä: kirjasto laskee myös ero-rajan raitojen välillä
+(`Calibration.dominance`), mutta tässä skriptissä ei ole sanakohtaista
+vertailua toisiin raitoihin lainkaan, joten rajalle ei ole paikkaa. Se on oma
+ominaisuutensa.
 
 Käyttäjä vaimentaa istunnon alun **ennen ajoa**, litteroimattomaan
 istuntoon: kynnys luetaan vain äänestä ja vaimennuksista, ja litteroinnin
 sanat tulevat mukaan vasta puhevartijaan ja päästettävän sanan kattoon.
-Luvut ovat podcast-magicissa makuarvoja, ja sama tarkistamatta oikealla
-istunnolla.
+Luvut ovat kirjastossa makuarvoja, ja sama tarkistamatta oikealla
+istunnolla. Ladattu kirjasto on ajettu kokonaisena vain puhtaassa
+hakemistossa ilman työtilaa (kaksi tiedostoa, oikea ffmpeg), ei Colabissa.
 
 ## Luettu XML on aina kovennettu
 

@@ -23,7 +23,14 @@ dependencies = [
     # ovat ne joilla kehittäjän ``colab`` toimii (2026-10-08).
     "google-colab-cli @ git+https://github.com/googlecolab/google-colab-cli@930275e62970df10055f411c8e28ca61755dcfc7",
     "jupyter-kernel-client @ git+https://github.com/googlecolab/jupyter-kernel-client.git@f18e982c3265df5e923aa9def101ab3fd737e139",
+    # Ei importoida täällä vaan **ladataan Colabiin**: yksi tiedosto ja pelkkä
+    # standardikirjasto (``driver.LEARN_MODULE``). Ainoa työtilan paketti jonka
+    # tämä sovellus ottaa, ja siksi että se ei tuo mitään mukanaan.
+    "silencelearn",
 ]
+
+[tool.uv.sources]
+silencelearn = { workspace = true }
 
 [project.scripts]
 colab-transcribe = "colabtranscribe.__main__:main"

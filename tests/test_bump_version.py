@@ -110,6 +110,7 @@ def test_the_script_only_offers_real_members(capsys):
         "fcp-subs-whisper",
         "nhsx",
         "podcast-magic",
+        "silencelearn",
         "speechmix",
     }
     for member in bump.members().values():
