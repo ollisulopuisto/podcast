@@ -786,3 +786,53 @@ def test_run_downmix_falls_back_to_a_processed_session(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline, "transcribe_samples", lambda *a: [])
     pipeline.run_downmix(str(tmp_path), str(tmp_path / "out"), "")
     assert seen == [str(tmp_path / "x_processed.nhsx")]
+
+
+INTERJECTION_SESSION = """<?xml version="1.0" encoding="UTF-8"?>
+<Session Name="huudahdus">
+  <AudioPool Path="">
+    <File Id="1" Name="haastattelija.wav" Path="haastattelija.wav">
+      <Transcription><p>
+        <w s="0.000" l="0.400" sp="UU">alku</w>
+        <w s="2.000" l="0.400" sp="UU">keskikohta</w>
+        <w s="4.000" l="0.400" sp="UU">loppu</w>
+      </p></Transcription>
+    </File>
+    <File Id="2" Name="vieras.wav" Path="vieras.wav">
+      <Transcription><p>
+        <w s="0.000" l="0.400" sp="UU">Joo</w>
+        <w s="30.000" l="0.400" sp="UU">kauempana</w>
+      </p></Transcription>
+    </File>
+  </AudioPool>
+  <Tracks>
+    <Track Name="Haastattelija">
+      <Region Ref="1" Start="0.000" Length="6.000" Offset="0.000"/>
+    </Track>
+    <Track Name="Vieras">
+      <Region Ref="2" Start="2.500" Length="1.000" Offset="0.000"/>
+      <Region Ref="2" Start="10.000" Length="1.000" Offset="30.000"/>
+    </Track>
+  </Tracks>
+</Session>"""
+
+
+def test_a_short_remark_breaks_up_the_long_turn_in_the_snapshot_too(tmp_path):
+    """Sama keskeytyssääntö kuin podcast-magicin ``script.core``issa, ja
+    sama istunto antaa täsmälleen saman tekstin."""
+    from colabtranscribe.colab.pipeline import write_script
+    from podcastmagic.script import core
+
+    session = tmp_path / "huudahdus.nhsx"
+    session.write_text(INTERJECTION_SESSION, encoding="utf-8")
+    text = open(write_script(str(session)), encoding="utf-8").read()
+    assert text == (
+        "[00:00] **Haastattelija:** alku keskikohta\n"
+        "\n"
+        "[00:02] **Vieras:** Joo\n"
+        "\n"
+        "[00:04] **Haastattelija:** loppu\n"
+        "\n"
+        "[00:10] **Vieras:** kauempana\n"
+    )
+    assert text == core.script(core.read(str(session)))

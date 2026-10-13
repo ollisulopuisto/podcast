@@ -626,12 +626,51 @@ def _stamp(seconds):
     return f"[{total // 60:02d}:{total % 60:02d}]"
 
 
+def _script_lines(entries):
+    """Alueet kappaleiksi. Snapshot podcast-magicin `script/core.py`:n
+    `_render`istä (sama koodi, ei muuta).
+
+    Toisen puhujan alue, joka alkaa tämän sisällä ja päättyy ennen sen
+    loppua, katkaisee kappaleen; kappale jatkuu jatkuvan sanan aikaleimalla.
+    Saman puhujan peräkkäiset palat yhtyvät.
+    """
+    entries = sorted(entries, key=lambda entry: entry[0])
+    pieces = []
+    for start, name, words in entries:
+        first, last = words[0][0], words[-1][1]
+        cuts = sorted(
+            other[0][0]
+            for _, other_name, other in entries
+            if other_name != name and first < other[0][0] and other[-1][1] <= last
+        )
+        position = 0
+        for cut in [*cuts, float("inf")]:
+            end = position
+            while end < len(words) and words[end][0] < cut:
+                end += 1
+            bit = words[position:end]
+            if bit:
+                pieces.append((start if position == 0 else bit[0][0], name,
+                               [w[2] for w in bit]))
+            position = end
+    pieces.sort(key=lambda piece: piece[0])
+
+    merged = []
+    for start, name, texts in pieces:
+        if merged and merged[-1][1] == name:
+            merged[-1][2].extend(texts)
+        else:
+            merged.append((start, name, list(texts)))
+    return [f"{_stamp(start)} **{name}:** {' '.join(texts)}" for start, name, texts in merged]
+
+
 def write_script(nhsx_path):
     """Istunnosta luettava `.md` sen viereen: yksi kappale per puheenvuoro.
 
     **Snapshot** podcast-magicin `script/core.py`:stä, koska tämä skripti ei
     voi tuoda työtilaa (ks. CLAUDE.md). Raidan nimi on puhujan nimi,
-    peräkkäiset alueet samalta raidalta ovat yksi vuoro, aikaleima on vuoron
+    peräkkäiset alueet samalta raidalta ovat yksi vuoro (toisen puhujan
+    lyhyt huomautus katkaisee vuoron, ks. `_script_lines`), aikaleima on vuoron
     ensimmäisen alueen paikka aikajanalla ja tekstin antavat sanat joiden
     tiedostoaika osuu alueen ikkunaan. `test_the_snapshot_script_matches_
     podcast_magics` vertaa tulosta alkuperäiseen.
@@ -668,18 +707,11 @@ def write_script(nhsx_path):
                 ws = time_to_seconds(word.get("s"))
                 we = ws + time_to_seconds(word.get("l"))
                 if ws < offset + length and we > offset:
-                    words.append(text)
+                    words.append((start + ws - offset, start + we - offset, text))
             if words:  # musiikkiraita ja tyhjä alue eivät ole käsikirjoitusta
-                entries.append((start, name, " ".join(words)))
+                entries.append((start, name, words))
 
-    entries.sort(key=lambda entry: entry[0])
-    turns = []
-    for start, name, text in entries:
-        if turns and turns[-1][1] == name:
-            turns[-1][2].append(text)
-        else:
-            turns.append((start, name, [text]))
-    lines = [f"{_stamp(start)} **{name}:** {' '.join(parts)}" for start, name, parts in turns]
+    lines = _script_lines(entries)
     output_path = _swap_suffix(nhsx_path, ".nhsx", ".md")
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n\n".join(lines) + ("\n" if lines else ""))

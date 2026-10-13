@@ -190,3 +190,64 @@ def test_consecutive_regions_of_one_track_are_one_turn(tmp_path):
         "\n"
         "[00:19] **Olli:** lopuksi\n"
     )
+
+
+INTERJECTION_SESSION = """<?xml version="1.0" encoding="UTF-8"?>
+<Session Name="huudahdus">
+  <AudioPool Path="">
+    <File Id="1" Name="haastattelija.wav" Path="haastattelija.wav">
+      <Transcription><p>
+        <w s="0.000" l="0.400" sp="UU">alku</w>
+        <w s="2.000" l="0.400" sp="UU">keskikohta</w>
+        <w s="4.000" l="0.400" sp="UU">loppu</w>
+      </p></Transcription>
+    </File>
+    <File Id="2" Name="vieras.wav" Path="vieras.wav">
+      <Transcription><p>
+        <w s="0.000" l="0.400" sp="UU">Joo</w>
+        <w s="30.000" l="0.400" sp="UU">kauempana</w>
+      </p></Transcription>
+    </File>
+  </AudioPool>
+  <Tracks>
+    <Track Name="Haastattelija">
+      <Region Ref="1" Start="0.000" Length="6.000" Offset="0.000"/>
+    </Track>
+    <Track Name="Vieras">
+      <Region Ref="2" Start="2.500" Length="1.000" Offset="0.000"/>
+      <Region Ref="2" Start="10.000" Length="1.000" Offset="30.000"/>
+    </Track>
+  </Tracks>
+</Session>"""
+
+
+def test_a_short_remark_inside_a_long_turn_breaks_it_up(tmp_path):
+    """Keskeytys jakaa vuoron ja vuoro jatkuu omalla aikaleimallaan.
+
+    Hindenburgin alue ei katkea toisen puhujan kohdalla, joten alue
+    alkaa 00:00 ja kestää yli vieraan «Joon» (00:02). Aluetasoinen
+    järjestys pani koko haastattelijan kappaleen ensin ja huudahduksen
+    sen perään; käyttäjän pyyntö 2026-10-13: huudahdus katkaisee kappaleen.
+    """
+    path = tmp_path / "huudahdus.nhsx"
+    path.write_text(INTERJECTION_SESSION, encoding="utf-8")
+    assert core.script(core.read(str(path))) == (
+        "[00:00] **Haastattelija:** alku keskikohta\n"
+        "\n"
+        "[00:02] **Vieras:** Joo\n"
+        "\n"
+        "[00:04] **Haastattelija:** loppu\n"
+        "\n"
+        "[00:10] **Vieras:** kauempana\n"
+    )
+
+
+def test_a_reply_that_outlasts_the_turn_is_not_an_interjection(tmp_path):
+    """Päällekkäin alkava mutta pidempään jatkuva puhe on vuoronvaihto."""
+    path = tmp_path / "huudahdus.nhsx"
+    path.write_text(
+        INTERJECTION_SESSION.replace('l="0.400" sp="UU">Joo', 'l="3.000" sp="UU">Joo'),
+        encoding="utf-8",
+    )
+    text = core.script(core.read(str(path)))
+    assert text.startswith("[00:00] **Haastattelija:** alku keskikohta loppu\n")

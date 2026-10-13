@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [Unreleased]
+
+### Changed
+- **A remark from another speaker breaks up a long turn in the script.** A Hindenburg region does not end where someone else speaks, so the interviewer's paragraph used to come first and the guest's "yes" after it. Now a region of another speaker that starts inside a turn and ends before it does cuts the paragraph there, and the paragraph continues with the time of its next word. Longer overlapping speech is still a change of turn. Same rule as podcast-magic's script (held by a test).
+
 ## [2026.10.12.1] - 2026-10-12
 
 ### Added
