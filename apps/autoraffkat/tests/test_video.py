@@ -7,6 +7,7 @@ tähän rooliin, sitä ei voisi vaihtaa toiseen.
 
 import os
 import subprocess
+import sys
 
 import numpy as np
 import pytest
@@ -465,6 +466,7 @@ def test_crowd_faces_are_looked_for_every_few_seconds(clip, monkeypatch):
     assert set(table["frame"]) == set(range(0, frames, 3))
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="VideoToolbox exists only on macOS")
 def test_keyframes_are_decoded_in_hardware_on_a_mac(clip, tmp_path, monkeypatch):
     """Avainruutujen purku on kasvomittauksen pullonkaula: VideoToolbox
     teki sen 3–7× nopeammin ja samoin ruuduin (2026-10-07)."""

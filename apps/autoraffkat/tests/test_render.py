@@ -7,6 +7,7 @@ laivastonsininen ja viininpunainen) ja ääni sen siniäänipurskeilla.
 """
 
 import subprocess
+import sys
 
 import numpy as np
 import pytest
@@ -230,6 +231,7 @@ def test_the_av_render_cuts_on_the_exact_frame_and_has_the_exact_length(tmp_path
 
 
 @needs_ffmpeg
+@pytest.mark.skipif(sys.platform != "darwin", reason="AVFoundation exists only on macOS")
 def test_the_av_render_in_two_halves_joins_on_the_exact_frame(tmp_path):
     """Kaksi vientiä rinnakkain (M1 Maxissa kaksi koodainta: 11× -> 16×
     reaaliaika, neljä ei enää auta) ja liitos kopiona: pituus ja leikkaukset
