@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.13.1] - 2026-10-13
+
+### Fixed
+- **The Windows build passes again.** The release builds of 2026.10.11.2 and 2026.10.12.1 failed their Windows tests, so nothing was published. Two macOS-only tests now skip elsewhere, and three vertical tests no longer race the measurement they replace. No change to the app itself.
+
 ## [2026.10.12.1] - 2026-10-12
 
 ### Fixed
