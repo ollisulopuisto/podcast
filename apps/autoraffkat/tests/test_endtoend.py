@@ -292,6 +292,11 @@ def test_vertical_export_evens_out_face_sizes(scratch_xml):
                 "x": np.full(n, 0.45, np.float32), "w": np.full(n, 0.1, np.float32),
                 "y": np.full(n, 0.4, np.float32), "h": np.full(n, h, np.float32)}
 
+    # Taulukot annetaan suoraan. Pystykytkin käynnistäisi muuten mittauksen
+    # (``video_missing``), ja sen valmistuminen korvaisi ne: macOSilla se
+    # oli hitaampi kuin vienti, Windowsissa valmis ensin (CI 2026-10-13:
+    # ``video_tables`` tyhjä, vienti ilman kehystystä).
+    state.start_measure_video = lambda: None
     state.video_tables = {"CLOSE_A.mp4": faces(0.246), "CLOSE_B.mp4": faces(0.30)}
     client = TestClient(create_app(state))
     result = client.post("/api/settings", json={
@@ -345,6 +350,8 @@ def test_vertical_follows_the_speaker_inside_a_two_shot(scratch_xml, flip):
         for x, spans in ((0.15, SPEECH_A), (0.65, SPEECH_B)):
             rows.append((t, x, 0.4 * talking(spans, t) * (t % 2)))
     n = len(rows)
+    # Ks. edellä: mittauksen käynnistys korvaisi annetut taulukot.
+    state.start_measure_video = lambda: None
     state.crowd_tables = {"CLOSE_A.mp4": {
         "times": np.arange(35, dtype=np.float32),
         "frame": np.array([r[0] for r in rows], np.int32),
