@@ -36,10 +36,14 @@ def test_the_cli_passes_the_state_to_the_speech_plugins(tmp_path, monkeypatch):
     state.write_text("U3R1ZGlvIDI=", encoding="utf-8")
     wav = tmp_path / "olli.wav"
     sf.write(wav, np.zeros(48000, dtype=np.float32), 48000)
+    # Liitännäisen on oltava olemassa: nimi tarkistetaan ajon alussa, eikä
+    # CI-ajurilla ole dxRevivea (CI 2026-10-13: ``SystemExit: 2``).
+    plugin = tmp_path / "Accentize-dxRevive.vst3"
+    plugin.mkdir()
     seen = []
     monkeypatch.setattr(cli_mix, "Mixer", lambda config: type(
         "M", (), {"run": lambda self: seen.append(config)})())
-    monkeypatch.setattr("sys.argv", ["automixer", str(wav), "--speech-plugins", DXREVIVE,
+    monkeypatch.setattr("sys.argv", ["automixer", str(wav), "--speech-plugins", str(plugin),
                                      "--plugin-state", str(state)])
     cli_mix.main()
     assert [p["state"] for p in seen[0]["buses"]["speech"]["processors"]] == ["U3R1ZGlvIDI="]
