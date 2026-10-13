@@ -1422,3 +1422,41 @@ def test_plugin_pieces_join_in_a_quiet_moment(monkeypatch):
     ratio = out[0] / np.where(audio[0] == 0, 1, audio[0])
     join = int(np.flatnonzero(np.abs(ratio - 1.1) < 1e-3)[0])
     assert pause.start <= join < pause.stop, join / RATE
+
+
+INSTALLED = [
+    {"name": "Accentize-dxRevive", "path": "/p/Accentize-dxRevive.vst3"},
+    {"name": "FabFilter Pro-Q 3", "path": "/p/FabFilter Pro-Q 3.vst3"},
+    {"name": "FabFilter Pro-L 2", "path": "/p/FabFilter Pro-L 2.vst3"},
+]
+
+
+def names(found):
+    return [p["name"] for p in found]
+
+
+def test_a_plugin_is_found_by_part_of_its_name():
+    """Käyttäjä kirjoitti ``dxRevive``; tiedoston nimi on
+    ``Accentize-dxRevive.vst3``. Kirjainkoolla, väliviivalla ja
+    tiedostopäätteellä ei ole väliä."""
+    for spec in ("dxRevive", "DXREVIVE", "dx revive", "dxRevive.vst3",
+                 "Accentize-dxRevive"):
+        assert names(chain.find_plugin(spec, INSTALLED)) == ["Accentize-dxRevive"]
+
+
+def test_an_existing_path_is_taken_as_it_is(tmp_path):
+    plug = tmp_path / "Oma.vst3"
+    plug.mkdir()
+    assert chain.find_plugin(str(plug), INSTALLED) == [
+        {"name": "Oma", "path": str(plug)}
+    ]
+
+
+def test_an_ambiguous_name_returns_every_candidate():
+    assert names(chain.find_plugin("fabfilter", INSTALLED)) == [
+        "FabFilter Pro-Q 3", "FabFilter Pro-L 2"]
+
+
+def test_a_misspelt_name_falls_back_to_the_closest():
+    assert names(chain.find_plugin("dxrevise", INSTALLED)) == ["Accentize-dxRevive"]
+    assert chain.find_plugin("ei-mitään-tällaista", INSTALLED) == []

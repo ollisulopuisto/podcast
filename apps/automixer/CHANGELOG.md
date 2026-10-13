@@ -5,9 +5,10 @@ All notable changes to automixer are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
-## [Unreleased]
+## [2026.10.13.1] - 2026-10-13
 
 ### Added
+- **Plug-ins by name: `--speech-plugins dxRevive`.** The option takes a path, a name or part of one (case, dashes and `.vst3` don't matter; a near miss like `dxrevise` is matched too) and says which plug-in it picked. Without a value it lists the installed plug-ins. If the name is ambiguous or unknown, a terminal asks you to pick from a numbered list; without a terminal the run stops with the list. The check happens before anything is analysed: a wrong name used to fail minutes in, after the block analysis. Same for `--music-plugins`.
 - **`automixer-beds --leave TRACK`: leave a music track's fades alone.** For beds exported with their fades already in the audio (or fades you drew yourself), `automixer-beds` no longer has to write its own curve over them, which played the fade twice. Repeatable, case-insensitive. A name that matches no music track is an error that lists the music tracks, not a silent no-op; if every music track is left alone nothing is written. The mixer itself needed no change: it plays the session's own fades and adds no rides to music.
 
 ## [2026.10.9.1] - 2026-10-09

@@ -27,6 +27,7 @@ asia jota ei sallita.
 
 from __future__ import annotations
 
+import difflib
 import os
 import sys
 import threading
@@ -252,6 +253,50 @@ def plugins() -> list[dict]:
                 # koska se on ensin listassa.
                 found.setdefault(entry.stem, str(entry))
     return [{"name": name, "path": path} for name, path in sorted(found.items())]
+
+
+def _plain(text: str) -> str:
+    """Nimi vertailua varten: pienet kirjaimet, vain kirjaimet ja numerot."""
+    return "".join(c for c in text.lower() if c.isalnum())
+
+
+def find_plugin(spec: str, installed: list[dict] | None = None) -> list[dict]:
+    """Liitännäiset jotka ``spec`` tarkoittaa: polku, nimi tai nimen osa.
+
+    Olemassa oleva polku kelpaa sellaisenaan. Muuten nimi, jonka kirjainkoolla,
+    välimerkeillä ja ``.vst3``-päätteellä ei ole väliä: ``dxRevive`` löytää
+    ``Accentize-dxRevive.vst3``:n, jonka koko polkua kukaan ei muista.
+    Järjestys: täsmälleen sama nimi, nimen osa, lopuksi lähin kirjoitusasu
+    (``dxrevise``). Tyhjä lista tarkoittaa ettei mikään sopinut; useampi
+    ettei voi valita puolesta.
+    """
+    expanded = os.path.expanduser(spec)
+    if os.path.exists(expanded):
+        stem = Path(expanded).stem
+        return [{"name": stem, "path": spec}]
+    installed = plugins() if installed is None else installed
+    query = _plain(Path(spec).stem if spec.lower().endswith((".vst3", ".component")) else spec)
+    if not query:
+        return []
+    exact = [p for p in installed if _plain(p["name"]) == query]
+    if exact:
+        return exact
+    part = [p for p in installed if query in _plain(p["name"])]
+    if part:
+        return part
+    # Kirjoitusvirhe: verrataan nimen samanpituisiin paloihin, koska
+    # ``dxrevise`` on lähellä ``dxrevive``a mutta ei koko nimeä
+    # ``accentizedxrevive``.
+    def score(name: str) -> float:
+        plain = _plain(name)
+        width = min(len(query), len(plain))
+        return max(
+            difflib.SequenceMatcher(None, query, plain[i:i + width]).ratio()
+            for i in range(len(plain) - width + 1)
+        )
+
+    ranked = sorted(((score(p["name"]), p) for p in installed), key=lambda x: -x[0])
+    return [p for value, p in ranked[:1] if value >= 0.75]
 
 
 def load_plugin(path: str, params: dict | None = None, state: str | None = None):

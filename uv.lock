@@ -208,7 +208,7 @@ wheels = [
 
 [[package]]
 name = "automixer"
-version = "2026.10.9.1"
+version = "2026.10.13.1"
 source = { editable = "apps/automixer" }
 dependencies = [
     { name = "mlx" },
@@ -243,7 +243,7 @@ requires-dist = [
 
 [[package]]
 name = "autoraffkat"
-version = "2026.10.11.2"
+version = "2026.10.12.1"
 source = { editable = "apps/autoraffkat" }
 dependencies = [
     { name = "fastapi" },

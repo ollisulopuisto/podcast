@@ -141,3 +141,50 @@ def test_the_module_no_longer_loads_plugins_itself():
     eikä testi saa kaatua siihen että historia on kirjoitettu auki.
     """
     assert not hasattr(processor, "pedalboard")
+
+
+def _cli(monkeypatch, *argv):
+    from automixer import cli_mix
+
+    monkeypatch.setattr("sys.argv", ["automixer", *argv])
+    cli_mix.main()
+
+
+def _installed(monkeypatch):
+    from speechmix import chain
+
+    monkeypatch.setattr(chain, "plugins", lambda: [
+        {"name": "Accentize-dxRevive", "path": "/p/Accentize-dxRevive.vst3"},
+        {"name": "Other", "path": "/p/Other.vst3"},
+    ])
+
+
+def test_an_empty_plugin_option_lists_what_is_installed(monkeypatch, capsys):
+    _installed(monkeypatch)
+    with pytest.raises(SystemExit) as stop:
+        _cli(monkeypatch, "jakso.nhsx", "--speech-plugins")
+    assert stop.value.code == 0
+    out = capsys.readouterr().out
+    assert "Accentize-dxRevive" in out
+    assert "/p/Accentize-dxRevive.vst3" in out
+
+
+def test_an_unknown_plugin_stops_before_any_work(monkeypatch, capsys):
+    """Nimi joka ei löydy lopettaa heti, ei analyysin jälkeen: se maksoi
+    ajossa minuutteja ennen kuin ``Plug-in not found: dxRevive`` tuli."""
+    _installed(monkeypatch)
+    with pytest.raises(SystemExit):
+        _cli(monkeypatch, "puuttuva.nhsx", "--speech-plugins", "nonexistent")
+    err = capsys.readouterr().err
+    assert "nonexistent" in err and "Accentize-dxRevive" in err
+
+
+def test_a_plugin_name_becomes_its_path(monkeypatch):
+    from automixer import cli_mix
+
+    _installed(monkeypatch)
+    seen = {}
+    monkeypatch.setattr(cli_mix, "_mix_session",
+                        lambda args, path: seen.update(plugins=args.speech_plugins))
+    _cli(monkeypatch, "jakso.nhsx", "--speech-plugins", "dxRevive")
+    assert seen["plugins"] == ["/p/Accentize-dxRevive.vst3"]

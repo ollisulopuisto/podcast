@@ -11,6 +11,7 @@ import glob
 import json
 import os
 import shutil
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -568,6 +569,65 @@ def detect_tracks(paths):
     return tracks
 
 
+def _choose_plugin(spec: str, found: list[dict], installed: list[dict]) -> dict | None:
+    """Yksi liitännäinen kun nimi ei yksin riitä: kysy terminaalissa.
+
+    ``found`` on ehdokkaat (tyhjä = ei löytynyt), ``installed`` kaikki
+    asennetut. Ilman terminaalia ei arvata: palauttaa ``None``.
+    """
+    options = found or installed
+    if not sys.stdin.isatty() or not options:
+        return None
+    why = f"'{spec}' matches several" if found else (
+        f"No plug-in called '{spec}'" if spec else "Installed plug-ins"
+    )
+    print(f"{why}:")
+    for number, plug in enumerate(options, 1):
+        print(f"  {number}. {plug['name']}")
+    answer = input("Number (Enter = cancel): ").strip()
+    if answer.isdigit() and 1 <= int(answer) <= len(options):
+        return options[int(answer) - 1]
+    return None
+
+
+def _resolve_plugin_args(args, parser) -> None:
+    """Nimet poluiksi heti alussa, ennen analyysia.
+
+    ``--speech-plugins dxRevive`` kaatui vasta lohkolaskennan jälkeen
+    (``Plug-in not found: dxRevive``), minuutteja ajon alusta. Nyt jokainen
+    nimi etsitään asennetuista heti: täsmä tai osuma käytetään (ja sanotaan
+    mikä), epäselvä kysytään terminaalissa, ja ilman terminaalia ajo
+    pysähtyy listaan. Tyhjä valitsin listaa asennetut.
+    """
+    from speechmix import chain
+
+    for dest, flag in (("speech_plugins", "--speech-plugins"),
+                       ("music_plugins", "--music-plugins")):
+        specs = getattr(args, dest)
+        if specs is None:
+            continue
+        installed = chain.plugins()
+        listing = "\n".join(f"  {p['name']}  ({p['path']})" for p in installed) \
+            or "  (none found in the standard folders)"
+        resolved = []
+        for spec in specs or [""]:
+            found = chain.find_plugin(spec, installed) if spec else []
+            pick = found[0] if len(found) == 1 else _choose_plugin(spec, found, installed)
+            if pick is None:
+                if not spec:
+                    print(f"Installed plug-ins ({flag} NAME):\n{listing}")
+                    raise SystemExit(0)
+                parser.error(
+                    f"{flag}: '{spec}' "
+                    + ("matches several plug-ins" if found else "is not an installed plug-in")
+                    + f". Installed:\n{listing}"
+                )
+            if pick["path"] != spec:
+                print(f"  {flag}: {pick['name']}  ({pick['path']})")
+            resolved.append(pick["path"])
+        setattr(args, dest, resolved)
+
+
 def main():
     """
     Main entry point for the Automixer CLI.
@@ -717,9 +777,14 @@ def main():
 
     # New options: Plugins
     parser.add_argument(
-        "--speech-plugins", nargs="+", help="Plugin paths for speech tracks"
+        "--speech-plugins", nargs="*",
+        help="Speech plug-ins: a path, or just a name or part of one "
+        "(dxRevive). Without a value, lists the installed plug-ins",
     )
-    parser.add_argument("--music-plugins", nargs="+", help="Plugin paths for music bus")
+    parser.add_argument(
+        "--music-plugins", nargs="*",
+        help="Music bus plug-ins, same forms as --speech-plugins",
+    )
     parser.add_argument(
         "--plugin-params", help="Plugin parameters (e.g. WavesNS1: threshold=0.5)"
     )
@@ -741,6 +806,7 @@ def main():
     )
 
     args = parser.parse_args()
+    _resolve_plugin_args(args, parser)
     if args.verbose:
         from speechmix import log
 

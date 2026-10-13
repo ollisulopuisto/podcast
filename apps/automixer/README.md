@@ -240,6 +240,14 @@ For a detailed breakdown of exactly when processing happens, see **[PIPELINE.md]
 - `src/automixer/cli_mix.py`: Parallelized mixing engine.
 - `src/automixer/app.py`: Textual-based TUI dashboard.
 
+### **Choosing a plug-in**
+`--speech-plugins` and `--music-plugins` take a path, or just a name or part
+of one: `--speech-plugins dxRevive`. Case, dashes and `.vst3` don't matter, a
+near miss (`dxrevise`) is matched, and the plug-in picked is printed. Without
+a value the option lists the installed plug-ins. An ambiguous or unknown name
+asks you to pick from a numbered list in a terminal, and stops with the list
+otherwise. The check runs before anything is analysed.
+
 ### **Plugin Parameters**
 You can now control your plugins directly from the TUI. In the **Plugins** tab, use the following format:
 `PluginName: param1=val1, param2=val2; NextPlugin: param=val`
