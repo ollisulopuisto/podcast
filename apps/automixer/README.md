@@ -198,8 +198,8 @@ as `episode automixer.wav`. Plain audio files work as before.
 Stages that read the speech grid, all off under `--minimal`:
 - `--no-debleed`: keep the cross-bleed between microphones.
 - `--no-rider`: skip the slow level ride ahead of the compressors.
-- `--mic-duck`: close a microphone while its owner is silent. Off by
-  default: de-bleeding removes the leakage, and by ear the gate pumped.
+- `--no-mic-duck`: do not close a microphone while its owner is silent.
+  On by default; -9 dB sounded best in a listen against -6 and -15.
 - `--mic-duck-db`: how far a closed microphone drops (default: the measured
   -9 dB, which is deliberately shallow — the benefit is in the timing).
 

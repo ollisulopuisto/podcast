@@ -223,7 +223,7 @@ def mix(
     declick_sensitivity: float = 0.5,
     rider: bool = True,
     debleed: bool = True,
-    mic_duck: bool = False,
+    mic_duck: bool = True,
     mic_duck_db: float | None = None,
     block_level: bool = True,
 ) -> stems.StemResult:

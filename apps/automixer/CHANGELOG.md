@@ -5,6 +5,11 @@ All notable changes to automixer are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [Unreleased]
+
+### Changed
+- **Microphone ducking is on by default.** `--mic-duck` was off because the gate pumped by ear; a listen on diet woke 05 (-6, -9 and -15 dB, compared blind and open) kept the -9 dB default. `--no-mic-duck` turns it off; `--mic-duck` is accepted and does nothing. `--minimal` still turns it off.
+
 ## [2026.10.13.1] - 2026-10-13
 
 ### Added

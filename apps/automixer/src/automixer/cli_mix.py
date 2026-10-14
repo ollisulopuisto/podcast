@@ -259,7 +259,7 @@ class Mixer:
         mic_ducks = {}
         # Oletus pois: vuodonpoisto vie vuodon lineaarisesti, ja kuunneltuna
         # (autoraffkat, pp 55) portti pumppasi.
-        if heard is not None and speech_cfg.get("mic_duck_enabled", False):
+        if heard is not None and speech_cfg.get("mic_duck_enabled", True):
             # Syvyys on säädin, loput mitattuja oletuksia kirjastosta.
             duck = room.DuckSettings()
             if speech_cfg.get("mic_duck_db") is not None:
@@ -727,15 +727,14 @@ def main():
         "--mic-duck",
         action="store_true",
         dest="speech_mic_duck",
-        help="Close a microphone while its owner is silent (off by default: "
-        "de-bleeding removes the leakage, and the gate pumped by ear)",
+        help=argparse.SUPPRESS,   # oletus on päällä; lippu kelpaa vanhoille ajoille
     )
-    # Vanha lippu kelpaa yhä, koska oletus on nyt sama kuin mitä se pyysi.
     parser.add_argument(
         "--no-mic-duck",
         action="store_false",
         dest="speech_mic_duck",
-        help=argparse.SUPPRESS,
+        help="Do not close a microphone while its owner is silent (on by "
+        "default: -9 dB sounded best against -6 and -15)",
     )
     parser.add_argument(
         "--mic-duck-db",
@@ -745,7 +744,7 @@ def main():
     )
     parser.set_defaults(
         speech_hp=True, speech_peak=True, speech_lev=True, speech_desmack=True,
-        speech_debleed=True, speech_rider=True, speech_mic_duck=False,
+        speech_debleed=True, speech_rider=True, speech_mic_duck=True,
     )
 
     # New options: Music Bus
