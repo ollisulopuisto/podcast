@@ -774,6 +774,13 @@ def _script_lines(entries):
 #: kaksihuippuinen, vain 1,7 % puheruuduista on alle ±8 dB:n sisällä ja vuoto
 #: on 27–28 dB oman puheen alla. 6 dB on keskellä leveää laaksoa, ei tarkka luku.
 BLEED_MARGIN_DB = 6.0
+#: Raja lasketaan ajossa: neljäsosa siitä kuinka paljon kovempaa oma puhe on
+#: kuin vuoto (mediaani selvistä sanoista), 3-12 dB:n väliin. Jakaja 4 on se
+#: jolla mitattu 27 dB antaa lähes saman kuin ylläoleva 6 dB (6,8 dB); kiinteä
+#: luku jää varaksi kun mittaukseen ei ole tarpeeksi sanoja.
+BLEED_DEPTH_DIVISOR = 4.0
+BLEED_MARGIN_MIN_DB = 3.0
+BLEED_MARGIN_MAX_DB = 12.0
 
 
 def _bleed_dropped(items, regions, levels):
@@ -814,13 +821,27 @@ def _bleed_dropped(items, regions, levels):
                     break
         return best
 
-    dropped = set()
+    # Jokaiselle sanalle: kuinka paljon oma taso ylittää kovimman muun raidan
+    # (suhteutettuna). Oma puhe on selvästi positiivista, vuoto yhtä selvästi
+    # negatiivista; sama etäisyys kertoo kuinka syvä vuoto on.
+    spread = {}
     for i, (it, db) in enumerate(zip(items, own, strict=True)):
         if it[0] not in baseline or db is None or not np.isfinite(db):
             continue
-        if other_level(it[0], it[4], it[5]) - (db - baseline[it[0]]) > BLEED_MARGIN_DB:
-            dropped.add(i)
-    return dropped
+        other = other_level(it[0], it[4], it[5])
+        if np.isfinite(other):
+            spread[i] = (db - baseline[it[0]]) - other
+    clear = [x for x in spread.values() if x > 2.0]
+    if len(clear) >= 2:
+        depth = float(np.median(clear))
+        margin = min(max(depth / BLEED_DEPTH_DIVISOR, BLEED_MARGIN_MIN_DB), BLEED_MARGIN_MAX_DB)
+        print(f"Vuodon raja: oma puhe {depth:.1f} dB vuotoa kovempaa, raja {margin:.1f} dB.",
+              flush=True)
+    else:
+        margin = BLEED_MARGIN_DB
+        print(f"Vuodon raja: liian vähän selviä sanoja mittaukseen, käytetään {margin:.1f} dB.",
+              flush=True)
+    return {i for i, x in spread.items() if -x > margin}
 
 
 def _drop_bleed(entries, meta, regions, tree, audio_dirs):

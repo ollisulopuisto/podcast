@@ -872,7 +872,7 @@ def test_identical_audio_is_transcribed_once_and_the_others_get_a_copy(
 RATE = 16000
 
 
-def _bleed_session(tmp_path, monkeypatch):
+def _bleed_session(tmp_path, monkeypatch, bleed=-27.0, own_b=-26.0):
     """Kaksi mikkiä, kumpikin kuulee molemmat. Aame puhuu 0-2 s, Antto 2-4 s,
     molemmat 4-5 s. Whisper litteroi vuodon kummallakin raidalla."""
     import numpy as np
@@ -884,8 +884,7 @@ def _bleed_session(tmp_path, monkeypatch):
     def level(db, seconds):
         return rng.standard_normal(int(RATE * seconds)) * 10 ** (db / 20)
 
-    own_a, own_b = -20.0, -26.0  # Antto on 6 dB hiljaisempi omalla mikillään
-    bleed = -27.0  # mitattu: vuoto oli 27-28 dB oman puheen alapuolella
+    own_a = -20.0  # Antto on oletuksena 6 dB hiljaisempi omalla mikillään
     a = np.concatenate([level(own_a, 2), level(own_b + bleed, 2), level(own_a, 1)])
     b = np.concatenate([level(own_a + bleed, 2), level(own_b, 2), level(own_b, 1)])
     pcm = {"aame.wav": (a * 32767).astype("int16"), "antto.wav": (b * 32767).astype("int16")}
@@ -1014,3 +1013,16 @@ def test_the_script_flag_turns_the_injection_filter_off(monkeypatch):
     monkeypatch.setattr(pipeline, "write_script", lambda *a, **k: None)
     pipeline.main()
     assert seen == [False]
+
+
+def test_the_margin_follows_how_deep_the_bleed_is(tmp_path, monkeypatch, capsys):
+    """Raja ei ole kiinteä: se on neljäsosa siitä kuinka paljon omat sanat ovat
+    kovempia kuin vuoto, 3-12 dB:n väliin rajattuna. Vuoto vain 5 dB alempana
+    jäisi kiinteällä 6 dB:llä kokonaan, mutta puhujat erottuvat silti."""
+    from colabtranscribe.colab.pipeline import write_script
+
+    session = _bleed_session(tmp_path, monkeypatch, bleed=-5.0, own_b=-20.0)
+    text = open(write_script(str(session), audio_dirs=[str(tmp_path)]), encoding="utf-8").read()
+    assert "vuototanttoa" not in text and "vuotoaamea" not in text
+    assert "aamen" in text and "antton" in text
+    assert "Vuodon raja" in capsys.readouterr().out
