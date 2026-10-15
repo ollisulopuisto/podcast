@@ -793,3 +793,55 @@ def test_the_plan_chunks_only_big_direct_uploads(monkeypatch, tmp_path: Path):
     assert any(c[0] == "chunked-upload" and c[2].endswith("iso.wav") for c in plan)
     assert any(c[:2] == ["colab", "upload"] and c[-1].endswith("pieni.wav") for c in plan)
     assert not any(c[:2] == ["colab", "upload"] and c[-1].endswith("iso.wav") for c in plan)
+
+
+def _session(tmp_path: Path, pool_path="rec Files", names=("a.wav", "b.wav")) -> None:
+    files = "".join(f'<File Id="{i}" Name="{n}"/>' for i, n in enumerate(names, 1))
+    (tmp_path / "jakso.nhsx").write_text(
+        f'<?xml version="1.0"?><Session><AudioPool Path="{pool_path}" Location="/x">'
+        f"{files}</AudioPool><Tracks/></Session>",
+        encoding="utf-8",
+    )
+
+
+def _touch(root: Path, *rels: str) -> list[str]:
+    for rel in rels:
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_bytes(b"x")
+    return driver.list_input_files(root)
+
+
+def test_only_what_the_session_uses_goes_up(tmp_path: Path):
+    """Hänen kansionsa: istunto + sen oma ``rec Files``, mutta vieressä myös
+    ``.TAKE``-kopiot ja raakamatsku.mp3. Pilvessä skripti litteroi *kaiken*
+    äänen jonka löytää, joten ylimääräinen maksaa sekä latauksen että ajan."""
+    _session(tmp_path)
+    files = _touch(
+        tmp_path,
+        "rec Files/a.wav", "rec Files/b.wav", "rec Files/c.wav",
+        "001.TAKE/a.wav", "raakamatsku.mp3", "muistiinpano.txt",
+    )
+    kept, skipped = driver.session_inputs(tmp_path, files)
+    assert kept == ["jakso.nhsx", "rec Files/a.wav", "rec Files/b.wav"]
+    assert set(skipped) == {
+        "rec Files/c.wav", "001.TAKE/a.wav", "raakamatsku.mp3", "muistiinpano.txt",
+    }
+
+
+def test_without_a_session_everything_goes_up(tmp_path: Path):
+    files = _touch(tmp_path, "puhe.wav", "toinen.mp3")
+    assert driver.session_inputs(tmp_path, files) == (files, [])
+
+
+def test_an_unreadable_session_uploads_everything_rather_than_guessing(tmp_path: Path):
+    files = _touch(tmp_path, "rec Files/a.wav", "raaka.mp3")
+    (tmp_path / "rikki.nhsx").write_text("<Session><AudioPool", encoding="utf-8")
+    files = driver.list_input_files(tmp_path)
+    assert driver.session_inputs(tmp_path, files) == (files, [])
+
+
+def test_a_file_the_session_names_but_the_folder_lacks_is_not_an_error(tmp_path: Path):
+    _session(tmp_path, names=("a.wav", "puuttuu.wav"))
+    files = _touch(tmp_path, "rec Files/a.wav")
+    kept, _ = driver.session_inputs(tmp_path, files)
+    assert kept == ["jakso.nhsx", "rec Files/a.wav"]

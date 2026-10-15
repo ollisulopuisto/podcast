@@ -579,6 +579,12 @@ class TranscribeApp(App):
         try:
             self.call_from_thread(self._set_progress, 0.0, "Valmistellaan ajoa...")
             files = driver.list_input_files(Path(options.input_dir))
+            files, skipped = driver.session_inputs(Path(options.input_dir), files)
+            if skipped:
+                self.call_from_thread(
+                    self._write_log,
+                    driver.skipped_note(options.input_dir, skipped),
+                )
             reuse_session = False
             if session.is_session_alive(options.session):
                 if options.reset_session:

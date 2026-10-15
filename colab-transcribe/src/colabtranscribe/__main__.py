@@ -154,6 +154,9 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
         return 1
 
     files = driver.list_input_files(input_path)
+    files, skipped = driver.session_inputs(input_path, files)
+    if skipped:
+        print(driver.skipped_note(input_path, skipped))
 
     reuse_session = False
     if session.is_session_alive(options.session):

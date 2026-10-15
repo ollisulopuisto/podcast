@@ -88,6 +88,87 @@ def list_input_files(input_dir: Path) -> list[str]:
     return sorted(found)
 
 
+def _session_names(nhsx: Path) -> tuple[str, list[str]] | None:
+    """Istunnon äänipoolin kansio ja tiedostonimet, tai None jos ei voi lukea."""
+    import xml.etree.ElementTree as ET
+
+    try:
+        text = nhsx.read_text(encoding="utf-8")
+        if "<!DOCTYPE" in text:  # sama kovennus kuin pilvessä: ei entiteettejä
+            return None
+        root = ET.fromstring(text)
+    except (OSError, ValueError, ET.ParseError):
+        return None
+    for pool in root.iter():
+        if pool.tag.rsplit("}", 1)[-1] == "AudioPool":
+            names = [
+                f.get("Name") or f.get("Path") or ""
+                for f in pool
+                if f.tag.rsplit("}", 1)[-1] == "File"
+            ]
+            return pool.get("Path", ""), [n for n in names if n]
+    return None
+
+
+def session_inputs(
+    input_dir: Path | str, files: list[str]
+) -> tuple[list[str], list[str]]:
+    """Istuntojen tarvitsemat tiedostot ja ne jotka voi jättää lataamatta.
+
+    Pilvessä skripti litteroi kaiken äänen jonka syötekansiosta löytää, joten
+    istunnon viereen jäänyt raakamatsku tai ``.TAKE``-kopio maksaa sekä
+    latauksen että ajan. Tähän jää ``.nhsx`` ja se äänitiedosto jonka
+    äänipooli nimeää: ensin pooliin kuuluvasta kansiosta (``Path``), sitten
+    istunnon vierestä, vasta sitten mistä tahansa samannimisestä (yksi).
+    Ilman istuntoa, tai jos jokin istunto ei jäsenny, kaikki lähtee: arvaus
+    joka pudottaa tarvittavan tiedoston on pahempi kuin liian iso lataus.
+    """
+    root = Path(input_dir).resolve()
+    if root.is_file():
+        return files, []
+    sessions = [f for f in files if f.lower().endswith(".nhsx")]
+    if not sessions:
+        return files, []
+    present = set(files)
+    by_name: dict[str, list[str]] = {}
+    for f in files:
+        by_name.setdefault(Path(f).name.casefold(), []).append(f)
+    keep = set(sessions)
+    for rel in sessions:
+        parsed = _session_names(root / rel)
+        if parsed is None:
+            return files, []
+        pool_path, names = parsed
+        folder = Path(rel).parent
+        for name in names:
+            name = Path(name).name
+            for cand in (
+                (folder / pool_path / name).as_posix(),
+                (folder / name).as_posix(),
+            ):
+                if cand in present:
+                    keep.add(cand)
+                    break
+            else:
+                hits = by_name.get(name.casefold())
+                if hits:
+                    keep.add(hits[0])
+    return [f for f in files if f in keep], [f for f in files if f not in keep]
+
+
+def skipped_note(input_dir: Path | str, skipped: list[str]) -> str:
+    """Yksi rivi siitä mitä jätettiin lataamatta ja kuinka paljon se oli."""
+    root = Path(input_dir).resolve()
+    total = 0
+    for rel in skipped:
+        with contextlib.suppress(OSError):
+            total += (root / rel).stat().st_size
+    return (
+        f"Istunto ei käytä {len(skipped)} tiedostoa ({total / 1e9:.1f} GB): "
+        "niitä ei ladata eikä litteroida."
+    )
+
+
 def has_nhsx_files(path: Path | str) -> bool:
     """Tarkistaa onko polku .nhsx-tiedosto tai kansio jossa on .nhsx-tiedostoja."""
     p = Path(path).resolve()
