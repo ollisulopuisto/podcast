@@ -503,7 +503,7 @@ def test_no_silence_skips_auto_silence(monkeypatch, argv, silenced):
     monkeypatch.setattr(pipeline, "inject_transcriptions_to_nhsx", lambda *a, **k: ["/c/x.nhsx"])
     monkeypatch.setattr(pipeline, "run_auto_silence", lambda *a: ran.append(a[0]))
     scripted = []
-    monkeypatch.setattr(pipeline, "write_script", scripted.append)
+    monkeypatch.setattr(pipeline, "write_script", lambda p, **k: scripted.append(p))
     pipeline.main()
     assert ran == (["/c/x.nhsx"] if silenced else [])
     # Käsikirjoitus tehdään valmiista istunnosta, ei aina samasta.
@@ -1094,3 +1094,34 @@ def test_a_hallucinated_loop_of_one_word_is_not_written_into_the_session(tmp_pat
 
     tree = etree.parse(str(next(out.glob("*litteroitu.nhsx"))))
     assert [w.text for w in tree.iter("w")] == ["ensin", "sitten", "niin", "niin"]
+
+
+def test_script_turns_use_the_same_gap_as_auto_silence():
+    """Yksi määritelmä puhejaksolle: sanat yhdistyvät ``merge_intervals_with_gap``illa
+    ja presetin ``gap`` määrää rajan, joten skripti ja Auto-Silence eivät ole eri mieltä."""
+    from colabtranscribe.colab.pipeline import _split_bursts
+
+    words = [(0.0, 0.5, "a"), (1.2, 1.7, "b")]  # tauko 0,7 s
+    one = _split_bursts([(0.0, "X", words)], gap=1.0)
+    two = _split_bursts([(0.0, "X", words)], gap=0.4)
+    assert [len(w) for _, _, w in one] == [2]
+    assert [len(w) for _, _, w in two] == [1, 1]
+    assert [s for s, _, _ in two] == [0.0, 1.2]
+
+
+@pytest.mark.parametrize(("argv", "gap"), [([], 1.0), (["--preset", "intra-mic"], 0.4), (["--gap", "2.5"], 2.5)])
+def test_the_script_gets_the_runs_gap(monkeypatch, argv, gap):
+    import sys
+
+    from colabtranscribe.colab import pipeline
+
+    seen = []
+    monkeypatch.setattr(sys, "argv", ["pipeline.py", *argv])
+    monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
+    monkeypatch.setattr(pipeline, "run_transcription", lambda *a: None)
+    monkeypatch.setattr(pipeline, "inject_transcriptions_to_nhsx", lambda *a, **k: ["/c/x.nhsx"])
+    monkeypatch.setattr(pipeline, "run_auto_silence", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "write_script", lambda path, **k: seen.append(k.get("gap")))
+    pipeline.main()
+    assert seen == [gap]

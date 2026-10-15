@@ -884,35 +884,34 @@ def _drop_bleed(entries, meta, regions, tree, audio_dirs):
     return kept
 
 
-#: Tauko jonka kohdalla puhe jaetaan vuoroiksi, kun raidalla on yksi koko jakson
-#: mittainen alue (istuntoa ei ole vaimennettu). Auto-Silencen oletustauko on 1 s.
+#: Oletus kun ``write_script`` kutsutaan ilman ajon omaa ``gap``ia: Auto-Silencen
+#: oletustauko (preset ``remote``). Ajossa raja tulee presetistä.
 TURN_GAP_S = 1.0
 
 
-def _split_bursts(entries):
-    """Alueen sanat tauoista pätkiksi: ``(alku, nimi, sanat)`` per pätkä.
+def _split_bursts(entries, gap=TURN_GAP_S):
+    """Alueen sanat puhejaksoiksi: ``(alku, nimi, sanat)`` per jakso.
 
+    Jaksot muodostaa sama ``merge_intervals_with_gap`` jolla Auto-Silence
+    päättää mitä raidalla pidetään auki, ja ``gap`` on ajon oma (preset), joten
+    skripti ja vaimennus ovat yhtä mieltä siitä missä puhe loppuu.
     Vaimentamattomalla raidalla alue on koko jakso, ja kaikki yhden puhujan puhe
-    olisi yksi kappale aikaleimalla 00:00. Ensimmäinen pätkä pitää alueen alun,
+    olisi yksi kappale aikaleimalla 00:00. Ensimmäinen jakso pitää alueen alun,
     jos sana alkaa sekunnin sisällä siitä (näin vaimennetun istunnon aikaleimat
     eivät muutu); muut alkavat ensimmäisestä sanastaan.
     """
     out = []
     for start, name, words in entries:
-        bursts = [[words[0]]]
-        for word in words[1:]:
-            if word[0] - bursts[-1][-1][1] >= TURN_GAP_S:
-                bursts.append([word])
-            else:
-                bursts[-1].append(word)
-        for k, burst in enumerate(bursts):
+        groups = merge_intervals_with_gap([(w[0], w[1]) for w in words], gap)
+        for k, (g_start, g_end) in enumerate(groups):
+            burst = [w for w in words if g_start <= w[0] <= g_end]
             first = burst[0][0]
             keeps_region_start = k == 0 and first - start <= 1.0
             out.append((start if keeps_region_start else first, name, burst))
     return out
 
 
-def write_script(nhsx_path, audio_dirs=None):
+def write_script(nhsx_path, audio_dirs=None, gap=TURN_GAP_S):
     """Istunnosta luettava `.md` sen viereen: yksi kappale per puheenvuoro.
 
     **Snapshot** podcast-magicin `script/core.py`:stä, koska tämä skripti ei
@@ -966,7 +965,7 @@ def write_script(nhsx_path, audio_dirs=None):
 
     if audio_dirs:
         entries = _drop_bleed(entries, meta, regions, tree, audio_dirs)
-    lines = _script_lines(_split_bursts(entries))
+    lines = _script_lines(_split_bursts(entries, gap))
     output_path = _swap_suffix(nhsx_path, ".nhsx", ".md")
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n\n".join(lines) + ("\n" if lines else ""))
@@ -1321,7 +1320,7 @@ def main():
                          **({"learn": True} if learn else {}))
         finished[idx - 1] = _swap_suffix(nhsx_file, ".nhsx", "_processed.nhsx")
     for nhsx_file in finished:
-        write_script(nhsx_file)
+        write_script(nhsx_file, gap=gap)
 
     print("\nKoko putki suoritettu onnistuneesti.", flush=True)
 

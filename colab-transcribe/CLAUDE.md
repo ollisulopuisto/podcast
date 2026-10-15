@@ -179,3 +179,12 @@ tarvitse: se ei kirjoita litterointeja istuntoon. Snapshot-testi
 (``test_the_snapshot_script_matches_podcast_magics``) ajaa skriptin ilman
 ``audio_dirs``-parametria, jolloin suodatus ei ole mukana ja tulos on sama.
 Raja ``BLEED_MARGIN_DB`` on mitattu yhdestä kahden mikin istunnosta.
+
+## Puhejakso on määritelty kerran
+
+"Missä raidan puhe alkaa ja loppuu" ratkaistaan ``merge_intervals_with_gap``illa
+(Auto-Silence) ja ``_split_bursts`` (skripti) käyttää samaa funktiota samalla
+``gap``illa, joka tulee presetistä. Älä lisää skriptiin omaa taukovakiota:
+``TURN_GAP_S`` on vain oletus kun ``write_script``ia kutsutaan ilman ajoa.
+podcast-magicin ``script/core.py`` ei voi tuoda sitä (työtilan raja) ja pitää
+oman 1 s:n kopionsa; testi pitää tulokset samoina oletusgapilla.
