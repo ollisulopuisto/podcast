@@ -6,6 +6,7 @@ että Vision on koneella. Oikea mittaus on kirjattu moduulin dokumenttiin.
 
 import threading
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -32,7 +33,7 @@ class FakeDetector:
             time.sleep(self.delay)  # kuva vie aikaa: muuten yksi säie ehtii tehdä kaiken itse
         # Kuvan järjestys tiedostonimestä: mittaus voi tulla säikeistä missä
         # järjestyksessä tahansa.
-        index = int(path.rsplit("/", 1)[-1].split(".")[0])
+        index = int(Path(path).stem)  # Windowsin polku ei erotu merkillä «/»
         m = self.mouths[index % len(self.mouths)]
         self.i += 1
         if m is None:
