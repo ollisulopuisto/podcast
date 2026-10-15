@@ -156,6 +156,57 @@ def session_inputs(
     return [f for f in files if f in keep], [f for f in files if f not in keep]
 
 
+#: Pilven skriptin ``AUDIO_EXTENSIONS``: se litteroi kaiken tällä päätteellä.
+_AUDIO_EXT = (".wav", ".aiff", ".flac", ".m4a", ".mp4", ".mp3")
+
+
+def _checksum(path: Path) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(8 * 1024 * 1024):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def dedupe_inputs(
+    input_dir: Path | str, files: list[str]
+) -> tuple[list[str], dict[str, str]]:
+    """Samasisältöiset äänitiedostot kerran: ``(ladattavat, {kopio: alkuperäinen})``.
+
+    Koko valitsee ehdokkaat ja tarkistussumma ratkaisee, joten yksin omaa
+    kokoaan olevaa tiedostoa ei lueta. Alkuperäinen on polun järjestyksessä
+    ensimmäinen. Kopiot tehdään Colabissa (``ln``) ennen ajoa, jotta istunto
+    löytää jokaisen nimensä, ja pilven skripti litteroi saman sisällön kerran.
+    """
+    root = Path(input_dir).resolve()
+    if root.is_file():
+        return files, {}
+    by_size: dict[int, list[str]] = {}
+    for f in files:
+        if f.lower().endswith(_AUDIO_EXT):
+            try:
+                by_size.setdefault((root / f).stat().st_size, []).append(f)
+            except OSError:
+                continue
+    aliases: dict[str, str] = {}
+    for group in by_size.values():
+        if len(group) < 2:
+            continue
+        first_by_sum: dict[str, str] = {}
+        for f in group:
+            try:
+                digest = _checksum(root / f)
+            except OSError:
+                continue
+            if digest in first_by_sum:
+                aliases[f] = first_by_sum[digest]
+            else:
+                first_by_sum[digest] = f
+    return [f for f in files if f not in aliases], aliases
+
+
 def skipped_note(input_dir: Path | str, skipped: list[str]) -> str:
     """Yksi rivi siitä mitä jätettiin lataamatta ja kuinka paljon se oli."""
     root = Path(input_dir).resolve()
@@ -188,7 +239,10 @@ def has_nhsx_files(path: Path | str) -> bool:
 
 
 def plan_commands(
-    options: RunOptions, input_files: list[str], reuse_session: bool = False
+    options: RunOptions,
+    input_files: list[str],
+    reuse_session: bool = False,
+    aliases: dict[str, str] | None = None,
 ) -> list[list[str]]:
     """Koko ajo komennoiksi, ensimmäisestä viimeiseen.
 
@@ -270,9 +324,14 @@ def plan_commands(
         ]
     )
 
+    aliases = aliases or {}
     # Alipolut on oltava olemassa ennen kuin mitään niihin ladataan.
     for sub in sorted(
-        {Path(f).parent for f in input_files if Path(f).parent != Path(".")}
+        {
+            Path(f).parent
+            for f in [*input_files, *aliases]
+            if Path(f).parent != Path(".")
+        }
     ):
         remote_dir = shlex.quote(f"{REMOTE_INPUT}/{sub.as_posix()}")
         commands.append(
@@ -299,6 +358,21 @@ def plan_commands(
             commands.append(
                 ["colab", "upload", "-s", options.session, str(source), remote]
             )
+
+    # Kopiot vasta kun alkuperäiset ovat perillä: kova linkki, ja kopio jos
+    # linkki ei onnistu.
+    for alias, original in aliases.items():
+        dst = shlex.quote(f"{REMOTE_INPUT}/{Path(alias).as_posix()}")
+        src = shlex.quote(f"{REMOTE_INPUT}/{Path(original).as_posix()}")
+        commands.append(
+            [
+                "colab",
+                "exec",
+                "-s",
+                options.session,
+                f"ln -f {src} {dst} || cp {src} {dst}",
+            ]
+        )
 
     remote_call = " ".join(
         ["python3", "/content/pipeline.py", *map(shlex.quote, pipeline_args(options))]
@@ -552,14 +626,21 @@ def _execute_single(
     return code
 
 
-def direct_tail(options: RunOptions, input_files: list[str]) -> list[list[str]]:
+def direct_tail(
+    options: RunOptions,
+    input_files: list[str],
+    aliases: dict[str, str] | None = None,
+) -> list[list[str]]:
     """Suoran siirron komennot skriptien latauksen jälkeen.
 
     Kun Drive kaatuu kesken ajon, istunto on jo luotu ja skriptit ovat ylhäällä;
     jäljellä on vain syötteiden lataus, ajo, tulokset alas ja istunnon sulku.
     """
     direct = plan_commands(
-        replace(options, transfer="direct"), input_files, reuse_session=True
+        replace(options, transfer="direct"),
+        input_files,
+        reuse_session=True,
+        aliases=aliases,
     )
     after_scripts = next(
         i for i, c in enumerate(direct) if LEARN_REMOTE in c

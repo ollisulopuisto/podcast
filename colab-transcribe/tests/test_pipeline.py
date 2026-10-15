@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -836,3 +837,33 @@ def test_a_short_remark_breaks_up_the_long_turn_in_the_snapshot_too(tmp_path):
         "[00:10] **Vieras:** kauempana\n"
     )
     assert text == core.script(core.read(str(session)))
+
+
+def test_identical_audio_is_transcribed_once_and_the_others_get_a_copy(
+    tmp_path, monkeypatch
+):
+    """Sama äänitys kahdella nimellä (kopio, ``_D``-versio, ``.TAKE``): sisältö
+    tunnistetaan tarkistussummasta, Whisper ajetaan kerran ja muiden nimille
+    kopioidaan tulos, jotta istunnon jokainen tiedosto saa litteroinnin."""
+    in_dir = tmp_path / "in"
+    (in_dir / "alikansio").mkdir(parents=True)
+    (in_dir / "a.wav").write_bytes(b"sama sisalto")
+    (in_dir / "alikansio" / "b.wav").write_bytes(b"sama sisalto")
+    (in_dir / "c.wav").write_bytes(b"eri sisalto")
+    out_dir = tmp_path / "out"
+    ran: list[str] = []
+
+    def fake_run(cmd, check, timeout):
+        src = Path(cmd[1])
+        ran.append(src.name)
+        t = out_dir / "transcripts"
+        t.mkdir(parents=True, exist_ok=True)
+        (t / (src.stem + ".json")).write_text(f'{{"from": "{src.name}"}}', encoding="utf-8")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    run_transcription(str(in_dir), str(out_dir), "prompt")
+
+    assert len(ran) == 2 and "c.wav" in ran
+    t = out_dir / "transcripts"
+    assert (t / "a.json").read_text() == (t / "b.json").read_text()
+    assert (t / "a.json").exists() and (t / "b.json").exists() and (t / "c.json").exists()

@@ -160,6 +160,41 @@ def merge_intervals_with_gap(intervals, max_gap=0.0):
     return [tuple(i) for i in merged]
 
 
+def _file_digest(path):
+    """Sisällön SHA-256, luettuna paloittain (tiedostot ovat satoja megoja)."""
+    import hashlib
+
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(8 * 1024 * 1024):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _duplicates_of(audio_items):
+    """``{(hakemisto, nimi): (hakemisto, nimi)}`` jokaiselle tiedostolle jonka
+    sisältö on sama kuin aiemmalla. Luetaan vain samankokoiset: koko on halpa
+    ja riittää sulkemaan pois suurimman osan."""
+    by_size = {}
+    for item in audio_items:
+        try:
+            by_size.setdefault(os.path.getsize(os.path.join(*item)), []).append(item)
+        except OSError:
+            continue
+    dupes = {}
+    for group in by_size.values():
+        if len(group) < 2:
+            continue
+        seen = {}
+        for item in group:
+            digest = _file_digest(os.path.join(*item))
+            if digest in seen:
+                dupes[item] = seen[digest]
+            else:
+                seen[digest] = item
+    return dupes
+
+
 # 3. Litterointi Faster-Whisperillä
 def run_transcription(input_dir, output_dir, initial_prompt):
     transcripts_dir = os.path.join(output_dir, "transcripts")
@@ -170,14 +205,36 @@ def run_transcription(input_dir, output_dir, initial_prompt):
             if filename.lower().endswith(AUDIO_EXTENSIONS):
                 audio_items.append((dirpath, filename))
 
+    dupes = _duplicates_of(audio_items)
     total = len(audio_items)
-    print(f"[vaihe 2/4] Litteroidaan äänitiedostot ({total} kpl)...", flush=True)
+    print(
+        f"[vaihe 2/4] Litteroidaan äänitiedostot ({total} kpl, "
+        f"{len(dupes)} samaa sisältöä uudelleen)...",
+        flush=True,
+    )
 
     for idx, (dirpath, filename) in enumerate(audio_items, 1):
         full_path = os.path.join(dirpath, filename)
         output_path = os.path.join(
             transcripts_dir, _swap_audio_ext(filename, ".json")
         )
+
+        original = dupes.get((dirpath, filename))
+        if original is not None:
+            source_json = os.path.join(
+                transcripts_dir, _swap_audio_ext(original[1], ".json")
+            )
+            if os.path.isfile(source_json) and not os.path.isfile(output_path):
+                import shutil
+
+                shutil.copyfile(source_json, output_path)
+                print(
+                    f"[vaihe 2/4 ({idx}/{total})] '{filename}' on sama äänitys kuin "
+                    f"'{original[1]}': litterointi kopioitu.",
+                    flush=True,
+                )
+                print(f"Litterointi luotu: {output_path}", flush=True)
+                continue
 
         if not os.path.isfile(output_path):
             print(f"[vaihe 2/4 ({idx}/{total})] Litteroidaan: {filename}", flush=True)

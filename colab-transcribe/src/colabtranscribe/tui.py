@@ -580,6 +580,7 @@ class TranscribeApp(App):
             self.call_from_thread(self._set_progress, 0.0, "Valmistellaan ajoa...")
             files = driver.list_input_files(Path(options.input_dir))
             files, skipped = driver.session_inputs(Path(options.input_dir), files)
+            files, aliases = driver.dedupe_inputs(Path(options.input_dir), files)
             if skipped:
                 self.call_from_thread(
                     self._write_log,
@@ -600,7 +601,9 @@ class TranscribeApp(App):
                         f"Käytetään olemassa olevaa Colab-istuntoa '{options.session}'.",
                     )
 
-            plan = driver.plan_commands(options, files, reuse_session=reuse_session)
+            plan = driver.plan_commands(
+                options, files, reuse_session=reuse_session, aliases=aliases
+            )
 
             recorded_lines: list[str] = []
 
@@ -636,7 +639,9 @@ class TranscribeApp(App):
             if "on_progress" in sig.parameters:
                 kwargs["on_progress"] = on_progress
             if "on_drive_failure" in sig.parameters:
-                kwargs["on_drive_failure"] = lambda: driver.direct_tail(options, files)
+                kwargs["on_drive_failure"] = lambda: driver.direct_tail(
+                    options, files, aliases
+                )
 
             code = self._runner(plan, log, timeout=driver.COMMAND_TIMEOUT, **kwargs)
             if code == 0:

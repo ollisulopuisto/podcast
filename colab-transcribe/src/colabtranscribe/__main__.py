@@ -163,6 +163,9 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
     files, skipped = driver.session_inputs(input_path, files)
     if skipped:
         print(driver.skipped_note(input_path, skipped))
+    files, aliases = driver.dedupe_inputs(input_path, files)
+    if aliases:
+        print(f"{len(aliases)} tiedostoa on kopioita toisista: ladataan ja litteroidaan kerran.")
 
     reuse_session = False
     if session.is_session_alive(options.session):
@@ -175,7 +178,9 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
             if not dry_run:
                 print(f"Käytetään olemassa olevaa Colab-istuntoa '{options.session}'.")
 
-    commands = driver.plan_commands(options, files, reuse_session=reuse_session)
+    commands = driver.plan_commands(
+        options, files, reuse_session=reuse_session, aliases=aliases
+    )
 
     if dry_run:
         for command in commands:
@@ -198,7 +203,7 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
         commands,
         log,
         timeout=driver.COMMAND_TIMEOUT,
-        on_drive_failure=lambda: driver.direct_tail(options, files),
+        on_drive_failure=lambda: driver.direct_tail(options, files, aliases),
     )
     if code == 0:
         generated = driver.parse_generated("\n".join(lines))

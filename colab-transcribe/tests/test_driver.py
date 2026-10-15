@@ -923,3 +923,41 @@ def test_extensible_wavs_are_compressed_too(monkeypatch, tmp_path: Path):
     options = RunOptions(input_dir=str(tmp_path), transfer="direct", session="s")
     plan = driver.plan_commands(options, ["a.wav"], reuse_session=True)
     assert any(c[0] == "flac-upload" for c in plan)
+
+
+def test_identical_audio_is_found_by_checksum_and_uploaded_once(monkeypatch, tmp_path: Path):
+    """Sama koko ei riitä (hänen WAVinsa ovat kaikki 409 667 072 tavua): vain
+    samankokoiset tiedostot luetaan, ja vain ne joiden sisältö on sama lasketaan kopioiksi."""
+    (tmp_path / "a.wav").write_bytes(b"x" * 50)
+    (tmp_path / "kopio.wav").write_bytes(b"x" * 50)
+    (tmp_path / "sama_koko.wav").write_bytes(b"y" * 50)
+    (tmp_path / "yksin.wav").write_bytes(b"z" * 7)
+    (tmp_path / "jakso.nhsx").write_text("<Session/>")
+    hashed: list[str] = []
+    real = driver._checksum
+    monkeypatch.setattr(driver, "_checksum", lambda p: hashed.append(p.name) or real(p))
+
+    files = driver.list_input_files(tmp_path)
+    kept, aliases = driver.dedupe_inputs(tmp_path, files)
+
+    assert aliases == {"kopio.wav": "a.wav"}
+    assert "kopio.wav" not in kept and "a.wav" in kept
+    assert "jakso.nhsx" in kept and "yksin.wav" in kept
+    assert "yksin.wav" not in hashed  # ainoa omaa kokoaan: ei luettu
+
+
+def test_aliases_are_made_in_colab_after_the_uploads(tmp_path: Path):
+    (tmp_path / "a.wav").write_bytes(b"x" * 5)
+    options = RunOptions(input_dir=str(tmp_path), transfer="direct", session="s")
+    plan = driver.plan_commands(
+        options, ["a.wav"], reuse_session=True, aliases={"osa/kopio.wav": "a.wav"}
+    )
+    link = next(i for i, c in enumerate(plan) if "ln -f" in " ".join(c))
+    run_pipeline = next(i for i, c in enumerate(plan) if "pipeline.py" in c[-1] and c[1] == "exec")
+    upload = max(i for i, c in enumerate(plan) if c[:2] == ["colab", "upload"])
+    assert upload < link < run_pipeline
+    cmd = plan[link][-1]
+    assert "/content/input/osa/kopio.wav" in cmd and "/content/input/a.wav" in cmd
+    assert "mkdir -p /content/input/osa" in cmd or any(
+        "mkdir -p /content/input/osa" in c[-1] for c in plan[:link]
+    )
