@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
-## [Unreleased]
+## [2026.10.16.3] - 2026-10-16
 
 ### Fixed
 - **The two pictures of a vertical stack are framed on the face.** Each half was a fixed 1080×1080 crop from the middle of the source, shifted 540 px, so a person sitting off-centre lost the edge of their face and the top of the head (pp 57, 2026-10-16). Each half is now a 1080×960 panel framed by the same reframer as the layouts' panels (`layout.stack_panel`): the reaction and the base picture under it are both asked for their face with that frame, the crop and position are written from the window, and the MP4 draws the same numbers (`flatten` keeps the other half as the partner when the panels differ). The whole source height is now visible (it was 960 of 1080 px). Without a source size the old centred square is kept.
