@@ -299,3 +299,11 @@ def test_source_flag_reaches_the_remote_command(tmp_path, capsys):
     out = capsys.readouterr().out
     line = next(x for x in out.splitlines() if "python3 /content/pipeline.py" in x)
     assert "--source downmix" in line
+
+
+def test_no_bleed_filter_flag_reaches_the_planned_script_call(tmp_path, capsys):
+    (tmp_path / "puhe.wav").write_bytes(b"")
+    code = cli.main(["--input", str(tmp_path), "--output", str(tmp_path / "out"),
+                     "--no-bleed-filter", "--dry-run"])
+    assert code == 0
+    assert "--no-bleed-filter" in capsys.readouterr().out

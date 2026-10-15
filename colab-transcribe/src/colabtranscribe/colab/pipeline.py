@@ -281,8 +281,44 @@ def run_transcription(input_dir, output_dir, initial_prompt):
 
 
 
+def _injection_bleed(tree, pending, nhsx_path, input_dir):
+    """Injektoitavista sanoista ``{(tiedosto-indeksi, sana-indeksi)}`` jotka ovat vuotoa.
+
+    Tiedoston sana siirretään aikajanalle sen alueen kautta jonka ikkunassa se
+    on; sana joka ei ole millään alueella (leikattu pois) jää, koska sitä ei
+    voi verrata mihinkään. Vain litteroidut tiedostot ovat vertailussa, joten
+    musiikkiraita ei tuki puhetta.
+    """
+    by_id = {fe.get("Id"): k for k, (fe, _) in enumerate(pending) if fe.get("Id")}
+    regions = {}
+    for track in _iter_named(tree, "Track"):
+        name = track.get("Name", "")
+        for region in _children_named(track, "Region"):
+            k = by_id.get(region.get("Ref", ""))
+            if k is None:
+                continue
+            regions.setdefault(name, []).append((
+                time_to_seconds(region.get("Start", "0")),
+                time_to_seconds(region.get("Length")),
+                time_to_seconds(region.get("Offset", "0")),
+                pending[k][0],
+            ))
+    items, where = [], []
+    for name, regs in regions.items():
+        for r_start, r_len, r_offset, file_elem in regs:
+            k = by_id[file_elem.get("Id")]
+            for n, (ws, we, _) in enumerate(pending[k][1]):
+                if r_offset <= ws < r_offset + r_len:
+                    items.append((name, file_elem, ws, we, r_start + ws - r_offset, r_start + we - r_offset))
+                    where.append((k, n))
+    if not items:
+        return set()
+    levels = _Levels(tree, _audio_dirs(tree, nhsx_path, input_dir))
+    return {where[i] for i in _bleed_dropped(items, regions, levels)}
+
+
 # 4. Injektoidaan litteroinnit .nhsx-rakenteeseen
-def inject_transcriptions_to_nhsx(input_dir, output_dir):
+def inject_transcriptions_to_nhsx(input_dir, output_dir, bleed_filter=True):
     transcripts_dir = os.path.join(output_dir, "transcripts")
     transcripts_root = os.path.realpath(transcripts_dir)
     generated_nhsx = []
@@ -297,6 +333,7 @@ def inject_transcriptions_to_nhsx(input_dir, output_dir):
         _reject_doctype(raw, filename)
         xml_elems = etree.fromstring(raw.encode("utf-8"), _SAFE_PARSER)
 
+        pending = []  # (tiedosto, [(alku, loppu, teksti)])
         for file_elem in _iter_named(xml_elems, "File"):
             file_elem_name = file_elem.get("Name")
             if not file_elem_name:
@@ -321,9 +358,7 @@ def inject_transcriptions_to_nhsx(input_dir, output_dir):
             if _first_named(file_elem, "Transcription") is not None:
                 continue
 
-            transcription_elem = etree.SubElement(file_elem, "Transcription")
-            p_elem = etree.SubElement(transcription_elem, "p")
-
+            words = []
             for segment in srt_data.get("segments", []):
                 for word in segment.get("words", []):
                     try:
@@ -334,11 +369,23 @@ def inject_transcriptions_to_nhsx(input_dir, output_dir):
                     text = (word.get("word") or "").strip()
                     if not text:
                         continue
-                    word_elem = etree.SubElement(p_elem, "w")
-                    word_elem.set("l", str(end - start))
-                    word_elem.set("s", str(start))
-                    word_elem.set("sp", "UU")
-                    word_elem.text = text
+                    words.append((start, end, text))
+            pending.append((file_elem, words))
+
+        dropped = set()
+        if bleed_filter:
+            dropped = _injection_bleed(xml_elems, pending, nhsx_in_path, input_dir)
+        for k, (file_elem, words) in enumerate(pending):
+            transcription_elem = etree.SubElement(file_elem, "Transcription")
+            p_elem = etree.SubElement(transcription_elem, "p")
+            for n, (start, end, text) in enumerate(words):
+                if (k, n) in dropped:
+                    continue
+                word_elem = etree.SubElement(p_elem, "w")
+                word_elem.set("l", str(end - start))
+                word_elem.set("s", str(start))
+                word_elem.set("sp", "UU")
+                word_elem.text = text
 
         out_name = _swap_suffix(filename, ".nhsx", " litteroitu.nhsx")
         out_file_path = os.path.join(output_dir, out_name)
@@ -721,7 +768,79 @@ def _script_lines(entries):
     return [f"{_stamp(start)} **{name}:** {' '.join(texts)}" for start, name, texts in merged]
 
 
-def write_script(nhsx_path):
+#: Sana kuuluu toiselle raidalle, jos se on omaan puhetasoonsa nähden vähintään
+#: näin monta dB kovempi kuin sanan oma raita. Mitattu (2 mikkiä, 47 min,
+#: ``08 alma kai telanne``): A–B-ero suhteutettuna kahden raidan p90-tasoon on
+#: kaksihuippuinen, vain 1,7 % puheruuduista on alle ±8 dB:n sisällä ja vuoto
+#: on 27–28 dB oman puheen alla. 6 dB on keskellä leveää laaksoa, ei tarkka luku.
+BLEED_MARGIN_DB = 6.0
+
+
+def _bleed_dropped(items, regions, levels):
+    """Indeksit joiden sana on toisen mikin vuotoa.
+
+    Kaksi mikkiä kuulee molemmat puhujat, ja Whisper litteroi vuodon kummallakin
+    raidalla: sama puhe näkyisi jokaisen puhujan alla. ``items`` on
+    ``(raita, tiedosto, tiedosto-alku, tiedosto-loppu, aikajana-alku,
+    aikajana-loppu)``; taso mitataan sanan ajalta ja suhteutetaan raidan omaan
+    puhetasoon (p90 omista sanoista), koska mikit ovat eri vahvistuksella.
+    Sana pudotetaan vain jos toinen raita on selvästi kovempi; päällekkäinen
+    puhe jää kummallekin.
+    """
+    import numpy as np
+
+    if len({it[0] for it in items}) < 2:
+        return set()
+    own = [levels.dbfs(it[1], it[2], it[3]) for it in items]
+    by_track = {}
+    for it, db in zip(items, own, strict=True):
+        if db is not None and np.isfinite(db):
+            by_track.setdefault(it[0], []).append(db)
+    baseline = {n: float(np.percentile(v, 90)) for n, v in by_track.items() if len(v) >= 3}
+    if len(baseline) < 2:
+        return set()
+
+    def other_level(track, t0, t1):
+        best = float("-inf")
+        mid = (t0 + t1) / 2
+        for name, regs in regions.items():
+            if name == track or name not in baseline:
+                continue
+            for r_start, r_len, r_offset, file_elem in regs:
+                if r_start <= mid < r_start + r_len:
+                    db = levels.dbfs(file_elem, r_offset + t0 - r_start, r_offset + t1 - r_start)
+                    if db is not None and np.isfinite(db):
+                        best = max(best, db - baseline[name])
+                    break
+        return best
+
+    dropped = set()
+    for i, (it, db) in enumerate(zip(items, own, strict=True)):
+        if it[0] not in baseline or db is None or not np.isfinite(db):
+            continue
+        if other_level(it[0], it[4], it[5]) - (db - baseline[it[0]]) > BLEED_MARGIN_DB:
+            dropped.add(i)
+    return dropped
+
+
+def _drop_bleed(entries, meta, regions, tree, audio_dirs):
+    """Skriptin sanat ilman vuotoa: ``entries`` samassa muodossa kuin ennen."""
+    items, where = [], []
+    for i, (_, name, words) in enumerate(entries):
+        file_elem, start, offset = meta[i]
+        for j, (ws, we, _) in enumerate(words):
+            items.append((name, file_elem, offset + ws - start, offset + we - start, ws, we))
+            where.append((i, j))
+    dropped = {where[k] for k in _bleed_dropped(items, regions, _Levels(tree, audio_dirs))}
+    kept = []
+    for i, (start, name, words) in enumerate(entries):
+        words = [w for j, w in enumerate(words) if (i, j) not in dropped]
+        if words:
+            kept.append((start, name, words))
+    return kept
+
+
+def write_script(nhsx_path, audio_dirs=None):
     """Istunnosta luettava `.md` sen viereen: yksi kappale per puheenvuoro.
 
     **Snapshot** podcast-magicin `script/core.py`:stä, koska tämä skripti ei
@@ -744,6 +863,8 @@ def write_script(nhsx_path):
             files.setdefault(file_elem.get("Id", ""), file_elem)
 
     entries = []
+    meta = []  # entries-rivin tiedosto, alue-alku ja offset: tasomittausta varten
+    regions = {}
     for track in _iter_named(tree, "Track"):
         name = track.get("Name", "")
         for region in _children_named(track, "Region"):
@@ -756,6 +877,7 @@ def write_script(nhsx_path):
             start = time_to_seconds(region.get("Start", "0"))
             offset = time_to_seconds(region.get("Offset", "0"))
             length = time_to_seconds(region.get("Length"))
+            regions.setdefault(name, []).append((start, length, offset, file_elem))
             words = []
             for word in _iter_named(transcription, "w"):
                 text = (word.text or "").strip()
@@ -767,7 +889,10 @@ def write_script(nhsx_path):
                     words.append((start + ws - offset, start + we - offset, text))
             if words:  # musiikkiraita ja tyhjä alue eivät ole käsikirjoitusta
                 entries.append((start, name, words))
+                meta.append((file_elem, start, offset))
 
+    if audio_dirs:
+        entries = _drop_bleed(entries, meta, regions, tree, audio_dirs)
     lines = _script_lines(entries)
     output_path = _swap_suffix(nhsx_path, ".nhsx", ".md")
     with open(output_path, "w", encoding="utf-8") as f:
@@ -1052,6 +1177,11 @@ def main():
         help="Whisper initial prompt täytesanoille",
     )
     parser.add_argument(
+        "--no-bleed-filter",
+        action="store_true",
+        help="kirjoita istuntoon myös toisen mikin vuoto",
+    )
+    parser.add_argument(
         "--no-silence",
         action="store_true",
         help="vain litterointi: Auto-Silence jätetään pois",
@@ -1099,7 +1229,9 @@ def main():
         return
     run_transcription(input_dir, output_dir, args.prompt)
     print("[vaihe 3/4] Injektoidaan litteroinnit .nhsx-rakenteeseen...", flush=True)
-    generated_files = inject_transcriptions_to_nhsx(input_dir, output_dir)
+    generated_files = inject_transcriptions_to_nhsx(
+        input_dir, output_dir, bleed_filter=not args.no_bleed_filter
+    )
 
     # Käsikirjoitus tehdään valmiista istunnosta: vaimennetusta, tai
     # litteroidusta kun vaimennus jätettiin pois.

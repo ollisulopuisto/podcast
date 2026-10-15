@@ -500,7 +500,7 @@ def test_no_silence_skips_auto_silence(monkeypatch, argv, silenced):
     monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
     monkeypatch.setattr(pipeline, "run_transcription", lambda *a: None)
-    monkeypatch.setattr(pipeline, "inject_transcriptions_to_nhsx", lambda *a: ["/c/x.nhsx"])
+    monkeypatch.setattr(pipeline, "inject_transcriptions_to_nhsx", lambda *a, **k: ["/c/x.nhsx"])
     monkeypatch.setattr(pipeline, "run_auto_silence", lambda *a: ran.append(a[0]))
     scripted = []
     monkeypatch.setattr(pipeline, "write_script", scripted.append)
@@ -867,3 +867,150 @@ def test_identical_audio_is_transcribed_once_and_the_others_get_a_copy(
     t = out_dir / "transcripts"
     assert (t / "a.json").read_text() == (t / "b.json").read_text()
     assert (t / "a.json").exists() and (t / "b.json").exists() and (t / "c.json").exists()
+
+
+RATE = 16000
+
+
+def _bleed_session(tmp_path, monkeypatch):
+    """Kaksi mikkiä, kumpikin kuulee molemmat. Aame puhuu 0-2 s, Antto 2-4 s,
+    molemmat 4-5 s. Whisper litteroi vuodon kummallakin raidalla."""
+    import numpy as np
+
+    from colabtranscribe.colab import pipeline
+
+    rng = np.random.default_rng(3)
+
+    def level(db, seconds):
+        return rng.standard_normal(int(RATE * seconds)) * 10 ** (db / 20)
+
+    own_a, own_b = -20.0, -26.0  # Antto on 6 dB hiljaisempi omalla mikillään
+    bleed = -27.0  # mitattu: vuoto oli 27-28 dB oman puheen alapuolella
+    a = np.concatenate([level(own_a, 2), level(own_b + bleed, 2), level(own_a, 1)])
+    b = np.concatenate([level(own_a + bleed, 2), level(own_b, 2), level(own_b, 1)])
+    pcm = {"aame.wav": (a * 32767).astype("int16"), "antto.wav": (b * 32767).astype("int16")}
+    monkeypatch.setattr(pipeline, "_decode_pcm16", lambda path: pcm[os.path.basename(path)])
+    for name in pcm:
+        (tmp_path / name).write_bytes(b"x")
+    words_a = [(0.2, "aamen"), (2.2, "vuototanttoa"), (4.2, "yhtaikaa")]
+    words_b = [(0.2, "vuotoaamea"), (2.2, "antton"), (4.2, "myos")]
+
+    def file_xml(i, name, words):
+        w = "".join(f'<w s="{s}" l="0.6">{t}</w>' for s, t in words)
+        return (f'<File Id="{i}" Name="{name}" Path="{name}">'
+                f"<Transcription><p>{w}</p></Transcription></File>")
+
+    session = tmp_path / "jakso.nhsx"
+    session.write_text(
+        '<?xml version="1.0"?><Session><AudioPool>'
+        + file_xml(1, "aame.wav", words_a) + file_xml(2, "antto.wav", words_b)
+        + '</AudioPool><Tracks><Track Name="Aame"><Region Ref="1" Start="0" Length="5" Offset="0"/></Track>'
+        '<Track Name="Antto"><Region Ref="2" Start="0" Length="5" Offset="0"/></Track></Tracks></Session>',
+        encoding="utf-8",
+    )
+    return session
+
+
+def test_bleed_words_are_dropped_from_the_script_and_overlap_is_kept(tmp_path, monkeypatch):
+    """Molemmat mikit kuulevat molemmat: ilman suodatusta jokainen sana on
+    kahdesti ja skripti näkee yhden pitkän keskeytyksen. Sana kuuluu raidalle
+    jonka taso omaan puhetasoon nähden on kovempi; päällekkäinen puhe säilyy."""
+    from colabtranscribe.colab.pipeline import write_script
+
+    session = _bleed_session(tmp_path, monkeypatch)
+    text = open(write_script(str(session), audio_dirs=[str(tmp_path)]), encoding="utf-8").read()
+    for kept in ("aamen", "antton", "yhtaikaa", "myos"):
+        assert kept in text
+    assert "vuototanttoa" not in text and "vuotoaamea" not in text
+
+
+def test_without_audio_the_script_is_unfiltered(tmp_path, monkeypatch):
+    from colabtranscribe.colab.pipeline import write_script
+
+    session = _bleed_session(tmp_path, monkeypatch)
+    text = open(write_script(str(session)), encoding="utf-8").read()
+    assert "vuototanttoa" in text and "vuotoaamea" in text
+
+
+def test_one_track_is_never_filtered(tmp_path, monkeypatch):
+    """Yksi raita ei voi vuotaa itselleen: sanoja ei pudoteta."""
+    from colabtranscribe.colab.pipeline import write_script
+
+    session = _bleed_session(tmp_path, monkeypatch)
+    raw = session.read_text(encoding="utf-8")
+    solo = raw[: raw.index('<Track Name="Antto">')] + "</Tracks></Session>"
+    session.write_text(solo, encoding="utf-8")
+    text = open(write_script(str(session), audio_dirs=[str(tmp_path)]), encoding="utf-8").read()
+    assert "vuototanttoa" in text
+
+
+def _bleed_inputs(tmp_path, monkeypatch):
+    """Sama tilanne kuin skriptitestissä, mutta litteroinnit ovat vielä JSONeina
+    eikä istunnossa: injektio päättää mitkä sanat kirjoitetaan Hindenburgiin."""
+    import json
+
+    session = _bleed_session(tmp_path, monkeypatch)
+    raw = session.read_text(encoding="utf-8")
+    import re
+
+    # pois valmiit litteroinnit: injektio kirjoittaa ne itse
+    session.write_text(re.sub(r"<Transcription>.*?</Transcription>", "", raw), encoding="utf-8")
+    out = tmp_path / "out"
+    (out / "transcripts").mkdir(parents=True)
+    words = {
+        "aame": [(0.2, "aamen"), (2.2, "vuototanttoa"), (4.2, "yhtaikaa")],
+        "antto": [(0.2, "vuotoaamea"), (2.2, "antton"), (4.2, "myos")],
+    }
+    for name, ws in words.items():
+        seg = {"segments": [{"words": [
+            {"word": t, "start": s, "end": s + 0.6} for s, t in ws]}]}
+        (out / "transcripts" / f"{name}.json").write_text(json.dumps(seg), encoding="utf-8")
+    return out
+
+
+def _injected_words(out, name):
+    from lxml import etree
+
+    tree = etree.parse(str(next(out.glob("*litteroitu.nhsx"))))
+    for f in tree.iter("File"):
+        if f.get("Name") == name:
+            return [w.text for w in f.iter("w")]
+    raise AssertionError(name)
+
+
+def test_injection_leaves_bleed_out_of_each_speakers_file(tmp_path, monkeypatch):
+    """Hindenburgissa jokaisella tiedostolla on oma litterointinsa: sama puhe
+    jokaisen puhujan ja jokaisen tiedoston alla ei ole käyttökelpoista."""
+    from colabtranscribe.colab.pipeline import inject_transcriptions_to_nhsx
+
+    out = _bleed_inputs(tmp_path, monkeypatch)
+    inject_transcriptions_to_nhsx(str(tmp_path), str(out))
+    assert _injected_words(out, "aame.wav") == ["aamen", "yhtaikaa"]
+    assert _injected_words(out, "antto.wav") == ["antton", "myos"]
+
+
+def test_injection_keeps_everything_when_the_filter_is_off(tmp_path, monkeypatch):
+    from colabtranscribe.colab.pipeline import inject_transcriptions_to_nhsx
+
+    out = _bleed_inputs(tmp_path, monkeypatch)
+    inject_transcriptions_to_nhsx(str(tmp_path), str(out), bleed_filter=False)
+    assert _injected_words(out, "aame.wav") == ["aamen", "vuototanttoa", "yhtaikaa"]
+
+
+def test_the_script_flag_turns_the_injection_filter_off(monkeypatch):
+    import sys
+
+    from colabtranscribe.colab import pipeline
+
+    seen = []
+    monkeypatch.setattr(sys, "argv", ["pipeline.py", "--no-bleed-filter"])
+    monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
+    monkeypatch.setattr(pipeline, "run_transcription", lambda *a: None)
+    monkeypatch.setattr(
+        pipeline, "inject_transcriptions_to_nhsx",
+        lambda i, o, bleed_filter=True: seen.append(bleed_filter) or [],
+    )
+    monkeypatch.setattr(pipeline, "write_script", lambda *a, **k: None)
+    pipeline.main()
+    assert seen == [False]

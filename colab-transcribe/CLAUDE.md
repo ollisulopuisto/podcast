@@ -169,3 +169,13 @@ paketoitavaa `.app`ia — ketju ajaa pilvessä, paikallinen kone vain ajaa.
 Ajuri on testattu ilman verkkoa: `plan_commands` on puhdas funktio, ja
 TUI:n ajo pistetään testeissä välikäsiin `runner`-argumentilla. Testit,
 jotka kutsuisivat `colab`ia tai Colabia, eivät ole testit vaan vedonlyöntiä.
+
+## Vuodon suodatus on vain tässä snapshotissa
+
+`_bleed_dropped` (``colab/pipeline.py``) pudottaa sanat jotka ovat toisen mikin
+vuotoa, sekä injektiossa (``_injection_bleed``) että skriptissä
+(``_drop_bleed``). podcast-magicin ``script/core.py`` ei tee sitä, eikä sen
+tarvitse: se ei kirjoita litterointeja istuntoon. Snapshot-testi
+(``test_the_snapshot_script_matches_podcast_magics``) ajaa skriptin ilman
+``audio_dirs``-parametria, jolloin suodatus ei ole mukana ja tulos on sama.
+Raja ``BLEED_MARGIN_DB`` on mitattu yhdestä kahden mikin istunnosta.

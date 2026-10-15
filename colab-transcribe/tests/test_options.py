@@ -165,3 +165,11 @@ def test_transcribe_only_tells_the_script_to_skip_silence():
 
     assert "--no-silence" not in pipeline_args(RunOptions())
     assert "--no-silence" in pipeline_args(RunOptions(silence=False))
+
+
+def test_the_bleed_filter_is_on_by_default_and_the_flag_reaches_the_script():
+    from colabtranscribe.options import pipeline_args
+
+    assert RunOptions().bleed_filter is True
+    assert "--no-bleed-filter" not in pipeline_args(RunOptions())
+    assert "--no-bleed-filter" in pipeline_args(RunOptions(bleed_filter=False))
