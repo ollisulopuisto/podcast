@@ -1000,3 +1000,52 @@ def test_the_cli_plans_only_the_session_it_was_pointed_at(tmp_path: Path, capsys
     assert code == 0
     assert "y.wav" in out and "b.nhsx" in out
     assert "x.wav" not in out and "a.nhsx" not in out
+
+
+def test_run_retries_when_colab_times_out_connecting_to_the_kernel(monkeypatch):
+    """Colabin välityspalvelin ei vastannut 10 s:ssa (``ReadTimeout``) ennen kuin
+    komento oli ehtinyt alkaa: se on sama asia kuin katkennut yhteys."""
+    import io
+
+    attempts = 0
+
+    class FlakyProcess:
+        def __init__(self, cmd, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            self.stdin = io.StringIO()
+            if attempts == 1:
+                self.stdout = ["ReadTimeout: HTTPSConnectionPool(...): Read timed out. (read timeout=10)\n"]
+                self._code = 1
+            else:
+                self.stdout = ["ok\n"]
+                self._code = 0
+
+        def wait(self):
+            return self._code
+
+    monkeypatch.setattr(subprocess, "Popen", FlakyProcess)
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    code = driver.run([["colab", "exec", "-s", "s", "ls /content"]], lambda _: None)
+    assert code == 0 and attempts == 2
+
+
+def test_joining_the_parts_can_be_repeated_without_emptying_the_file(monkeypatch, tmp_path: Path):
+    """Jos liitos onnistui mutta vastaus katosi, uusinta ei saa ajaa ``cat``ia
+    ilman paloja: ``>`` tyhjentäisi valmiin tiedoston."""
+    import subprocess as sp
+
+    monkeypatch.setattr(driver, "CHUNK_BYTES", 4)
+    seen = []
+    monkeypatch.setattr(driver, "_execute_single", lambda c, log, timeout=None, **_: seen.append(c) or 0)
+    src = tmp_path / "a.bin"
+    src.write_bytes(b"0123456789")
+    driver.run([["chunked-upload", "s", str(src), str(tmp_path / "out.bin")]], lambda _: None)
+    cmd = seen[-1][4]
+    work = tmp_path
+    for n in range(3):
+        (work / f"out.bin.part{n:04d}").write_bytes(b"abc"[:1] * 3)
+    first = sp.run(["bash", "-c", cmd], capture_output=True)
+    assert first.returncode == 0 and (work / "out.bin").read_bytes() == b"aaaaaaaaa"
+    again = sp.run(["bash", "-c", cmd], capture_output=True)  # palat jo poissa
+    assert again.returncode == 0 and (work / "out.bin").read_bytes() == b"aaaaaaaaa"

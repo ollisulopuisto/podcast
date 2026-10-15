@@ -582,7 +582,12 @@ def _execute_single(
                     has_kernel_error = True
                 if "Precondition Failed" in stripped or "TooManyAssignmentsError" in stripped:
                     has_precondition_error = True
-                if "Connection was lost" in stripped or "ConnectionResetError" in stripped:
+                if (
+                    "Connection was lost" in stripped
+                    or "ConnectionResetError" in stripped
+                    or "ReadTimeout" in stripped
+                    or "Read timed out" in stripped
+                ):
                     has_connection_lost_error = True
                 if "accounts.google.com/o/oauth2" in stripped:
                     for token in stripped.split():
@@ -735,7 +740,8 @@ def _upload_as_flac(
             "exec",
             "-s",
             session,
-            f"ffmpeg -y -loglevel error -i {qf} -c:a {decoder} {q} && rm {qf}",
+            f"if [ -f {qf} ]; then ffmpeg -y -loglevel error -i {qf} -c:a {decoder} {q} "
+            f"&& rm {qf}; fi; test -f {q}",
         ],
         log,
         timeout=timeout,
@@ -777,7 +783,16 @@ def _upload_in_chunks(
             n += 1
     q = shlex.quote(remote)
     return _execute_single(
-        ["colab", "exec", "-s", session, f"cat {q}.part* > {q} && rm {q}.part*"],
+        [
+            "colab",
+            "exec",
+            "-s",
+            session,
+            # Toistettavissa: jos edellinen kerta ehti liittää mutta vastaus
+            # katosi, paloja ei enää ole eikä ``>`` saa tyhjentää valmista tiedostoa.
+            f"if ls {q}.part* >/dev/null 2>&1; then cat {q}.part* > {q} && rm {q}.part*; fi; "
+            f"test -f {q}",
+        ],
         log,
         timeout=timeout,
     )
