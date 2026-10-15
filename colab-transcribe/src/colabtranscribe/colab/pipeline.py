@@ -281,6 +281,29 @@ def run_transcription(input_dir, output_dir, initial_prompt):
 
 
 
+#: Saman sanan näin pitkä jono peräkkäin on Whisperin silmukka hiljaisessa kohdassa
+#: («niin, niin, niin, …» kymmeniä kertoja), ei puhetta. Luku on arvaus: aito
+#: toisto («niin niin niin») jää tämän alle.
+LOOP_MIN_RUN = 5
+
+
+def _drop_loops(words):
+    """Pudota viisi tai useampi saman sanan peräkkäistoisto; ``words`` on
+    ``[(alku, loppu, teksti)]`` ja järjestys säilyy."""
+    def norm(text):
+        return "".join(ch for ch in text.casefold() if ch.isalnum())
+
+    out, i = [], 0
+    while i < len(words):
+        j = i
+        while j + 1 < len(words) and norm(words[j + 1][2]) == norm(words[i][2]):
+            j += 1
+        if j - i + 1 < LOOP_MIN_RUN:
+            out.extend(words[i : j + 1])
+        i = j + 1
+    return out
+
+
 def _injection_bleed(tree, pending, nhsx_path, input_dir):
     """Injektoitavista sanoista ``{(tiedosto-indeksi, sana-indeksi)}`` jotka ovat vuotoa.
 
@@ -370,7 +393,7 @@ def inject_transcriptions_to_nhsx(input_dir, output_dir, bleed_filter=True):
                     if not text:
                         continue
                     words.append((start, end, text))
-            pending.append((file_elem, words))
+            pending.append((file_elem, _drop_loops(words)))
 
         dropped = set()
         if bleed_filter:
@@ -861,6 +884,34 @@ def _drop_bleed(entries, meta, regions, tree, audio_dirs):
     return kept
 
 
+#: Tauko jonka kohdalla puhe jaetaan vuoroiksi, kun raidalla on yksi koko jakson
+#: mittainen alue (istuntoa ei ole vaimennettu). Auto-Silencen oletustauko on 1 s.
+TURN_GAP_S = 1.0
+
+
+def _split_bursts(entries):
+    """Alueen sanat tauoista pätkiksi: ``(alku, nimi, sanat)`` per pätkä.
+
+    Vaimentamattomalla raidalla alue on koko jakso, ja kaikki yhden puhujan puhe
+    olisi yksi kappale aikaleimalla 00:00. Ensimmäinen pätkä pitää alueen alun,
+    jos sana alkaa sekunnin sisällä siitä (näin vaimennetun istunnon aikaleimat
+    eivät muutu); muut alkavat ensimmäisestä sanastaan.
+    """
+    out = []
+    for start, name, words in entries:
+        bursts = [[words[0]]]
+        for word in words[1:]:
+            if word[0] - bursts[-1][-1][1] >= TURN_GAP_S:
+                bursts.append([word])
+            else:
+                bursts[-1].append(word)
+        for k, burst in enumerate(bursts):
+            first = burst[0][0]
+            keeps_region_start = k == 0 and first - start <= 1.0
+            out.append((start if keeps_region_start else first, name, burst))
+    return out
+
+
 def write_script(nhsx_path, audio_dirs=None):
     """Istunnosta luettava `.md` sen viereen: yksi kappale per puheenvuoro.
 
@@ -908,13 +959,14 @@ def write_script(nhsx_path, audio_dirs=None):
                 we = ws + time_to_seconds(word.get("l"))
                 if ws < offset + length and we > offset:
                     words.append((start + ws - offset, start + we - offset, text))
+            words = _drop_loops(words)
             if words:  # musiikkiraita ja tyhjä alue eivät ole käsikirjoitusta
                 entries.append((start, name, words))
                 meta.append((file_elem, start, offset))
 
     if audio_dirs:
         entries = _drop_bleed(entries, meta, regions, tree, audio_dirs)
-    lines = _script_lines(entries)
+    lines = _script_lines(_split_bursts(entries))
     output_path = _swap_suffix(nhsx_path, ".nhsx", ".md")
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n\n".join(lines) + ("\n" if lines else ""))

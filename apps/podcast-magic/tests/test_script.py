@@ -243,11 +243,51 @@ def test_a_short_remark_inside_a_long_turn_breaks_it_up(tmp_path):
 
 
 def test_a_reply_that_outlasts_the_turn_is_not_an_interjection(tmp_path):
-    """Päällekkäin alkava mutta pidempään jatkuva puhe on vuoronvaihto."""
+    """Päällekkäin alkava mutta pidempään jatkuva puhe on vuoronvaihto.
+
+    Haastattelijan puhe jaetaan sen omista tauoista, joten pitkä vastaus asettuu
+    omaan kohtaansa ajassa ja haastattelijan loppu tulee sen jälkeen oman
+    aikaleimansa kanssa (aiemmin koko kappale tuli ensin).
+    """
     path = tmp_path / "huudahdus.nhsx"
     path.write_text(
         INTERJECTION_SESSION.replace('l="0.400" sp="UU">Joo', 'l="3.000" sp="UU">Joo'),
         encoding="utf-8",
     )
     text = core.script(core.read(str(path)))
-    assert text.startswith("[00:00] **Haastattelija:** alku keskikohta loppu\n")
+    assert text.startswith(
+        "[00:00] **Haastattelija:** alku keskikohta\n"
+        "\n"
+        "[00:02] **Vieras:** Joo\n"
+        "\n"
+        "[00:04] **Haastattelija:** loppu\n"
+    )
+
+
+def test_a_whole_file_region_gives_one_turn_per_burst_of_speech(tmp_path):
+    """Istunto jota ei ole vaimennettu: yksi alue per raita, ja ennen kaikki
+    yhden puhujan puhe oli yksi kappale aikaleimalla 00:00."""
+    session = tmp_path / "jakso.nhsx"
+    session.write_text(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<Session><AudioPool Path="">
+  <File Id="1" Name="kysyja.wav" Path="kysyja.wav"><Transcription><p>
+    <w s="1.000" l="0.500">Kysymys</w><w s="1.600" l="0.500">yksi</w>
+    <w s="20.000" l="0.500">Kysymys</w><w s="20.600" l="0.500">kaksi</w>
+  </p></Transcription></File>
+  <File Id="2" Name="vieras.wav" Path="vieras.wav"><Transcription><p>
+    <w s="5.000" l="0.500">Vastaus</w><w s="5.600" l="0.500">yksi</w><w s="6.200" l="0.500">jatkuu</w>
+  </p></Transcription></File>
+</AudioPool><Tracks>
+  <Track Name="Kysyjä"><Region Ref="1" Start="0.000" Length="60.000" Offset="0.000"/></Track>
+  <Track Name="Vieras"><Region Ref="2" Start="0.000" Length="60.000" Offset="0.000"/></Track>
+</Tracks></Session>""",
+        encoding="utf-8",
+    )
+    assert core.script(core.read(str(session))) == (
+        "[00:00] **Kysyjä:** Kysymys yksi\n"
+        "\n"
+        "[00:05] **Vieras:** Vastaus yksi jatkuu\n"
+        "\n"
+        "[00:20] **Kysyjä:** Kysymys kaksi\n"
+    )

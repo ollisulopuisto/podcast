@@ -16,6 +16,12 @@ from nhsx.read import Session, read
 __all__ = ["read", "script"]
 
 
+#: Tauko jonka kohdalla puhe jaetaan vuoroiksi, kun raidalla on yksi koko jakson
+#: mittainen alue (istuntoa ei ole vaimennettu). Auto-Silencen oletustauko on 1 s.
+#: Snapshot colab-transcriben ``_split_bursts``ista; testi pitää ne samoina.
+TURN_GAP_S = 1.0
+
+
 def _stamp(seconds: float) -> str:
     total = int(seconds)
     return f"[{total // 60:02d}:{total % 60:02d}]"
@@ -56,7 +62,30 @@ def script(session: Session) -> str:
                 continue  # musiikkiraita ja tyhjä alue eivät ole käsikirjoitusta
             entries.append((region.start, track.name, inside))
 
-    return _render(entries)
+    return _render(_split_bursts(entries))
+
+
+def _split_bursts(entries):
+    """Alueen sanat tauoista pätkiksi: ``(alku, nimi, sanat)`` per pätkä.
+
+    Vaimentamattomalla raidalla alue on koko jakso, ja kaikki yhden puhujan puhe
+    olisi yksi kappale aikaleimalla 00:00. Ensimmäinen pätkä pitää alueen alun,
+    jos sana alkaa sekunnin sisällä siitä (näin vaimennetun istunnon aikaleimat
+    eivät muutu); muut alkavat ensimmäisestä sanastaan.
+    """
+    out = []
+    for start, name, words in entries:
+        bursts = [[words[0]]]
+        for word in words[1:]:
+            if word[0] - bursts[-1][-1][1] >= TURN_GAP_S:
+                bursts.append([word])
+            else:
+                bursts[-1].append(word)
+        for k, burst in enumerate(bursts):
+            first = burst[0][0]
+            keeps_region_start = k == 0 and first - start <= 1.0
+            out.append((start if keeps_region_start else first, name, burst))
+    return out
 
 
 def _render(entries: list[tuple[float, str, list[tuple[float, float, str]]]]) -> str:

@@ -1026,3 +1026,71 @@ def test_the_margin_follows_how_deep_the_bleed_is(tmp_path, monkeypatch, capsys)
     assert "vuototanttoa" not in text and "vuotoaamea" not in text
     assert "aamen" in text and "antton" in text
     assert "Vuodon raja" in capsys.readouterr().out
+
+
+WHOLE_FILE_SESSION = """<?xml version="1.0" encoding="UTF-8"?>
+<Session><AudioPool Path="">
+  <File Id="1" Name="kysyja.wav" Path="kysyja.wav"><Transcription><p>
+    <w s="1.000" l="0.500">Kysymys</w><w s="1.600" l="0.500">yksi</w>
+    <w s="20.000" l="0.500">Kysymys</w><w s="20.600" l="0.500">kaksi</w>
+  </p></Transcription></File>
+  <File Id="2" Name="vieras.wav" Path="vieras.wav"><Transcription><p>
+    <w s="5.000" l="0.500">Vastaus</w><w s="5.600" l="0.500">yksi</w><w s="6.200" l="0.500">jatkuu</w>
+  </p></Transcription></File>
+</AudioPool><Tracks>
+  <Track Name="Kysyjä"><Region Ref="1" Start="0.000" Length="60.000" Offset="0.000"/></Track>
+  <Track Name="Vieras"><Region Ref="2" Start="0.000" Length="60.000" Offset="0.000"/></Track>
+</Tracks></Session>"""
+
+
+def test_a_whole_file_region_still_gives_one_turn_per_burst_of_speech(tmp_path):
+    """Ilman Auto-Silenceä jokaisella raidalla on yksi koko jakson mittainen
+    alue: ennen kaikki yhden puhujan puhe oli yksi kappale aikaleimalla 00:00.
+    Puhe pilkotaan tauoista, ja järjestys tulee sanojen ajoista."""
+    from colabtranscribe.colab.pipeline import write_script
+
+    session = tmp_path / "jakso.nhsx"
+    session.write_text(WHOLE_FILE_SESSION, encoding="utf-8")
+    text = open(write_script(str(session)), encoding="utf-8").read()
+    assert text == (
+        "[00:00] **Kysyjä:** Kysymys yksi\n"
+        "\n"
+        "[00:05] **Vieras:** Vastaus yksi jatkuu\n"
+        "\n"
+        "[00:20] **Kysyjä:** Kysymys kaksi\n"
+    )
+
+
+def test_the_snapshot_script_matches_podcast_magics_on_whole_file_regions(tmp_path):
+    from colabtranscribe.colab.pipeline import write_script
+    from podcastmagic.script import core
+
+    session = tmp_path / "jakso.nhsx"
+    session.write_text(WHOLE_FILE_SESSION, encoding="utf-8")
+    written = write_script(str(session))
+    assert open(written, encoding="utf-8").read() == core.script(core.read(str(session)))
+
+
+def test_a_hallucinated_loop_of_one_word_is_not_written_into_the_session(tmp_path):
+    """Whisper toistaa hiljaisessa kohdassa samaa sanaa kymmeniä kertoja
+    («niin, niin, niin, …»). Viisi tai useampi peräkkäin on silmukka, ei puhetta."""
+    import json
+
+    from colabtranscribe.colab.pipeline import inject_transcriptions_to_nhsx
+
+    inbox, out = tmp_path / "in", tmp_path / "out"
+    (out / "transcripts").mkdir(parents=True)
+    inbox.mkdir()
+    (inbox / "j.nhsx").write_text(
+        '<?xml version="1.0"?><Session><AudioPool><File Id="1" Name="a.wav"/></AudioPool>'
+        '<Tracks><Track Name="A"><Region Ref="1" Start="0" Length="100" Offset="0"/></Track></Tracks></Session>',
+        encoding="utf-8",
+    )
+    words = [("niin" if 1 <= i <= 9 else w, i * 0.5) for i, w in enumerate(["ensin"] + ["x"] * 9 + ["sitten", "niin", "niin"])]
+    seg = {"segments": [{"words": [{"word": t, "start": s, "end": s + 0.4} for t, s in words]}]}
+    (out / "transcripts" / "a.json").write_text(json.dumps(seg), encoding="utf-8")
+    inject_transcriptions_to_nhsx(str(inbox), str(out), bleed_filter=False)
+    from lxml import etree
+
+    tree = etree.parse(str(next(out.glob("*litteroitu.nhsx"))))
+    assert [w.text for w in tree.iter("w")] == ["ensin", "sitten", "niin", "niin"]
