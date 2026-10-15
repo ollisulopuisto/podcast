@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
-## [Unreleased]
+## [2026.10.16.1] - 2026-10-16
 
 ### Added
 - **A project with no microphone roles keeps the source's audio on.** An audio-only track left unused is enabled in every `<mc-clip>` (`srcEnable="audio"`, as in the source) when no microphone has a role; before, every clip was `srcEnable="video"` and the export had no audio switched on in Final Cut. The export says so in its warnings.
