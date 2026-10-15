@@ -414,6 +414,25 @@ angle with a level, that is an improvement.
 
 `video/CLAUDE.md` holds the sections that were here (loaded when working in that directory).
 
+## The source's own edits are cuts, with a different camera on both sides
+
+A project made of several `<mc-clip>` parts has seams. A seam where the source
+time continues (`prev.source_at(next.offset)` equals `next.start` within one
+and a half frames) is nothing: `Grid.edits` leaves it out. A seam where the
+source *jumps* means the user cut something out, and the picture shows the jump
+if the same camera carries on across it. `analysis._source_edits` puts those
+seams into `Grid.edits` and `decide._respect_edits` runs **last**, after
+`_merge`, because merging would undo the cut it adds.
+
+At an edit the shot is split, and if both sides are the same camera the one
+after the jump is replaced for `min_shot`: a close-up becomes the wide, a wide
+becomes the close-up of whoever speaks (`_speaker_at`, nearest earlier speaker
+within ten seconds). A piece the split leaves under `min_shot` is joined to its
+neighbour first: the first real run (pp 57) left 0.08 s of a close-up before the
+jump, a flash that `min_shot` exists to forbid. Only multicam parts are
+edits so far; a sync-clip or project made of several clips has no such seam in
+this reader.
+
 ## The rhythm engine, and why you will miss it
 
 `decide.py` is not a threshold machine. It carries an editing model added in

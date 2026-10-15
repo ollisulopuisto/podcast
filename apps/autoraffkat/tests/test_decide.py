@@ -1128,3 +1128,82 @@ def test_a_single_screen_vertical_cut_has_no_wide_at_all():
 
     paneled = decide(grid, Globals(**base, vertical=True, vertical_layout="wide_top"))
     assert "W" in {s.angle for s in paneled.segments}
+
+
+# ------------------------------------------------------- lähde-XML:n leikkaukset
+
+
+def _edit_globals():
+    return Globals(min_shot=2.0, lead=0.0, confirm=0.2, min_overlap=0.4, wide_every=0.0)
+
+
+def test_an_edit_in_the_source_becomes_a_cut_and_the_camera_changes():
+    """Käyttäjän leikkaus lähde-XML:ssä (jatkuvuushyppy): samaa kuvaa ei saa olla
+    kummallakin puolella, koska hyppy näkyisi kuvassa. A puhuu molemmin puolin
+    kohtaa 20 s, joten ilman sääntöä A:n lähikuva jatkuisi hypyn yli."""
+    grid = grid_for([(5, 35)], [(36, 39)])
+    grid.edits = (20.0,)
+    segments = decide(grid, _edit_globals()).segments
+    cut = next(s for s in segments if abs(s.start - 20.0) < 1e-6)
+    before = next(s for s in segments if abs(s.end - 20.0) < 1e-6)
+    assert before.angle != cut.angle, angles(segments)
+
+
+def test_the_picture_after_the_edit_returns_to_the_speaker_when_the_cut_is_done():
+    grid = grid_for([(5, 35)], [(36, 39)])
+    grid.edits = (20.0,)
+    segments = decide(grid, _edit_globals()).segments
+    i = next(k for k, s in enumerate(segments) if abs(s.start - 20.0) < 1e-6)
+    assert segments[i].angle == "W"                      # välikuva hypyn yli
+    assert segments[i].duration >= _edit_globals().min_shot - 1e-6
+    assert segments[i + 1].angle == "CA"                 # ja sitten taas puhuja
+
+
+def test_a_wide_on_both_sides_of_the_edit_becomes_the_speakers_close_up():
+    grid = grid_for([(30, 38)], [], seconds=40.0)
+    grid.edits = (10.0,)   # laaja ennen ja jälkeen: A ei puhu vielä
+    segments = decide(grid, _edit_globals()).segments
+    cut = next(s for s in segments if abs(s.start - 10.0) < 1e-6)
+    before = next(s for s in segments if abs(s.end - 10.0) < 1e-6)
+    assert before.angle != cut.angle, angles(segments)
+
+
+def test_an_edit_that_already_has_a_camera_change_only_gets_its_cut():
+    grid = grid_for([(2, 8)], [(10, 16)])
+    grid.edits = (9.0,)
+    plain = decide(grid_for([(2, 8)], [(10, 16)]), _edit_globals()).segments
+    segments = decide(grid, _edit_globals()).segments
+    assert any(abs(s.start - 9.0) < 1e-6 for s in segments)   # leikkaus on
+    # eikä muuta muuten: samat kuvat samassa järjestyksessä ilman katkoa
+    assert [s.angle for s in segments if s.angle != "W"] [:2] == [s.angle for s in plain if s.angle != "W"][:2]
+
+
+def test_no_edits_means_no_change():
+    base = decide(grid_for([(2, 8)], [(10, 16)]), _edit_globals()).segments
+    again_grid = grid_for([(2, 8)], [(10, 16)])
+    again_grid.edits = ()
+    assert angles(decide(again_grid, _edit_globals()).segments) == angles(base)
+
+
+def test_an_edit_does_not_leave_a_flash_of_a_shot_before_it():
+    """Leikkaus 0,1 s kuvan alun jälkeen jätti ennen hyppyä välähdyksen
+    (pp 57: 0,08 s Nymania kohdassa 4646,52). Alle ``min_shot`` jäävä pala
+    liitetään edelliseen kuvaan, ja hypyn ylittävä kuva vaihtuu vasta sitten."""
+    grid = grid_for([(19.9, 38)], [])
+    grid.edits = (20.0,)
+    g = _edit_globals()
+    segments = decide(grid, g).segments
+    for seg in segments:
+        assert seg.duration >= g.min_shot - 1e-6 or seg is segments[-1], angles(segments)
+    cut = next(s for s in segments if abs(s.start - 20.0) < 1e-6)
+    before = next(s for s in segments if abs(s.end - 20.0) < 1e-6)
+    assert before.angle != cut.angle
+
+
+def test_an_edit_does_not_leave_a_flash_after_it_either():
+    grid = grid_for([(2, 19.9), (21, 38)], [])
+    grid.edits = (20.0,)
+    g = _edit_globals()
+    segments = decide(grid, g).segments
+    for seg in segments[:-1]:
+        assert seg.duration >= g.min_shot - 1e-6, angles(segments)

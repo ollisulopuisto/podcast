@@ -254,6 +254,20 @@ noise floor counts as speech, and a gain trim. Sensitivity is a threshold
 *relative to the floor*, so gain does not move it; gain only affects how
 microphones compare against each other during overlapping speech.
 
+**A speaker without a microphone**: give their close-up a speaker name and
+no microphone, and autoraffkat reads speech from their lips instead. It
+decodes the close-up at 10 frames a second, measures how much the mouth
+moves, and feeds the result through the same decision as a microphone
+(sensitivity still applies, 9 dB over the floor by default). It is slow, minutes
+per camera and hour, so it starts by itself only when a speaker has no
+microphone, runs in the background and is kept on disk; the edit waits until
+it is done. Measured on two episodes with microphones as the truth: lip
+movement told speaking from silence at AUC 0.82–0.91 for a close-up, and with a
+mixdown saying *when* someone talks, comparing two close-ups picked *who* 93 %
+of the time. The wide shot is no use for this (faces too small). The cut settings have a row for it (**Speech from the picture**), with a switch, the progress, and a retry button.
+
+If you cut the multicam clip yourself in Final Cut before exporting (several `<mc-clip>` parts with the source jumping between them), each such seam stays a cut and the camera changes across it. With no microphone roles, the source's own audio track stays switched on in the export.
+
 **Global & Split Edits**:
 * **Shortest shot**: minimum duration a camera stays on screen.
 * **Lead (J-cut)**: cuts to the incoming speaker before their voice crosses the threshold, capturing pre-speech inhales and reactions.
@@ -459,7 +473,7 @@ slot — or click the card and then the slot, which does the same thing and work
 from the keyboard. Where the card lands is what it becomes: a camera in a
 speaker's slot is that speaker's close-up, a sound file is their microphone.
 The top row is for the tracks that belong to everyone, the wide shot and the
-room tone. Anything you haven't placed waits in **Unused** below the bay, and
+room tone. Anything you haven't placed waits in **Unassigned** below the bay, and
 dragging a card back there takes it out of the edit.
 
 The name is typed once per speaker, on the row, so a close-up and a microphone

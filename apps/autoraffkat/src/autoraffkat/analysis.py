@@ -8,6 +8,7 @@ purkua.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 from dataclasses import dataclass, field
 from fractions import Fraction
@@ -31,6 +32,7 @@ from .model import (
     MediaItem,
     TrackConfig,
 )
+from .video import speech as visual_speech
 
 # Tasoitus, pohjan persentiili ja kynnys ovat kirjastossa: automixer kysyy
 # saman kysymyksen samasta aineistosta, ja kaksi vastausta siihen on juuri se
@@ -210,10 +212,15 @@ class Roles:
     closes: dict[str, str] = field(default_factory=dict)  # puhuja -> lähikuva
     # ryhmäkuva -> puhujat, järjestyksessä jossa ne valittiin
     groups: dict[str, list[str]] = field(default_factory=dict)
+    # Puhuja jolla on lähikuva mutta ei mikkiä: puhe luetaan kuvasta
+    # (``video/speech.py``), jos se on sallittu.
+    visual_speakers: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
 
 
-def resolve_roles(timeline: Timeline, tracks: dict[str, TrackConfig]) -> Roles:
+def resolve_roles(
+    timeline: Timeline, tracks: dict[str, TrackConfig], visual: bool = True
+) -> Roles:
     """Kääntää raitakohtaiset roolit puhujiksi ja kerää puutteet.
 
     Puutteet palautetaan listana eikä nosteta poikkeuksena: käyttöliittymässä
@@ -261,15 +268,18 @@ def resolve_roles(timeline: Timeline, tracks: dict[str, TrackConfig]) -> Roles:
                 roles.problems.append(t("roles.group_unknown_speaker",
                                         name=track_names[key], speaker=name))
 
-    if not roles.mics:
-        roles.problems.append(t("roles.no_mic"))
     for name in roles.speakers:
         if name not in roles.mics:
-            roles.problems.append(t("roles.speaker_without_mic", name=name))
+            if visual and name in roles.closes:
+                roles.visual_speakers.append(name)
+            else:
+                roles.problems.append(t("roles.speaker_without_mic", name=name))
+    if not roles.mics and not roles.visual_speakers:
+        roles.problems.append(t("roles.no_mic"))
     # Ilman yhtäkään lähikuvaa päätös on kelvollinen mutta hyödytön: koko
     # ohjelma olisi yhtä laajaa kuvaa (tai ilman kuvaa lainkaan). Se on roolituksen puute eikä tulos,
     # joten se sanotaan ääneen eikä viedä XML:ksi.
-    if roles.mics and not roles.closes and not roles.groups:
+    if (roles.mics or roles.visual_speakers) and not roles.closes and not roles.groups:
         roles.problems.append(t("roles.no_closeups"))
     return roles
 
@@ -287,7 +297,10 @@ def program_range(timeline: Timeline, roles: Roles) -> tuple[Fraction, Fraction]
     ensimmäisen osan loppuun, ja toinen osa putosi viennistä sanomatta.
     """
     spans = [timeline.track_span(roles.wide_key)] if roles.wide_key else []
-    mics = [timeline.track_span(k) for keys in roles.mics.values() for k in keys]
+    # Kuvasta puhuvan «mikki» on hänen lähikuvansa.
+    mic_keys = [k for keys in roles.mics.values() for k in keys]
+    mic_keys += [roles.closes[name] for name in roles.visual_speakers]
+    mics = [timeline.track_span(k) for k in mic_keys]
     mics = [s for s in mics if s is not None]
     if mics:
         spans.append((min(s[0] for s in mics), max(s[1] for s in mics)))
@@ -295,6 +308,26 @@ def program_range(timeline: Timeline, roles: Roles) -> tuple[Fraction, Fraction]
     if not spans:
         return timeline.start, timeline.end
     return max(s[0] for s in spans), min(s[1] for s in spans)
+
+
+def _source_edits(
+    timeline: Timeline, program_start: Fraction, program_end: Fraction
+) -> tuple[float, ...]:
+    """Lähde-XML:n omat leikkaukset: ``<mc-clip>``-osien saumat joissa lähde hyppää.
+
+    Käyttäjä on leikannut materiaalia (poistanut kohdan) ja jatkuvuus katkeaa
+    tässä: kuva ei saa jatkua samalla kameralla hypyn yli. Sauma jossa osa
+    jatkaa edellistä (lähdeaika täsmää puolentoista ruudun tarkkuudella) ei
+    ole hyppy eikä leikkaus.
+    """
+    slack = Fraction(3, 2) * timeline.frame_duration
+    found = []
+    for prev, nxt in zip(timeline.multicams, timeline.multicams[1:], strict=False):
+        if abs(nxt.start - prev.source_at(nxt.offset)) <= slack:
+            continue
+        if program_start < nxt.offset < program_end:
+            found.append(float(nxt.offset - program_start))
+    return tuple(sorted(found))
 
 
 def build_grid(
@@ -312,9 +345,26 @@ def build_grid(
     lanes: list[SpeakerLanes] = []
     for name in roles.speakers:
         mic_keys = roles.mics.get(name, [])
-        if not mic_keys:
-            continue
         parts = []
+        if not mic_keys and name in roles.visual_speakers:
+            # Ei mikkiä: puhe huulten liikkeestä. Sama ``grid.lane``, mutta
+            # kynnys on kuvalle mitattu (``VISUAL_MARGIN_DB``) ja siirtyy
+            # lähikuvan herkkyysasetuksen mukana. Ennen mittausta ei ole
+            # käyrää, eikä kaistaa tehdä: mittaamaton ei ole hiljaisuutta.
+            close = roles.closes[name]
+            cfg = tracks.get(close, TrackConfig())
+            margin = max(3.0, visual_speech.VISUAL_MARGIN_DB
+                         + (cfg.sensitivity_db - grid_lib.FLOOR_MARGIN_DB))
+            for item in timeline.track_media(close):
+                twin = dataclasses.replace(item, key=item.key + visual_speech.SUFFIX)
+                if twin.key not in analysis.envelopes:
+                    continue
+                db, valid, floor = analysis.aligned(twin, program_start, n)
+                parts.append((db, valid, floor, margin, 0.0))
+            if not parts:
+                continue
+        elif not mic_keys:
+            continue
         for key in mic_keys:
             cfg = tracks.get(key, TrackConfig())
             # Raidan osat ovat eri tiedostoja mutta sama mikki: sama säädin,
@@ -357,5 +407,6 @@ def build_grid(
     grid = Grid(
         n=n, program_start=float(program_start), speakers=lanes,
         wide_key=roles.wide_key, groups=groups,
+        edits=_source_edits(timeline, program_start, program_end),
     )
     return grid, program_start, program_end

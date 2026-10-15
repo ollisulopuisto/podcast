@@ -9,7 +9,7 @@ silmukka jaksojen (ei näytteiden) yli.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -128,6 +128,10 @@ class Grid:
     speakers: list[SpeakerLanes] = field(default_factory=list)
     wide_key: str = ""
     groups: list[GroupShot] = field(default_factory=list)
+    # Lähde-XML:n omat leikkaukset, jotka ovat jatkuvuushyppyjä (ohjelman
+    # sekunteja, ``program_start`` poistettuna): niiden kohdalla on leikkaus
+    # ja eri kuva kummallakin puolella. Ks. ``_respect_edits``.
+    edits: tuple[float, ...] = ()
 
     @property
     def duration(self) -> float:
@@ -704,6 +708,91 @@ def _merge(segments: list[Segment]) -> list[Segment]:
     return merged
 
 
+def _split_at(segments: list[Segment], t: float) -> list[Segment]:
+    """Jakaa kuvan kohdasta ``t`` kahtia, jos kohta on sen sisällä."""
+    eps = 1e-6
+    out: list[Segment] = []
+    for seg in segments:
+        if seg.start + eps < t < seg.end - eps:
+            out.append(replace(seg, end=t))
+            out.append(replace(seg, start=t))
+        else:
+            out.append(seg)
+    return out
+
+
+def _speaker_at(grid: Grid, active: np.ndarray, at: float) -> tuple[str, str] | None:
+    """Lähikuva sille joka puhuu hetkellä ``at`` (muuten lähin edeltävä, muuten ensimmäinen)."""
+    i = min(max(int(at / HOP), 0), max(grid.n - 1, 0))
+    candidates = [k for k, sp in enumerate(grid.speakers) if sp.close_key]
+    if not candidates:
+        return None
+    for j in range(i, -1, -1):
+        talking = [k for k in candidates if active[k, j]]
+        if talking:
+            best = max(talking, key=lambda k: float(grid.speakers[k].level[min(j, grid.n - 1)]))
+            sp = grid.speakers[best]
+            return sp.close_key, sp.name
+        if i - j > int(10.0 / HOP):  # ei kaukaa: sitä ei enää kuule
+            break
+    sp = grid.speakers[candidates[0]]
+    return sp.close_key, sp.name
+
+
+def _respect_edits(
+    segments: list[Segment], grid: Grid, g: Globals, active: np.ndarray
+) -> list[Segment]:
+    """Lähde-XML:n jatkuvuushypyt: leikkaus ja eri kuva kummallakin puolella.
+
+    Käyttäjä on leikannut lähdettä (poistanut kohdan) ja se näkyy kuvassa,
+    jos sama kamera jatkuu hypyn yli. Hyppykohtaan tulee siksi aina leikkaus,
+    ja jos kuva olisi sama molemmin puolin, hypyn jälkeinen kuva vaihdetaan
+    ``min_shot``in ajaksi: lähikuvan jälkeen laajaksi, laajan jälkeen sille
+    joka puhuu. Sen jälkeen jatketaan alkuperäisellä kuvalla. Jos jäännös
+    jäisi alle minimin, koko hypyn jälkeinen kuva on vaihtokuva.
+    """
+    if not grid.edits:
+        return segments
+    out = list(segments)
+    for edit in sorted(grid.edits):
+        t = grid.program_start + edit
+        out = _split_at(out, t)
+        i = next((k for k, s in enumerate(out) if abs(s.start - t) < 1e-6), None)
+        if i is None or i == 0:
+            continue
+        # Saumasta jäänyt pala alle ``min_shot`` on välähdys (pp 57: 0,08 s
+        # ennen hyppyä): se liitetään viereiseen kuvaan, ja vasta sen jälkeen
+        # katsotaan onko hypyn kohdalla sama kuva molemmin puolin.
+        if out[i - 1].duration < g.min_shot - 1e-6 and i >= 2:
+            out[i - 2] = replace(out[i - 2], end=out[i - 1].end)
+            del out[i - 1]
+            i -= 1
+        if out[i].duration < g.min_shot - 1e-6 and i + 1 < len(out):
+            out[i + 1] = replace(out[i + 1], start=out[i].start)
+            del out[i]
+            if i >= len(out):
+                continue
+            # leikkaus pysyy hypyn kohdassa: uusi kuva alkaa siitä
+        left, right = out[i - 1], out[i]
+        if left.angle != right.angle:
+            continue
+        if right.angle == grid.wide_key:
+            alt = _speaker_at(grid, active, edit)
+        else:
+            alt = (grid.wide_key, WIDE_LABEL) if grid.wide_key else None
+        if not alt or not alt[0] or alt[0] == right.angle:
+            continue
+        hold = min(g.min_shot, right.duration)
+        if right.duration - hold < g.min_shot:
+            hold = right.duration
+        pieces = [replace(right, angle=alt[0], label=alt[1], end=right.start + hold,
+                          focus="", punch=False)]
+        if right.duration - hold > 1e-6:
+            pieces.append(replace(right, start=right.start + hold))
+        out[i : i + 1] = pieces
+    return out
+
+
 def decide(grid: Grid, g: Globals, marks=None) -> Decision:
     """Leikkauslista. Tämän on pyörittävä millisekunneissa.
 
@@ -760,6 +849,8 @@ def decide(grid: Grid, g: Globals, marks=None) -> Decision:
         segments = _merge(_bookend_wide(segments, g, WIDE_LABEL, grid.wide_key))
     else:
         segments = _merge(_without_wide(segments, grid.wide_key))
+    # Viimeisenä eikä ``_merge``n jälkeen: yhdistäminen purkaisi leikkauksen.
+    segments = _respect_edits(segments, grid, g, active)
 
     # Esikatselua varten: mikä kuva milläkin hetkellä.
     chosen = np.full(grid.n, WIDE, dtype=np.int32)

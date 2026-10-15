@@ -2199,3 +2199,25 @@ def test_auto_layout_needs_a_named_wide(fixture_dir, auto_numbers):
         Fraction(0), Fraction(36), "Ilman laajaa", source="multicam.fcpxml", roles=roles,
         settings=_layout_settings("auto"), reframer=_StubReframer(scale=1.0, pos_x=0.0))
     assert 'type="none"' not in xml
+
+
+def test_audio_of_a_project_without_mic_roles_plays_on(fixture_dir):
+    """Puhe luettiin kuvasta eikä mikkejä ole: lähteen ääni (miksaus) ei saa
+    pudota viennistä. pp 57:n vienti tuli FCP:hen ilman ääntä, koska ainoa
+    ääniraita oli «käyttämätön» ja jokaisen klipin ``mc-source`` oli ``video``."""
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    segments = [Segment("WIDE", "Laaja", 0.0, 4.0), Segment("CLOSE_A", "Host", 4.0, 12.0)]
+    xml = build_multicam_fcpxml(
+        tl, segments, [], Fraction(0), Fraction(12), "Ilman mikkejä",
+        source="multicam.fcpxml", passthrough=["host Track1"],
+    )
+    clips = ET.fromstring(xml).findall(".//spine/mc-clip")
+    assert clips
+    for clip in clips:
+        audio = clip.findall('mc-source[@srcEnable="audio"]')
+        assert len(audio) == 1, ET.tostring(clip)[:300]
+    # eikä mitään ilman pyyntöä
+    plain = build_multicam_fcpxml(
+        tl, segments, [], Fraction(0), Fraction(12), "Ilman mikkejä", source="multicam.fcpxml",
+    )
+    assert not ET.fromstring(plain).findall('.//spine/mc-clip/mc-source[@srcEnable="audio"]')

@@ -253,6 +253,19 @@ puheeksi lasketaan, ja vahvistuksen korjaus. Herkkyys on kynnys pohjan
 suhteen, joten se ei siirry vahvistuksen mukana; vahvistus vaikuttaa vain
 mikkien keskinäiseen vertailuun päällekkäispuheessa.
 
+**Puhuja ilman mikkiä**: anna lähikuvalle puhujan nimi äläkä anna mikkiä,
+niin autoraffkat lukee puheen huulista. Se purkaa lähikuvan 10 kuvaa
+sekunnissa, mittaa suun liikkeen ja syöttää tuloksen samaan päätökseen kuin
+mikin (herkkyys pätee yhä, oletuksena 9 dB pohjan päällä). Se on hidasta,
+minuutteja kameraa ja tuntia kohden, joten se käynnistyy itsestään vain kun
+puhujalla ei ole mikkiä, pyörii taustalla ja jää levylle; leikkaus odottaa
+sen valmistumista. Mitattu kahdella jaksolla mikit totuutena: huulten liike
+erotti puheen hiljaisuudesta lähikuvalla AUC 0,82–0,91, ja kun miksauksen ääni
+kertoi *milloin* joku puhuu, kahden lähikuvan vertailu valitsi *kuka* 93 %:ssa
+ruuduista. Laajakuvasta ei ole tähän apua (kasvot liian pieniä). Leikkausasetuksissa on sille oma rivi (**Puhe kuvasta**): kytkin, edistyminen ja uusintapainike.
+
+Jos olet leikannut monikameraklipin itse Final Cutissa ennen vientiä (useita `<mc-clip>`-osia, joiden välillä lähde hyppää), jokainen sauma pysyy leikkauksena ja kamera vaihtuu sen yli. Ilman mikkirooleja lähteen oma ääniraita jää viennissä päälle.
+
 **Globaalit ja leikkausrytmi**:
 * **Lyhin kuvan kesto**: kuinka kauan kamera pysyy ruudussa vähintään.
 * **Ennakko (J-cut)**: leikkaa tulevaan puhujaan ennen äänen kynnyksen ylitystä, jolloin sisäänhengitys ja ilmeet tulevat mukaan.

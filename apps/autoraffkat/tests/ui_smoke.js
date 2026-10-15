@@ -489,6 +489,45 @@ for (const lang of ['fi', 'en']) {
   });
 }
 
+/* Puhe kuvasta: rivi piirtyy vain kun puhujalla on lähikuva mutta ei mikkiä,
+   ja sen neljä tilaa ovat eri koodipolkuja: mitataan, odottaa, valmis ja
+   virhe (jolloin on uusintapainike). Fixturessa jokaisella puhujalla on
+   mikki, joten tila syötetään tässä kuten palvelin sen antaisi. */
+for (const lang of ['fi', 'en']) {
+  const variants = {
+    measuring: { candidates: ['Guest'], missing: ['Guest'], running: true, fraction: 0.42, errors: {} },
+    waiting: { candidates: ['Guest'], missing: ['Guest'], running: false, fraction: 0, errors: {} },
+    measured: { candidates: ['Guest'], missing: [], running: false, fraction: 1, errors: {} },
+    failed: { candidates: ['Guest'], missing: ['Guest'], running: false, fraction: 1,
+              errors: { Guest: 'purku epäonnistui' } },
+  };
+  for (const [name, speech] of Object.entries(variants)) {
+    const withSpeech = JSON.parse(JSON.stringify(state));
+    withSpeech.speech = speech;
+    context.__state = withSpeech;
+    vm.runInContext('state = __state;', context);
+    context.setLang(lang);
+    run(`${lang} puhe kuvasta (${name}) renderGlobals`, () => context.renderGlobals());
+    run(`${lang} puhe kuvasta (${name}) käsittelijät`, () => {
+      let first = null;
+      fireAll((where, err) => { if (!first) first = new Error(`${where}: ${err.message}`); });
+      if (first) throw first;
+    });
+  }
+  run(`${lang} puhe kuvasta: noteSpeech`, () => {
+    context.noteSpeech(variants.measuring);
+    context.noteSpeech(variants.measured);
+    context.noteSpeech(null);
+  });
+  run(`${lang} puhe kuvasta: watchSpeech`, () => context.watchSpeech());
+  /* Leikkauslistan yhteenveto kertoo lähteen leikkauksista. */
+  const withEdits = JSON.parse(JSON.stringify(latest));
+  withEdits.edits = [4646.6];
+  context.__latest = withEdits;
+  vm.runInContext('latest = __latest;', context);
+  run(`${lang} lähteen leikkaukset renderCuts`, () => context.renderCuts());
+}
+
 /* Asynkroniset polut: pyyntökierros, vienti ja edistymisen seuranta. Näitä
    piirto ei aja lainkaan, ja juuri ne koskevat palvelinta. */
 async function asyncPaths() {

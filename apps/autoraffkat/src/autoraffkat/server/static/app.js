@@ -134,6 +134,7 @@ let lastSeats = '{}';           // viimeksi piirretyt istujat
 let pending = null;             // ajastin
 let inflight = null;            // AbortController
 let progressTimer = null;
+let speechTimer = null;
 let mixTimer = null;
 // Onko uudelleenkäsittely varmistettavana. Moduulitasolla, koska painike
 // vaihdetaan paikallaan eikä tila saa kadota vaihdon mukana.
@@ -897,6 +898,14 @@ function renderTray(tray) {
   head.append(Object.assign(document.createElement('span'),
     { className: 'muted small', textContent: T('patch.hint') }));
   host.append(head);
+  /* Kohdistamaton ääniraita ei ole käyttämätön: ilman mikkirooleja se soi
+     viennissä sellaisenaan, ja se on sanottava siinä missä raita on. */
+  const plays = tray.some((m) => m.kind === 'audio')
+    && !state.tracks.some((t) => t.config.role === 'mic');
+  if (plays) {
+    host.append(Object.assign(document.createElement('p'),
+      { className: 'muted small', textContent: T('patch.trayAudio') }));
+  }
 
   const box = document.createElement('div');
   box.className = 'tray-box';
@@ -1001,6 +1010,27 @@ function renderGlobals() {
       ? (longChosen ? longChosen[1] : '') : T('audio.off'),
     body: (body) => { longTakeBody(body); },
   }).row);
+
+  /* Puhe kuvasta: puhuja jolla on lähikuva mutta ei mikkiä. Rivi näkyy vain
+     jos sellainen on, myös kun asetus on pois, jotta sen saa takaisin päälle. */
+  const speech = state.speech || {};
+  if ((speech.candidates || []).length) {
+    rows.append(settingRow({
+      key: 'visual_speech',
+      label: T('speech.title'),
+      hint: T('speech.hint'),
+      value: speechValue(speech),
+      toggle: {
+        checked: state.globals.visual_speech,
+        onChange: (on) => {
+          state.globals.visual_speech = on;
+          renderGlobals();
+          schedule(0);
+        },
+      },
+      body: (body) => { speechBody(body, speech); },
+    }).row);
+  }
 
   /* Reaktiokuvat: spekulatiivinen kerros, omalle lanelleen. Oma rivinsä
      leikkauspaneelissa eikä äänessä, koska kyse on kuvasta — ja portin
@@ -1201,6 +1231,89 @@ function reactionsBody(host, mark, video, running) {
     label: T('reactions.lead'),
     min: 0, max: 1.5, step: 0.05, unit: T('unit.seconds'),
   }, mark);
+}
+
+/* Puheen mittaus kuvasta: rivin arvo. Mittaus on minuutteja, joten tila on
+   nähtävä: mitataan (prosentti), valmis, virhe tai pois. */
+function speechValue(speech) {
+  if (!state.globals.visual_speech) return T('audio.off');
+  if (Object.keys(speech.errors || {}).length) return T('speech.errorShort');
+  if (speech.running) {
+    return T('speech.measuring', { percent: Math.round((speech.fraction || 0) * 100) });
+  }
+  return (speech.missing || []).length ? T('speech.waiting') : T('speech.measured');
+}
+
+/* Rivin runko: ketä luetaan kuvasta, edistymispalkki, virhe ja uusinta.
+   Ei säädintä: kynnys on mitattu (VISUAL_MARGIN_DB), ja herkkyys löytyy
+   lähikuvan omalta kortilta niin kuin mikilläkin. */
+function speechBody(host, speech) {
+  const note = document.createElement('p');
+  note.className = 'why';
+  note.textContent = T('speech.why');
+  host.append(note);
+  const who = document.createElement('p');
+  who.className = 'why';
+  who.textContent = T('speech.speakers', { names: (speech.candidates || []).join(', ') });
+  host.append(who);
+  if (speech.running) host.append(progressBar(speech.fraction || 0));
+  const errors = Object.values(speech.errors || {});
+  errors.forEach((text) => {
+    const line = document.createElement('p');
+    line.className = 'why error';
+    line.textContent = T('speech.failed', { error: text });
+    host.append(line);
+  });
+  if (errors.length) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'ghost small';
+    button.textContent = T('speech.retry');
+    button.addEventListener('click', async () => {
+      setBusy(button, true, T('speech.retrying'));
+      try {
+        const data = await (await fetch('/api/speech', { method: 'POST' })).json();
+        noteSpeech(data.speech);
+      } catch (err) {
+        banner(err.message || T('speech.failedShort'), true);
+      } finally {
+        setBusy(button, false);
+      }
+    });
+    host.append(button);
+  }
+}
+
+/* Palvelimen puhetila talteen. Piirretään uudestaan vain jos se muuttui:
+   kesken raahatun säätimen alta ei vaihdeta paneelia. Mittauksen aikana
+   seurataan, ja valmistuttua päätös ajetaan kerran uudestaan. */
+function noteSpeech(speech) {
+  if (!speech) return;
+  const changed = JSON.stringify(speech) !== JSON.stringify(state.speech || {});
+  state.speech = speech;
+  if (changed) renderGlobals();
+  if (speech.running) watchSpeech();
+}
+
+function watchSpeech() {
+  clearTimeout(speechTimer);
+  speechTimer = setTimeout(async () => {
+    try {
+      const data = await (await fetch('/api/state')).json();
+      const was = state.speech && state.speech.running;
+      noteSpeech(data.speech);
+      if (data.speech && data.speech.running) {
+        $('status').textContent = '';
+        const text = document.createElement('span');
+        text.textContent = T('speech.measuring', {
+          percent: Math.round((data.speech.fraction || 0) * 100) });
+        $('status').append(text, progressBar(data.speech.fraction || 0));
+      } else {
+        $('status').textContent = '';
+        if (was !== false) send();
+      }
+    } catch (err) { /* palvelin poissa: lopetetaan seuranta hiljaa */ }
+  }, 1500);
 }
 
 /* Panoroinnin säätimet. Yksi luku: kuinka leveälle puhujat levitetään.
@@ -2671,6 +2784,7 @@ function renderCuts() {
     T('app.shots', { n: latest.segments.length }),
     fmtTime(latest.program.duration),
     counts,
+    (latest.edits || []).length ? T('cuts.edits', { n: latest.edits.length }) : '',
     shots.length
       ? (state.globals.reactions
           ? T('cuts.reactions', { n: shots.length })
@@ -2713,6 +2827,7 @@ async function send() {
     });
     const data = await response.json();
     latest = data;
+    noteSpeech(data.speech);
     /* Istujat muuttuvat mittauksen valmistuttua tai kun järjestystä
        korjataan; kortit piirretään uudestaan vain silloin, ettei kesken
        kirjoitettu nimi katoa joka kierroksella. */

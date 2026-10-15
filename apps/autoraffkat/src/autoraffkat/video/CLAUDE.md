@@ -136,3 +136,43 @@ to load a VST3 on the main thread, and Vision has no such constraint. Both
 empty cases are reported separately in the export warnings: on with nothing
 measured, and measured with nothing passing the gate, are different
 situations, and silence is how this project's recurring failure gets missed.
+
+## Speech from the picture is a microphone made of lips
+
+`video/speech.py` gives a speaker who has a close-up and no microphone an
+**envelope in a microphone's shape** (dB, one value per `HOP`, in file time),
+stored in `Analysis.envelopes` under `<media key>#visual`. `build_grid` then
+uses the same `grid.lane` as for a microphone; the picture has no decision of
+its own. That is the whole design: a second rule for "who is speaking" is what
+`packages/speechmix` exists to prevent.
+
+It is not the keyframe table. Keyframes are one a second and lips move in tenths;
+the speech measurement decodes at 10 frames a second (`FPS`), 4.6× realtime per
+camera, so it is a button-sized job (Vision on half the cores' worth of threads, at least two: on 8 cores four, 3.3× → 4.6× real time measured; decoding at 5.9× is the ceiling and two cameras side by side do not beat it) and is cached on disk (`speech/`), keyed by
+file, ranges, detector and version.
+
+The signal is the **change** in `mouth`, not its value: the opening differs by face
+and camera (0.11–0.64 in one episode) but its movement is speech on all of them.
+It is scaled to the file's own 90th percentile, because the faces sit at
+different distances.
+
+The threshold is `VISUAL_MARGIN_DB` (9), not the microphone's 12: F1 at 6/9/12/15 dB
+was 0.77–0.86 / 0.77–0.90 / 0.63–0.89 / 0.28–0.84 on two windows and two close-ups,
+and 9 is the only one that stayed above 0.77 on all four. The close-up's
+sensitivity setting moves it relative to its default.
+
+Unlike the reaction measurement above, this one starts by itself (after the audio
+analysis, and when roles make a speaker mic-less): reaction shots are optional and
+this is the only way such a speaker gets a lane, so waiting for a button would
+only leave the edit blocked.
+
+**An unmeasured picture is not silence.** Until the envelope exists the speaker has
+no lane and `compute` answers with a problem that says the measurement is running;
+a decision made without that lane would be a cut between the others, wrong without
+a sound.
+
+Alignment is the part that fails quietly. The first trial used an offset
+estimated from too short a window (118.7 s instead of 128.5 s) and got AUC
+0.45–0.65: chance, with nothing to say so. In the editor the offset comes from
+the FCPXML; on raw material check the correlation between the camera's audio and
+a microphone first.

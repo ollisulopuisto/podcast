@@ -46,12 +46,14 @@ from ..model import (
     OVERLAP_RULES,
     RHYTHM_PRESETS,
     ROLE_MIC,
+    ROLE_UNUSED,
     ROLES,
     AudioSettings,
     Globals,
 )
 from ..paths import get_resource_path
 from ..preview import build as build_preview
+from ..video import speech as visual_speech
 
 STATIC_DIR = get_resource_path("server/static")
 
@@ -151,6 +153,10 @@ class AppState:
     )
     audio_preview: dict = field(default_factory=dict)
     audio_preview_running: bool = False
+    # Puhe kuvasta, kun puhujalla on lähikuva mutta ei mikkiä (``video/speech.py``).
+    speech_running: bool = False
+    speech_fraction: float = 0.0
+    speech_errors: dict = field(default_factory=dict)
     lock: threading.RLock = field(default_factory=threading.RLock)
 
     # ---------------------------------------------------------- lataus
@@ -282,6 +288,104 @@ class AppState:
             self.start_measure_video()
         if self.settings.audio.enabled:
             self.start_audio_preview()
+        self.start_measure_speech()
+
+    def _roles(self):
+        """Roolit, ja puhuuko kuva mikittömän puolesta: asetus ``visual_speech``."""
+        return resolve_roles(self.timeline, self.settings.tracks,
+                             visual=self.settings.globals.visual_speech)
+
+    def speech_status(self) -> dict:
+        """Puheen mittaus kuvasta käyttöliittymälle.
+
+        ``candidates`` ovat puhujat joilla on lähikuva mutta ei mikkiä, myös kun
+        asetus on pois: rivi pysyy näkyvissä, jotta sen saa takaisin päälle.
+        """
+        candidates: list[str] = []
+        if self.timeline is not None:
+            candidates = resolve_roles(
+                self.timeline, self.settings.tracks, visual=True).visual_speakers
+        return {
+            "candidates": candidates,
+            "missing": self.speech_missing(),
+            "running": self.speech_running,
+            "fraction": self.speech_fraction,
+            "errors": dict(self.speech_errors),
+        }
+
+    def speech_missing(self) -> list[str]:
+        """Puhujat joiden puhe pitää lukea kuvasta eikä sitä ole vielä mitattu."""
+        if self.timeline is None or self.analysis is None:
+            return []
+        roles = self._roles()
+        missing = []
+        for name in roles.visual_speakers:
+            items = self.timeline.track_media(roles.closes[name])
+            if any(i.key + visual_speech.SUFFIX not in self.analysis.envelopes
+                   for i in items):
+                missing.append(name)
+        return missing
+
+    def start_measure_speech(self) -> bool:
+        """Käynnistää puheen mittauksen kuvasta taustalle, jos se ei ole jo menossa."""
+        with self.lock:
+            if self.speech_running or self.timeline is None or self.analysis is None:
+                return False
+            if not self.speech_missing():
+                return False
+            self.speech_running = True
+            self.speech_fraction = 0.0
+            self.speech_errors = {}
+        threading.Thread(target=self.measure_speech, daemon=True).start()
+        return True
+
+    def measure_speech(self) -> None:
+        """Taustasäie: huulten liike lähikuvista puhujille joilla ei ole mikkiä.
+
+        Tulos on verhokäyrä mikin muodossa (``Analysis.envelopes``), joten
+        ``build_grid`` päättää siitä kuten mikistä. Välimuistitettu levylle:
+        purku ja tunnistin ovat minuutteja, eikä toinen avaus maksa mitään.
+        """
+        from ..video import detect
+
+        assert self.timeline is not None and self.analysis is not None
+        try:
+            roles = self._roles()
+            detector = detect.load(self.settings.globals.reaction_detector)
+            work = [
+                (name, item)
+                for name in roles.visual_speakers
+                for item in self.timeline.track_media(roles.closes[name])
+                if item.key + visual_speech.SUFFIX not in self.analysis.envelopes
+            ]
+            for done, (name, item) in enumerate(work):
+                ranges = [(float(p.start - item.asset_start), float(p.duration))
+                          for p in item.placements]
+
+                def report(fraction: float, done=done) -> None:
+                    with self.lock:
+                        self.speech_fraction = round((done + fraction) / len(work), 4)
+
+                try:
+                    env = visual_speech.envelope(item.path, ranges, detector, progress=report)
+                except Exception as exc:  # yksi tiedosto ei kaada muita
+                    with self.lock:
+                        self.speech_errors[name] = str(exc)
+                    continue
+                with self.lock:
+                    key = item.key + visual_speech.SUFFIX
+                    self.analysis.envelopes[key] = env
+                    self.analysis._aligned = {
+                        k: v for k, v in self.analysis._aligned.items() if k[0] != key
+                    }
+        except Exception as exc:  # taustasäie ei saa kaatua hiljaa
+            with self.lock:
+                self.speech_errors["speech"] = str(exc)
+            traceback.print_exc()
+        finally:
+            with self.lock:
+                self.speech_running = False
+                self.speech_fraction = 1.0
 
     def start_seating(self) -> None:
         """Kevyt otos taustalle, jos sitä ei ole jo menossa."""
@@ -307,7 +411,7 @@ class AppState:
         if self.timeline is None or self.analysis is None:
             return
         try:
-            roles = resolve_roles(self.timeline, self.settings.tracks)
+            roles = self._roles()
             grid, _, _ = build_grid(self.analysis, self.settings.tracks, roles)
             detector = detect.load(self.settings.globals.reaction_detector)
             self.seating = video_analyse.seating(
@@ -340,7 +444,7 @@ class AppState:
                 self.audio_preview_running = False
             return
         try:
-            roles = resolve_roles(self.timeline, self.settings.tracks)
+            roles = self._roles()
             grid = self.analysis.grid if self.analysis else None
             program_start = float(self.timeline.start) if self.timeline else 0.0
             data = mix.preview_audio(
@@ -396,7 +500,7 @@ class AppState:
 
         if self.timeline is None:
             return False
-        roles = resolve_roles(self.timeline, self.settings.tracks)
+        roles = self._roles()
         return bool(video_analyse.crowd_files(roles, self.timeline))
 
     def start_measure_video(self) -> bool:
@@ -425,7 +529,7 @@ class AppState:
 
         assert self.timeline is not None and self.analysis is not None
         try:
-            roles = resolve_roles(self.timeline, self.settings.tracks)
+            roles = self._roles()
             grid, _, _ = build_grid(self.analysis, self.settings.tracks, roles)
             files = video_analyse.close_up_files(grid, roles, self.timeline)
             crowd_files = (video_analyse.crowd_files(roles, self.timeline)
@@ -809,6 +913,13 @@ class AppState:
             g.rhythm = raw["rhythm"]
         if "name_tags" in raw:
             g.name_tags = bool(raw["name_tags"])
+        if "visual_speech" in raw:
+            was = g.visual_speech
+            g.visual_speech = bool(raw["visual_speech"])
+            # Päälle vaihtaminen käynnistää mittauksen: kytkin joka vaatii
+            # lisäpainikkeen on kytkin joka näyttää rikkinäiseltä.
+            if g.visual_speech and not was and self.analysis is not None:
+                self.start_measure_speech()
         self._apply_audio(payload.get("audio") or {})
         if (
             ("audio" in payload or "tracks" in payload)
@@ -818,6 +929,10 @@ class AppState:
             self.start_audio_preview()
         if "project_name" in raw:
             g.project_name = str(raw["project_name"])[:120] or DEFAULT_PROJECT_NAME
+        # Roolit voivat tehdä puhujasta mikittömän: mittaus kuvasta alkaa itse,
+        # koska ilman sitä päätös ei valmistu.
+        if "tracks" in payload and self.analysis is not None:
+            self.start_measure_speech()
 
     def _apply_audio(self, raw: dict) -> None:
         """Äänenkäsittelyn asetukset. Ei käynnistä käsittelyä — se on hidas."""
@@ -892,7 +1007,7 @@ class AppState:
         """
         if self.timeline is None or self.mix_progress.get("running"):
             return {"fresh": 0, "expected": 0}
-        roles = resolve_roles(self.timeline, self.settings.tracks)
+        roles = self._roles()
         fresh, total = mix.freshness(self.timeline, roles, self.settings.audio)
         return {"fresh": fresh, "expected": total}
 
@@ -913,7 +1028,7 @@ class AppState:
         """
         if self.timeline is None or self.mix_progress.get("running"):
             return
-        roles = resolve_roles(self.timeline, self.settings.tracks)
+        roles = self._roles()
         found = mix.adopt(self.timeline, roles, self.settings.audio)
         for key, path in found.replacements.items():
             if key not in self.mix_result.replacements:
@@ -1041,8 +1156,19 @@ class AppState:
         if self.timeline is None or self.analysis is None:
             raise HTTPException(409, self.load_error or t("export.not_loaded"))
         started = time.perf_counter()
-        roles = resolve_roles(self.timeline, self.settings.tracks)
+        roles = self._roles()
         problems = list(roles.problems)
+        # Kuvasta luettava puhe: ilman mittausta kaistaa ei ole, ja päätös
+        # olisi leikkaus vain mikillisistä, hiljaa väärä.
+        waiting = self.speech_missing()
+        if waiting:
+            names = ", ".join(waiting)
+            if self.speech_errors:
+                problems.append(t("speech.failed", names=names,
+                                  error="; ".join(self.speech_errors.values())))
+            else:
+                problems.append(t("speech.measuring", names=names,
+                                  percent=int(self.speech_fraction * 100)))
         for track in self.timeline.tracks:
             cfg = self.settings.tracks.get(track.key)
             if not cfg or cfg.role != ROLE_MIC:
@@ -1053,13 +1179,15 @@ class AppState:
                 if k in self.analysis.errors
             ]
         if problems:
-            return {"ok": False, "problems": problems, "ms": 0.0}
+            return {"ok": False, "problems": problems, "ms": 0.0,
+                    "speech": self.speech_status()}
         try:
             grid, program_start, program_end = build_grid(
                 self.analysis, self.settings.tracks, roles
             )
         except AnalysisError as exc:
-            return {"ok": False, "problems": [str(exc)], "ms": 0.0}
+            return {"ok": False, "problems": [str(exc)], "ms": 0.0,
+                    "speech": self.speech_status()}
 
         # Mitatut reaktiohetket päätökselle: aikakatkaisu tietää vain että
         # aikaa on kulunut, mittaus että jotain tapahtuu. Taulukkona, koska
@@ -1114,9 +1242,33 @@ class AppState:
             # Näkyviin, koska mitattu järjestys voi olla väärin ja pystyvienti
             # rajaisi silloin väärän ihmisen — ja sen näkee vasta viennistä.
             "seats": seats_view,
+            # Lähde-XML:n omat leikkaukset (jatkuvuushypyt), ohjelman sekunteina.
+            "edits": [float(e) for e in grid.edits],
+            "speech": self.speech_status(),
             "ms": round(elapsed, 1),
             "_grid": (grid, program_start, program_end, decision),
         }
+
+
+def _passthrough_tracks(state: AppState, mic_tracks: list) -> list[str]:
+    """Raidat joiden ääni soi lähteen tavoin: ei mikkirooleja, vain miksaus.
+
+    Kun yhtään mikkiä ei ole roolitettu (puhe luetaan kuvasta), viennin
+    jokainen ``mc-source`` olisi ``video`` ja ääni puuttuisi (pp 57 FCP:ssä).
+    Silloin käyttämättömäksi jätetyt pelkkää ääntä sisältävät raidat kytketään
+    päälle sellaisenaan. Jos mikkejä on, rooli päättää eikä tätä käytetä.
+    """
+    if mic_tracks or state.timeline is None:
+        return []
+    out = []
+    for track in state.timeline.tracks:
+        cfg = state.settings.tracks.get(track.key)
+        if cfg is not None and cfg.role != ROLE_UNUSED:
+            continue
+        items = state.timeline.track_media(track.key)
+        if items and all(i.has_audio and not i.has_video for i in items):
+            out.append(track.key)
+    return out
 
 
 def _video_json(state: AppState) -> dict:
@@ -1146,7 +1298,7 @@ def _video_json(state: AppState) -> dict:
     pans = state.measured_pans()
     if state.video_tables and state.timeline is not None and state.analysis:
         try:
-            roles = resolve_roles(state.timeline, state.settings.tracks)
+            roles = state._roles()
             grid, program_start, _ = build_grid(
                 state.analysis, state.settings.tracks, roles)
             # Laskenta ei katso ``reactions``-asetusta, samasta syystä kuin
@@ -1306,6 +1458,8 @@ def _state_json(state: AppState) -> dict:
         # hiljaa, ja silloin merkki näyttäisi väärää tai ei mitään.
         "audio_defaults": AudioSettings().to_json(),
         "video": _video_json(state),
+        # Puhe kuvasta: kuka odottaa mittausta, kuinka pitkällä se on.
+        "speech": state.speech_status(),
         # Palojen ylärajan ja automaattivalinnan on oltava käyttöliittymässä
         # sama luku kuin käsittelyssä: se riippuu koneesta, ei asetuksista.
         # Alustojen lukemat palvelimelta, jotta käyttöliittymä ja käsittely
@@ -1474,6 +1628,13 @@ def create_app(state: AppState) -> FastAPI:
         project.save(state.xml_path, state.settings)
         return _state_json(state)
 
+    @app.post("/api/speech")
+    def start_speech():
+        """Käynnistää (tai uusii virheen jälkeen) puheen mittauksen kuvasta."""
+        with state.lock:
+            state.start_measure_speech()
+        return {"ok": True, "speech": state.speech_status()}
+
     @app.post("/api/video")
     def measure_video():
         """Käynnistää lähikuvien mittauksen taustalle.
@@ -1619,7 +1780,7 @@ def create_app(state: AppState) -> FastAPI:
                 )
             _grid, program_start, program_end, decision = result["_grid"]
             assert state.timeline is not None
-            roles = resolve_roles(state.timeline, state.settings.tracks)
+            roles = state._roles()
             mic_tracks: list[tuple[str, str]] = []
             for name in roles.speakers:
                 for key in roles.mics.get(name, []):
@@ -1738,6 +1899,11 @@ def create_app(state: AppState) -> FastAPI:
 
                     segments = movement_mod.punch_segments(
                         segments, _grid, state.settings.globals.min_shot)
+                passthrough = _passthrough_tracks(state, mic_tracks)
+                if passthrough and state.timeline.multicams:
+                    names = {t.key: t.name for t in state.timeline.tracks}
+                    warnings.append(t("export.passthrough",
+                                      names=", ".join(names[k] for k in passthrough)))
                 if state.timeline.multicams:
                     # Monikamerassa ulos tulee monikameraleikkaus: kuvakulman
                     # voi vaihtaa Final Cutissa jälkikäteen.
@@ -1758,6 +1924,7 @@ def create_app(state: AppState) -> FastAPI:
                         ducks=ducks,
                         reframer=reframer,
                         shots=shot_list,
+                        passthrough=passthrough,
                     )
                 else:
                     # Hiljainen pudotus littanaan vientiin ei saa jäädä

@@ -1099,8 +1099,12 @@ def _mc_sources(
     transform: list[str] | None = None,
     video_speakers: list[str] | None = None,
     video_silent: list[str] | None = None,
+    passthrough: list[str] | None = None,
 ) -> list[str]:
     """``<mc-source>``-rivit: yksi kuva, loput ääntä omilla rooleillaan.
+
+    ``passthrough`` ovat kulmat jotka soivat sellaisenaan (``srcEnable="audio"``,
+    ei rooleja): lähteen oma ääni kun yksikään mikki ei ole roolitettu.
 
     Kuvakulman oma ääni kytketään pois samalla tavalla kuin Final Cut sen
     kirjoittaa: rooli jää näkyviin mutta ``active="0"``.
@@ -1211,6 +1215,8 @@ def _mc_sources(
             "              </mc-source>",
             *twin_lines(angle_id, playing),
         ]
+    for angle_id in passthrough or []:
+        lines.append(f'              <mc-source angleID={quoteattr(angle_id)} srcEnable="audio"/>')
     return lines
 
 
@@ -1949,8 +1955,13 @@ def build_multicam_fcpxml(
     ducks: dict[str, list] | None = None,
     reframer=None,
     shots: list | None = None,
+    passthrough: list[str] | None = None,
 ) -> str:
     """Rakentaa monikameraleikkauksen: yksi ``<mc-clip>`` per kuva.
+
+    ``passthrough``: raitojen avaimet joiden ääni soi lähteen tavoin vaikka
+    niille ei ole mikkirooleja (``roles``-vapaa miksaus). Ilman tätä
+    jokaisen klipin ``mc-source`` on ``video`` eikä viennissä kuulu mitään.
 
     Tulos on natiivi monikameraleikkaus, ei littana: kuvakulman voi vaihtaa
     Final Cutissa jälkikäteen kulmanäkymästä. Resurssit tulevat lähde-XML:stä
@@ -2173,6 +2184,8 @@ def build_multicam_fcpxml(
             transform=base_transform,
             video_speakers=video_speakers,
             video_silent=silent(video_angle, video_speakers) if video_angle else [],
+            passthrough=[x for k in (passthrough or [])
+                         for x in angles_of.get(k, []) if x in own],
         )
         if index in group_end:
             wide_angle, wide_item = wide_of[index]

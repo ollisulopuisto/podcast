@@ -76,6 +76,16 @@ CATALOG: dict[str, dict[str, str]] = {
         "fi": "Ryhmäkuvassa «{name}» on puhuja «{speaker}», jolla ei ole mikkiä.",
         "en": "Group shot “{name}” names “{speaker}”, who has no microphone.",
     },
+    "speech.measuring": {
+        "fi": "Puhe luetaan kuvasta ({names}): huulten liikettä mitataan, "
+        "{percent} %. Kestää minuutteja, ja tulos jää muistiin.",
+        "en": "Speech is read from the picture ({names}): measuring lip "
+        "movement, {percent} %. It takes minutes, and the result is kept.",
+    },
+    "speech.failed": {
+        "fi": "Puhetta ei saatu luettua kuvasta ({names}): {error}",
+        "en": "Could not read speech from the picture ({names}): {error}",
+    },
     "roles.speaker_without_mic": {
         "fi": "Puhujalta «{name}» puuttuu mikki.",
         "en": "Speaker “{name}” has no microphone.",
@@ -350,6 +360,10 @@ CATALOG: dict[str, dict[str, str]] = {
               "vienti jää ilman panorointia.",
         "en": "Panning is on but the seating has not been measured — "
               "the export goes out without it.",
+    },
+    "export.passthrough": {
+        "fi": "Mikkirooleja ei ole, joten lähteen ääni ({names}) soi sellaisenaan.",
+        "en": "No microphone roles, so the source's audio ({names}) plays as it is.",
     },
     "export.flat_no_multicam": {
         "fi": "Lähteessä ei ole monikameraklippiä, joten vienti on littana "

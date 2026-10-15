@@ -297,6 +297,10 @@ class Globals:
     # syntyy monta leikkausta, ja Final Cutin selaimessa nimi on ainoa mikä
     # ne erottaa toisistaan.
     name_tags: bool = True
+    # Puhuja jolla on lähikuva mutta ei mikkiä: puhe luetaan huulten liikkeestä
+    # (``video/speech.py``). Päällä oletuksena, koska ilman sitä tällainen puhuja
+    # ei ole mukana päätöksessä lainkaan; pois jos mittauksen minuutit eivät käy.
+    visual_speech: bool = True
 
     def to_json(self) -> dict:
         return asdict(self)

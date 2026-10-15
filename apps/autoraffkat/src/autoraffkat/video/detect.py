@@ -174,6 +174,11 @@ class VisionFaces:
         }
 
 
+    def clone(self) -> "VisionFaces":
+        """Oma tunnistin toiselle säikeelle: pyyntö- ja käsittelijäluokat ovat
+        yhteisiä, mutta Visionin tilaa ei jaeta säikeiden kesken."""
+        return VisionFaces()
+
     def measure_all(self, path: str) -> list[dict]:
         """Jokainen kasvo: laatikko ja suun aukko. Laajalle ja ryhmäkuvalle.
 
