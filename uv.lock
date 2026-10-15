@@ -552,6 +552,7 @@ dependencies = [
     { name = "google-colab-cli" },
     { name = "jupyter-kernel-client" },
     { name = "silencelearn" },
+    { name = "soundfile" },
     { name = "textual" },
 ]
 
@@ -560,6 +561,7 @@ requires-dist = [
     { name = "google-colab-cli", git = "https://github.com/googlecolab/google-colab-cli?rev=930275e62970df10055f411c8e28ca61755dcfc7" },
     { name = "jupyter-kernel-client", git = "https://github.com/googlecolab/jupyter-kernel-client.git?rev=f18e982c3265df5e923aa9def101ab3fd737e139" },
     { name = "silencelearn", editable = "packages/silencelearn" },
+    { name = "soundfile", specifier = ">=0.13.1" },
     { name = "textual", specifier = ">=8.0.0" },
 ]
 

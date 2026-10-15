@@ -27,6 +27,9 @@ dependencies = [
     # standardikirjasto (``driver.LEARN_MODULE``). Ainoa työtilan paketti jonka
     # tämä sovellus ottaa, ja siksi että se ei tuo mitään mukanaan.
     "silencelearn",
+    # FLAC-pakkaus ennen suoraa siirtoa; pyörän mukana tulee libsndfile, joten
+    # ffmpegiä ei tarvita paikallisesti. Sama määrittely kuin automixerissa.
+    "soundfile>=0.13.1",
 ]
 
 [tool.uv.sources]

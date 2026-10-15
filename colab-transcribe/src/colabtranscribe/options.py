@@ -43,6 +43,8 @@ class RunOptions:
     output_dir: str = "output"
     preset: str = "remote"
     transfer: str = "direct"
+    # Isot PCM-WAVit FLACiksi ennen suoraa siirtoa (häviötön, puretaan Colabissa).
+    compress: bool = True
     source: str = "tracks"
     rms: bool = False
     # Auto-Silence litteroinnin jälkeen. Pois päältä tulos on pelkkä

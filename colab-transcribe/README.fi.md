@@ -66,7 +66,8 @@ colab-transcribe --input ~/jakso/ --keep-session  # jätä Colab-istunto käynti
 Tiedostot ladataan oletuksena suoraan Colabiin (`--transfer direct`; isot tiedostot
 lähtevät paloina). `--transfer drive` kulkee Google Driven kautta: se on nopeampi,
 mutta vaatii että Drive API on käytettävissä tilillä. Ilman sitä Google vastaa
-403:lla ja ajo jatkaa itse suoralla latauksella.
+403:lla ja ajo jatkaa itse suoralla latauksella. Suorassa siirrossa isot WAVit pakataan
+ensin FLACiksi (häviötön, puretaan Colabissa); `--no-compress` kytkee sen pois.
 Esiasetukset ovat Colabissa ajettavan skriptin: `remote` (häntä 1,0 s,
 tauko 1,0 s) ja `intra-mic` (RMS-tarkistus päällä, häntä 0,4 s, tauko
 0,4 s). `--thr`, `--tail`, `--gap`, `--rms` ja `--prompt` korvaavat

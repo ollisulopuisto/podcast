@@ -291,7 +291,9 @@ def plan_commands(
             big = source.stat().st_size > CHUNK_ABOVE
         except OSError:
             big = False
-        if big:
+        if big and options.compress and _flac_bitdepth(source):
+            commands.append(["flac-upload", options.session, str(source), remote])
+        elif big:
             commands.append(["chunked-upload", options.session, str(source), remote])
         else:
             commands.append(
@@ -359,6 +361,8 @@ def describe_command(command: list[str]) -> str:
     if not command:
         return "Suoritetaan komentoa..."
     cmd0 = command[0]
+    if cmd0 == "flac-upload":
+        return f"Pakataan ja siirretään {Path(command[2]).name} FLACina..."
     if cmd0 == "chunked-upload":
         return f"Siirretään isoa tiedostoa {Path(command[2]).name} paloina..."
     if cmd0 == "drive" and len(command) > 1 and command[1] == "upload":
@@ -563,6 +567,77 @@ def direct_tail(options: RunOptions, input_files: list[str]) -> list[list[str]]:
     return direct[after_scripts:]
 
 
+#: FLAC kantaa PCM:n 16 ja 24 bittiä; WAVin liukuluku ja 32-bittinen PCM eivät
+#: mahdu siihen, ja ne lähetetään sellaisinaan. Arvo on ffmpegin purkukoodekki.
+_FLAC_DECODERS = {"PCM_16": "pcm_s16le", "PCM_24": "pcm_s24le"}
+
+
+def _flac_bitdepth(path: Path) -> str | None:
+    """Purkukoodekki jos tiedosto on FLACiksi häviöttä pakattava WAV, muuten None."""
+    if path.suffix.lower() != ".wav":
+        return None
+    import soundfile as sf
+
+    try:
+        info = sf.info(path)
+    except (OSError, RuntimeError):
+        return None
+    if info.format not in ("WAV", "WAVEX", "RF64"):
+        return None
+    return _FLAC_DECODERS.get(info.subtype)
+
+
+def _upload_as_flac(
+    session: str,
+    source: Path,
+    remote: str,
+    log: Callable[[str], None],
+    timeout: float | None = None,
+) -> int:
+    """Pakkaa WAV FLACiksi, lähetä, ja pura Colabissa samannimiseksi WAViksi.
+
+    Istunto viittaa ``a.wav``:iin, joten tulos on täsmälleen se tiedosto (sama
+    nimi, sama bittisyvyys) eikä istuntoa tai tuloksia tarvitse muokata.
+    """
+    import soundfile as sf
+
+    decoder = _flac_bitdepth(source)
+    if decoder is None:
+        return _upload_in_chunks(session, source, remote, log, timeout)
+    remote_flac = f"{remote}.flac"
+    with tempfile.TemporaryDirectory() as tmp:
+        flac = Path(tmp) / "a.flac"
+        log(f"Pakataan {source.name} FLACiksi (häviötön)...")
+        with sf.SoundFile(source) as src, sf.SoundFile(
+            flac, "w", src.samplerate, src.channels, format="FLAC", subtype=src.subtype
+        ) as dst:
+            while len(block := src.read(1 << 20, dtype="int32")):
+                dst.write(block)
+        log(f"{source.stat().st_size / 1e6:.0f} MB -> {flac.stat().st_size / 1e6:.0f} MB")
+        if flac.stat().st_size > CHUNK_ABOVE:
+            code = _upload_in_chunks(session, flac, remote_flac, log, timeout)
+        else:
+            code = _execute_single(
+                ["colab", "upload", "-s", session, str(flac), remote_flac],
+                log,
+                timeout=timeout,
+            )
+    if code != 0:
+        return code
+    q, qf = shlex.quote(remote), shlex.quote(remote_flac)
+    return _execute_single(
+        [
+            "colab",
+            "exec",
+            "-s",
+            session,
+            f"ffmpeg -y -loglevel error -i {qf} -c:a {decoder} {q} && rm {qf}",
+        ],
+        log,
+        timeout=timeout,
+    )
+
+
 def _upload_in_chunks(
     session: str,
     source: Path,
@@ -678,6 +753,14 @@ def run(
                         base_pct + 0.85 * step_span,
                         f"[{i + 1}/{total}] Auto-Silence...",
                     )
+
+            if command[0] == "flac-upload":
+                code = _upload_as_flac(
+                    command[1], Path(command[2]), command[3], log, timeout
+                )
+                if code != 0:
+                    return code
+                continue
 
             if command[0] == "chunked-upload":
                 code = _upload_in_chunks(

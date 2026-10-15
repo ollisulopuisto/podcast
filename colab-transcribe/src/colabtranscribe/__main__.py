@@ -44,6 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="siirtotapa: direct (suora Colab-lataus, oletus) tai drive (nopeampi Google Drive, vaatii Drive API:n)",
     )
     parser.add_argument(
+        "--no-compress",
+        action="store_true",
+        help="älä pakkaa isoja WAVeja FLACiksi ennen suoraa siirtoa",
+    )
+    parser.add_argument(
         "--source",
         choices=SOURCES,
         default=None,
@@ -128,6 +133,7 @@ def options_from_args(args: argparse.Namespace) -> RunOptions:
         output_dir=args.output if args.output != "output" else env_opts.output_dir,
         preset=args.preset if args.preset != "remote" else env_opts.preset,
         transfer=transfer,
+        compress=not args.no_compress,
         source=args.source if args.source is not None else env_opts.source,
         rms=args.rms or env_opts.rms,
         silence=not args.transcribe_only and env_opts.silence,

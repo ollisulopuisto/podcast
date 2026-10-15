@@ -845,3 +845,81 @@ def test_a_file_the_session_names_but_the_folder_lacks_is_not_an_error(tmp_path:
     files = _touch(tmp_path, "rec Files/a.wav")
     kept, _ = driver.session_inputs(tmp_path, files)
     assert kept == ["jakso.nhsx", "rec Files/a.wav"]
+
+
+def _wav(path: Path, subtype: str, seconds: float = 0.5, fmt: str = "WAV") -> Path:
+    import numpy as np
+    import soundfile as sf
+
+    rng = np.random.default_rng(1)
+    x = (0.1 * rng.standard_normal((int(8000 * seconds), 2))).astype("float32")
+    sf.write(path, x, 8000, subtype=subtype, format=fmt)
+    return path
+
+
+def test_big_pcm_wavs_are_planned_as_flac_uploads(monkeypatch, tmp_path: Path):
+    """FLAC on häviötön: 120 s:n 24-bittinen pätkä pieneni 17,3 MB -> 9,5 MB."""
+    monkeypatch.setattr(driver, "CHUNK_ABOVE", 100)
+    _wav(tmp_path / "a.wav", "PCM_24")
+    _wav(tmp_path / "b.wav", "FLOAT")  # FLAC ei kanna liukulukua
+    _wav(tmp_path / "pieni.wav", "PCM_24", seconds=0.001)
+    options = RunOptions(input_dir=str(tmp_path), transfer="direct", session="s")
+    plan = driver.plan_commands(options, ["a.wav", "b.wav", "pieni.wav"], reuse_session=True)
+    assert any(c[0] == "flac-upload" and c[2].endswith("a.wav") for c in plan)
+    assert not any(c[0] == "flac-upload" and c[2].endswith("b.wav") for c in plan)
+    assert any(c[0] == "chunked-upload" and c[2].endswith("b.wav") for c in plan)
+    assert any(c[:2] == ["colab", "upload"] and c[-1].endswith("pieni.wav") for c in plan)
+
+
+def test_no_compress_leaves_wavs_as_they_are(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(driver, "CHUNK_ABOVE", 100)
+    _wav(tmp_path / "a.wav", "PCM_24")
+    options = RunOptions(
+        input_dir=str(tmp_path), transfer="direct", session="s", compress=False
+    )
+    plan = driver.plan_commands(options, ["a.wav"], reuse_session=True)
+    assert not any(c[0] == "flac-upload" for c in plan)
+
+
+def test_a_flac_upload_is_lossless_and_is_turned_back_into_the_same_wav(
+    monkeypatch, tmp_path: Path
+):
+    """Istunto viittaa tiedostoon ``a.wav``: Colabissa FLAC puretaan samannimiseksi,
+    samalla bittisyvyydellä, joten istuntoa ja tuloksia ei tarvitse muokata."""
+    import numpy as np
+    import soundfile as sf
+
+    src = _wav(tmp_path / "a.wav", "PCM_24")
+    original, rate = sf.read(src, dtype="int32")
+    seen: list[list[str]] = []
+    decoded: list = []
+
+    def fake_execute(command, log, timeout=None, **_):
+        seen.append(command)
+        if command[:2] == ["colab", "upload"]:
+            decoded.append(sf.read(command[4], dtype="int32"))
+        return 0
+
+    monkeypatch.setattr(driver, "_execute_single", fake_execute)
+    code = driver.run(
+        [["flac-upload", "s", str(src), "/content/input/x y/a.wav"]], lambda _: None
+    )
+    assert code == 0
+    up = next(c for c in seen if c[:2] == ["colab", "upload"])
+    assert up[-1] == "/content/input/x y/a.wav.flac"
+    samples, got_rate = decoded[0]
+    assert got_rate == rate and np.array_equal(samples, original)
+    unpack = seen[-1][4]
+    assert "ffmpeg" in unpack and "pcm_s24le" in unpack
+    assert "'/content/input/x y/a.wav.flac'" in unpack and "rm" in unpack
+
+
+def test_extensible_wavs_are_compressed_too(monkeypatch, tmp_path: Path):
+    """ffmpegin ja monen äänittimen WAVit ovat WAVEX-muotoa (soundfile sanoo
+    ``WAVEX``, ei ``WAV``): ne ovat ihan tavallista PCM:ää eikä niitä saa
+    jättää pakkaamatta."""
+    monkeypatch.setattr(driver, "CHUNK_ABOVE", 100)
+    _wav(tmp_path / "a.wav", "PCM_24", fmt="WAVEX")
+    options = RunOptions(input_dir=str(tmp_path), transfer="direct", session="s")
+    plan = driver.plan_commands(options, ["a.wav"], reuse_session=True)
+    assert any(c[0] == "flac-upload" for c in plan)
