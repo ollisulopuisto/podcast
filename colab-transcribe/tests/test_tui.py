@@ -416,3 +416,29 @@ def test_auto_silence_can_be_switched_off(tmp_path: Path):
             await pilot.pause()
 
     run_scenario(scenario)
+
+
+def test_browse_with_several_sessions_asks_which_one(tmp_path: Path):
+    """Kansiossa useampi .nhsx: valitaan yksi, ja syötteeksi tulee se tiedosto."""
+    d = tmp_path / "monta"
+    d.mkdir()
+    for n in ("a.nhsx", "b.nhsx"):
+        (d / n).write_text("<Session/>")
+    asked = []
+
+    async def scenario():
+        def fake_file_picker(directory="", prompt="", file_types=None):
+            asked.append(file_types)
+            return str(d / "b.nhsx")
+
+        app = TranscribeApp(
+            folder_picker=lambda initial="", prompt="": str(d), file_picker=fake_file_picker
+        )
+        async with app.run_test() as pilot:
+            app.query_one("#browse_input").press()
+            await pilot.pause()
+            await asyncio.sleep(0.05)
+            assert app.query_one("#input").value == str(d / "b.nhsx")
+
+    run_scenario(scenario)
+    assert asked == [(".nhsx",)]

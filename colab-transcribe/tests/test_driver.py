@@ -961,3 +961,42 @@ def test_aliases_are_made_in_colab_after_the_uploads(tmp_path: Path):
     assert "mkdir -p /content/input/osa" in cmd or any(
         "mkdir -p /content/input/osa" in c[-1] for c in plan[:link]
     )
+
+
+def _two_sessions(tmp_path: Path) -> None:
+    for sess, wav in (("a.nhsx", "x.wav"), ("b.nhsx", "y.wav")):
+        (tmp_path / sess).write_text(
+            f'<Session><AudioPool Path=""><File Id="1" Name="{wav}"/></AudioPool></Session>',
+            encoding="utf-8",
+        )
+        (tmp_path / wav).write_bytes(b"x")
+
+
+def test_a_chosen_session_takes_only_its_own_audio(tmp_path: Path):
+    """Kansiossa on monta istuntoa (alkuperäinen, 2 raitaa, litteroitu): yksi
+    valitaan, eikä muiden äänet lähde mukaan."""
+    _two_sessions(tmp_path)
+    files = driver.list_input_files(tmp_path)
+    kept, skipped = driver.session_inputs(tmp_path, files, only="b.nhsx")
+    assert kept == ["b.nhsx", "y.wav"]
+    assert set(skipped) == {"a.nhsx", "x.wav"}
+
+
+def test_an_nhsx_path_as_input_means_that_session_in_its_folder(tmp_path: Path):
+    _two_sessions(tmp_path)
+    assert driver.split_session(tmp_path / "b.nhsx") == (tmp_path, "b.nhsx")
+    assert driver.split_session(tmp_path) == (tmp_path, None)
+    assert driver.split_session(tmp_path / "x.wav") == (tmp_path / "x.wav", None)
+    assert driver.nhsx_sessions(tmp_path) == ["a.nhsx", "b.nhsx"]
+
+
+def test_the_cli_plans_only_the_session_it_was_pointed_at(tmp_path: Path, capsys):
+    from colabtranscribe import __main__ as cli
+
+    _two_sessions(tmp_path)
+    code = cli.main(["--input", str(tmp_path / "b.nhsx"), "--output", str(tmp_path / "o"),
+                     "--transfer", "direct", "--dry-run"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "y.wav" in out and "b.nhsx" in out
+    assert "x.wav" not in out and "a.nhsx" not in out

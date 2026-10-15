@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import shlex
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from . import __version__, driver, session
@@ -165,8 +166,18 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
         )
         return 1
 
+    # Syötteenä oleva .nhsx tarkoittaa sitä istuntoa omassa kansiossaan.
+    input_path, only = driver.split_session(input_path)
+    options = replace(options, input_dir=str(input_path))
     files = driver.list_input_files(input_path)
-    files, skipped = driver.session_inputs(input_path, files)
+    if only is None and input_path.is_dir():
+        found = driver.nhsx_sessions(input_path)
+        if len(found) > 1:
+            print(
+                f"Kansiossa on {len(found)} istuntoa ({', '.join(found)}): kaikki "
+                "lähtevät mukaan. Valitse yksi antamalla --input <tiedosto>.nhsx."
+            )
+    files, skipped = driver.session_inputs(input_path, files, only=only)
     if skipped:
         print(driver.skipped_note(input_path, skipped))
     files, aliases = driver.dedupe_inputs(input_path, files)

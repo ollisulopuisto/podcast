@@ -110,8 +110,29 @@ def _session_names(nhsx: Path) -> tuple[str, list[str]] | None:
     return None
 
 
+def nhsx_sessions(input_dir: Path | str) -> list[str]:
+    """Kansion ``.nhsx``-istunnot nimen mukaan (ei piilotiedostoja, ei alikansioita)."""
+    try:
+        return sorted(
+            p.name
+            for p in Path(input_dir).iterdir()
+            if p.is_file() and p.suffix.lower() == ".nhsx" and not p.name.startswith(".")
+        )
+    except OSError:
+        return []
+
+
+def split_session(path: Path | str) -> tuple[Path, str | None]:
+    """``.nhsx``-tiedosto syötteenä tarkoittaa sitä istuntoa omassa kansiossaan:
+    ``(kansio, istunnon nimi)``. Muu syöte palautuu sellaisenaan ilman valintaa."""
+    p = Path(path)
+    if p.is_file() and p.suffix.lower() == ".nhsx":
+        return p.parent, p.name
+    return p, None
+
+
 def session_inputs(
-    input_dir: Path | str, files: list[str]
+    input_dir: Path | str, files: list[str], only: str | None = None
 ) -> tuple[list[str], list[str]]:
     """Istuntojen tarvitsemat tiedostot ja ne jotka voi jättää lataamatta.
 
@@ -127,6 +148,8 @@ def session_inputs(
     if root.is_file():
         return files, []
     sessions = [f for f in files if f.lower().endswith(".nhsx")]
+    if only is not None:
+        sessions = [f for f in sessions if f == only]
     if not sessions:
         return files, []
     present = set(files)

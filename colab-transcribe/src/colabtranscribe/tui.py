@@ -11,6 +11,7 @@ from __future__ import annotations
 import inspect
 import re
 from collections.abc import Callable
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 from typing import ClassVar
@@ -482,6 +483,18 @@ class TranscribeApp(App):
                         )
                         if audio_chosen:
                             chosen = audio_chosen
+                    elif (
+                        target_input_id == "#input"
+                        and chosen_path.is_dir()
+                        and len(driver.nhsx_sessions(chosen_path)) > 1
+                    ):
+                        session_chosen = file_picker_fn(
+                            chosen,
+                            "Kansiossa on useita istuntoja. Valitse yksi",
+                            (".nhsx",),
+                        )
+                        if session_chosen:
+                            chosen = session_chosen
                     self.call_from_thread(self._set_input_value, target_input_id, chosen)
 
             self.run_worker(_worker, thread=True, exclusive=False)
@@ -507,6 +520,24 @@ class TranscribeApp(App):
                                 prompt="Ei .nhsx-istuntoa löytynyt. Valitse äänitiedosto",
                             ),
                             on_file_dismiss,
+                        )
+                    elif (
+                        target_input_id == "#input"
+                        and chosen_path.is_dir()
+                        and len(driver.nhsx_sessions(chosen_path)) > 1
+                    ):
+
+                        def on_session_dismiss(session_chosen: str | None) -> None:
+                            self._set_input_value(
+                                target_input_id, session_chosen or chosen
+                            )
+
+                        self.push_screen(
+                            FilePickerModal(
+                                start_dir=chosen,
+                                prompt="Kansiossa on useita istuntoja. Valitse yksi",
+                            ),
+                            on_session_dismiss,
                         )
                     else:
                         self._set_input_value(target_input_id, chosen)
@@ -578,9 +609,11 @@ class TranscribeApp(App):
     def _job(self, options: RunOptions) -> None:
         try:
             self.call_from_thread(self._set_progress, 0.0, "Valmistellaan ajoa...")
-            files = driver.list_input_files(Path(options.input_dir))
-            files, skipped = driver.session_inputs(Path(options.input_dir), files)
-            files, aliases = driver.dedupe_inputs(Path(options.input_dir), files)
+            input_path, only = driver.split_session(Path(options.input_dir))
+            options = replace(options, input_dir=str(input_path))
+            files = driver.list_input_files(input_path)
+            files, skipped = driver.session_inputs(input_path, files, only=only)
+            files, aliases = driver.dedupe_inputs(input_path, files)
             if skipped:
                 self.call_from_thread(
                     self._write_log,
