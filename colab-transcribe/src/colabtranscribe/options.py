@@ -58,6 +58,8 @@ class RunOptions:
     keep_session: bool = False
     # Toisen mikin vuoto pois litteroinnista jonka istuntoon kirjoitetaan.
     bleed_filter: bool = True
+    # Käsikirjoitus: lyhyet huomautukset kappaleen sisään, ei omille riveilleen.
+    inline_remarks: bool = False
 
     def __post_init__(self):
         if self.gpu not in GPUS:
@@ -166,4 +168,6 @@ def pipeline_args(options: RunOptions) -> list[str]:
         args.append("--no-silence")
     if not options.bleed_filter:
         args.append("--no-bleed-filter")
+    if options.inline_remarks:
+        args.append("--inline-remarks")
     return args

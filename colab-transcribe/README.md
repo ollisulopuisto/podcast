@@ -55,6 +55,7 @@ Fully scripted, no interface:
 colab-transcribe --input ~/jakso/ --output ~/valmis/ --preset intra-mic
 colab-transcribe --input ~/jakso/ --transcribe-only   # transcribe only, no Auto-Silence
 colab-transcribe --input ~/jakso/yksi.nhsx            # one session out of a folder that holds several
+colab-transcribe --input ~/jakso/ --inline-remarks    # script: short remarks like "(Guest: yes)" stay in the paragraph
 colab-transcribe --input ~/jakso/ --dry-run     # print the plan, run nothing
 colab-transcribe --input ~/jakso/ --gpu A100 --rms --thr -40
 colab-transcribe --input ~/jakso/ --no-drive    # fallback to direct colab upload

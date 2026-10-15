@@ -307,3 +307,11 @@ def test_no_bleed_filter_flag_reaches_the_planned_script_call(tmp_path, capsys):
                      "--no-bleed-filter", "--dry-run"])
     assert code == 0
     assert "--no-bleed-filter" in capsys.readouterr().out
+
+
+def test_inline_remarks_flag_reaches_the_planned_script_call(tmp_path, capsys):
+    (tmp_path / "puhe.wav").write_bytes(b"")
+    code = cli.main(["--input", str(tmp_path), "--output", str(tmp_path / "out"),
+                     "--inline-remarks", "--dry-run"])
+    assert code == 0
+    assert "--inline-remarks" in capsys.readouterr().out

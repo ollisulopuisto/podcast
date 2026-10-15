@@ -45,6 +45,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="siirtotapa: direct (suora Colab-lataus, oletus) tai drive (nopeampi Google Drive, vaatii Drive API:n)",
     )
     parser.add_argument(
+        "--inline-remarks",
+        action="store_true",
+        help="käsikirjoitus: lyhyet huomautukset kappaleen sisään (Nimi: teksti), ei omille riveilleen",
+    )
+    parser.add_argument(
         "--no-bleed-filter",
         action="store_true",
         help="kirjoita istuntoon myös toisen mikin vuoto (oletuksena vuoto jätetään pois)",
@@ -141,6 +146,7 @@ def options_from_args(args: argparse.Namespace) -> RunOptions:
         transfer=transfer,
         compress=not args.no_compress,
         bleed_filter=not args.no_bleed_filter,
+        inline_remarks=args.inline_remarks,
         source=args.source if args.source is not None else env_opts.source,
         rms=args.rms or env_opts.rms,
         silence=not args.transcribe_only and env_opts.silence,

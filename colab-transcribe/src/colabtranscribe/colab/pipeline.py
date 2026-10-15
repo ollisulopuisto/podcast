@@ -753,13 +753,21 @@ def _stamp(seconds):
     return f"[{total // 60:02d}:{total % 60:02d}]"
 
 
-def _script_lines(entries):
+#: Valinnaisen rivinsisäisen huomautuksen enimmäispituus sanoina.
+INLINE_REMARK_WORDS = 2
+
+
+def _script_lines(entries, inline_remarks=False):
     """Alueet kappaleiksi. Snapshot podcast-magicin `script/core.py`:n
     `_render`istä (sama koodi, ei muuta).
 
     Toisen puhujan alue, joka alkaa tämän sisällä ja päättyy ennen sen
     loppua, katkaisee kappaleen; kappale jatkuu jatkuvan sanan aikaleimalla.
     Saman puhujan peräkkäiset palat yhtyvät.
+
+    ``inline_remarks`` (oletuksena pois): lyhyt huomautus (enintään
+    ``INLINE_REMARK_WORDS`` sanaa) saman puhujan kahden palan välissä liitetään
+    kappaleen sisään muodossa ``(Nimi: teksti)`` eikä katkaise sitä.
     """
     entries = sorted(entries, key=lambda entry: entry[0])
     pieces = []
@@ -781,6 +789,21 @@ def _script_lines(entries):
                                [w[2] for w in bit]))
             position = end
     pieces.sort(key=lambda piece: piece[0])
+
+    if inline_remarks:
+        i = 1
+        while i < len(pieces) - 1:
+            before, remark, after = pieces[i - 1], pieces[i], pieces[i + 1]
+            if (
+                before[1] == after[1] != remark[1]
+                and len(remark[2]) <= INLINE_REMARK_WORDS
+            ):
+                pieces[i - 1 : i + 2] = [(
+                    before[0], before[1],
+                    [*before[2], f"({remark[1]}: {' '.join(remark[2])})", *after[2]],
+                )]
+            else:
+                i += 1
 
     merged = []
     for start, name, texts in pieces:
@@ -911,7 +934,7 @@ def _split_bursts(entries, gap=TURN_GAP_S):
     return out
 
 
-def write_script(nhsx_path, audio_dirs=None, gap=TURN_GAP_S):
+def write_script(nhsx_path, audio_dirs=None, gap=TURN_GAP_S, inline_remarks=False):
     """Istunnosta luettava `.md` sen viereen: yksi kappale per puheenvuoro.
 
     **Snapshot** podcast-magicin `script/core.py`:stä, koska tämä skripti ei
@@ -965,7 +988,7 @@ def write_script(nhsx_path, audio_dirs=None, gap=TURN_GAP_S):
 
     if audio_dirs:
         entries = _drop_bleed(entries, meta, regions, tree, audio_dirs)
-    lines = _script_lines(_split_bursts(entries, gap))
+    lines = _script_lines(_split_bursts(entries, gap), inline_remarks)
     output_path = _swap_suffix(nhsx_path, ".nhsx", ".md")
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n\n".join(lines) + ("\n" if lines else ""))
@@ -1249,6 +1272,11 @@ def main():
         help="Whisper initial prompt täytesanoille",
     )
     parser.add_argument(
+        "--inline-remarks",
+        action="store_true",
+        help="käsikirjoitus: lyhyt huomautus kappaleen sisään (Nimi: teksti), ei omalle rivilleen",
+    )
+    parser.add_argument(
         "--no-bleed-filter",
         action="store_true",
         help="kirjoita istuntoon myös toisen mikin vuoto",
@@ -1320,7 +1348,7 @@ def main():
                          **({"learn": True} if learn else {}))
         finished[idx - 1] = _swap_suffix(nhsx_file, ".nhsx", "_processed.nhsx")
     for nhsx_file in finished:
-        write_script(nhsx_file, gap=gap)
+        write_script(nhsx_file, gap=gap, inline_remarks=args.inline_remarks)
 
     print("\nKoko putki suoritettu onnistuneesti.", flush=True)
 

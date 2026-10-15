@@ -1125,3 +1125,60 @@ def test_the_script_gets_the_runs_gap(monkeypatch, argv, gap):
     monkeypatch.setattr(pipeline, "write_script", lambda path, **k: seen.append(k.get("gap")))
     pipeline.main()
     assert seen == [gap]
+
+
+def _remark_entries():
+    """Haastattelija jatkaa virkettä, vieras sanoo «niin» keskellä."""
+    return [
+        (0.0, "Haastattelija", [(0.0, 0.4, "No"), (0.5, 0.9, "pörssiyhtiö,"),
+                                 (3.0, 3.4, "puhutte"), (3.5, 3.9, "paljon")]),
+        (1.5, "Vieras", [(1.5, 1.8, "niin")]),
+    ]
+
+
+def test_a_short_remark_breaks_the_paragraph_by_default():
+    from colabtranscribe.colab.pipeline import _script_lines
+
+    assert _script_lines(_remark_entries()) == [
+        "[00:00] **Haastattelija:** No pörssiyhtiö,",
+        "[00:01] **Vieras:** niin",
+        "[00:03] **Haastattelija:** puhutte paljon",
+    ]
+
+
+def test_inline_remarks_keep_the_paragraph_whole_when_asked():
+    from colabtranscribe.colab.pipeline import _script_lines
+
+    assert _script_lines(_remark_entries(), inline_remarks=True) == [
+        "[00:00] **Haastattelija:** No pörssiyhtiö, (Vieras: niin) puhutte paljon",
+    ]
+
+
+def test_a_longer_reply_is_never_folded_into_the_paragraph():
+    from colabtranscribe.colab.pipeline import _script_lines
+
+    entries = _remark_entries()
+    entries[1] = (1.5, "Vieras", [(1.5, 1.8, "ei"), (1.9, 2.2, "ihan"), (2.3, 2.6, "noin")])
+    lines = _script_lines(entries, inline_remarks=True)
+    assert len(lines) == 3
+
+
+def test_the_inline_remarks_flag_reaches_the_script_and_is_off_by_default(monkeypatch):
+    import sys
+
+    from colabtranscribe.colab import pipeline
+    from colabtranscribe.options import RunOptions, pipeline_args
+
+    assert "--inline-remarks" not in pipeline_args(RunOptions())
+    assert "--inline-remarks" in pipeline_args(RunOptions(inline_remarks=True))
+    seen = []
+    for argv, want in (([], False), (["--inline-remarks"], True)):
+        monkeypatch.setattr(sys, "argv", ["pipeline.py", *argv])
+        monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
+        monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
+        monkeypatch.setattr(pipeline, "run_transcription", lambda *a: None)
+        monkeypatch.setattr(pipeline, "inject_transcriptions_to_nhsx", lambda *a, **k: ["/c/x.nhsx"])
+        monkeypatch.setattr(pipeline, "run_auto_silence", lambda *a, **k: None)
+        monkeypatch.setattr(pipeline, "write_script", lambda p, **k: seen.append(k.get("inline_remarks")))
+        pipeline.main()
+        assert seen[-1] is want
