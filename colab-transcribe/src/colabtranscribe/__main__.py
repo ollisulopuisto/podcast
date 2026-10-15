@@ -41,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--transfer",
         choices=TRANSFERS,
         default=None,
-        help="siirtotapa: drive (nopea Google Drive, oletus) tai direct (suora Colab-lataus)",
+        help="siirtotapa: direct (suora Colab-lataus, oletus) tai drive (nopeampi Google Drive, vaatii Drive API:n)",
     )
     parser.add_argument(
         "--source",

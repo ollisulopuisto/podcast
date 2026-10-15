@@ -42,7 +42,7 @@ class RunOptions:
     input_dir: str = ""
     output_dir: str = "output"
     preset: str = "remote"
-    transfer: str = "drive"
+    transfer: str = "direct"
     source: str = "tracks"
     rms: bool = False
     # Auto-Silence litteroinnin jälkeen. Pois päältä tulos on pelkkä
@@ -96,7 +96,7 @@ class RunOptions:
             "COLAB_OUTPUT", "output"
         )
         preset = os.environ.get("COLAB_PRESET", "remote")
-        transfer = os.environ.get("COLAB_TRANSFER", "drive")
+        transfer = os.environ.get("COLAB_TRANSFER", "direct")
         source = os.environ.get("COLAB_SOURCE", "tracks")
         rms = os.environ.get("COLAB_RMS", "").lower() in ("1", "true", "yes")
         transcribe_only = os.environ.get("COLAB_TRANSCRIBE_ONLY", "").lower() in (

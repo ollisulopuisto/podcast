@@ -12,6 +12,7 @@ and this project adheres to Calendar Versioning (CalVer).
 - **Big inputs go up in parts on the direct transfer.** A 409 MB WAV failed with HTTP 500 in `colab upload`. Files over 128 MB are now sent in 64 MB parts, each retried on its own, and joined with `cat` in Colab. The sizes are a guess until a file that big has gone through; the 500 was measured, the cure is not yet.
 
 ### Changed
+- **The default transfer is direct, not Drive.** Drive needs the Drive API to be usable on the account and answers 403 where it is not, which was a wall for a new user. `--transfer drive` is still there for the speed; if it fails with 403 the run continues directly.
 - **A remark from another speaker breaks up a long turn in the script.** A Hindenburg region does not end where someone else speaks, so the interviewer's paragraph used to come first and the guest's "yes" after it. Now a region of another speaker that starts inside a turn and ends before it does cuts the paragraph there, and the paragraph continues with the time of its next word. Longer overlapping speech is still a change of turn. Same rule as podcast-magic's script (held by a test).
 
 ## [2026.10.12.1] - 2026-10-12

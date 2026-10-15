@@ -34,6 +34,8 @@ def test_dry_run_prints_commands_and_runs_nothing(tmp_path, capsys):
             str(tmp_path / "out"),
             "--preset",
             "intra-mic",
+            "--transfer",
+            "drive",
             "--dry-run",
         ]
     )
@@ -100,6 +102,8 @@ def test_dry_run_with_single_audio_file(tmp_path, capsys):
             str(audio),
             "--output",
             str(tmp_path / "out"),
+            "--transfer",
+            "drive",
             "--dry-run",
         ]
     )

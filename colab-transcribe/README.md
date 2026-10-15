@@ -63,8 +63,10 @@ colab-transcribe --input ~/jakso/ --reset-session # force stop and recreate Cola
 colab-transcribe --input ~/jakso/ --keep-session  # keep Colab VM alive after completion
 ```
 
-Files are transferred via Google Drive (`--transfer drive`, default) using fast
-resumable uploads and mounted inside Colab at internal datacenter speeds.
+Files are uploaded straight to Colab (`--transfer direct`, default; big files go
+in parts). `--transfer drive` goes through Google Drive instead, which is faster
+but needs the Drive API to be usable on your account: without it Google answers
+403, and the run falls back to the direct upload by itself.
 Presets are the Colab script's: `remote` (tail 1.0 s, gap 1.0 s) and
 `intra-mic` (RMS check on, tail 0.4 s, gap 0.4 s). `--thr`, `--tail`,
 `--gap`, `--rms` and `--prompt` override after the preset.

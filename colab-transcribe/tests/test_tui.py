@@ -58,6 +58,7 @@ def test_run_button_plans_and_logs(tmp_path: Path):
         async with app.run_test() as pilot:
             app.query_one("#input").value = str(tmp_path)
             app.query_one("#output").value = str(tmp_path / "out")
+            app.query_one("#transfer", Select).value = "drive"
             # Näppäin eikä klikkaus: lomake on pidempi kuin ruutu, ja
             # ruudun ulkopuolisen painikkeen klikkaus on OutOfBounds.
             await pilot.press("r")
