@@ -69,7 +69,7 @@ in parts). `--transfer drive` goes through Google Drive instead, which is faster
 but needs the Drive API to be usable on your account: without it Google answers
 403, and the run falls back to the direct upload by itself. On the direct transfer
 big WAVs are packed to FLAC first (lossless, unpacked in Colab); `--no-compress`
-turns that off.
+turns that off. Uploads are cached in the Colab session by content hash, so retrying a run that stopped halfway (same session) only sends what is missing; the cache goes when the session is stopped (`--keep-session` holds it).
 Presets are the Colab script's: `remote` (tail 1.0 s, gap 1.0 s) and
 `intra-mic` (RMS check on, tail 0.4 s, gap 0.4 s). `--thr`, `--tail`,
 `--gap`, `--rms` and `--prompt` override after the preset.

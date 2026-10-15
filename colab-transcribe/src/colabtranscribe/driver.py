@@ -9,6 +9,7 @@ ajettavan skriptin tuloste on ainoa tieto siitä mitä siellä tapahtui.
 from __future__ import annotations
 
 import contextlib
+import functools
 import re
 import shlex
 import subprocess
@@ -47,12 +48,37 @@ CHUNK_BYTES = 64 * 1024 * 1024
 CHUNK_RETRIES = 3
 
 REMOTE_INPUT = "/content/input"
+#: Ladatut tiedostot elävät täällä sisällön tarkistussumman alla ja syöte on
+#: linkkejä niihin: ``REMOTE_INPUT`` tyhjennetään joka ajossa (skripti litteroi
+#: kaiken siinä), mutta välimuisti säilyy kunnes Colab-kone sulkeutuu.
+REMOTE_CACHE = "/content/cache"
 REMOTE_OUTPUT = "/content/output"
 
 #: Paikallinen raja yhdelle `colab`-komennolle. Pilven whisper-raja on 2 h
 #: (`colab/pipeline.py:WHISPER_TIMEOUT`); tätä lyhyempi wait tappaisi
 #: onnistuneen litteroinnin. Asennus ja siirrot mahtuvat tunnin marginaaliin.
 COMMAND_TIMEOUT = 3 * 3600
+
+
+@functools.lru_cache(maxsize=256)
+def _content_key(path: str, size: int, mtime_ns: int) -> str:
+    """Sisällön SHA-256 (16 merkkiä). Koko ja aika ovat vain muistin avain, ettei
+    sama tiedosto luettaisi uudestaan saman ajon aikana."""
+    import hashlib
+
+    del size, mtime_ns  # vain välimuistin avaimena
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(8 * 1024 * 1024):
+            h.update(chunk)
+    return h.hexdigest()[:16]
+
+
+def cache_path(source: Path) -> str:
+    """Tiedoston paikka Colabin välimuistissa: ``/content/cache/<hash>/<nimi>``."""
+    source = Path(source)
+    st = source.stat()
+    return f"{REMOTE_CACHE}/{_content_key(str(source), st.st_size, st.st_mtime_ns)}/{source.name}"
 
 
 def list_input_files(input_dir: Path) -> list[str]:
@@ -348,18 +374,10 @@ def plan_commands(
     )
 
     aliases = aliases or {}
-    # Alipolut on oltava olemassa ennen kuin mitään niihin ladataan.
-    for sub in sorted(
-        {
-            Path(f).parent
-            for f in [*input_files, *aliases]
-            if Path(f).parent != Path(".")
-        }
-    ):
-        remote_dir = shlex.quote(f"{REMOTE_INPUT}/{sub.as_posix()}")
-        commands.append(
-            ["colab", "exec", "-s", options.session, f"mkdir -p {remote_dir}"]
-        )
+    if reuse_session:
+        # Sama kone on yhä hengissä: katso mitä edellinen ajo jätti välimuistiin.
+        commands.append(["cache-list", options.session])
+    uploads: list[tuple[str, str, str]] = []  # (lähde, välimuistipolku, syötepolku)
     for f in input_files:
         # Suhteellinen polku ratkaistaan syötekansiona: aliprosessi ei peri
         # kutsujan työhakemistoa, ja suunnitelman on oltava sama mistä ja
@@ -368,19 +386,37 @@ def plan_commands(
         if options.input_dir and not source.is_absolute():
             inp = Path(options.input_dir)
             source = inp if inp.is_file() else inp / source
-        remote = f"{REMOTE_INPUT}/{Path(f).as_posix()}"
+        remote_input = f"{REMOTE_INPUT}/{Path(f).as_posix()}"
         try:
-            big = source.stat().st_size > CHUNK_ABOVE
+            remote = cache_path(source)
+        except OSError:
+            remote = remote_input  # ei luettavissa: suunnitelma näyttää sen silti
+        uploads.append((str(source), remote, remote_input))
+    dirs = {str(Path(r).parent) for _, r, _ in uploads if r.startswith(REMOTE_CACHE)}
+    dirs |= {str(Path(i).parent) for _, _, i in uploads}
+    dirs |= {f"{REMOTE_INPUT}/{Path(a).parent.as_posix()}" for a in aliases}
+    dirs = sorted(dirs)
+    if dirs:
+        commands.append(
+            ["colab", "exec", "-s", options.session,
+             "mkdir -p " + " ".join(shlex.quote(d) for d in dirs)]
+        )
+    for source_str, remote, _ in uploads:
+        try:
+            big = Path(source_str).stat().st_size > CHUNK_ABOVE
         except OSError:
             big = False
-        if big and options.compress and _flac_bitdepth(source):
-            commands.append(["flac-upload", options.session, str(source), remote])
+        if big and options.compress and _flac_bitdepth(Path(source_str)):
+            commands.append(["flac-upload", options.session, source_str, remote])
         elif big:
-            commands.append(["chunked-upload", options.session, str(source), remote])
+            commands.append(["chunked-upload", options.session, source_str, remote])
         else:
-            commands.append(
-                ["colab", "upload", "-s", options.session, str(source), remote]
-            )
+            commands.append(["colab", "upload", "-s", options.session, source_str, remote])
+    links = [
+        f"ln -f {shlex.quote(r)} {shlex.quote(i)}" for _, r, i in uploads if r != i
+    ]
+    if links:
+        commands.append(["colab", "exec", "-s", options.session, " && ".join(links)])
 
     # Kopiot vasta kun alkuperäiset ovat perillä: kova linkki, ja kopio jos
     # linkki ei onnistu.
@@ -740,8 +776,8 @@ def _upload_as_flac(
             "exec",
             "-s",
             session,
-            f"if [ -f {qf} ]; then ffmpeg -y -loglevel error -i {qf} -c:a {decoder} {q} "
-            f"&& rm {qf}; fi; test -f {q}",
+            f"if [ -f {qf} ]; then ffmpeg -y -loglevel error -i {qf} -c:a {decoder} "
+            f"-f wav {q}.tmp && mv {q}.tmp {q} && rm {qf}; fi; test -f {q}",
         ],
         log,
         timeout=timeout,
@@ -790,12 +826,41 @@ def _upload_in_chunks(
             session,
             # Toistettavissa: jos edellinen kerta ehti liittää mutta vastaus
             # katosi, paloja ei enää ole eikä ``>`` saa tyhjentää valmista tiedostoa.
-            f"if ls {q}.part* >/dev/null 2>&1; then cat {q}.part* > {q} && rm {q}.part*; fi; "
-            f"test -f {q}",
+            f"if ls {q}.part* >/dev/null 2>&1; then cat {q}.part* > {q}.tmp "
+            f"&& mv {q}.tmp {q} && rm {q}.part*; fi; test -f {q}",
         ],
         log,
         timeout=timeout,
     )
+
+
+def _upload_target(command: list[str]) -> str | None:
+    """Mihin Colabin polkuun komento lataa, tai None jos se ei ole lataus."""
+    if command[0] in ("flac-upload", "chunked-upload") and len(command) >= 4:
+        return command[3]
+    if command[:2] == ["colab", "upload"] and len(command) >= 6:
+        return command[5]
+    return None
+
+
+def _list_cache(
+    session: str, log: Callable[[str], None], timeout: float | None = None
+) -> set[str]:
+    """Tiedostot jotka edellinen ajo jätti Colabin välimuistiin. Epäonnistunut
+    listaus on tyhjä lista: silloin ladataan kaikki, mikä on aina oikein."""
+    found: list[str] = []
+
+    def collect(line: str) -> None:
+        log(line)
+        if line.startswith(REMOTE_CACHE + "/"):
+            found.append(line.strip())
+
+    code = _execute_single(
+        ["colab", "exec", "-s", session, f"find {REMOTE_CACHE} -type f 2>/dev/null; true"],
+        collect,
+        timeout=timeout,
+    )
+    return set(found) if code == 0 else set()
 
 
 def upload_input_to_drive(
@@ -830,6 +895,7 @@ def run(
             ilman sitä ajo pysähtyy kuten ennen.
     """
     opened_auth_urls: set[str] = set()
+    cached: set[str] = set()
     total = len(commands)
     try:
         for i, command in enumerate(commands):
@@ -872,6 +938,15 @@ def run(
                         base_pct + 0.85 * step_span,
                         f"[{i + 1}/{total}] Auto-Silence...",
                     )
+
+            if command[0] == "cache-list":
+                cached = _list_cache(command[1], log, timeout)
+                continue
+
+            target = _upload_target(command)
+            if target is not None and target in cached:
+                log(f"{Path(target).name}: jo Colabissa, ei ladata uudestaan.")
+                continue
 
             if command[0] == "flac-upload":
                 code = _upload_as_flac(

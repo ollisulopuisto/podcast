@@ -581,9 +581,15 @@ def test_plan_commands_single_audio_file_direct(tmp_path: Path):
     commands = driver.plan_commands(options, ["haastattelu.mp3"])
 
     upload_cmds = [c for c in commands if c[0] == "colab" and c[1] == "upload"]
-    audio_uploads = [c for c in upload_cmds if c[-1] == "/content/input/haastattelu.mp3"]
+    audio_uploads = [c for c in upload_cmds if c[-1].endswith("/haastattelu.mp3")]
     assert len(audio_uploads) == 1
     assert audio_uploads[0][4] == str(audio)
+    assert audio_uploads[0][-1].startswith("/content/cache/")
+    # ja syöte on linkki välimuistiin
+    assert any(
+        c[:2] == ["colab", "exec"] and f"ln -f {audio_uploads[0][-1]} /content/input/haastattelu.mp3" in c[-1]
+        for c in commands
+    )
 
 
 def test_plan_commands_single_audio_file_drive(tmp_path: Path):
@@ -952,14 +958,15 @@ def test_aliases_are_made_in_colab_after_the_uploads(tmp_path: Path):
     plan = driver.plan_commands(
         options, ["a.wav"], reuse_session=True, aliases={"osa/kopio.wav": "a.wav"}
     )
-    link = next(i for i, c in enumerate(plan) if "ln -f" in " ".join(c))
+    link = next(i for i, c in enumerate(plan) if "ln -f" in " ".join(c) and "kopio.wav" in " ".join(c))
     run_pipeline = next(i for i, c in enumerate(plan) if "pipeline.py" in c[-1] and c[1] == "exec")
     upload = max(i for i, c in enumerate(plan) if c[:2] == ["colab", "upload"])
     assert upload < link < run_pipeline
     cmd = plan[link][-1]
     assert "/content/input/osa/kopio.wav" in cmd and "/content/input/a.wav" in cmd
-    assert "mkdir -p /content/input/osa" in cmd or any(
-        "mkdir -p /content/input/osa" in c[-1] for c in plan[:link]
+    assert any(
+        c[:2] == ["colab", "exec"] and c[-1].startswith("mkdir -p") and "/content/input/osa" in c[-1]
+        for c in plan[:link]
     )
 
 
@@ -1049,3 +1056,74 @@ def test_joining_the_parts_can_be_repeated_without_emptying_the_file(monkeypatch
     assert first.returncode == 0 and (work / "out.bin").read_bytes() == b"aaaaaaaaa"
     again = sp.run(["bash", "-c", cmd], capture_output=True)  # palat jo poissa
     assert again.returncode == 0 and (work / "out.bin").read_bytes() == b"aaaaaaaaa"
+
+
+def _cache_plan(tmp_path: Path, reuse: bool, files=("a.wav", "b.wav")):
+    for f in files:
+        (tmp_path / f).write_bytes(b"x" * 5)
+    options = RunOptions(input_dir=str(tmp_path), transfer="direct", session="s")
+    return driver.plan_commands(options, list(files), reuse_session=reuse)
+
+
+def test_uploads_go_to_a_cache_and_input_is_rebuilt_from_links(tmp_path: Path):
+    """Pilvessä skripti lukee kiinteää ``/content/input``-kansiota ja litteroi
+    kaiken siinä, joten se tyhjennetään joka ajossa. Ladatut tiedostot elävät
+    ``/content/cache``ssa ja syöte on linkkejä niihin."""
+    plan = _cache_plan(tmp_path, reuse=True)
+    execs = [c[-1] for c in plan if c[:2] == ["colab", "exec"]]
+    assert any("rm -rf /content/input/*" in c for c in execs)
+    uploads = [c[-1] for c in plan if c[:2] == ["colab", "upload"] and c[-1].endswith(".wav")]
+    assert len(uploads) == 2 and all(u.startswith("/content/cache/") for u in uploads)
+    link = next(i for i, c in enumerate(plan) if c[:2] == ["colab", "exec"] and "ln -f" in c[-1])
+    last_upload = max(i for i, c in enumerate(plan) if c[:2] == ["colab", "upload"])
+    run_pipeline = next(i for i, c in enumerate(plan) if c[:2] == ["colab", "exec"] and "pipeline.py" in c[-1])
+    assert last_upload < link < run_pipeline
+    assert "/content/input/a.wav" in plan[link][-1] and "/content/input/b.wav" in plan[link][-1]
+
+
+def test_the_cache_is_listed_only_when_the_session_is_reused(tmp_path: Path):
+    assert ["cache-list", "s"] in _cache_plan(tmp_path, reuse=True)
+    assert not any(c[0] == "cache-list" for c in _cache_plan(tmp_path, reuse=False))
+
+
+def test_the_cache_key_is_the_content_hash(tmp_path: Path):
+    """Tiedosto tunnistetaan sisällöstä: sama sisältö löytyy vaikka nimi,
+    kansio tai muokkausaika olisi toinen, ja muuttunut tiedosto ladataan uudestaan."""
+    f = tmp_path / "a.wav"
+    f.write_bytes(b"x" * 5)
+    first = driver.cache_path(f)
+    assert first.startswith("/content/cache/") and first.endswith("/a.wav")
+    assert driver.cache_path(f) == first
+    copy = tmp_path / "toinen"
+    copy.mkdir()
+    (copy / "a.wav").write_bytes(b"x" * 5)
+    assert driver.cache_path(copy / "a.wav") == first  # sama sisältö, sama avain
+    f.write_bytes(b"y" * 5)  # sama koko, eri sisältö
+    assert driver.cache_path(f) != first
+
+
+def test_uploads_already_in_the_cache_are_skipped(monkeypatch, tmp_path: Path):
+    a = tmp_path / "a.wav"
+    a.write_bytes(b"x" * 5)
+    b = tmp_path / "b.wav"
+    b.write_bytes(b"y" * 7)
+    in_cache = driver.cache_path(a)
+    seen: list[list[str]] = []
+
+    def fake_execute(command, log, timeout=None, **_):
+        seen.append(command)
+        if command[:2] == ["colab", "exec"] and "find /content/cache" in command[-1]:
+            log(in_cache)
+        return 0
+
+    monkeypatch.setattr(driver, "_execute_single", fake_execute)
+    plan = [
+        ["cache-list", "s"],
+        ["colab", "upload", "-s", "s", str(a), in_cache],
+        ["colab", "upload", "-s", "s", str(b), driver.cache_path(b)],
+    ]
+    logs: list[str] = []
+    assert driver.run(plan, logs.append) == 0
+    uploaded = [c[-1] for c in seen if c[:2] == ["colab", "upload"]]
+    assert uploaded == [driver.cache_path(b)]
+    assert any("jo Colabissa" in line for line in logs)
