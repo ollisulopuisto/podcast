@@ -581,7 +581,7 @@ def test_plan_commands_single_audio_file_direct(tmp_path: Path):
     commands = driver.plan_commands(options, ["haastattelu.mp3"])
 
     upload_cmds = [c for c in commands if c[0] == "colab" and c[1] == "upload"]
-    audio_uploads = [c for c in upload_cmds if c[-1].endswith("/haastattelu.mp3")]
+    audio_uploads = [c for c in upload_cmds if c[-1].endswith("/data.mp3")]
     assert len(audio_uploads) == 1
     assert audio_uploads[0][4] == str(audio)
     assert audio_uploads[0][-1].startswith("/content/cache/")
@@ -738,7 +738,7 @@ def test_the_direct_tail_starts_after_the_scripts_and_covers_the_inputs(tmp_path
     assert not any(c[:2] == ["colab", "drivemount"] for c in tail)
     assert not any(str(driver.PIPELINE_SCRIPT) in c for c in tail)
     uploads = [c for c in tail if c[:2] == ["colab", "upload"]]
-    assert {Path(c[-1]).name for c in uploads} == {"a.nhsx", "m.wav"}
+    assert {Path(c[4]).name for c in uploads} == {"a.nhsx", "m.wav"}
     assert tail[-1][:2] == ["colab", "stop"] or tail[-1][:2] == ["colab", "download"]
 
 
@@ -797,7 +797,7 @@ def test_the_plan_chunks_only_big_direct_uploads(monkeypatch, tmp_path: Path):
     options = RunOptions(input_dir=str(tmp_path), transfer="direct", session="iiris")
     plan = driver.plan_commands(options, ["pieni.wav", "iso.wav"], reuse_session=True)
     assert any(c[0] == "chunked-upload" and c[2].endswith("iso.wav") for c in plan)
-    assert any(c[:2] == ["colab", "upload"] and c[-1].endswith("pieni.wav") for c in plan)
+    assert any(c[:2] == ["colab", "upload"] and c[4].endswith("pieni.wav") for c in plan)
     assert not any(c[:2] == ["colab", "upload"] and c[-1].endswith("iso.wav") for c in plan)
 
 
@@ -874,7 +874,7 @@ def test_big_pcm_wavs_are_planned_as_flac_uploads(monkeypatch, tmp_path: Path):
     assert any(c[0] == "flac-upload" and c[2].endswith("a.wav") for c in plan)
     assert not any(c[0] == "flac-upload" and c[2].endswith("b.wav") for c in plan)
     assert any(c[0] == "chunked-upload" and c[2].endswith("b.wav") for c in plan)
-    assert any(c[:2] == ["colab", "upload"] and c[-1].endswith("pieni.wav") for c in plan)
+    assert any(c[:2] == ["colab", "upload"] and c[4].endswith("pieni.wav") for c in plan)
 
 
 def test_no_compress_leaves_wavs_as_they_are(monkeypatch, tmp_path: Path):
@@ -1005,8 +1005,8 @@ def test_the_cli_plans_only_the_session_it_was_pointed_at(tmp_path: Path, capsys
                      "--transfer", "direct", "--dry-run"])
     out = capsys.readouterr().out
     assert code == 0
-    assert "y.wav" in out and "b.nhsx" in out
-    assert "x.wav" not in out and "a.nhsx" not in out
+    assert "/content/input/y.wav" in out and "/content/input/b.nhsx" in out
+    assert "x.wav" not in out and "/a.nhsx" not in out and "input/a.nhsx" not in out
 
 
 def test_run_retries_when_colab_times_out_connecting_to_the_kernel(monkeypatch):
@@ -1092,7 +1092,7 @@ def test_the_cache_key_is_the_content_hash(tmp_path: Path):
     f = tmp_path / "a.wav"
     f.write_bytes(b"x" * 5)
     first = driver.cache_path(f)
-    assert first.startswith("/content/cache/") and first.endswith("/a.wav")
+    assert first.startswith("/content/cache/") and first.endswith("/data.wav")
     assert driver.cache_path(f) == first
     copy = tmp_path / "toinen"
     copy.mkdir()
@@ -1127,3 +1127,37 @@ def test_uploads_already_in_the_cache_are_skipped(monkeypatch, tmp_path: Path):
     uploaded = [c[-1] for c in seen if c[:2] == ["colab", "upload"]]
     assert uploaded == [driver.cache_path(b)]
     assert any("jo Colabissa" in line for line in logs)
+
+
+def test_the_cache_name_never_carries_the_users_file_name(tmp_path: Path):
+    """Colabin tiedostorajapinta hylkäsi ``…Arjanne1142^.wav.flac``in (HTTP 400,
+    ``%5E``). Välimuistissa nimi on ``data`` + pääte, ja syötteen oikea nimi tulee
+    linkistä, joten nimen merkeillä ei ole väliä."""
+    f = tmp_path / "audioIiris^ä ö & #1.WAV"
+    f.write_bytes(b"x")
+    remote = driver.cache_path(f)
+    assert remote.rsplit("/", 1)[1] == "data.wav"
+    odd = tmp_path / "x.päätte"
+    odd.write_bytes(b"x")
+    assert driver.cache_path(odd).rsplit("/", 1)[1] == "data"
+
+
+def test_a_result_folder_inside_the_input_is_not_uploaded(tmp_path: Path):
+    """Edellisen ajon ``output/`` oli syötekansion sisällä, ja sen litteroidut
+    istunnot lähtivät mukaan syötteinä."""
+    (tmp_path / "output").mkdir()
+    (tmp_path / "output" / "x litteroitu.nhsx").write_text("<Session/>")
+    (tmp_path / "jakso.nhsx").write_text("<Session/>")
+    assert driver.list_input_files(tmp_path, exclude=tmp_path / "output") == ["jakso.nhsx"]
+    assert "output/x litteroitu.nhsx" in driver.list_input_files(tmp_path)  # ilman rajausta kuten ennen
+
+
+def test_the_cli_leaves_its_own_output_folder_out_of_the_upload(tmp_path: Path, capsys):
+    from colabtranscribe import __main__ as cli
+
+    (tmp_path / "output").mkdir()
+    (tmp_path / "output" / "vanha litteroitu.nhsx").write_text("<Session/>")
+    (tmp_path / "jakso.nhsx").write_text("<Session/>")
+    code = cli.main(["--input", str(tmp_path), "--dry-run", "--transfer", "direct"])
+    out = capsys.readouterr().out
+    assert code == 0 and "jakso.nhsx" in out and "vanha" not in out

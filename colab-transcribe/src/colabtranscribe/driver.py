@@ -75,19 +75,28 @@ def _content_key(path: str, size: int, mtime_ns: int) -> str:
 
 
 def cache_path(source: Path) -> str:
-    """Tiedoston paikka Colabin välimuistissa: ``/content/cache/<hash>/<nimi>``."""
+    """Tiedoston paikka Colabin välimuistissa: ``/content/cache/<hash>/data<pääte>``.
+
+    Nimi ei ole käyttäjän tiedoston nimi: Colabin tiedostorajapinta hylkäsi
+    ``…Arjanne1142^.wav.flac``in (HTTP 400, ``%5E``), ja nimessä voi olla mitä
+    tahansa. Oikea nimi tulee syötteen linkistä (``ln``), jossa se on lainattu."""
     source = Path(source)
     st = source.stat()
-    return f"{REMOTE_CACHE}/{_content_key(str(source), st.st_size, st.st_mtime_ns)}/{source.name}"
+    suffix = source.suffix.lower()
+    if not (suffix[1:].isascii() and suffix[1:].isalnum()):
+        suffix = ""
+    return f"{REMOTE_CACHE}/{_content_key(str(source), st.st_size, st.st_mtime_ns)}/data{suffix}"
 
 
-def list_input_files(input_dir: Path) -> list[str]:
+def list_input_files(input_dir: Path, exclude: Path | None = None) -> list[str]:
     """Kaikki tiedostot suhteellisina polkuina, syvyydestä riippumatta.
 
     Jos input_dir on yksittäinen tiedosto, palautetaan vain sen nimi.
     Ei suodateta ääneen: skripti tarvitsee myös `.nhsx`-istunnot, ja sen
     tarvitsema se itse. Piilotetut tiedostot ja hakemistot (alkavat
     pisteellä) suljetaan pois, koska ne ovat metadataa, ei käyttötietoa.
+    ``exclude`` on kansio joka jätetään pois (ajon oma tulostekansio, jos se on
+    syötteen sisällä: edellisen ajon tulokset eivät ole syötteitä).
     Symbolisia linkkejä kansion ulkopuolelle ei seurata: syötekansio on
     se mitä käyttäjä valitsi, ei sen takana oleva tiedostojärjestelmä.
     Järjestys on polun järjestys, jotta suunnitelma on sama joka ajolla.
@@ -98,8 +107,12 @@ def list_input_files(input_dir: Path) -> list[str]:
     if not root.is_dir():
         return []
     found: list[str] = []
+    skip = exclude.resolve() if exclude is not None else None
     for dirpath, dirnames, filenames in root.walk(follow_symlinks=False):
-        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        dirnames[:] = [
+            d for d in dirnames
+            if not d.startswith(".") and (skip is None or (dirpath / d).resolve() != skip)
+        ]
         for name in filenames:
             if name.startswith("."):
                 continue
@@ -834,12 +847,12 @@ def _upload_in_chunks(
     )
 
 
-def _upload_target(command: list[str]) -> str | None:
-    """Mihin Colabin polkuun komento lataa, tai None jos se ei ole lataus."""
+def _upload_target(command: list[str]) -> tuple[str, str] | None:
+    """``(paikallinen, Colabin polku)`` jos komento on lataus, muuten None."""
     if command[0] in ("flac-upload", "chunked-upload") and len(command) >= 4:
-        return command[3]
+        return command[2], command[3]
     if command[:2] == ["colab", "upload"] and len(command) >= 6:
-        return command[5]
+        return command[4], command[5]
     return None
 
 
@@ -944,8 +957,8 @@ def run(
                 continue
 
             target = _upload_target(command)
-            if target is not None and target in cached:
-                log(f"{Path(target).name}: jo Colabissa, ei ladata uudestaan.")
+            if target is not None and target[1] in cached:
+                log(f"{Path(target[0]).name}: jo Colabissa, ei ladata uudestaan.")
                 continue
 
             if command[0] == "flac-upload":

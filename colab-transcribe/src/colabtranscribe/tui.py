@@ -611,7 +611,9 @@ class TranscribeApp(App):
             self.call_from_thread(self._set_progress, 0.0, "Valmistellaan ajoa...")
             input_path, only = driver.split_session(Path(options.input_dir))
             options = replace(options, input_dir=str(input_path))
-            files = driver.list_input_files(input_path)
+            files = driver.list_input_files(
+                input_path, exclude=options.resolved_output_dir()
+            )
             files, skipped = driver.session_inputs(input_path, files, only=only)
             files, aliases = driver.dedupe_inputs(input_path, files)
             if skipped:

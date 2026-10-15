@@ -169,7 +169,7 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
     # Syötteenä oleva .nhsx tarkoittaa sitä istuntoa omassa kansiossaan.
     input_path, only = driver.split_session(input_path)
     options = replace(options, input_dir=str(input_path))
-    files = driver.list_input_files(input_path)
+    files = driver.list_input_files(input_path, exclude=options.resolved_output_dir())
     if only is None and input_path.is_dir():
         found = driver.nhsx_sessions(input_path)
         if len(found) > 1:
