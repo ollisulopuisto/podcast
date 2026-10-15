@@ -173,3 +173,9 @@ def test_the_bleed_filter_is_on_by_default_and_the_flag_reaches_the_script():
     assert RunOptions().bleed_filter is True
     assert "--no-bleed-filter" not in pipeline_args(RunOptions())
     assert "--no-bleed-filter" in pipeline_args(RunOptions(bleed_filter=False))
+
+
+def test_the_default_session_is_not_a_developers_own_setup_name():
+    """``vst-pipeline`` oli kehittäjän oma istunto ja vuoti jokaisen käyttäjän
+    lokiin ja ``colab stop``-ohjeisiin."""
+    assert RunOptions().session == "whisper"

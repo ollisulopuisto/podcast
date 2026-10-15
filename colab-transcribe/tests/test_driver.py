@@ -326,11 +326,11 @@ def test_run_handles_drive_upload(monkeypatch, tmp_path):
 
     monkeypatch.setattr(driver, "upload_input_to_drive", fake_upload)
     logs = []
-    cmd = ["drive", "upload", str(in_dir), "ColabTranscribe/vst-pipeline/input.tar"]
+    cmd = ["drive", "upload", str(in_dir), "ColabTranscribe/whisper/input.tar"]
     code = driver.run([cmd], logs.append)
     assert code == 0
     assert len(uploaded) == 1
-    assert uploaded[0] == (str(in_dir), "vst-pipeline")
+    assert uploaded[0] == (str(in_dir), "whisper")
 
 
 def test_run_reports_actionable_hint_on_drive_403(monkeypatch, tmp_path: Path):
@@ -339,7 +339,7 @@ def test_run_reports_actionable_hint_on_drive_403(monkeypatch, tmp_path: Path):
 
     monkeypatch.setattr(driver, "upload_input_to_drive", failing_upload)
     logs: list[str] = []
-    cmd = ["drive", "upload", str(tmp_path), "ColabTranscribe/vst-pipeline/input.tar"]
+    cmd = ["drive", "upload", str(tmp_path), "ColabTranscribe/whisper/input.tar"]
     code = driver.run([cmd], logs.append)
     assert code == 1
     assert any(
@@ -375,7 +375,7 @@ def test_run_handles_keyboard_interrupt(monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
     logs = []
     code = driver.run(
-        [["colab", "new", "-s", "vst-pipeline", "--gpu", "T4"]], logs.append
+        [["colab", "new", "-s", "whisper", "--gpu", "T4"]], logs.append
     )
     assert code == 130
     assert any("Ajo keskeytetty" in line for line in logs)
@@ -397,7 +397,7 @@ def test_run_detects_precondition_failed_on_colab_new(monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", FakeProcess)
     logs = []
     code = driver.run(
-        [["colab", "new", "-s", "vst-pipeline", "--gpu", "T4"]], logs.append
+        [["colab", "new", "-s", "whisper", "--gpu", "T4"]], logs.append
     )
     assert code != 0
     assert any("Precondition Failed" in line for line in logs)
@@ -428,7 +428,7 @@ def test_run_retries_on_connection_lost_and_succeeds(monkeypatch):
     monkeypatch.setattr("time.sleep", lambda _: None)
     logs = []
     code = driver.run(
-        [["colab", "exec", "-s", "vst-pipeline", "ls /content"]], logs.append
+        [["colab", "exec", "-s", "whisper", "ls /content"]], logs.append
     )
     assert code == 0
     assert attempts == 2
@@ -451,7 +451,7 @@ def test_run_reports_actionable_hint_on_persistent_connection_lost(monkeypatch):
     monkeypatch.setattr("time.sleep", lambda _: None)
     logs = []
     code = driver.run(
-        [["colab", "exec", "-s", "vst-pipeline", "ls /content"]], logs.append
+        [["colab", "exec", "-s", "whisper", "ls /content"]], logs.append
     )
     assert code != 0
     assert any("Connection was lost" in line for line in logs)
@@ -484,7 +484,7 @@ def test_run_auto_opens_auth_url(monkeypatch):
 
     monkeypatch.setattr(subprocess, "Popen", FakeProcess)
     logs = []
-    code = driver.run([["colab", "drivemount", "-s", "vst-pipeline"]], logs.append)
+    code = driver.run([["colab", "drivemount", "-s", "whisper"]], logs.append)
     assert code == 0
     assert opened_urls == [auth_url]
     assert any("Avattu" in line or "valtuutus" in line.lower() for line in logs)
@@ -506,7 +506,7 @@ def test_execute_single_passes_colab_cli_no_browser_env(monkeypatch):
             return 0
 
     monkeypatch.setattr(subprocess, "Popen", FakeProcess)
-    code = driver.run([["colab", "drivemount", "-s", "vst-pipeline"]], lambda _: None)
+    code = driver.run([["colab", "drivemount", "-s", "whisper"]], lambda _: None)
     assert code == 0
     assert captured_env.get("COLAB_CLI_NO_BROWSER") == "1"
 
@@ -538,8 +538,8 @@ def test_run_deduplicates_auth_urls(monkeypatch):
     logs = []
     code = driver.run(
         [
-            ["colab", "drivemount", "-s", "vst-pipeline"],
-            ["colab", "drivemount", "-s", "vst-pipeline"],
+            ["colab", "drivemount", "-s", "whisper"],
+            ["colab", "drivemount", "-s", "whisper"],
         ],
         logs.append,
     )

@@ -668,7 +668,7 @@ def _execute_single(
             return 1
 
         if has_precondition_error:
-            sess_name = "vst-pipeline"
+            sess_name = "whisper"
             if "-s" in command:
                 idx = command.index("-s")
                 if idx + 1 < len(command):

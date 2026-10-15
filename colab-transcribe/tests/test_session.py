@@ -17,8 +17,8 @@ def test_load_sessions_when_file_missing(tmp_path: Path, monkeypatch):
 def test_load_sessions_returns_dict(tmp_path: Path, monkeypatch):
     cfg = tmp_path / "sessions.json"
     data = {
-        "vst-pipeline": {
-            "name": "vst-pipeline",
+        "whisper": {
+            "name": "whisper",
             "endpoint": "gpu-t4-xxx",
             "variant": "GPU",
             "accelerator": "T4",
@@ -28,8 +28,8 @@ def test_load_sessions_returns_dict(tmp_path: Path, monkeypatch):
     cfg.write_text(json.dumps(data), encoding="utf-8")
     monkeypatch.setattr(session, "get_sessions_config_path", lambda: cfg)
     res = session.load_sessions()
-    assert "vst-pipeline" in res
-    assert res["vst-pipeline"]["accelerator"] == "T4"
+    assert "whisper" in res
+    assert res["whisper"]["accelerator"] == "T4"
 
 
 def test_is_session_alive_checks_process(tmp_path: Path, monkeypatch):

@@ -377,7 +377,7 @@ def test_progress_bar_updates_on_run(tmp_path: Path):
     (tmp_path / "puhe.wav").write_bytes(b"")
 
     def runner_with_progress(commands, log, timeout=None):
-        log("colab new -s vst-pipeline --gpu T4")
+        log("colab new -s whisper --gpu T4")
         log("[vaihe 1/4] Asennetaan riippuvuudet...")
         log("[vaihe 2/4 (1/1)] Litteroidaan: puhe.wav")
         log("Litterointi luotu: /content/output/transcripts/puhe.json")

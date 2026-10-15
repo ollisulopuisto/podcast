@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output", default="output", help="tulostekansio (oletus: output)"
     )
 
-    parser.add_argument("--session", default="vst-pipeline", help="Colab-istunnon nimi")
+    parser.add_argument("--session", default="whisper", help="Colab-istunnon nimi")
     parser.add_argument(
         "--gpu", choices=GPUS, default="T4", help="Colabin GPU (oletus: T4)"
     )
@@ -133,7 +133,7 @@ def options_from_args(args: argparse.Namespace) -> RunOptions:
         else (args.transfer if args.transfer is not None else env_opts.transfer)
     )
     return RunOptions(
-        session=args.session if args.session != "vst-pipeline" else env_opts.session,
+        session=args.session if args.session != "whisper" else env_opts.session,
         gpu=args.gpu if args.gpu != "T4" else env_opts.gpu,
         input_dir=args.input or env_opts.input_dir,
         output_dir=args.output if args.output != "output" else env_opts.output_dir,

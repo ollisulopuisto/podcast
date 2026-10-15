@@ -37,7 +37,7 @@ DEFAULT_PROMPT = "öö, tota, niinku, mhm, joo, silleen, vähän, niinkun, ööh
 class RunOptions:
     """Yksi ajo, alusta loppuun: istunto, siirrot ja leikkausasetukset."""
 
-    session: str = "vst-pipeline"
+    session: str = "whisper"
     gpu: str = "T4"
     input_dir: str = ""
     output_dir: str = "output"
@@ -93,7 +93,7 @@ class RunOptions:
         """Luo asetukset ympäristömuuttujista, täydentäen puuttuvat oletuksilla."""
         import os
 
-        session = os.environ.get("COLAB_SESSION", "vst-pipeline")
+        session = os.environ.get("COLAB_SESSION", "whisper")
         gpu = os.environ.get("COLAB_GPU", "T4")
         input_dir = os.environ.get("COLAB_INPUT_DIR") or os.environ.get("COLAB_INPUT", "")
         output_dir = os.environ.get("COLAB_OUTPUT_DIR") or os.environ.get(

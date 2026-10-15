@@ -263,7 +263,7 @@ def test_headless_run_resets_session_when_requested(tmp_path, capsys, monkeypatc
         ["--input", str(tmp_path), "--output", str(tmp_path / "out"), "--reset-session"]
     )
     assert code == 0
-    assert stopped == ["vst-pipeline"]
+    assert stopped == ["whisper"]
     assert any(c[:2] == ["colab", "new"] for c in calls[0])
 
 

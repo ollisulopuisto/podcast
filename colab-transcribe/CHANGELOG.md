@@ -11,6 +11,9 @@ and this project adheres to Calendar Versioning (CalVer).
 - **A Drive upload that fails with HTTP 403 continues with direct upload.** On an account without a Drive API quota project the run used to stop at "Google Drive upload failed: 403"; it now says so and carries on with the direct transfer from where it was (session and scripts are already up).
 - **Big inputs go up in parts on the direct transfer.** A 409 MB WAV failed with HTTP 500 in `colab upload`. Files over 128 MB are now sent in 64 MB parts, each retried on its own, and joined with `cat` in Colab. The sizes are a guess until a file that big has gone through; the 500 was measured, the cure is not yet.
 
+### Changed
+- **The default Colab session is called `whisper`, not `vst-pipeline`.** The old name was a developer's own session and showed up in everyone's log and in the `colab stop -s …` hints. `--session` and `COLAB_SESSION` still set it. A session left open under the old name is not found any more; stop it with `colab stop -s vst-pipeline`.
+
 ### Fixed
 - **File names with odd characters no longer fail the upload.** Colab's file API answered HTTP 400 to `audioIiris…^.wav.flac` (the `^` goes out as `%5E`). In the cache the file is now `/content/cache/<hash>/data<extension>` whatever it was called, and the real name is restored by the link into `/content/input`.
 - **The run's own output folder is not uploaded as input.** An `output/` inside the input folder (earlier results) went up with the session files; it is now left out.
