@@ -1607,10 +1607,11 @@ def _room_lines(
 # positiivinen on vapaa — ja kuva peittää spinen vain ylempänä.
 REACTION_LANE = 1
 
-# Pinottu pari pystyviennissä: kaksi 1080 px neliötä 1920 px korkean kuvan
-# päällä. Lähde on 1920×1080, joten neliö jättää 420 px = 21.875 % pois
-# kummaltakin reunalta (crop-rect on prosentteja leveydestä, oletettu, ei
-# mitattu). Keskipisteet ovat ±540 px = ±28.125 % (1 % = 19.2 px korkeudesta).
+# Vara-neliö pinolle kun lähteen kokoa ei tiedetä (muuten pinon puolikas on
+# ``layout.stack_panel`` ja kehystetään kasvoihin): kaksi 1080 px neliötä
+# 1920 px korkean kuvan päällä. Lähde on 1920×1080, joten neliö jättää 420 px
+# = 21.875 % pois kummaltakin reunalta (crop-rect on prosentteja leveydestä,
+# oletettu, ei mitattu). Keskipisteet ovat ±540 px = ±28.125 % (1 % = 19.2 px).
 SQUARE_CROP = 21.875
 SQUARE_Y = 28.125
 
@@ -1881,9 +1882,24 @@ def _reaction_clips(
         transform: list[str] = []
         shot = None
         sign = stacks[index][2] if stacks and index in stacks else 0
+        stack_panel = None
         if sign:
-            # Pinossa kuva on neliö eikä sitä kehystetä reframerilla.
-            transform = _square_lines(sign, "                  ")
+            # Pinon puolikas on 1080×960 paneeli ja kehystetään kasvoihin kuten
+            # asettelun paneeli. Jos lähteen kokoa ei tiedetä, jää vanha
+            # keskeltä rajattu neliö.
+            stack = screen_layout.stack_panel(sign)
+            part = next((i for i in (timeline.track_media(key) if timeline else [])
+                         if i.placement_at(start)), None)
+            if reframer is not None and part is not None:
+                focus = reaction.speaker if key == roles.wide_key else ""
+                shot = reframer.from_item(part, float(start), float(end), focus=focus,
+                                          frame=(stack.w, stack.h))
+            fcp = _panel_of(part, shot, stack)
+            if fcp:
+                stack_panel = stack
+                transform = _panel_lines(fcp, "                  ")
+            else:
+                transform = _square_lines(sign, "                  ")
         elif here is not None:
             part = next((i for i in (timeline.track_media(key) if timeline else [])
                          if i.placement_at(start)), None)
@@ -1908,8 +1924,8 @@ def _reaction_clips(
             if part is not None:
                 _record(shots, first, first + dur, part, part.file_time_at(start),
                         shot if vertical else None, _NO_MOVE, settings, lane=lane,
-                        square=sign,
-                        panel=here.close if here is not None else None,
+                        square=0 if stack_panel else sign,
+                        panel=(here.close if here is not None else stack_panel),
                         partner=(_wide_shot(timeline, roles, here, first,
                                             first + dur, start)
                                  if here is not None else None))
@@ -2111,11 +2127,15 @@ def build_multicam_fcpxml(
         # Paneelikuvalla ei ole mikroliikettä eikä koko ruudun kehystä:
         # kehys on alapaneelin, ja liike jää pois.
         span_panels = panels_at(a) if index in wide_of else None
-        span_move = (_NO_MOVE if span_panels is not None
+        # Pinon alla oleva kuva on pinon puolikas: oma paneeli, ei liikettä.
+        square = _square_of(stacks, a, b) if vertical else 0
+        stack = screen_layout.stack_panel(square) if square else None
+        span_move = (_NO_MOVE if span_panels is not None or stack is not None
                      else (moves[index] if moves else _NO_MOVE))
         if reframer is not None and part is not None:
             frame_kw = ({"frame": (span_panels.close.w, span_panels.close.h)}
-                        if span_panels is not None else {})
+                        if span_panels is not None else
+                        {"frame": (stack.w, stack.h)} if stack is not None else {})
             shot = reframer.from_item(
                 part, float(at), float(program_start + frame_duration * b),
                 focus=seg.focus, **_framing_request(span_move, seg, settings,
@@ -2160,17 +2180,20 @@ def build_multicam_fcpxml(
         # Pinon alla oleva kuva saa pinon toisen puoliskon. Spinen palat on
         # katkaistu pinon rajoista, joten palanen on kokonaan pinon sisällä
         # tai kokonaan sen ulkopuolella.
-        square = _square_of(stacks, a, b) if vertical else 0
         paneled = span_panels is not None
+        stack_fcp = _panel_of(part, shot, stack) if stack is not None else None
         _record(shots, a, b, part, part.file_time_at(at) if part else 0, shot,
                 _move_after(shot, span_move), settings,
-                square=square,
-                panel=span_panels.close if paneled else None,
+                square=0 if stack_fcp else square,
+                panel=(span_panels.close if paneled
+                       else stack if stack_fcp else None),
                 partner=(_wide_shot(timeline, roles, span_panels, a, b, at)
                          if paneled else None))
         if paneled:
             base_transform = _panel_lines(_panel_of(part, shot, span_panels.close),
                                           "                ")
+        elif stack_fcp:
+            base_transform = _panel_lines(stack_fcp, "                ")
         elif square:
             base_transform = _square_lines(square, "                ")
         else:

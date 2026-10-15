@@ -276,10 +276,19 @@ In a layout the spine carries the close-up and the wide is a connected clip on
 lane 1, one per part, attached to the first spine clip of that part and
 running across the cuts (so the timeline shows no edit points on top of an
 unchanging picture). Reactions go on lane 2 and replace only the lower panel;
-the reaction stack (two squares) does not exist in a layout. A span whose part
+the reaction stack does not exist in a layout. A span whose part
 has no wide, or whose source has no size, falls back to a full-screen picture
 rather than leaving black on top. Micro-movement is off in layouts: a zoom
 change would take the panel's aspect ratio with it.
+
+**The vertical stack uses the same machinery.** Its two halves are 1080×960
+panels (`layout.stack_panel`, +1 top / −1 bottom), and both the reaction and
+the base picture under it are framed on the face by the reframer with that
+frame. They were a fixed centre crop (21.875 % each side, ±28.125 %), which
+cut off anyone sitting off-centre (pp 57). `render.flatten` keeps the other
+half as `partner` when the two panels differ and replaces when they are the
+same (a layout's lower panel). The centred square survives only as the
+fallback when the source has no size.
 
 **Automatic layout changes per shot, so the reframer is asked per shot.**
 `autolayout.plan` turns shot durations into `single` / `wide_top` — a hold

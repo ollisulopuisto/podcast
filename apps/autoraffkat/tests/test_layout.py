@@ -96,3 +96,11 @@ def test_a_window_off_centre_vertically_is_compensated_in_the_position():
     s = fcp.scale
     off_y = 190.0 + (1080 - 190.0) / 2 - 540            # +95 px alas lähteen keskeltä
     assert fcp.pos_y * 19.2 - s * off_y == pytest.approx(-304)
+
+
+def test_the_stack_is_two_panels_that_fill_the_screen_without_a_gap():
+    top, bottom = layout.stack_panel(1), layout.stack_panel(-1)
+    assert (top.x, top.y, top.w, top.h) == (0, 0, 1080, 960)
+    assert (bottom.x, bottom.y, bottom.w, bottom.h) == (0, 960, 1080, 960)
+    fcp = layout.fcp_panel(top, layout.window_of(1920, 1080, 1080, 960), 1920, 1080)
+    assert fcp.pos_y == pytest.approx(25.0)

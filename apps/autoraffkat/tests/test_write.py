@@ -869,10 +869,12 @@ def test_a_vertical_reaction_shot_is_filled_and_framed(fixture_dir):
     ruutua: ilman täyttöä tai rajausta se tuli pystykuvan päälle letterboxina
     (hmh hannes vertical v3, 2026-09-25).
 
-    Kun reaktio ja pohjakuva ovat ruudulla yhtä aikaa, reaktio on neliö
-    pinossa, joten täyttöä ei käytetä vaan kuva rajataan keskeltä neliöksi.
+    Kun reaktio ja pohjakuva ovat ruudulla yhtä aikaa, reaktio on pinon
+    puolikas: 1080×960 paneeli, johon kuva kehystetään kasvoihin kuten
+    asettelun paneelikin. Aiempi vakiorajaus keskeltä jätti kasvot kehyksen
+    ulkopuolelle (pp 57, 2026-10-16: pään yläosa ja kasvojen reuna poissa).
     """
-    stub = _StubReframer()
+    stub = _StubReframer(scale=1.0, pos_x=0.0)
     _, xml = _with_reactions(fixture_dir, [("Guest", 8.0, 9.6, 2.1)],
                              settings=_vertical_settings(), reframer=stub)
     root = ET.fromstring(xml)
@@ -880,13 +882,48 @@ def test_a_vertical_reaction_shot_is_filled_and_framed(fixture_dir):
     source = clip.find("mc-source")
     assert source.find("adjust-conform").get("type") == "none"
     crop = source.find("adjust-crop/crop-rect")
-    assert abs(float(crop.get("left")) - 21.875) < 0.01
-    assert abs(float(crop.get("right")) - 21.875) < 0.01
+    # Keskitetty ikkuna: 1215×1080 lähteestä (1080×960 paneeli, täyttö 0,8889).
+    assert abs(float(crop.get("left")) - 18.359) < 0.01
+    assert abs(float(crop.get("right")) - 18.359) < 0.01
     assert abs(float(crop.get("top"))) < 0.01
     assert abs(float(crop.get("bottom"))) < 0.01
-    assert abs(abs(_stack_y(source)) - 28.125) < 0.01
-    # Neliö rajataan lähteen keskeltä, ei kasvoihin: reframer ei kysy siitä.
-    assert not any(name.startswith("CLOSE_B") for name, _a, _b in stub.calls)
+    assert abs(abs(_stack_y(source)) - 25.0) < 0.01
+    # Reaktion kuvaa kysytään kehystäjältä paneelin kehyksellä.
+    assert (1080, 960) in stub.frames
+
+
+def test_a_stack_half_follows_the_face_not_the_centre(fixture_dir):
+    """Kasvot oikealla (``pos_x`` 20): ikkuna siirtyy lähteessä, rajaus on
+    epäsymmetrinen ja kasvot jäävät paneeliin. Ennen jokainen neliö otettiin
+    lähteen keskeltä, joten kameran reunaan istuva kasvo leikkautui."""
+    from autoraffkat import layout
+
+    stub = _StubReframer(scale=1.5, pos_x=20.0)
+    _, xml = _with_reactions(fixture_dir, [("Guest", 8.0, 9.6, 2.1)],
+                             settings=_vertical_settings(), reframer=stub)
+    clip = next(c for c in ET.fromstring(xml).iter("mc-clip")
+                if "reaktio" in (c.get("name") or ""))
+    crop = clip.find("mc-source/adjust-crop/crop-rect")
+    window = layout.window_of(1920, 1080, 1080, 960, 1.5, 20.0, 0.0)
+    assert abs(float(crop.get("left")) - window[0] / 1920 * 100) < 0.01
+    assert abs(float(crop.get("right")) - (1920 - window[0] - window[2]) / 1920 * 100) < 0.01
+    assert abs(float(crop.get("left")) - float(crop.get("right"))) > 1.0
+
+
+def test_the_base_under_a_stack_is_framed_on_its_face_too(fixture_dir):
+    """Pinon alla oleva pohjakuva on pinon toinen puoli, ja se kehystetään
+    samalla tavalla: kehystäjältä kysytään sitäkin paneelin kehyksellä."""
+    stub = _StubReframer(scale=1.5, pos_x=20.0)
+    _, xml = _with_reactions(fixture_dir, [("Guest", 8.0, 9.6, 2.1)],
+                             settings=_vertical_settings(), reframer=stub)
+    root = ET.fromstring(xml)
+    base = [s for s in root.findall(".//spine/mc-clip/mc-source")
+            if s.find("adjust-crop/crop-rect") is not None]
+    assert base, "pohjakuvaa ei rajattu pinoa varten"
+    crop = base[0].find("adjust-crop/crop-rect")
+    assert abs(float(crop.get("left")) - float(crop.get("right"))) > 1.0
+    # Sekä reaktiolle että pohjalle kysyttiin paneelin kehys.
+    assert stub.frames.count((1080, 960)) >= 2
 
 
 def _stack_y(source) -> float:
@@ -894,17 +931,18 @@ def _stack_y(source) -> float:
 
 
 def test_two_videos_on_screen_stack_into_two_squares(fixture_dir):
-    """Kaksi kuvaa samaan aikaan ruudussa: pystyssä kaksi 1080×1080 neliötä,
+    """Kaksi kuvaa samaan aikaan ruudussa: pystyssä kaksi 1080×960 paneelia,
     toinen toisen päällä.
 
-    Ruudun korkeus on 1920 px ja neliön 1080 px, joten keskipisteet ovat
-    ±540 px = ±28.125 % (1 % = 19.2 px). Ne eivät mene päällekkäin eivätkä
-    jätä väliin rakoa. Vaakasuunnassa 1920 px leveästä lähdekuvasta jää
-    keskeltä 1080 px: 21.875 % pois kummaltakin reunalta.
+    Ruudun korkeus on 1920 px ja paneelin 960 px, joten keskipisteet ovat
+    ±480 px = ±25 % (1 % = 19.2 px). Ne eivät mene päällekkäin eivätkä
+    jätä väliin rakoa. Kehystäjän ollessa keskellä lähteestä jää näkyviin
+    1215 px: 18.359 % pois kummaltakin reunalta.
     """
     spans = [("Guest", 8.0, 9.6, 2.1), ("Guest", 20.0, 21.6, 2.1)]
     _, xml = _with_reactions(fixture_dir, spans,
-                             settings=_vertical_settings(), reframer=_StubReframer())
+                             settings=_vertical_settings(),
+                             reframer=_StubReframer(scale=1.0, pos_x=0.0))
     reactions = [c for c in ET.fromstring(xml).iter("mc-clip")
                  if "reaktio" in (c.get("name") or "")]
     assert len(reactions) == 2
@@ -913,12 +951,12 @@ def test_two_videos_on_screen_stack_into_two_squares(fixture_dir):
         source = clip.find("mc-source")
         crop = source.find("adjust-crop/crop-rect")
         assert crop is not None, "reaktiokuvaa ei rajattu neliöksi"
-        assert abs(float(crop.get("left")) - 21.875) < 0.01
-        assert abs(float(crop.get("right")) - 21.875) < 0.01
+        assert abs(float(crop.get("left")) - 18.359) < 0.01
+        assert abs(float(crop.get("right")) - 18.359) < 0.01
         assert abs(float(crop.get("top"))) < 0.01
         assert abs(float(crop.get("bottom"))) < 0.01
         y = _stack_y(source)
-        assert abs(abs(y) - 28.125) < 0.01
+        assert abs(abs(y) - 25.0) < 0.01
         ys.append(y)
     # Järjestys vaihtuu: A päällä, sitten B päällä.
     assert ys[0] == -ys[1]
@@ -929,7 +967,8 @@ def test_the_base_square_takes_the_other_half_of_the_stack(fixture_dir):
     alhaalla, ja seuraavassa pinossa päinvastoin."""
     spans = [("Guest", 8.0, 9.6, 2.1), ("Guest", 20.0, 21.6, 2.1)]
     _, xml = _with_reactions(fixture_dir, spans,
-                             settings=_vertical_settings(), reframer=_StubReframer())
+                             settings=_vertical_settings(),
+                             reframer=_StubReframer(scale=1.0, pos_x=0.0))
     root = ET.fromstring(xml)
     reactions = [c for c in root.iter("mc-clip") if "reaktio" in (c.get("name") or "")]
     reaction_ys = [_stack_y(c.find("mc-source")) for c in reactions]
@@ -2159,7 +2198,7 @@ def test_auto_layout_asks_the_reframer_with_the_right_frame(fixture_dir, auto_nu
 
 def test_auto_layout_reactions_follow_their_host(fixture_dir, auto_numbers):
     """Vuorottelun keskellä reaktio vaihtaa alapaneelin (lane 2); pidon
-    aikana se on neliöpinon toinen puoli (lane 1, 21,875 %:n rajaus)."""
+    aikana se on pinon puolikas (lane 1, 1080×960 paneeli)."""
     _, xml = _layout_cut(fixture_dir, "auto", segments=_AUTO_SEGMENTS,
                          reactions=[("Guest", 8.0, 9.6, 2.1), ("Guest", 20.0, 21.6, 2.1)])
     reactions = sorted(
@@ -2167,8 +2206,8 @@ def test_auto_layout_reactions_follow_their_host(fixture_dir, auto_numbers):
         key=lambda c: parse_time(c.get("offset")))
     assert [c.get("lane") for c in reactions] == ["2", "1"]
     exchange, hold = (c.find("mc-source/adjust-crop/crop-rect") for c in reactions)
-    assert abs(float(exchange.get("left")) - 21.875) > 0.5      # paneeli, ei neliö
-    assert abs(float(hold.get("left")) - 21.875) < 0.01          # pinon neliö
+    assert abs(float(exchange.get("left")) - 26.8) < 0.1         # 1080×1312 -paneeli
+    assert abs(float(hold.get("left")) - 18.359) < 0.01          # pinon 1080×960 -paneeli
 
 
 def test_auto_layout_records_panels_only_where_they_are_drawn(fixture_dir, auto_numbers):

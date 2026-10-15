@@ -683,7 +683,8 @@ class AppState:
                 for r in found if r.speaker in names]
 
     def render_job(self, shots, mic_tracks, replacements, room, ducks,
-                   program_start, program_end, movie: str) -> dict:
+                   program_start, program_end, movie: str,
+                   passthrough: list[str] | None = None) -> dict:
         """Renderöinnin syöte samoista päätöksistä joilla XML juuri kirjoitettiin.
 
         Kuvat tulevat kirjoittajalta (``shots``), ääni samoista käsitellyistä
@@ -714,6 +715,11 @@ class AppState:
             item = by_key.get(key)
             if item is not None:
                 sources.append(render.AudioSource(path, placements(item), gain_db=gain))
+        # Läpivientiraidat soivat sellaisenaan kuten viennissä (``srcEnable="audio"``);
+        # ilman näitä MP4 on mykkä kun mikkirooleja ei ole.
+        for key in passthrough or []:
+            for item in self.timeline.track_media(key):
+                sources.append(render.AudioSource(item.path, placements(item), gain_db=gain))
         if self.settings.globals.vertical:
             from .. import reframe
 
@@ -1956,7 +1962,8 @@ def create_app(state: AppState) -> FastAPI:
             if want_render:
                 movie = os.path.splitext(out_path)[0] + ".mp4"
                 job = state.render_job(shot_list, mic_tracks, replacements, room,
-                                       ducks, program_start, program_end, movie)
+                                       ducks, program_start, program_end, movie,
+                                       passthrough=passthrough)
                 # Käynnissä heti eikä vasta säikeessä: muuten vastauksen jälkeen
                 # heti kysytty tila näyttäisi valmiilta, ja painike palaisi.
                 state.render_progress.update({"running": True, "fraction": 0.0,

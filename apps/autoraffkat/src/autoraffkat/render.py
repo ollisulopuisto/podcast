@@ -45,7 +45,7 @@ class Shot:
     fill: bool = False          # Spatial Conform «Fill» (pystyvienti), muuten «Fit»
     lane: int = 0
     # Vaakasuora rajaus prosentteina lähteen leveydestä, molemmilta puolilta.
-    # Neliöpino: 21.875 % per puoli, jolloin jäljelle jää 1080×1080 natiivi-
+    # Vara-neliöpino (lähteen koko tuntematon): 21.875 % per puoli, jolloin jäljelle jää 1080×1080 natiivi-
     # skaalassa. Sama luku kuin ``fcpxml/write.py:SQUARE_CROP``.
     crop: float = 0.0
     # Pinon toinen puolikas samalla ajalla. ``flatten`` asettaa sen kun
@@ -234,7 +234,11 @@ def flatten(shots: list[Shot], frame_duration: Fraction) -> list[Shot]:
                 out.append(piece(shot, cursor, cover.start))
             low, high = max(cover.start, cursor), min(cover.end, shot.end)
             top = piece(cover, low, high)
-            if cover.crop and shot.crop:
+            # Pino: kumpikin puolikas on ruudulla. Samalla paneelilla
+            # (asettelun alapaneeli) reaktio korvaa pohjan.
+            stacked = (cover.panel is not None and shot.panel is not None
+                       and cover.panel != shot.panel)
+            if (cover.crop and shot.crop) or stacked:
                 top.partner = piece(shot, low, high)
             out.append(top)
             cursor = high

@@ -84,6 +84,19 @@ def panels(layout: str, project_w: int = PROJECT_W,
                   Panel(0, 0, project_w, close_h))
 
 
+# Pino: kaksi 1080×960 paneelia päällekkäin. Aiempi kiinteä neliö (1080×1080,
+# keskeltä) jätti ±120 px lähteestä ruudun ulkopuolelle eikä seurannut
+# kasvoja: pp 57:n pystyviennissä pään yläosa ja kasvojen reuna leikkautuivat
+# (2026-10-16). Paneeli kulkee saman kehystäjän läpi kuin asettelun paneelit.
+
+
+def stack_panel(sign: int, project_w: int = PROJECT_W,
+                project_h: int = PROJECT_H) -> Panel:
+    """Pinon puolikas: ``sign`` +1 on ylempi, −1 alempi."""
+    half = project_h // 2
+    return Panel(0, 0 if sign > 0 else half, project_w, half)
+
+
 def window_of(src_w: int, src_h: int, frame_w: int, frame_h: int,
               scale: float = 1.0, pos_x: float = 0.0,
               pos_y: float = 0.0) -> tuple[float, float, float, float]:

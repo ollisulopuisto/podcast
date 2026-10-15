@@ -303,6 +303,18 @@ def test_a_mixdown_with_no_mic_roles_is_passed_through_to_the_export(monkeypatch
     assert _passthrough_tracks(state, []) == []                       # roolitettu mikki ei ole läpivienti
 
 
+def test_the_render_plays_the_passed_through_track_too(monkeypatch, tmp_path):
+    """Vienti toi läpivientiraidan äänen mutta oma MP4-renderi ei: ``render_job``
+    rakensi äänilähteet vain mikeistä ja tilaäänestä, joten MP4 oli mykkä."""
+    state = _state(monkeypatch, tmp_path)
+    state.settings.tracks["MIC A"] = TrackConfig(role="unused")
+    job = state.render_job([], [], {}, [], {}, 0, 10, str(tmp_path / "x.mp4"),
+                           passthrough=["MIC A"])
+    assert len(job["sources"]) == 1
+    assert job["sources"][0].path.endswith(
+        state.timeline.track_media("MIC A")[0].path.split("/")[-1])
+
+
 # ------------------------------------------------------------ käyttöliittymän rajapinta
 
 

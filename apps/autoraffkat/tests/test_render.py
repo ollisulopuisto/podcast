@@ -492,6 +492,26 @@ def test_a_panel_reaction_replaces_the_closeup_but_keeps_its_wide():
     assert [round(s.partner.file_start, 3) for s in flat] == [0.0, 0.4, 1.2]
 
 
+STACK_TOP = (0, 0, 1080, 960)
+STACK_BOTTOM = (0, 960, 1080, 960)
+
+
+def test_a_stack_half_over_the_other_half_keeps_it_as_its_partner():
+    """Pinon puolikkaat ovat eri paneeleita: reaktio (ylhäällä) ei peitä
+    pohjaa (alhaalla) vaan pohja jää sen kumppaniksi, kuten ennen neliöillä.
+    Samalla paneelilla (asettelu) reaktio edelleen korvaa."""
+    base = _panel_shot("base.mp4", STACK_BOTTOM)
+    reaction = _panel_shot("reaction.mp4", STACK_TOP, start=10, end=30, lane=1)
+    flat = render.flatten([base, reaction], render.Fraction(1, 25))
+    assert [(s.start, s.end) for s in flat] == [(0, 10), (10, 30), (30, 50)]
+    stacked = flat[1]
+    assert stacked.path == "reaction.mp4" and stacked.panel == STACK_TOP
+    assert stacked.partner is not None
+    assert stacked.partner.path == "base.mp4" and stacked.partner.panel == STACK_BOTTOM
+    assert stacked.partner.file_start == pytest.approx(10 / 25)
+    assert flat[0].partner is None and flat[2].partner is None
+
+
 @needs_ffmpeg
 def test_wide_on_top_and_closeup_below_each_land_in_their_panel(tmp_path):
     """Merkki: laajassa viiva 1300 px:ssä, lähikuvassa 960 px:ssä (keskellä).
