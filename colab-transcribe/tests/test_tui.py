@@ -442,3 +442,14 @@ def test_browse_with_several_sessions_asks_which_one(tmp_path: Path):
 
     run_scenario(scenario)
     assert asked == [(".nhsx",)]
+
+
+def test_inline_remarks_can_be_switched_on_and_is_off_by_default(tmp_path: Path):
+    async def scenario():
+        app = TranscribeApp()
+        async with app.run_test():
+            assert app.collect_options().inline_remarks is False
+            app.query_one("#inline_remarks").value = True
+            assert app.collect_options().inline_remarks is True
+
+    run_scenario(scenario)

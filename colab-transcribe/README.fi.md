@@ -54,6 +54,9 @@ Täysin skriptattuna, ilman käyttöliittymää:
 ```
 colab-transcribe --input ~/jakso/ --output ~/valmis/ --preset intra-mic
 colab-transcribe --input ~/jakso/ --transcribe-only   # vain litterointi, ei Auto-Silencea
+colab-transcribe --input ~/jakso/yksi.nhsx      # yksi istunto kansiosta jossa niitä on useita
+colab-transcribe --input ~/jakso/ --inline-remarks # käsikirjoitus: lyhyet huomautukset "(Vieras: niin)" kappaleen sisään
+colab-transcribe --input ~/jakso/ --no-bleed-filter # kirjoita istuntoon myös toisen mikin vuoto
 colab-transcribe --input ~/jakso/ --dry-run     # tulosta suunnitelma, älä aja
 colab-transcribe --input ~/jakso/ --gpu A100 --rms --thr -40
 colab-transcribe --input ~/jakso/ --no-drive    # käytä vanhaa hidasta suoraa Colab-latausta
@@ -67,7 +70,9 @@ Tiedostot ladataan oletuksena suoraan Colabiin (`--transfer direct`; isot tiedos
 lähtevät paloina). `--transfer drive` kulkee Google Driven kautta: se on nopeampi,
 mutta vaatii että Drive API on käytettävissä tilillä. Ilman sitä Google vastaa
 403:lla ja ajo jatkaa itse suoralla latauksella. Suorassa siirrossa isot WAVit pakataan
-ensin FLACiksi (häviötön, puretaan Colabissa); `--no-compress` kytkee sen pois.
+ensin FLACiksi (häviötön, puretaan Colabissa); `--no-compress` kytkee sen pois. Ladatut tiedostot jäävät Colabin välimuistiin sisällön tarkistussumman mukaan, joten saman istunnon uusinta lähettää vain puuttuvat (välimuisti katoaa kun istunto suljetaan; `--keep-session` pitää sen).
+
+Kahden mikin äänityksessä kumpikin mikki kuulee molemmat puhujat. Istuntoon kirjoitetaan vain sanat, jotka ovat omalla raidalla selvästi kovempia kuin toisella (raja mitataan aineistosta, ja se näkyy lokissa rivillä `Vuodon raja`); käsikirjoitus lukee suodatetun istunnon.
 Esiasetukset ovat Colabissa ajettavan skriptin: `remote` (häntä 1,0 s,
 tauko 1,0 s) ja `intra-mic` (RMS-tarkistus päällä, häntä 0,4 s, tauko
 0,4 s). `--thr`, `--tail`, `--gap`, `--rms` ja `--prompt` korvaavat

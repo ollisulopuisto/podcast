@@ -56,6 +56,7 @@ colab-transcribe --input ~/jakso/ --output ~/valmis/ --preset intra-mic
 colab-transcribe --input ~/jakso/ --transcribe-only   # transcribe only, no Auto-Silence
 colab-transcribe --input ~/jakso/yksi.nhsx            # one session out of a folder that holds several
 colab-transcribe --input ~/jakso/ --inline-remarks    # script: short remarks like "(Guest: yes)" stay in the paragraph
+colab-transcribe --input ~/jakso/ --no-bleed-filter   # also write the other mic's bleed into the session
 colab-transcribe --input ~/jakso/ --dry-run     # print the plan, run nothing
 colab-transcribe --input ~/jakso/ --gpu A100 --rms --thr -40
 colab-transcribe --input ~/jakso/ --no-drive    # fallback to direct colab upload
@@ -71,6 +72,8 @@ but needs the Drive API to be usable on your account: without it Google answers
 403, and the run falls back to the direct upload by itself. On the direct transfer
 big WAVs are packed to FLAC first (lossless, unpacked in Colab); `--no-compress`
 turns that off. Uploads are cached in the Colab session by content hash, so retrying a run that stopped halfway (same session) only sends what is missing; the cache goes when the session is stopped (`--keep-session` holds it).
+
+With two mics each one hears both speakers. Only the words that are clearly louder on their own track than on the other are written into the session (the margin is measured on the material and logged as `Vuodon raja`); the script reads the filtered session.
 Presets are the Colab script's: `remote` (tail 1.0 s, gap 1.0 s) and
 `intra-mic` (RMS check on, tail 0.4 s, gap 0.4 s). `--thr`, `--tail`,
 `--gap`, `--rms` and `--prompt` override after the preset.

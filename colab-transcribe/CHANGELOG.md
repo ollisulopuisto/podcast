@@ -5,14 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
-## [Unreleased]
+## [2026.10.15.1] - 2026-10-15
 
 ### Fixed
 - **A Drive upload that fails with HTTP 403 continues with direct upload.** On an account without a Drive API quota project the run used to stop at "Google Drive upload failed: 403"; it now says so and carries on with the direct transfer from where it was (session and scripts are already up).
 - **Big inputs go up in parts on the direct transfer.** A 409 MB WAV failed with HTTP 500 in `colab upload`. Files over 128 MB are now sent in 64 MB parts, each retried on its own, and joined with `cat` in Colab. The sizes are a guess until a file that big has gone through; the 500 was measured, the cure is not yet.
 
 ### Added
-- **`--inline-remarks` (off by default): short remarks stay inside the paragraph.** A remark of at most two words between two pieces of the same speaker ("niin", "joo") is written in the paragraph as `(Name: niin)` instead of breaking it into three lines. Without the option the script is as before.
+- **`--inline-remarks` (off by default): short remarks stay inside the paragraph.** A remark of at most two words between two pieces of the same speaker ("niin", "joo") is written in the paragraph as `(Name: niin)` instead of breaking it into three lines. Without the option the script is as before. The TUI has a switch for it (and its transfer labels now say which is the default).
 
 ### Changed
 - **The default Colab session is called `whisper`, not `vst-pipeline`.** The old name was a developer's own session and showed up in everyone's log and in the `colab stop -s …` hints. `--session` and `COLAB_SESSION` still set it. A session left open under the old name is not found any more; stop it with `colab stop -s vst-pipeline`.

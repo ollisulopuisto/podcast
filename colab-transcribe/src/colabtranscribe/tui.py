@@ -375,8 +375,8 @@ class TranscribeApp(App):
                 yield Label("Siirtotapa")
                 yield Select(
                     [
-                        ("Google Drive (erittäin nopea)", "drive"),
-                        ("Suora Colab-lataus (hidas, ilman Drivea)", "direct"),
+                        ("Google Drive (nopeampi, vaatii Drive API:n)", "drive"),
+                        ("Suora Colab-lataus (oletus, FLAC-pakattu)", "direct"),
                     ],
                     value=self._initial.transfer,
                     id="transfer",
@@ -386,6 +386,8 @@ class TranscribeApp(App):
                 yield Switch(value=self._initial.silence, id="silence")
                 yield Label("RMS-tarkistus")
                 yield Switch(value=self._initial.rms, id="rms")
+                yield Label("Käsikirjoitus: lyhyet huomautukset kappaleen sisään")
+                yield Switch(value=self._initial.inline_remarks, id="inline_remarks")
             with Horizontal(id="runrow"):
                 yield Button("Aja", id="run", variant="primary")
                 yield Button("Alkuasetukset", id="onboarding_btn")
@@ -423,6 +425,7 @@ class TranscribeApp(App):
             transfer=str(self.query_one("#transfer", Select).value),
             rms=self.query_one("#rms", Switch).value,
             silence=self.query_one("#silence", Switch).value,
+            inline_remarks=self.query_one("#inline_remarks", Switch).value,
             thr=int(number("#thr", initial.thr)),
             tail=number("#tail", initial.tail),
             gap=number("#gap", initial.gap),
