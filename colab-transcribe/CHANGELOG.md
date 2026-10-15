@@ -7,6 +7,10 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+### Fixed
+- **A Drive upload that fails with HTTP 403 continues with direct upload.** On an account without a Drive API quota project the run used to stop at "Google Drive upload failed: 403"; it now says so and carries on with the direct transfer from where it was (session and scripts are already up).
+- **Big inputs go up in parts on the direct transfer.** A 409 MB WAV failed with HTTP 500 in `colab upload`. Files over 128 MB are now sent in 64 MB parts, each retried on its own, and joined with `cat` in Colab. The sizes are a guess until a file that big has gone through; the 500 was measured, the cure is not yet.
+
 ### Changed
 - **A remark from another speaker breaks up a long turn in the script.** A Hindenburg region does not end where someone else speaks, so the interviewer's paragraph used to come first and the guest's "yes" after it. Now a region of another speaker that starts inside a turn and ends before it does cuts the paragraph there, and the paragraph continues with the time of its next word. Longer overlapping speech is still a change of turn. Same rule as podcast-magic's script (held by a test).
 

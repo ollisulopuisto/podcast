@@ -78,7 +78,7 @@ def test_real_run_streams_output_and_reports_results(tmp_path, capsys, monkeypat
     (tmp_path / "puhe.wav").write_bytes(b"")
     calls = []
 
-    def fake_run(commands, log, timeout=None):
+    def fake_run(commands, log, timeout=None, **_):
         calls.append(commands)
         log("Litteroitu .nhsx luotu: /content/output/j litteroitu.nhsx")
         return 0
@@ -115,7 +115,7 @@ def test_real_run_single_audio_file_reports_transcripts(tmp_path, capsys, monkey
     audio = tmp_path / "haastattelu.mp3"
     audio.write_bytes(b"data")
 
-    def fake_run(commands, log, timeout=None):
+    def fake_run(commands, log, timeout=None, **_):
         log("Litterointi luotu: /content/output/transcripts/haastattelu.json")
         return 0
 
@@ -133,7 +133,7 @@ def test_failing_remote_run_returns_its_code(tmp_path, monkeypatch):
 
     (tmp_path / "puhe.wav").write_bytes(b"")
 
-    def fake_run(commands, log, timeout=None):
+    def fake_run(commands, log, timeout=None, **_):
         return 3
 
     monkeypatch.setattr(cli, "check_environment", lambda: OnboardingReport(items=[]))
@@ -220,7 +220,7 @@ def test_headless_run_reuses_alive_session(tmp_path, capsys, monkeypatch):
     (tmp_path / "puhe.wav").write_bytes(b"")
     calls = []
 
-    def fake_run(commands, log, timeout=None):
+    def fake_run(commands, log, timeout=None, **_):
         calls.append(commands)
         return 0
 
@@ -246,7 +246,7 @@ def test_headless_run_resets_session_when_requested(tmp_path, capsys, monkeypatc
         stopped.append(name)
         return 0
 
-    def fake_run(commands, log, timeout=None):
+    def fake_run(commands, log, timeout=None, **_):
         calls.append(commands)
         return 0
 

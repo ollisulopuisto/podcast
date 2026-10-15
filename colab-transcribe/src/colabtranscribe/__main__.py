@@ -185,7 +185,12 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
         lines.append(line)
         print(line)
 
-    code = driver.run(commands, log, timeout=driver.COMMAND_TIMEOUT)
+    code = driver.run(
+        commands,
+        log,
+        timeout=driver.COMMAND_TIMEOUT,
+        on_drive_failure=lambda: driver.direct_tail(options, files),
+    )
     if code == 0:
         generated = driver.parse_generated("\n".join(lines))
         transcripts = driver.parse_generated_transcripts("\n".join(lines))

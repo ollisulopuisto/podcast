@@ -694,3 +694,102 @@ def test_commands_find_the_bundled_colab(monkeypatch):
     monkeypatch.setattr("subprocess.Popen", Done)
     driver._execute_single(["colab", "stop", "-s", "x"], lambda _m: None, max_retries=0)
     assert started == [(["colab", "stop", "-s", "x"], "/env/bin")]
+
+
+def test_a_drive_403_continues_with_direct_upload_when_a_fallback_is_given(
+    monkeypatch, tmp_path: Path
+):
+    """Drive-API vaatii quota-projektin jota ystävän tilillä ei ollut (HTTP 403).
+    Ajon ei pidä pysähtyä: Drive-vaiheen ja sen jälkeisten tilalle tulee suora
+    siirto, ja vanha loppu (tar-purku, Drive-siivous) jää pois."""
+
+    def failing_upload(input_dir, session, log):
+        raise RuntimeError("HTTP Error 403: Forbidden")
+
+    monkeypatch.setattr(driver, "upload_input_to_drive", failing_upload)
+    logs: list[str] = []
+    plan = [
+        ["drive", "upload", str(tmp_path), "ColabTranscribe/iiris/input.tar"],
+        ["echo", "tar-purku-driveltä"],
+    ]
+    code = driver.run(plan, logs.append, on_drive_failure=lambda: [["echo", "suora-siirto"]])
+    assert code == 0
+    assert any("suora-siirto" in line for line in logs)
+    assert not any("tar-purku-driveltä" in line for line in logs)
+    assert any("403" in line for line in logs)
+
+
+def test_the_direct_tail_starts_after_the_scripts_and_covers_the_inputs(tmp_path: Path):
+    """Pilvessä skriptit ovat jo ylhäällä kun Drive kaatuu, joten suora häntä
+    alkaa vasta syötteistä: ei toista ``colab new``tä eikä skriptien latausta."""
+    (tmp_path / "a.nhsx").write_text("x")
+    (tmp_path / "a Files").mkdir()
+    (tmp_path / "a Files" / "m.wav").write_bytes(b"w")
+    options = RunOptions(input_dir=str(tmp_path), transfer="drive", session="iiris")
+    files = driver.list_input_files(tmp_path)
+    tail = driver.direct_tail(options, files)
+    assert not any(c[:2] == ["colab", "new"] for c in tail)
+    assert not any(c[:2] == ["colab", "drivemount"] for c in tail)
+    assert not any(str(driver.PIPELINE_SCRIPT) in c for c in tail)
+    uploads = [c for c in tail if c[:2] == ["colab", "upload"]]
+    assert {Path(c[-1]).name for c in uploads} == {"a.nhsx", "m.wav"}
+    assert tail[-1][:2] == ["colab", "stop"] or tail[-1][:2] == ["colab", "download"]
+
+
+def test_a_big_input_goes_up_in_parts_and_is_joined_in_colab(monkeypatch, tmp_path: Path):
+    """Suora siirto kaatui HTTP 500:een 409 MB:n WAVissa (Colabin tiedostorajapinta).
+    Iso tiedosto lähtee paloina; jokainen pala yritetään uudelleen erikseen, ja
+    Colabissa palat liitetään `cat`illa takaisin yhdeksi tiedostoksi."""
+    monkeypatch.setattr(driver, "CHUNK_BYTES", 1000)
+    src = tmp_path / "iso.WAV"
+    data = bytes(range(256)) * 10  # 2560 tavua -> 3 palaa
+    src.write_bytes(data)
+
+    seen: list[list[str]] = []
+    got: list[bytes] = []
+    failures = {"left": 1}
+
+    def fake_execute(command, log, timeout=None, **_):
+        seen.append(command)
+        if command[:2] == ["colab", "upload"]:
+            if failures["left"] and command[-1].endswith(".part0001"):
+                failures["left"] -= 1
+                return 1
+            got.append(Path(command[4]).read_bytes())
+        return 0
+
+    monkeypatch.setattr(driver, "_execute_single", fake_execute)
+    monkeypatch.setattr(driver.time, "sleep", lambda _: None)
+    code = driver.run(
+        [["chunked-upload", "iiris", str(src), "/content/input/a b/iso.WAV"]],
+        lambda _: None,
+    )
+    assert code == 0
+    assert b"".join(got) == data
+    uploads = [c[-1] for c in seen if c[:2] == ["colab", "upload"]]
+    assert uploads.count("/content/input/a b/iso.WAV.part0001") == 2  # yksi uusinta
+    join = seen[-1]
+    assert join[:4] == ["colab", "exec", "-s", "iiris"]
+    assert "cat '/content/input/a b/iso.WAV'.part*" in join[4]
+    assert "rm" in join[4]
+
+
+def test_a_part_that_keeps_failing_stops_the_run(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(driver, "CHUNK_BYTES", 1000)
+    src = tmp_path / "iso.WAV"
+    src.write_bytes(b"x" * 2500)
+    monkeypatch.setattr(driver, "_execute_single", lambda *a, **k: 1)
+    monkeypatch.setattr(driver.time, "sleep", lambda _: None)
+    code = driver.run([["chunked-upload", "s", str(src), "/content/input/x"]], lambda _: None)
+    assert code == 1
+
+
+def test_the_plan_chunks_only_big_direct_uploads(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(driver, "CHUNK_ABOVE", 100)
+    (tmp_path / "pieni.wav").write_bytes(b"x" * 10)
+    (tmp_path / "iso.wav").write_bytes(b"x" * 500)
+    options = RunOptions(input_dir=str(tmp_path), transfer="direct", session="iiris")
+    plan = driver.plan_commands(options, ["pieni.wav", "iso.wav"], reuse_session=True)
+    assert any(c[0] == "chunked-upload" and c[2].endswith("iso.wav") for c in plan)
+    assert any(c[:2] == ["colab", "upload"] and c[-1].endswith("pieni.wav") for c in plan)
+    assert not any(c[:2] == ["colab", "upload"] and c[-1].endswith("iso.wav") for c in plan)

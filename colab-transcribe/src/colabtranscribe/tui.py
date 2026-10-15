@@ -629,6 +629,8 @@ class TranscribeApp(App):
             kwargs = {}
             if "on_progress" in sig.parameters:
                 kwargs["on_progress"] = on_progress
+            if "on_drive_failure" in sig.parameters:
+                kwargs["on_drive_failure"] = lambda: driver.direct_tail(options, files)
 
             code = self._runner(plan, log, timeout=driver.COMMAND_TIMEOUT, **kwargs)
             if code == 0:

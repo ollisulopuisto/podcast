@@ -18,6 +18,7 @@ import threading
 import time
 import webbrowser
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import silencelearn
@@ -34,6 +35,16 @@ PIPELINE_SCRIPT = Path(__file__).parent / "colab" / "pipeline.py"
 #: jos tähän tulisi oma kopio, olisimme takaisin siinä mistä paketti pelasti.
 LEARN_MODULE = Path(silencelearn.__file__)
 LEARN_REMOTE = "/content/silencelearn.py"
+
+#: Suora siirto: tätä isommat syötteet lähetetään paloina. Mitattu: 409 667 072
+#: tavun WAV kaatui `colab upload`issa HTTP 500:een (Colabin tiedostorajapinta),
+#: neljän megan WAVit eivät ole kaatuneet. Rajat ovat arvauksia kunnes isompi
+#: tiedosto on mennyt läpi paloina; muuta tästä, ei kutsuista.
+CHUNK_ABOVE = 128 * 1024 * 1024
+CHUNK_BYTES = 64 * 1024 * 1024
+#: Yhden palan uudelleenyritykset (`colab upload` itse yrittää kahdesti vain
+#: yhteyskatkoihin, ei 500:aan).
+CHUNK_RETRIES = 3
 
 REMOTE_INPUT = "/content/input"
 REMOTE_OUTPUT = "/content/output"
@@ -194,16 +205,17 @@ def plan_commands(
         if options.input_dir and not source.is_absolute():
             inp = Path(options.input_dir)
             source = inp if inp.is_file() else inp / source
-        commands.append(
-            [
-                "colab",
-                "upload",
-                "-s",
-                options.session,
-                str(source),
-                f"{REMOTE_INPUT}/{Path(f).as_posix()}",
-            ]
-        )
+        remote = f"{REMOTE_INPUT}/{Path(f).as_posix()}"
+        try:
+            big = source.stat().st_size > CHUNK_ABOVE
+        except OSError:
+            big = False
+        if big:
+            commands.append(["chunked-upload", options.session, str(source), remote])
+        else:
+            commands.append(
+                ["colab", "upload", "-s", options.session, str(source), remote]
+            )
 
     remote_call = " ".join(
         ["python3", "/content/pipeline.py", *map(shlex.quote, pipeline_args(options))]
@@ -266,6 +278,8 @@ def describe_command(command: list[str]) -> str:
     if not command:
         return "Suoritetaan komentoa..."
     cmd0 = command[0]
+    if cmd0 == "chunked-upload":
+        return f"Siirretään isoa tiedostoa {Path(command[2]).name} paloina..."
     if cmd0 == "drive" and len(command) > 1 and command[1] == "upload":
         return "Ladataan syötteet Google Driveen..."
     if cmd0 == "colab" and len(command) > 1:
@@ -453,6 +467,62 @@ def _execute_single(
     return code
 
 
+def direct_tail(options: RunOptions, input_files: list[str]) -> list[list[str]]:
+    """Suoran siirron komennot skriptien latauksen jälkeen.
+
+    Kun Drive kaatuu kesken ajon, istunto on jo luotu ja skriptit ovat ylhäällä;
+    jäljellä on vain syötteiden lataus, ajo, tulokset alas ja istunnon sulku.
+    """
+    direct = plan_commands(
+        replace(options, transfer="direct"), input_files, reuse_session=True
+    )
+    after_scripts = next(
+        i for i, c in enumerate(direct) if LEARN_REMOTE in c
+    ) + 1
+    return direct[after_scripts:]
+
+
+def _upload_in_chunks(
+    session: str,
+    source: Path,
+    remote: str,
+    log: Callable[[str], None],
+    timeout: float | None = None,
+) -> int:
+    """Lähetä iso tiedosto paloina ja liitä ne Colabissa: yhden palan virhe
+    maksaa yhden palan uudelleenlähetyksen, ei koko tiedostoa."""
+    with tempfile.TemporaryDirectory() as tmp, open(source, "rb") as f:
+        n = 0
+        while chunk := f.read(CHUNK_BYTES):
+            part = Path(tmp) / f"part{n:04d}"
+            part.write_bytes(chunk)
+            remote_part = f"{remote}.part{n:04d}"
+            for attempt in range(CHUNK_RETRIES + 1):
+                if attempt:
+                    log(
+                        f"Pala {n} epäonnistui, yritetään uudelleen "
+                        f"({attempt}/{CHUNK_RETRIES})..."
+                    )
+                    time.sleep(5)
+                code = _execute_single(
+                    ["colab", "upload", "-s", session, str(part), remote_part],
+                    log,
+                    timeout=timeout,
+                )
+                if code == 0:
+                    break
+            else:
+                return code
+            part.unlink()
+            n += 1
+    q = shlex.quote(remote)
+    return _execute_single(
+        ["colab", "exec", "-s", session, f"cat {q}.part* > {q} && rm {q}.part*"],
+        log,
+        timeout=timeout,
+    )
+
+
 def upload_input_to_drive(
     input_dir: Path | str, session: str, log: Callable[[str], None]
 ) -> str:
@@ -467,6 +537,7 @@ def run(
     log: Callable[[str], None],
     timeout: float | None = None,
     on_progress: Callable[[float, str], None] | None = None,
+    on_drive_failure: Callable[[], list[list[str]]] | None = None,
 ) -> int:
     """Aja suunnitelma peräkkäin ja syötä jokainen rivi lokiin.
 
@@ -479,6 +550,9 @@ def run(
         log: Funktio joka saa jokaisen tulosterivin.
         timeout: Yksittäisen komennon aikaraja sekunteina. None = ei rajaa.
         on_progress: Valinnainen takaisinkutsu edistymiselle (prosentti, kuvaus).
+        on_drive_failure: Jos Drive-lataus kaatuu 403:een (quota project
+            puuttuu), saa tämä antaa tilalle suoran siirron loput komennot;
+            ilman sitä ajo pysähtyy kuten ennen.
     """
     opened_auth_urls: set[str] = set()
     total = len(commands)
@@ -524,6 +598,14 @@ def run(
                         f"[{i + 1}/{total}] Auto-Silence...",
                     )
 
+            if command[0] == "chunked-upload":
+                code = _upload_in_chunks(
+                    command[1], Path(command[2]), command[3], log, timeout
+                )
+                if code != 0:
+                    return code
+                continue
+
             if len(command) >= 3 and command[0] == "drive" and command[1] == "upload":
                 log(shlex.join(command))
                 input_dir = command[2]
@@ -534,6 +616,16 @@ def run(
                 except Exception as err:
                     log(f"Google Drive -lataus epäonnistui: {err}")
                     err_msg = str(err).lower()
+                    if on_drive_failure is not None and (
+                        "403" in err_msg or "forbidden" in err_msg
+                    ):
+                        log(
+                            "Drive ei ole käytettävissä tällä tilillä (403, quota "
+                            "project puuttuu): jatketaan suoralla siirrolla."
+                        )
+                        commands[i + 1 :] = on_drive_failure()
+                        total = len(commands)
+                        continue
                     if "403" in err_msg or "forbidden" in err_msg:
                         log(
                             "Huom: Google Drive API vaatii aktiivisen GCP-projektin (quota project)."
