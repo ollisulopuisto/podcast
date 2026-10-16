@@ -1,8 +1,13 @@
 # Voice Presets and Audition Implementation Plan
 
-Two parts, one chain and one plug-in handling: **Part A** names mic conditions
-as presets; **Part B** (`audition`, near the end) renders a window at several
-plug-in settings so an editor can choose by ear.
+Three parts, one chain and one plug-in handling: **Part A** names mic conditions
+as presets; **Part B** (`audition`) renders a window at several plug-in settings
+so an editor can choose by ear; **Part C** asks whether tone should be matched
+for consistency, and starts with a measurement.
+
+**Status (2026-10-16):** Part B's measurement script is written and tested
+(`scripts/ab/audition_measure.py`); its numbers wait for a run on the owner's
+Mac with dxRevive. Parts A and C have no code yet.
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -355,6 +360,84 @@ changes.
 
 ---
 
+## Part C: tone consistency (measure first, build only if the numbers ask for it)
+
+**Origin:** the owner's roadmap question (2026-10-16): do we need EQ profiles
+like Hindenburg's? The owner was never sure those worked well enough to be
+usable; the idea of matching tone may still be useful. Gain is already matched.
+**The goal is consistency, not turning a cheap microphone into an expensive
+one.** A library of per-microphone profiles is out of scope; the voice presets
+of Part A already cover clearly poor conditions (`remote`, `phone`).
+
+**Today:** the chain applies one fixed house tone to everyone (`TONE_*` in
+`chain.py`: 250 Hz +1.5 dB, 400 Hz −2 dB, a 3 kHz shelf +1.5 dB), tuned by ear
+once against one reference chain (`SHARED-AUDIO.md` §3.10). It never measures
+the speaker, so differences between speakers survive the chain unchanged.
+
+**What could be useful, in order of expected value:**
+
+1. **The same speaker across episodes.** A speaker's long-term speech spectrum
+   is stored per show, and a new episode is pulled toward it. This is the
+   consistency the listener actually hears week to week.
+2. **Speakers within an episode, toward a common target, not toward each
+   other.** Pairwise matching is a moving target (A follows B while B follows A).
+   Each speaker is pulled toward one fixed target curve, partially (about 50–60 %)
+   and bounded (about ±3 dB).
+3. **Drift inside one track** (proximity effect at 250 Hz as the speaker moves).
+   Only if the measurement shows drift larger than the level rider already hides.
+
+**Shape of a correction, if built:**
+
+- The spectrum is measured on **speech frames only** (the speaking mask already
+  exists) and only in bands where speech stands clearly above the noise floor.
+  A band dominated by noise is never boosted; this is the `phone` lesson, that
+  anything lifting empty highs lifts only noise.
+- Four broad bands (low end, body 150–400 Hz, presence 2–5 kHz, air above
+  8 kHz), not narrow filters. Voices stay different from each other; only what
+  the recording chain added is corrected.
+- It sits where the existing tone stage sits, **after the plug-in**: dxRevive at
+  100 % lifts 3–20 kHz by +4…+5.7 dB (`SHARED-AUDIO.md` §3.9), so tone must be
+  measured on what the plug-in produced, not on the raw file.
+- The fixed `TONE_*` house curve is either the target or is replaced by it;
+  decide after the measurement, not before.
+
+**Hindenburg's profiles.** What exactly they do and why they disappointed is not
+known here and is not assumed. The usual failure of a match to the whole
+long-term spectrum is that it chases content and noise and over-corrects; the
+shape above is designed against that, not against Hindenburg specifically.
+
+### Task C0: Measure the spread (owner's Mac, no code in the chain)
+
+**Files:**
+- Create: `scripts/ab/tone_measure.py` (next to `audition_measure.py`)
+- Test: `tests/test_tone_measure.py`
+
+For each speaker track of several episodes (the same speakers in more than one),
+compute the speech-frame spectrum in the four bands, with the noise-clearance
+rule above. Print, per band: the spread **between speakers** within an episode,
+and the spread of the **same speaker across episodes**. The meter is proved on
+synthetic tracks first: two voices with a known 3 dB tilt difference must read
+3 dB; a band under the noise floor must be reported as unmeasured, not as zero.
+
+**Decision rules, set before looking at the numbers:**
+
+- Between-speaker spread under about 2 dB in a band: that band is not worth
+  correcting.
+- Same-speaker spread across episodes larger than the between-speaker spread:
+  item 1 above is the feature, and the stored per-show profile is built first.
+- Frame-to-frame band movement within a track that the rider and compressors
+  already hide: item 3 is dropped.
+
+Results go in `SHARED-AUDIO.md` as a new §3.x, same style as the others.
+
+### Task C1+: Only after C0 says so
+
+Correction stage (default off, A/B through `scripts/ab/compare.py` at matched
+loudness, then a listening check), the per-show profile store, and host
+integration. Each is planned from the C0 numbers, not before.
+
+---
+
 ## Open questions
 
 These go back to the owner and are not decided here:
@@ -371,6 +454,8 @@ These go back to the owner and are not decided here:
    applied" what is wanted, or should `audition` also apply the match?
 6. **Part B.** Do automixer and autoraffkat get `audition` in their plug-in
    editors, or only kuulas for now?
+7. **Part C.** Which episodes and speakers go into C0? It needs the same speakers
+   in at least two episodes.
 
 ## Not in this plan
 
