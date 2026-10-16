@@ -416,10 +416,10 @@ def test_shorts_style_punches_in_on_the_same_camera(scratch_xml, monkeypatch):
 
     from autoraffkat import movement
 
-    def punch_middle(segments, grid, min_shot):
+    def punch_middle(segments, grid):
         out, done = [], False
         for seg in segments:
-            if not done and seg.label != "Laaja" and seg.end - seg.start >= 3 * min_shot:
+            if not done and seg.label != "Laaja" and seg.end - seg.start >= 3 * 1.5:
                 third = (seg.end - seg.start) / 3
                 out += [replace(seg, end=seg.start + third),
                         replace(seg, start=seg.start + third, end=seg.end - third, punch=True),

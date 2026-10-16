@@ -1903,8 +1903,7 @@ def create_app(state: AppState) -> FastAPI:
                     # painotuksissa, ks. movement.punch_segments.
                     from .. import movement as movement_mod
 
-                    segments = movement_mod.punch_segments(
-                        segments, _grid, state.settings.globals.min_shot)
+                    segments = movement_mod.punch_segments(segments, _grid)
                 passthrough = _passthrough_tracks(state, mic_tracks)
                 if passthrough and state.timeline.multicams:
                     names = {t.key: t.name for t in state.timeline.tracks}

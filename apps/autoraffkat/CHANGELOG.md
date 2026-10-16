@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.16.4] - 2026-10-16
+
+### Fixed
+- **No more jump cut inside one close-up.** In the shorts style a close-up was split when the speaker resumed after someone else spoke, even though the picture never left that camera, so the viewer saw the same face in two sizes in a row (pp 57, 51:30). Size now changes only when the picture returns to a speaker from another shot.
+
 ## [2026.10.16.3] - 2026-10-16
 
 ### Fixed

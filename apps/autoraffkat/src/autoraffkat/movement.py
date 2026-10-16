@@ -22,10 +22,6 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, replace
 
-import numpy as np
-
-from .model import HOP
-
 # Siemen. Sama jakso tuottaa saman suunnitelman joka viennillä; eri luku
 # antaa eri leikkauksen, joten «uusinta» on siemenen vaihto.
 SEED = 2026
@@ -85,10 +81,6 @@ STYLES = (STYLE_CALM, STYLE_SHORTS)
 # myös sommittelua, joten 12 % riittää. Full HD -lähdettä se säästää:
 # täyttö on jo 1,78-kertainen, punchin kanssa 1,99.
 PUNCH = 1.12
-
-# Leikkaus näin paljon ennen lauseen alkua, kuten J-cutin ennakko: kuva
-# vaihtuu kun sana alkaa, ei sen jälkeen.
-PUNCH_LEAD = 0.1
 
 # Punch-in tulee puhujan vaihtuessa, ei tauosta eikä voimakkuudesta.
 # Koko jakson litteroinnista mitattuna (video files, 540 puheen alkua)
@@ -201,55 +193,29 @@ def _plan_shorts(rng, durations, wides, punches, split) -> list[Move]:
     return moves
 
 
-def punch_segments(segments: list, grid, min_shot: float) -> list:
-    """Lähikuvat pilkottuna punch-ineiksi puhujan vaihtuessa.
+def punch_segments(segments: list, grid) -> list:
+    """Lähikuvien kehys vuorottelee kun kuva palaa puhujaan.
 
-    Kaksi kohtaa, molemmat puhujan vaihtoja:
+    Vuoron alussa, kun kuva palaa puhujaan toisesta kuvasta, rajaus vaihtuu
+    edellisestä kerrasta — perus ja punch vuorottelevat kameroittain, joten
+    vuoron ottaminen näkyy koon vaihtumisena.
 
-    * **Lähikuvan sisällä**: puhuja jatkaa sen jälkeen kun joku muu on
-      puhunut välissä (välihuomautus, lyhyt vastaus). Pelkkä tauko saman
-      puhujan puheessa ei ole vaihto.
-    * **Vuoron alussa**: kun kuva palaa puhujaan, rajaus vaihtuu edellisestä
-      kerrasta — perus ja punch vuorottelevat kameroittain, joten vuoron
-      ottaminen näkyy myös koon vaihtumisena.
+    **Lähikuvaa ei pilkota kesken.** Aiemmin se pilkottiin kun puhuja jatkoi
+    toisen välihuomautuksen jälkeen, mutta kuva pysyi samana kamerana: katsoja
+    näki saman kasvon kahdessa koossa peräkkäin, hyppyleikkauksen ilman syytä
+    (pp 57, 51:30). Koon vaihtuminen kuuluu vain oikeaan kuvanvaihtoon.
 
-    Jokainen pala on vähintään ``min_shot``. Vain lähikuvat: laajan ja
-    ryhmäkuvan pystyrajaus on jo puhujan mukaan. Silmukka kulkee puheen
-    jaksojen eikä näytteiden yli.
-    """
+    Vain lähikuvat: laajan ja ryhmäkuvan pystyrajaus on jo puhujan mukaan.    """
     by_camera = {lane.close_key: lane for lane in grid.speakers if lane.close_key}
     last: dict[str, bool] = {}
     out = []
     for seg in segments:
-        lane = by_camera.get(seg.angle)
-        lo = max(0, int(round((seg.start - grid.program_start) / HOP)))
-        hi = min(grid.n, int(round((seg.end - grid.program_start) / HOP)))
-        if lane is None or hi - lo < 2:
+        if by_camera.get(seg.angle) is None:
             out.append(seg)
             continue
-        punch = not last[seg.angle] if seg.angle in last else False
-        others = [other.on for other in grid.speakers if other is not lane]
-        edges = np.diff(lane.on.astype(np.int8), prepend=0)
-        starts = np.flatnonzero(edges == 1)
-        ends = np.flatnonzero(edges == -1)
-        cuts = []
-        previous = seg.start
-        for index in starts[(starts > lo) & (starts < hi)]:
-            before = ends[ends <= index]
-            if not len(before):
-                continue
-            gap = slice(int(before[-1]), int(index))
-            if not any(other[gap].any() for other in others):
-                continue
-            at = grid.program_start + index * HOP - PUNCH_LEAD
-            if at - previous >= min_shot and seg.end - at >= min_shot:
-                cuts.append(at)
-                previous = at
-        bounds = [seg.start, *cuts, seg.end]
-        for k in range(len(bounds) - 1):
-            state = punch if k % 2 == 0 else not punch
-            out.append(replace(seg, start=bounds[k], end=bounds[k + 1], punch=state))
-            last[seg.angle] = state
+        state = not last[seg.angle] if seg.angle in last else False
+        out.append(replace(seg, punch=state))
+        last[seg.angle] = state
     return out
 
 

@@ -121,22 +121,21 @@ def _turn_grid(seconds=40):
     ])
 
 
-def test_punch_ins_land_where_the_speaker_takes_the_floor_back():
-    """Punch vain puhujan vaihtuessa: kun puhuja jatkaa toisen välihuomautuksen
-    jälkeen. Pelkkä tauko saman puhujan puheessa ei ole — koko jakson
-    litteroinnista mitattuna tauon pituus, huippu, tason lasku eikä sävelkulku
-    erottanut lauseen alkua lauseen keskeltä (video files, 540 alkua); vain
-    puhujan vaihto erotti. Käyttäjä 2026-09-25: puhujan vaihto riittää."""
+def test_a_close_up_is_never_split_into_two_sizes_of_the_same_face():
+    """Saman lähikuvan sisällä koko ei vaihdu, vaikka toinen puhuisi välissä.
+
+    Aiemmin punch-in tehtiin kun puhuja jatkoi välihuomautuksen jälkeen,
+    mutta kuva ei vaihtunut toiseen kameraan: katsoja näki saman Nymanin
+    kahdessa koossa peräkkäin, hyppyleikkauksen ilman syytä (pp 57, 51:30,
+    käyttäjä 2026-10-16). Koko vaihtuu vain kun kuva palaa puhujaan.
+    """
     from autoraffkat.model import Segment
 
     cut = [Segment("W", "Laaja", 0.0, 3.0), Segment("CAM A", "Host", 3.0, 40.0)]
-    out = movement.punch_segments(cut, _turn_grid(), min_shot=2.5)
+    out = movement.punch_segments(cut, _turn_grid())
     pieces = [s for s in out if s.angle == "CAM A"]
-    starts = [round(s.start, 2) for s in pieces]
-    assert starts == [3.0, round(12.5 - movement.PUNCH_LEAD, 2),
-                      round(31.5 - movement.PUNCH_LEAD, 2)], starts
-    assert [s.punch for s in pieces] == [False, True, False]
-    assert pieces[-1].end == 40.0
+    assert [(s.start, s.end) for s in pieces] == [(3.0, 40.0)]
+    assert [s.punch for s in pieces] == [False]
 
 
 def test_each_return_to_a_speaker_alternates_the_framing():
@@ -147,7 +146,7 @@ def test_each_return_to_a_speaker_alternates_the_framing():
     cut = [Segment("CAM A", "Host", 3.0, 10.4), Segment("CAM B", "Guest", 10.4, 12.4),
            Segment("CAM A", "Host", 12.4, 20.0), Segment("CAM B", "Guest", 20.0, 21.0),
            Segment("CAM A", "Host", 21.0, 30.0)]
-    out = movement.punch_segments(cut, _turn_grid(), min_shot=2.5)
+    out = movement.punch_segments(cut, _turn_grid())
     host = [s.punch for s in out if s.angle == "CAM A"]
     assert host == [False, True, False]
 

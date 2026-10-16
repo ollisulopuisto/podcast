@@ -793,9 +793,9 @@ holds the AV path; the ffmpeg path fails it and is not fixed yet.
 for the second as an option, not a replacement (2026-09-25). **Calm** is
 camera variation: jumps under 3 %, slow random pushes. **Shorts** is
 short-form editing: punch-ins come **on speaker changes** (`punch_segments`):
-inside a close-up where the speaker resumes after someone else spoke, and
 at every return to a speaker, whose framing alternates base/punch per
-camera. The first version punched in on loud onsets after a pause, and a
+camera. A close-up is never split in the middle (that showed the same face in
+two sizes with no cut to anything else: pp 57, 51:30). The first version punched in on loud onsets after a pause, and a
 full-episode transcript said that was wrong — of 540 onsets, pause length
 (precision 0.28 at 0.3 s, 0.34 at 1 s against a 0.26 base rate), onset
 peak, level fall and pitch fall all failed to separate sentence starts from

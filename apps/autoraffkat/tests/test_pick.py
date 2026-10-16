@@ -334,6 +334,10 @@ def test_has_native_picker_detects_tools(monkeypatch):
     )
     assert pick.has_native_picker() is True
 
+    # Windowsissa riittää PowerShell; ilman sitä jäisi vain Tk, jota ei
+    # kaikilla koneilla ole (``_tkinter`` puuttuu), joten testi ei saa nojata siihen.
+    monkeypatch.setattr(pick.shutil, "which",
+                        lambda name: "powershell.exe" if name == "powershell" else None)
     monkeypatch.setattr(sys, "platform", "win32")
     assert pick.has_native_picker() is True
 
