@@ -1,4 +1,8 @@
-# Voice Presets Implementation Plan
+# Voice Presets and Audition Implementation Plan
+
+Two parts, one chain and one plug-in handling: **Part A** names mic conditions
+as presets; **Part B** (`audition`, near the end) renders a window at several
+plug-in settings so an editor can choose by ear.
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -261,6 +265,96 @@ changed, all three version locations matching; changelog entries in
 
 ---
 
+## Part B: `audition`, parallel renders of one window at several settings
+
+**Origin:** a second request from the kuulas session (2026-10-16), added to this
+plan at the owner's word ("samaan PR:ään"). dxRevive and similar restoration
+plug-ins probably cannot run in real time, so kuulas will not put them in the
+playback path. Instead it loops a short window around the playhead and switches
+between pre-rendered versions with keys 1–4 (0 = original), loudness-matched.
+When the owner changes a setting in the plug-in's own window
+(`speechmix.editor`), kuulas re-renders the window in the background and swaps
+it in. The function belongs in `speechmix`, so automixer's and autoraffkat's
+plug-in editors can use it too.
+
+**Choices made here (flag them if wrong):**
+
+- **Generalised signature.** `audition(source, rate, start, end, plugin_path,
+  plugin_state, variants, preroll, workers)` takes `variants`, a list of
+  parameter dicts, and returns one render per variant in the same order. The
+  single-parameter case (`{"mix": v}` for v in 25/50/75/100) is the common call,
+  not a separate function.
+- **Loudness is reported, not applied.** Each result carries its
+  `chain.loudness` value, so the host can match levels (kuulas switches between
+  renders and needs the gains). Applying gain inside `audition` would hide a
+  decision the host needs to display. A helper `match_loudness(renders)` can
+  live beside it if two hosts end up writing the same three lines.
+- **No new parallel machinery.** `PluginPool` and `apply_plugin` already give one
+  instance per worker and full `reset=True` runs. `audition` is a thin function
+  over them.
+
+**Plug-in semantics it must get right (all already known to this package):**
+
+- Every render is a **full run** with `reset=True`. A window is never fed in
+  pieces; a window is its own file.
+- **Preroll** before `start` so the plug-in has warmed up, then trimmed back to
+  `[start, end)`. The preroll length is a measurement (Task A1), not a guess.
+- **Delay compensation** with `chain.lag_samples`; the plug-in's reported
+  latency is wrong (`apply_plugin`'s length check exists because dxRevive lost
+  4641 samples).
+- Parameters through `chain.apply_parameters` and `parameter_specs`; the
+  **model selector stays in `plugin_state`**, applied before parameters as
+  `load_plugin` already does. A variant cannot change the model; a preset can
+  (Part A, Task 0).
+- Plug-ins load only on the main thread (see autoraffkat `CLAUDE.md`):
+  `PluginPool` builds every instance in its constructor. A background re-render
+  must therefore go through the same child-process route as `speechmix.editor`,
+  not a worker thread that loads lazily.
+
+### Task A0: The level parameter, linear or not (measure first)
+
+Question: is dxRevive's Mix a linear dry/wet blend? On a few 10 s windows, align
+the 50 % render, the raw window and the 100 % render by `lag_samples`, build the
+50/50 blend of raw and 100 %, and take the null against the 50 % render.
+**Residual below about −60 dB after alignment** means linear: kuulas can offer a
+continuous level slider from one 100 % render. Anything else, and only discrete
+auditions are honest. Record the number in `SHARED-AUDIO.md` whichever way it
+falls. Red test: a fake plug-in with a known linear mix passes the null check, a
+fake with a non-linear curve fails it, so the check itself is proved.
+
+### Task A1: Time and preroll, on the owner's Mac
+
+Measure render time per 10 s window per value, with 1, 2 and 4 workers, and the
+preroll after which the output stops depending on it (render with preroll 0, 1,
+2, 4, 8 s and find where the trimmed window stops changing). Record both in
+`SHARED-AUDIO.md` as a new §3.x, same style as §3.9 (what, on what, with which
+function). The preroll default in code comes from this row.
+
+### Task A2: `audition`
+
+**Files:**
+- Create: `packages/speechmix/src/speechmix/audition.py`
+- Test: `packages/speechmix/tests/test_audition.py`
+
+Red tests, using the fake plug-ins `test_chain.py` already defines: output
+length equals `end - start` for every variant; a fake with a known latency comes
+back aligned; a fake whose output depends on its history shows that preroll
+changes the result and that `reset=True` makes two identical variants identical;
+the result order matches `variants`; an unknown parameter name is reported
+rather than silently ignored (`apply_parameters` already returns the unknown
+ones, so surface them); loudness values are present. Then the minimum code over
+`PluginPool` and `apply_plugin`.
+
+### Task A3: Host use
+
+kuulas calls `audition` and owns the keys, the loop and the swap. automixer and
+autoraffkat adopt it in their plug-in editors only if the owner wants it there;
+decide in that PR, not here. Document the public surface in
+`packages/speechmix/README.md`, bump the CalVer of every app whose behaviour
+changes.
+
+---
+
 ## Open questions
 
 These go back to the owner and are not decided here:
@@ -273,6 +367,10 @@ These go back to the owner and are not decided here:
    stay local?
 4. **podcast-magic.** Should its silence presets read the voice preset, or do the
    two stay independent?
+5. **Part B.** Is the generalised `variants` list and "loudness reported, not
+   applied" what is wanted, or should `audition` also apply the match?
+6. **Part B.** Do automixer and autoraffkat get `audition` in their plug-in
+   editors, or only kuulas for now?
 
 ## Not in this plan
 
