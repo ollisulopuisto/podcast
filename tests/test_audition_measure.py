@@ -1,0 +1,173 @@
+"""Audition-mittaus: onko Mix lineaarinen, ja kuinka pitkä esiaika riittää.
+
+Mittaus ajetaan oikealla dxRevivellä käyttäjän koneella, joten täällä todistetaan
+vain että mittari mittaa oikein: tunnetulla lineaarisella liitännäisellä nollaus
+onnistuu, tunnetulla epälineaarisella ei, viive korjataan pois ja esiaika löytyy
+sieltä missä tunnettu muisti on asettunut.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+import numpy as np
+import pytest
+from scipy import signal as sp
+
+ROOT = Path(__file__).resolve().parents[1]
+_spec = importlib.util.spec_from_file_location(
+    "audition_measure", ROOT / "scripts" / "ab" / "audition_measure.py"
+)
+am = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(am)
+
+RATE = 16000
+DELAY = 37  # väärin ilmoitettu viive, näytteinä
+
+
+def _speechlike(seconds=12.0, seed=1):
+    """Kohinaa jonka verhokäyrä vaihtelee: korrelaatio löytää viiveen."""
+    rng = np.random.default_rng(seed)
+    n = int(seconds * RATE)
+    t = np.arange(n) / RATE
+    envelope = 0.15 + 0.12 * np.abs(np.sin(2 * np.pi * 1.7 * t)) ** 3
+    return (rng.standard_normal((1, n)) * envelope).astype(np.float32)
+
+
+class FakePlugin:
+    """Dry/wet-liitännäinen jolla on viive ja jonka Mix-käyrä on valittavissa."""
+
+    def __init__(self, curve=lambda m: m, delay=DELAY):
+        self.parameters = {"mix": object()}
+        self.mix = 0.0
+        self.curve = curve
+        self.delay = delay
+        self.calls = 0
+        self.mix_when_run = []
+
+    def process(self, audio, rate, reset=True):
+        self.calls += 1
+        self.mix_when_run.append(self.mix)
+        wet = np.tanh(3.0 * audio) / 3.0 * 2.0
+        m = self.curve(self.mix)
+        out = (1.0 - m) * audio + m * wet
+        shifted = np.zeros_like(out)
+        shifted[:, self.delay :] = out[:, : out.shape[1] - self.delay]
+        return shifted.astype(np.float32)
+
+
+class SlowGain:
+    """Muistillinen: hidas verhokäyrä alkaa nollasta, joten alku riippuu esiajasta."""
+
+    def __init__(self, tau=0.3):
+        self.parameters = {}
+        self.a = float(np.exp(-1.0 / (tau * RATE)))
+
+    def process(self, audio, rate, reset=True):
+        env = sp.lfilter([1 - self.a], [1, -self.a], np.abs(audio), axis=1)
+        return (audio / (env + 0.05)).astype(np.float32)
+
+
+def _renders(plugin, audio, mixes, start=4.0, end=8.0, preroll=2.0):
+    plugin.mix = 1.0
+    full, lag = am.render_window(plugin, audio, RATE, start, end, preroll)
+    out = {1.0: full}
+    for m in mixes:
+        plugin.mix = m
+        out[m], _ = am.render_window(plugin, audio, RATE, start, end, preroll, lag=lag)
+    plugin.mix = 0.0
+    dry, _ = am.render_window(plugin, audio, RATE, start, end, preroll, lag=lag)
+    return dry, out
+
+
+def test_a_render_is_the_window_with_the_latency_taken_out():
+    audio = _speechlike()
+    dry, _ = _renders(FakePlugin(), audio, [])
+    window = audio[:, int(4.0 * RATE) : int(8.0 * RATE)]
+    assert dry.shape == window.shape
+    assert np.allclose(dry, window, atol=1e-6)
+
+
+def test_the_latency_is_found_and_reported():
+    audio = _speechlike()
+    _, lag = am.render_window(FakePlugin(), audio, RATE, 4.0, 8.0, 2.0)
+    assert lag == DELAY
+
+
+def test_a_linear_mix_nulls_against_the_blend():
+    audio = _speechlike()
+    dry, renders = _renders(FakePlugin(), audio, [0.5])
+    residual = am.linear_mix_residual_db(dry, renders[1.0], renders[0.5], 0.5)
+    assert residual < am.LINEAR_DB
+    assert am.is_linear(residual)
+
+
+def test_a_nonlinear_mix_does_not_null():
+    audio = _speechlike()
+    dry, renders = _renders(FakePlugin(curve=lambda m: m**2), audio, [0.5])
+    residual = am.linear_mix_residual_db(dry, renders[1.0], renders[0.5], 0.5)
+    assert residual > -30.0
+    assert not am.is_linear(residual)
+
+
+def test_the_null_is_measured_against_the_partial_render_not_the_blend():
+    """Nolla-vertailun nimittäjä on osittainen ajo: 0 dB = ei mitään yhteistä."""
+    zeros = np.zeros((1, 1000), np.float32)
+    ones = np.ones((1, 1000), np.float32)
+    assert am.residual_db(ones, zeros) == pytest.approx(0.0, abs=1e-6)
+    assert am.residual_db(ones, ones) < -120.0
+
+
+def test_the_preroll_is_the_shortest_one_that_stopped_changing_the_result():
+    audio = _speechlike()
+    plugin = SlowGain()
+    renders = {
+        p: am.render_window(plugin, audio, RATE, 6.0, 8.0, p)[0]
+        for p in (0.0, 0.5, 4.0, 6.0)
+    }
+    assert am.settled_preroll(renders) == 4.0
+    assert am.residual_db(renders[6.0], renders[0.5]) > am.LINEAR_DB
+
+
+def test_no_preroll_settles_when_every_one_still_differs():
+    audio = _speechlike()
+    plugin = SlowGain(tau=3.0)
+    renders = {
+        p: am.render_window(plugin, audio, RATE, 6.0, 8.0, p)[0] for p in (0.0, 0.5, 1.0)
+    }
+    assert am.settled_preroll(renders) is None
+
+
+def test_each_value_gets_its_own_instance_and_comes_back_in_order():
+    audio = _speechlike()
+    plugins = [FakePlugin() for _ in range(3)]
+    variants = [{"mix": 0.25}, {"mix": 0.5}, {"mix": 1.0}]
+    renders, seconds = am.render_variants(
+        plugins, variants, audio, RATE, 4.0, 8.0, 2.0, workers=2
+    )
+    assert seconds > 0
+    assert [p.calls for p in plugins] == [1, 1, 1]
+    assert [p.mix_when_run for p in plugins] == [[0.25], [0.5], [1.0]]
+    assert len(renders) == 3
+    assert not np.allclose(renders[0], renders[2])
+
+
+def test_an_unknown_parameter_name_is_an_error_not_a_silent_default():
+    audio = _speechlike()
+    with pytest.raises(ValueError, match="mixx"):
+        am.render_variants(
+            [FakePlugin()], [{"mixx": 0.5}], audio, RATE, 4.0, 8.0, 2.0, workers=1
+        )
+
+
+def test_a_window_that_starts_before_the_preroll_is_refused():
+    audio = _speechlike()
+    with pytest.raises(ValueError, match="preroll"):
+        am.render_window(FakePlugin(), audio, RATE, 1.0, 5.0, 2.0)
+
+
+def test_the_report_says_which_way_it_went_and_carries_the_numbers():
+    text = am.format_linearity({0.5: -71.234, 0.25: -12.5})
+    assert "-71.2" in text and "-12.5" in text
+    assert "linear" in text.lower() and "not" in text.lower()
