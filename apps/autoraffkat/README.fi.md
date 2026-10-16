@@ -298,8 +298,7 @@ laukaise sääntöä.
 
 **Mikroliike** (oletuksena pois) on kahta tyyliä. **Shorts** on
 lyhytvideoiden leikkausta: lähikuvissa punch-in tulee puhujan vaihtuessa —
-kun puhuja jatkaa toisen välihuomautuksen jälkeen, ja aina kun kuva palaa
-puhujaan — vuorotellen
+aina kun kuva palaa puhujaan toisesta kuvasta (lähikuvaa ei pilkota kesken) — vuorotellen
 perusrajaus — sivussa, tilaa katseen suuntaan — ja keskitetty 112 %:n
 punch-in, jolloin leikkaus vaihtaa sekä koon että sommittelun; jatkuva
 puhe saa puskun sisään. **Rauhallinen**, alla, on kameran vaihtelua.
@@ -369,7 +368,7 @@ yhden ihmisen puheenvuoro ja pysyy yhtenä kuvana koko ruudulla; lyhyemmät
 kuvat ovat nopeaa vuorottelua ja saavat laajan ylhäälle. Jakson pitää kestää
 vähintään 20 s säilyttääkseen asettelunsa (lyhyempi liittyy pidempään
 naapuriinsa), joten rakenne ei välky. Reaktiokuvat seuraavat isäntäkuvansa
-asettelua: pidon päällä ne ovat neliöparin toinen puoli, vuorottelun keskellä
+asettelua: pidon päällä ne ovat pinon toinen puoli (1080×960-paneeli, kehystetty kasvoihin), vuorottelun keskellä
 ne vaihtavat alapaneelin. Molemmat luvut ovat makuasioita, eivät mittauksia, ja
 ne ovat `autolayout.py`:ssä. Nimessä on `autolayout`.
 
