@@ -39,6 +39,10 @@ import numpy as np
 #: ulkopuolella ja selvästi yli float32:n kohinan; sama raja on suunnitelmassa.
 LINEAR_DB = -60.0
 
+#: Kuinka monta dB:n verran jäännöksen pitää ylittää toistokohina, jotta ero
+#: luetaan todelliseksi. 10 dB = kolminkertainen amplitudi.
+BEYOND_NOISE_DB = 10.0
+
 #: Jälkiaika sekunteina. Viiveellinen liitännäinen siirtää sisältöä myöhemmäksi
 #: mutta pitää pituuden, joten ikkunan loppu jää ulos ellei sen perään anneta
 #: tilaa. Viiveet ovat satoja millisekunteja korkeintaan (dxRevive: 4641
@@ -129,6 +133,25 @@ def linear_mix_residual_db(
     return residual_db(partial, blend)
 
 
+def fit_blend(
+    raw: np.ndarray, full: np.ndarray, partial: np.ndarray
+) -> tuple[float, float, float]:
+    """``partial`` ≈ ``a``·``raw`` + ``b``·``full`` pienimmän neliösumman mielessä.
+
+    Palaa ``(a, b, jäännös dB)``. Kysymys on yleisempi kuin «onko Mix (1-m)/m»:
+    onko osittainen ajo **minkä tahansa** kahden osan summa, ja mitkä ovat
+    painot. Jos jäännös on toistokohinan tasolla, ``a`` ja ``b`` ovat Mixin
+    laki tällä tasolla (esim. 0,75/0,25 neliöllä tai cos/sin tasavirtaisella),
+    ja yksi 100 %:n ajo riittää jatkuvaan säätimeen sen lain mukaan. Jos ei,
+    märkä osa itsessään riippuu Mixistä, eikä yksi ajo riitä.
+    """
+    x = np.stack([raw.ravel(), full.ravel()], axis=1).astype(np.float64)
+    y = partial.ravel().astype(np.float64)
+    (a, b), *_ = np.linalg.lstsq(x, y, rcond=None)
+    fitted = (a * raw + b * full).astype(np.float64)
+    return float(a), float(b), residual_db(partial, fitted)
+
+
 def settled_preroll(
     renders: dict[float, np.ndarray], floor_db: float | None = None
 ) -> float | None:
@@ -179,7 +202,7 @@ def repeat_residual_db(
     return residual_db(first, second)
 
 
-def render_variants(
+def render_variants_full(
     plugins: list,
     variants: list[dict],
     audio: np.ndarray,
@@ -190,8 +213,8 @@ def render_variants(
     workers: int,
     tail: float = DEFAULT_TAIL,
     lag: int | None = None,
-) -> tuple[list[np.ndarray], float]:
-    """Ikkuna kullakin arvolla rinnakkain. Palaa ``(ajot, sekunnit)``.
+) -> tuple[list[np.ndarray], list[int], float]:
+    """Ikkuna kullakin arvolla rinnakkain. Palaa ``(ajot, viiveet, sekunnit)``.
 
     Yksi instanssi per arvo: VST3-olio on tilallinen eikä sitä voi ajaa kahdesta
     säikeestä yhtä aikaa (``chain.PluginPool``). Ladattujen instanssien pitää olla
@@ -199,9 +222,10 @@ def render_variants(
     on virhe: ``chain.apply_parameters`` ohittaisi sen hiljaa, ja mittaus
     kuvaisi liitännäisen oletusta.
 
-    ``lag`` annettuna käytetään sitä kaikkiin: viive ei riipu säätimestä, ja
-    jokaisen oma mittaus voi heilahtaa ±1 näytettä, mikä näkyisi nollauksessa.
-    Ilman sitä jokainen mitataan erikseen.
+    ``lag`` annettuna käytetään sitä kaikkiin. Ilman sitä jokainen ajo mitataan
+    omalla viiveellään, ja ne palautetaan: viive voi riippua Mixistä (kuiva ja
+    märkä polku eivät aina viivästy yhtä paljon), ja yhteinen viive siirtäisi
+    silloin toisen komponentin pois paikaltaan.
     """
     from speechmix import chain
 
@@ -221,7 +245,13 @@ def render_variants(
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         results = list(pool.map(one, range(len(plugins))))
     seconds = time.perf_counter() - began
-    return [window for window, _ in results], seconds
+    return [w for w, _ in results], [lg for _, lg in results], seconds
+
+
+def render_variants(*args, **kwargs) -> tuple[list[np.ndarray], float]:
+    """Kuten ``render_variants_full``, ilman viiveitä."""
+    windows, _, seconds = render_variants_full(*args, **kwargs)
+    return windows, seconds
 
 
 def format_linearity(residuals: dict[float, float], control: float | None = None) -> str:
@@ -237,7 +267,14 @@ def format_linearity(residuals: dict[float, float], control: float | None = None
     if control is not None:
         lines.append(f"| repeat (same setting twice) | {control:.1f} dB |")
     worst = max(residuals.values())
-    if control is not None and not is_linear(control):
+    margin = None if control is None else worst - control
+    if control is not None and not is_linear(control) and margin >= BEYOND_NOISE_DB:
+        verdict = (
+            f"Not linear beyond the repeat noise: the worst residual {worst:.1f} dB "
+            f"is {margin:.1f} dB above the repeat noise ({control:.1f} dB), so the "
+            "Mix is not a plain dry/wet blend. The weights below say what it is."
+        )
+    elif control is not None and not is_linear(control):
         verdict = (
             f"Inconclusive: two identical renders already differ by {control:.1f} dB "
             f"(repeat noise), above {LINEAR_DB:.0f} dB, so the residuals above "
@@ -253,6 +290,34 @@ def format_linearity(residuals: dict[float, float], control: float | None = None
         verdict = (
             f"Not linear: the worst residual {worst:.1f} dB is above "
             f"{LINEAR_DB:.0f} dB, so only discrete renders are honest."
+        )
+    return "\n".join([*lines, "", verdict])
+
+
+def format_blend_fit(
+    fits: dict[float, tuple[float, float, float]], control: float | None = None
+) -> str:
+    """Painot ``a`` (kuiva) ja ``b`` (märkä) tasoittain, ja sopiiko kahden osan malli."""
+    lines = [
+        "| level | dry weight | wet weight | residual after fit |",
+        "|---|---|---|---|",
+    ]
+    for level in sorted(fits):
+        a, b, residual = fits[level]
+        lines.append(f"| {level:g} | {a:.2f} | {b:.2f} | {residual:.1f} dB |")
+    limit = LINEAR_DB if control is None else max(LINEAR_DB, control + 3.0)
+    ok = all(residual < limit for _, _, residual in fits.values())
+    if ok:
+        verdict = (
+            f"A two-component blend explains every level (residual below {limit:.0f} dB): "
+            "the weights above are the Mix law, and one 100 % render can serve a "
+            "continuous slider by that law."
+        )
+    else:
+        verdict = (
+            f"Not a two-component blend: some level stays above {limit:.0f} dB after "
+            "the best fit, so the wet part itself changes with Mix and one render "
+            "is not enough."
         )
     return "\n".join([*lines, "", verdict])
 
@@ -363,11 +428,9 @@ def main(argv: list[str] | None = None) -> int:
     dry_plugin, level_plugins = instances[0], instances[1:]
     preroll = args.preroll
     chain.apply_parameters(dry_plugin, {param: 0.0})
-    # Viive mitataan täydestä ajosta ja käytetään kaikkiin, ks. render_variants.
-    chain.apply_parameters(level_plugins[-1], {param: args.full})
-    _, lag = render_window(level_plugins[-1], audio, rate, start, stop, preroll)
-    dry, _ = render_window(dry_plugin, audio, rate, start, stop, preroll, lag=lag)
-    renders, _ = render_variants(
+    # Jokainen ajo mitataan omalla viiveellään (ks. render_variants_full).
+    dry, dry_lag = render_window(dry_plugin, audio, rate, start, stop, preroll)
+    renders, lags, _ = render_variants_full(
         level_plugins,
         [{param: v} for v in levels],
         audio,
@@ -376,18 +439,26 @@ def main(argv: list[str] | None = None) -> int:
         stop,
         preroll,
         workers=len(levels),
-        lag=lag,
     )
     full = renders[-1]
     residuals = {
         v / args.full: linear_mix_residual_db(dry, full, renders[i], v / args.full)
         for i, v in enumerate(values)
     }
+    fits = {v / args.full: fit_blend(dry, full, renders[i]) for i, v in enumerate(values)}
     # Kontrolli: sama asetus kahdesti. Ilman sitä jäännös voi olla pelkkää
     # liitännäisen omaa vaihtelua.
     control = repeat_residual_db(level_plugins[-1], audio, rate, start, stop, preroll)
     print("## A0: is Mix a linear dry/wet blend?\n")
     print(format_linearity(residuals, control), "\n")
+    print("### Mix weights, best two-component fit (raw and 100 % render)\n")
+    print(format_blend_fit(fits, control), "\n")
+    print("### Delay per render (samples)\n")
+    print("| render | delay |\n|---|---|")
+    print(f"| 0 % (dry) | {dry_lag} |")
+    for level, value in zip(levels, lags, strict=True):
+        print(f"| {level:g} | {value} |")
+    print()
 
     # A1: esiaika, täydellä Mixillä, yksi instanssi
     plugin = level_plugins[-1]

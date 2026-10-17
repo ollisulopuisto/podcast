@@ -13,6 +13,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import soundfile as sf
 from scipy import signal as sp
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -225,3 +226,156 @@ def test_the_preroll_limit_rises_with_the_repeat_noise():
 def test_the_preroll_report_names_the_repeat_noise():
     text = am.format_preroll({0.0: -19.2, 4.0: -26.2}, None, control=-19.0)
     assert "-19.0" in text and "repeat" in text.lower()
+
+
+class EqualPower(FakePlugin):
+    """Mix on tasavirtainen ristiinhäivytys: cos/sin, ei (1-m)/m."""
+
+    def process(self, audio, rate, reset=True):
+        self.calls += 1
+        wet = np.tanh(3.0 * audio) / 3.0 * 2.0
+        a, b = np.cos(self.mix * np.pi / 2), np.sin(self.mix * np.pi / 2)
+        out = a * audio + b * wet
+        shifted = np.zeros_like(out)
+        shifted[:, self.delay :] = out[:, : out.shape[1] - self.delay]
+        return shifted.astype(np.float32)
+
+
+class DrivenWet(FakePlugin):
+    """Märkä osa riippuu Mixistä (vääristymä kasvaa): ei kahden osan summa."""
+
+    def process(self, audio, rate, reset=True):
+        self.calls += 1
+        wet = np.tanh((1.0 + 8.0 * self.mix) * audio) / 3.0
+        out = (1.0 - self.mix) * audio + self.mix * wet
+        shifted = np.zeros_like(out)
+        shifted[:, self.delay :] = out[:, : out.shape[1] - self.delay]
+        return shifted.astype(np.float32)
+
+
+class MixDependentDelay(FakePlugin):
+    """Kokonaisviive riippuu Mixistä: 30 näytettä kuivana, 40 märkänä."""
+
+    def process(self, audio, rate, reset=True):
+        self.delay = int(30 + 10 * self.mix)
+        return super().process(audio, rate, reset=reset)
+
+
+def _fit(plugin, mix):
+    audio = _speechlike()
+    plugin.mix = 0.0
+    dry, lag = am.render_window(plugin, audio, RATE, 4.0, 8.0, 2.0)
+    plugin.mix = 1.0
+    full, _ = am.render_window(plugin, audio, RATE, 4.0, 8.0, 2.0, lag=lag)
+    plugin.mix = mix
+    partial, _ = am.render_window(plugin, audio, RATE, 4.0, 8.0, 2.0, lag=lag)
+    return am.fit_blend(dry, full, partial)
+
+
+def test_the_fit_recovers_a_linear_law():
+    a, b, residual = _fit(FakePlugin(), 0.25)
+    assert (a, b) == (pytest.approx(0.75, abs=1e-3), pytest.approx(0.25, abs=1e-3))
+    assert residual < -100.0
+
+
+def test_the_fit_recovers_a_squared_law_a_plain_blend_cannot_see():
+    a, b, residual = _fit(FakePlugin(curve=lambda m: m**2), 0.5)
+    assert (a, b) == (pytest.approx(0.75, abs=1e-3), pytest.approx(0.25, abs=1e-3))
+    assert residual < -100.0
+
+
+def test_the_fit_recovers_an_equal_power_law():
+    a, b, residual = _fit(EqualPower(), 0.5)
+    assert a == pytest.approx(np.cos(np.pi / 4), abs=1e-3)
+    assert b == pytest.approx(np.sin(np.pi / 4), abs=1e-3)
+    assert residual < -100.0
+
+
+def test_the_fit_does_not_explain_a_wet_part_that_changes_with_mix():
+    _, _, residual = _fit(DrivenWet(), 0.5)
+    assert residual > -30.0
+
+
+def test_every_render_reports_its_own_delay_when_the_delay_follows_the_mix():
+    audio = _speechlike()
+    plugins = [MixDependentDelay() for _ in range(3)]
+    variants = [{"mix": 0.0}, {"mix": 0.5}, {"mix": 1.0}]
+    renders, lags, _seconds = am.render_variants_full(
+        plugins, variants, audio, RATE, 4.0, 8.0, 2.0, workers=2
+    )
+    assert lags == [30, 35, 40]
+    # Jokainen on viivekorjattu omalla viiveellään: kuiva on ikkuna sellaisenaan.
+    window = audio[:, int(4.0 * RATE) : int(8.0 * RATE)]
+    assert np.allclose(renders[0], window, atol=1e-6)
+
+
+def test_a_verdict_beyond_the_repeat_noise_is_not_inconclusive():
+    residuals = {0.25: -15.0, 0.5: -13.4, 0.75: -16.9}
+    text = am.format_linearity(residuals, control=-38.3)
+    assert "beyond the repeat noise" in text.lower()
+    assert "Not linear" in text
+    assert "Inconclusive" not in text
+
+
+def test_the_blend_report_gives_weights_per_level_and_a_verdict():
+    fits = {0.25: (0.80, 0.20, -50.0), 0.5: (0.60, 0.40, -49.0)}
+    text = am.format_blend_fit(fits, control=-38.0)
+    assert "0.80" in text and "0.40" in text and "-50.0" in text
+    assert "two-component" in text.lower()
+    bad = am.format_blend_fit({0.5: (0.6, 0.4, -14.0)}, control=-38.0)
+    assert "not" in bad.lower() and "two-component" in bad.lower()
+
+
+class PercentFake(FakePlugin):
+    """Mix prosentteina kuten dxRevivessa: 25 tarkoittaa 0,25."""
+
+    def process(self, audio, rate, reset=True):
+        real = self.mix
+        self.mix = real / 100.0
+        try:
+            return super().process(audio, rate, reset=reset)
+        finally:
+            self.mix = real
+
+
+def test_main_runs_end_to_end_and_prints_every_section(tmp_path, monkeypatch, capsys):
+    audio = _speechlike(seconds=40.0)
+    wav = tmp_path / "jakso.wav"
+    sf.write(wav, audio[0], RATE)
+    monkeypatch.setattr(
+        am,
+        "_load_instances",
+        lambda path, state, count: [PercentFake() for _ in range(count)],
+    )
+    monkeypatch.setattr(am, "_mix_param_default", lambda path: "mix")
+    code = am.main(
+        [
+            str(wav),
+            "--plugin",
+            "x.vst3",
+            "--start",
+            "20",
+            "--seconds",
+            "4",
+            "--preroll",
+            "4",
+            "--prerolls",
+            "0,2,4",
+            "--workers",
+            "1,2",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    for heading in (
+        "A0: is Mix a linear dry/wet blend?",
+        "Mix weights",
+        "Delay per render",
+        "A1: preroll",
+        "A1: time",
+    ):
+        assert heading in out
+    # Lineaarinen valeliitännäinen: 25 % = 0,75 kuivaa ja 0,25 märkää, ja viive 37.
+    assert "| 0.25 | 0.75 | 0.25 |" in out
+    assert "| 37 |" in out or "| 0 % (dry) | 37 |" in out
+    assert "Linear:" in out or "Not linear" not in out
