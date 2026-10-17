@@ -5,7 +5,7 @@ as presets; **Part B** (`audition`) renders a window at several plug-in settings
 so an editor can choose by ear; **Part C** asks whether tone should be matched
 for consistency, and starts with a measurement.
 
-**Status (2026-10-17):** the two measurement scripts are written and tested:
+**Status (2026-10-17):** audition's A0/A1 have a first result (`SHARED-AUDIO.md` §3.11); the two measurement scripts are written and tested:
 `scripts/ab/audition_measure.py` (Part B, A0/A1) and `scripts/ab/tone_measure.py`
 (Part C, C0). Their numbers wait for runs on the owner's Mac (dxRevive and real
 episodes). Part A has no code yet and Part C's correction stage waits for C0.
@@ -316,6 +316,18 @@ plug-in editors can use it too.
   `PluginPool` builds every instance in its constructor. A background re-render
   must therefore go through the same child-process route as `speechmix.editor`,
   not a worker thread that loads lazily.
+
+### Result of A0 and A1 (2026-10-17, first run, one window)
+
+Recorded in `SHARED-AUDIO.md` §3.11. In short: dxRevive repeats itself only to
+about −38 dB, so every comparison needs the repeat control. **Mix is not a plain
+dry/wet blend but a gain-preserving crossfade with a steep taper** (dry weight
+about `(1 − m)^2.3`: 0.50 / 0.20 / 0.04 at 25 / 50 / 75 %), explained by a
+two-component fit to the repeat noise. A continuous Mix slider from one 100 %
+render plus the raw is therefore possible **by that law**, and kuulas can have
+it. Preroll needs about 8 s (4 s is not enough). Four renders of a 10 s
+window take about 5 s on four workers. Open: the law at ten levels, the other
+model (Studio), a second window and speaker.
 
 ### Task A0: The level parameter, linear or not (measure first)
 

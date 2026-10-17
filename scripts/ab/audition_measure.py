@@ -396,6 +396,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--prerolls", default="0,2,4,8,16")
     parser.add_argument("--workers", default="1,2,4")
+    parser.add_argument(
+        "--only-a0",
+        action="store_true",
+        help="vain A0 (Mixin laki): ei esiaikaa eikä kelloa, nopea tiheälle --values-listalle",
+    )
     args = parser.parse_args(argv)
 
     param = args.mix_param or _mix_param_default(args.plugin)
@@ -459,6 +464,9 @@ def main(argv: list[str] | None = None) -> int:
     for level, value in zip(levels, lags, strict=True):
         print(f"| {level:g} | {value} |")
     print()
+
+    if args.only_a0:
+        return 0
 
     # A1: esiaika, täydellä Mixillä, yksi instanssi
     plugin = level_plugins[-1]

@@ -527,6 +527,87 @@ Still open:
   they change neither tone nor dynamics, so the gap is smaller than assumed —
   one excerpt, one room.
 
+### 3.11 dxRevive's Mix is a gain-preserving crossfade with a steep taper, and it does not repeat itself exactly
+
+Measured 2026-10-17 with `scripts/ab/audition_measure.py` on the owner's Mac.
+Material: one 10-second window at 600–610 s of a single unprocessed
+microphone track (`recording-38`, s13e04, 2026-10-15), one speaker, speech
+throughout, 8 s of speech before the window. Plug-in: Accentize-dxRevive
+(VST3), model **Studio 2** (state saved with `speechmix.editor`). Everything
+measured with the repo's own functions: `chain.apply_plugin` (full
+`reset=True` run per render), `chain.lag_samples`, `chain.apply_parameters`.
+One window, one speaker: the numbers are a first measurement, not a
+calibration.
+
+**It does not repeat itself exactly.** Two identical renders (same setting,
+same window, same instance) differ by **−37.9 to −38.3 dB** (four repeats over two
+runs). Every other residual below is read against that floor, and nothing
+smaller than about −35 dB can be told from run-to-run variation. The first
+run of the script lacked this control, called a −13 dB residual "not linear"
+and, on the preroll table, "never settled"; with no control those numbers
+could have been noise, and only the repeat showed they were not. A script
+that compares two renders of a generative plug-in needs the repeat in the
+same output.
+
+**Mix is not (1−m)·dry + m·wet.** The residual against that blend is −15.0,
+−13.4 and −16.9 dB at 25, 50 and 75 %, i.e. 21–25 dB above the repeat noise.
+Fitting `render = a·raw + b·render(100 %)` per level (`fit_blend`) takes it
+down to the repeat noise (−43.9, −39.8, −38.3 dB), so **a two-component blend
+explains every level**, with weights:
+
+| Mix | dry `a` | wet `b` |
+|---|---|---|
+| 25 % | 0.50 | 0.50 |
+| 50 % | 0.20 | 0.80 |
+| 75 % | 0.04 | 0.96 |
+
+`a + b = 1.00` at every level (gain-preserving), and the dry weight follows
+roughly `(1 − m)^2.3` (0.75^2.3 = 0.52, 0.5^2.3 = 0.20, 0.25^2.3 = 0.04). So
+the dial is a wet-fraction control with a steep taper: **50 % is already 80 %
+wet and the dry path is 14 dB down.** That also reads the earlier listening
+result (§3.10, 25 % preferred over 50 %) in a different light: 25 % is an even
+50/50 blend, 50 % is 80/20 wet. Weights are read to two decimals from three
+points; the law between them is an interpolation, not a measurement.
+
+**What it allows.** A continuous Mix slider from **one** 100 % render plus the
+raw: `out(m) = a(m)·raw + (1 − a(m))·render(100 %)`, with `a(m)` from this
+table (or the fitted power law once it is checked at more points). The
+residual of that reconstruction against the real plug-in is at the plug-in's
+own repeat noise. Not yet shown: more than three levels, the other model
+(Studio), a second window or speaker, other plug-in versions.
+
+**Delay.** All five renders (0, 25, 50, 75, 100 %) come back with **0 samples**
+of delay against the input, measured per render at sample resolution. The
+dry and wet paths are aligned; the −15 dB residual was the Mix law and not
+a misalignment (the first version of the script reused the 100 % render's
+delay for every render, which would have hidden a mismatch; each render is
+now measured on its own).
+
+**Preroll.** Residual against the 16 s render: 0 s −19.2 dB, 2 s −18.2 dB,
+4 s −26.2 dB, **8 s −38.4 dB** (= the repeat noise, −38.1 dB). The
+plug-in needs about 8 s of context before the window and 4 s is not enough
+(12 dB above the noise); 6 s was not tried. Default **8 s** until a second
+window says otherwise.
+
+**Time** (10 s window, 8 s preroll, 0.5 s tail = 18.5 s of audio per render;
+batch of four values: 25, 50, 75 and 100 %):
+
+| workers | batch | per value |
+|---|---|---|
+| 1 | 10.4–14.2 s | 2.6–3.6 s |
+| 2 | 8.0–8.4 s | 2.0–2.1 s |
+| 4 | 5.2–5.7 s | 1.3–1.4 s |
+
+Four renders in about 5 s, and one render about 2.6 s, is 7× realtime for the
+audio actually processed, in line with the 7.25× of §3.9. The speed-up from
+four workers is 2× not 4×: more instances do not scale linearly.
+
+Still open:
+- The law at ten levels (10, 20 … 90 %) and as a fitted `(1 − m)^k`.
+- The same on **Studio** (the other model; the editor window would not switch
+  to it, so no state for it exists yet) and on a second speaker and window.
+- Whether input gain changes the answer (the plug-in publishes it).
+
 ---
 
 ## 4. Hard rules that are cheap to violate

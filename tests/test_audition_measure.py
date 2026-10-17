@@ -379,3 +379,35 @@ def test_main_runs_end_to_end_and_prints_every_section(tmp_path, monkeypatch, ca
     assert "| 0.25 | 0.75 | 0.25 |" in out
     assert "| 37 |" in out or "| 0 % (dry) | 37 |" in out
     assert "Linear:" in out or "Not linear" not in out
+
+
+def test_only_a0_stops_before_the_preroll_and_the_clock(tmp_path, monkeypatch, capsys):
+    wav = tmp_path / "jakso.wav"
+    sf.write(wav, _speechlike(seconds=40.0)[0], RATE)
+    monkeypatch.setattr(
+        am,
+        "_load_instances",
+        lambda path, state, count: [PercentFake() for _ in range(count)],
+    )
+    monkeypatch.setattr(am, "_mix_param_default", lambda path: "mix")
+    code = am.main(
+        [
+            str(wav),
+            "--plugin",
+            "x.vst3",
+            "--start",
+            "20",
+            "--seconds",
+            "4",
+            "--preroll",
+            "4",
+            "--values",
+            "10,20,30,40,50,60,70,80,90",
+            "--only-a0",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "A0: is Mix a linear dry/wet blend?" in out
+    assert "| 0.9 |" in out
+    assert "A1: preroll" not in out and "A1: time" not in out
