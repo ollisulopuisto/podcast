@@ -549,6 +549,38 @@ could have been noise, and only the repeat showed they were not. A script
 that compares two renders of a generative plug-in needs the repeat in the
 same output.
 
+**Why it does not repeat: the output is random, not stateful** (`scripts/ab/reset_check.py`,
+2026-10-17, same window, Studio 2, Mix 100 %, preroll 0, three instances). Every
+comparison lands on the same number to 0.2 dB:
+
+| comparison | difference |
+|---|---|
+| three fresh instances, each rendering once (pairs 1–2, 1–3, 2–3) | −38.2, −38.2, −38.3 dB |
+| the same instance, first vs second, second vs third, third vs fourth use | −38.2, −38.3, −38.4 dB |
+| an instance after it processed other audio, vs its own first render | −38.4 dB |
+| the same, after an explicit `reset()` | −38.2 dB |
+
+If `reset=True` left anything behind, fresh instances would agree far better
+than reused ones; they do not. The test is run at preroll 0 because a leftover
+shows at the start of a call and a long preroll cuts exactly that away (the
+earlier 8 s measurements could not have seen a short one). So **`reset=True`
+works, nothing is carried between calls, and each render has its own noise**:
+with two independent renders differing by −38.2 dB, one render's noise is about
+−41 dB relative to the signal (1.3 % in amplitude, 0.9 % per render). The level
+is the same for fresh and reused instances, so it is injected at a steady
+level, not a chaotic effect of history.
+
+Consequences: (1) a null deeper than about −38 dB between two dxRevive renders
+cannot be reached by any setting, so the measurement scripts report the repeat
+next to every residual; (2) a render is **not reproducible bit for bit**, so a
+cache keyed on settings returns a different realisation than a fresh run would
+(inaudible, but "same settings" does not mean "same samples"); (3) the Mix
+slider built from one 100 % render (below) is **more consistent** than separate
+renders at each setting: moving it reuses one realisation of the noise, where
+separate renders would add −38 dB of run-to-run difference on top of the real
+difference between settings. Not tested: the other state (A), whose repeat
+noise was −25.5 dB, is probably the same kind of noise at a higher level.
+
 **Mix is not (1−m)·dry + m·wet.** The residual against that blend is −15.0,
 −13.4 and −16.9 dB at 25, 50 and 75 %, i.e. 21–25 dB above the repeat noise.
 Fitting `render = a·raw + b·render(100 %)` per level (`fit_blend`) takes it

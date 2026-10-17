@@ -329,6 +329,17 @@ it. Preroll needs about 8 s (4 s is not enough). Four renders of a 10 s window
 take about 5 s on four workers. Open: the other model (Studio), a second
 window and speaker, input gain.
 
+**Reset check (2026-10-17).** The output is random, not stateful: fresh
+instances, a reused instance, an instance after other audio and one after
+`reset()` all differ by −38.2…−38.4 dB, so `reset=True` is not the cause
+(`SHARED-AUDIO.md` §3.11). Design consequence for `audition`: **Mix variants
+are computed by blending one 100 % render with the raw by the fitted law**, not
+rendered separately. It is four times cheaper, it needs one plug-in instance,
+and the variants share one realisation of the plug-in's noise, so an A/B
+between them hears only the setting and not the run-to-run difference. Only
+parameters without a known law (input gain, other models) need a render per
+variant.
+
 ### Task A0: The level parameter, linear or not (measure first)
 
 Question: is dxRevive's Mix a linear dry/wet blend? On a few 10 s windows, align
