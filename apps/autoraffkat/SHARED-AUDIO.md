@@ -649,6 +649,24 @@ between the raw and the 100 % render: at or below the plug-in's own repeat
 noise. Not yet shown: the other model (Studio), a second window or speaker,
 other plug-in versions, input gain other than the default.
 
+**A second window gives the same law.** Studio 2, window at 630–640 s of the
+same recording (same speaker, 30 s from the first), `--values 25,50`: 25 % dry
+0.50 / wet 0.50 and 50 % dry 0.20 / wet 0.80, the first window's weights to the
+rounding. So the law does not depend on the audio, as far as two windows of
+one speaker show. The fit is worse here, though: residual after fit −28.4 dB
+at 25 % and −34.4 dB at 50 % against a repeat noise of −36.9 dB (the first
+window reached the noise at every level), and the render delays were −1 for
+25, 50 and 100 % where the first window gave 0 for all. The pattern (a larger
+leftover at 25 %, where the dry and wet weights are equal, than at 50 %) is
+what a one-sample offset between the plug-in's own dry and wet paths in this
+window would give; a delay that changes with the audio is odd for a plug-in
+and is more likely the estimate itself (an envelope correlation on generative
+output, resolved to one sample) than a real delay. Not settled. Practical
+reading: the slider reconstructed by the law is within about −28 dB of the
+plug-in's own output in this window (3.8 % in amplitude), 8 dB above the plug-in's
+own run-to-run difference; the weights are right, and the timing of the wet render
+against the raw may need a per-window alignment to reach the noise floor.
+
 **Delay.** All five renders (0, 25, 50, 75, 100 %) come back with **0 samples**
 of delay against the input, measured per render at sample resolution. The
 dry and wet paths are aligned; the −15 dB residual was the Mix law and not
