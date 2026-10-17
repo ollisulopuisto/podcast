@@ -555,26 +555,38 @@ Fitting `render = a·raw + b·render(100 %)` per level (`fit_blend`) takes it
 down to the repeat noise (−43.9, −39.8, −38.3 dB), so **a two-component blend
 explains every level**, with weights:
 
-| Mix | dry `a` | wet `b` |
-|---|---|---|
-| 25 % | 0.50 | 0.50 |
-| 50 % | 0.20 | 0.80 |
-| 75 % | 0.04 | 0.96 |
+| Mix | dry `a` | wet `b` | residual after fit |
+|---|---|---|---|
+| 10 % | 0.77 | 0.23 | −51.1 dB |
+| 25 % | 0.50 | 0.50 | −43.9 dB |
+| 40 % | 0.30 | 0.70 | −40.8 dB |
+| 50 % | 0.20 | 0.80 | −39.8 dB |
+| 60 % | 0.12 | 0.88 | −39.3 dB |
+| 75 % | 0.04 | 0.96 | −38.3 dB |
+| 90 % | 0.01 | 0.99 | −38.2 dB |
 
-`a + b = 1.00` at every level (gain-preserving), and the dry weight follows
-roughly `(1 − m)^2.3` (0.75^2.3 = 0.52, 0.5^2.3 = 0.20, 0.25^2.3 = 0.04). So
-the dial is a wet-fraction control with a steep taper: **50 % is already 80 %
-wet and the dry path is 14 dB down.** That also reads the earlier listening
-result (§3.10, 25 % preferred over 50 %) in a different light: 25 % is an even
-50/50 blend, 50 % is 80/20 wet. Weights are read to two decimals from three
-points; the law between them is an interpolation, not a measurement.
+(25, 50 and 75 % from one run, 10 and 40 % and 60 and 90 % from two more, at
+most four plug-in instances at once; the repeat noise was −38.3, −38.1 and
+−37.9 dB in the three, and every fit is at or below it.) `a + b = 1.00` at
+every level, so the blend is gain-preserving, and the dry weight follows
+**`a(m) = (1 − m)^2.37`** (least squares over the seven points: rms error
+0.005, largest 0.0095 at 40 %). 0.005 is the rounding of the weights as the
+script prints them, so the curve is as good as the measurement; a
+two-parameter form `(1 − m)^1.87 · (1 − 0.56 m)` brings the largest error to
+0.005, not needed. The same law in dB: the dry path is −2.3 dB at 10 %, −6
+dB at 25 %, −10.5 at 40 %, −14 at 50 %, −18.4 at 60 %, −28 at 75 % and −40 at
+90 %. So the dial is a wet-fraction control with a steep taper: **50 % is
+already 80 % wet and the dry path is 14 dB down.** That also reads the
+earlier listening result (§3.10, 25 % preferred over 50 %) in a different
+light: 25 % is an even 50/50 blend, 50 % is 80/20 wet.
 
-**What it allows.** A continuous Mix slider from **one** 100 % render plus the
-raw: `out(m) = a(m)·raw + (1 − a(m))·render(100 %)`, with `a(m)` from this
-table (or the fitted power law once it is checked at more points). The
-residual of that reconstruction against the real plug-in is at the plug-in's
-own repeat noise. Not yet shown: more than three levels, the other model
-(Studio), a second window or speaker, other plug-in versions.
+**What it allows.** A continuous Mix slider from **one** 100 % render plus
+the raw: `out(m) = a(m)·raw + (1 − a(m))·render(100 %)`, with
+`a(m) = (1 − m)^2.37`. The error of the curve against the measured weights
+is at most 0.0095 in a weight, which is about −40 dB of the difference
+between the raw and the 100 % render: at or below the plug-in's own repeat
+noise. Not yet shown: the other model (Studio), a second window or speaker,
+other plug-in versions, input gain other than the default.
 
 **Delay.** All five renders (0, 25, 50, 75, 100 %) come back with **0 samples**
 of delay against the input, measured per render at sample resolution. The
@@ -603,7 +615,6 @@ audio actually processed, in line with the 7.25× of §3.9. The speed-up from
 four workers is 2× not 4×: more instances do not scale linearly.
 
 Still open:
-- The law at ten levels (10, 20 … 90 %) and as a fitted `(1 − m)^k`.
 - The same on **Studio** (the other model; the editor window would not switch
   to it, so no state for it exists yet) and on a second speaker and window.
 - Whether input gain changes the answer (the plug-in publishes it).

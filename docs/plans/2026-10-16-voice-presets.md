@@ -317,17 +317,17 @@ plug-in editors can use it too.
   must therefore go through the same child-process route as `speechmix.editor`,
   not a worker thread that loads lazily.
 
-### Result of A0 and A1 (2026-10-17, first run, one window)
+### Result of A0 and A1 (2026-10-17, first runs, one window)
 
 Recorded in `SHARED-AUDIO.md` §3.11. In short: dxRevive repeats itself only to
 about −38 dB, so every comparison needs the repeat control. **Mix is not a plain
-dry/wet blend but a gain-preserving crossfade with a steep taper** (dry weight
-about `(1 − m)^2.3`: 0.50 / 0.20 / 0.04 at 25 / 50 / 75 %), explained by a
-two-component fit to the repeat noise. A continuous Mix slider from one 100 %
+dry/wet blend but a gain-preserving crossfade with a steep taper**: dry weight
+`a(m) = (1 − m)^2.37`, fitted to seven levels within the weights' own rounding
+(0.50 / 0.20 / 0.04 at 25 / 50 / 75 %). A continuous Mix slider from one 100 %
 render plus the raw is therefore possible **by that law**, and kuulas can have
-it. Preroll needs about 8 s (4 s is not enough). Four renders of a 10 s
-window take about 5 s on four workers. Open: the law at ten levels, the other
-model (Studio), a second window and speaker.
+it. Preroll needs about 8 s (4 s is not enough). Four renders of a 10 s window
+take about 5 s on four workers. Open: the other model (Studio), a second
+window and speaker, input gain.
 
 ### Task A0: The level parameter, linear or not (measure first)
 
