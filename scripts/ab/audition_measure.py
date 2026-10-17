@@ -43,6 +43,11 @@ LINEAR_DB = -60.0
 #: luetaan todelliseksi. 10 dB = kolminkertainen amplitudi.
 BEYOND_NOISE_DB = 10.0
 
+#: Kuinka paljon sovitetun kuivan painon pitää erota tavallisen sekoituksen
+#: painosta (1 - m), jotta tavallinen sekoitus hylätään painojen perusteella.
+#: Painot tulostetaan kahdella desimaalilla, joten 0,10 on kaukana pyöristyksestä.
+PLAIN_WEIGHT_TOL = 0.10
+
 #: Jälkiaika sekunteina. Viiveellinen liitännäinen siirtää sisältöä myöhemmäksi
 #: mutta pitää pituuden, joten ikkunan loppu jää ulos ellei sen perään anneta
 #: tilaa. Viiveet ovat satoja millisekunteja korkeintaan (dxRevive: 4641
@@ -254,12 +259,18 @@ def render_variants(*args, **kwargs) -> tuple[list[np.ndarray], float]:
     return windows, seconds
 
 
-def format_linearity(residuals: dict[float, float], control: float | None = None) -> str:
+def format_linearity(
+    residuals: dict[float, float],
+    control: float | None = None,
+    fits: dict[float, tuple[float, float, float]] | None = None,
+) -> str:
     """Taulukko ``SHARED-AUDIO.md``:hen ja yksi lause siitä mitä se tarkoittaa.
 
     ``control`` on kahden samanlaisen ajon ero (``repeat_residual_db``). Jos
-    se on ``LINEAR_DB``:n yläpuolella, jäännökset eivät kerro lineaarisuudesta
-    mitään, ja lause sanoo niin.
+    se on ``LINEAR_DB``:n yläpuolella, jäännökset eivät yksin kerro lineaarisuudesta
+    mitään, ja lause sanoo niin. ``fits`` (``fit_blend`` tasoittain) täydentää: kohinainen
+    liitännäinen jättää jäännöksen marginaalin pieneksi, mutta sovitetut painot
+    erottavat tavallisen sekoituksen silti, koska kohina ei vääristä niitä.
     """
     lines = ["| level | residual vs raw/100 % blend |", "|---|---|"]
     for level in sorted(residuals):
@@ -268,11 +279,28 @@ def format_linearity(residuals: dict[float, float], control: float | None = None
         lines.append(f"| repeat (same setting twice) | {control:.1f} dB |")
     worst = max(residuals.values())
     margin = None if control is None else worst - control
+    off_plain = []
+    if fits:
+        off_plain = [
+            (level, a)
+            for level, (a, _, _) in sorted(fits.items())
+            if abs(a - (1.0 - level)) >= PLAIN_WEIGHT_TOL
+        ]
     if control is not None and not is_linear(control) and margin >= BEYOND_NOISE_DB:
         verdict = (
             f"Not linear beyond the repeat noise: the worst residual {worst:.1f} dB "
             f"is {margin:.1f} dB above the repeat noise ({control:.1f} dB), so the "
             "Mix is not a plain dry/wet blend. The weights below say what it is."
+        )
+    elif control is not None and not is_linear(control) and off_plain:
+        shown = ", ".join(
+            f"{level:g}: fitted dry weight {a:.2f} against {1.0 - level:.2f}"
+            for level, a in off_plain
+        )
+        verdict = (
+            f"Not a plain dry/wet blend, by the fitted weights ({shown}). The residual "
+            f"test alone is not decisive at this noise: the worst residual {worst:.1f} dB "
+            f"is only {margin:.1f} dB above the repeat noise ({control:.1f} dB)."
         )
     elif control is not None and not is_linear(control):
         verdict = (
@@ -455,7 +483,7 @@ def main(argv: list[str] | None = None) -> int:
     # liitännäisen omaa vaihtelua.
     control = repeat_residual_db(level_plugins[-1], audio, rate, start, stop, preroll)
     print("## A0: is Mix a linear dry/wet blend?\n")
-    print(format_linearity(residuals, control), "\n")
+    print(format_linearity(residuals, control, fits), "\n")
     print("### Mix weights, best two-component fit (raw and 100 % render)\n")
     print(format_blend_fit(fits, control), "\n")
     print("### Delay per render (samples)\n")

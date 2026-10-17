@@ -597,8 +597,18 @@ by −8.3 dB, 17 dB above the repeat noise.
 instance reused −25.7, −25.4, −25.7 dB; after other audio −25.4 dB; after
 `reset()` −25.6 dB. Every comparison again agrees to 0.4 dB: random and not
 stateful, and **13 dB noisier than Studio 2** (about −28 dB per render against
-−41 dB). The Mix law of the previous table is **Studio 2's**; Studio's is not
-measured.
+−41 dB). The Mix law table above is **Studio 2's**. **Studio's law is the same
+within the rounding of the weights**, from two points (`audition_measure.py
+--state tila-studio.b64 --values 25,50`): 25 % dry 0.51 / wet 0.49, 50 % dry
+0.21 / wet 0.79 (Studio 2: 0.50/0.50 and 0.20/0.80; `(1 − m)^2.37` gives 0.51
+and 0.19), fit residuals −25.7 and −25.0 dB against a repeat noise of −25.6 dB.
+So the law looks like a property of the plug-in's Mix control and not of the
+model; two points, not ten. The delay per render differs: dry 0, 25 % −2, 50 %
+−3, 100 % −3 samples (Studio 2: 0 everywhere). Whether the wet path is really 3
+samples early or the envelope correlation of a generative output is off by that
+much is not settled; at this noise the blend cannot tell, and a 3-sample
+misalignment would matter at 25–50 % (a comb notch near 8 kHz at 48 kHz) if it
+is real.
 
 **Mix is not (1−m)·dry + m·wet.** The residual against that blend is −15.0,
 −13.4 and −16.9 dB at 25, 50 and 75 %, i.e. 21–25 dB above the repeat noise.

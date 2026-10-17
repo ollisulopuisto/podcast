@@ -411,3 +411,20 @@ def test_only_a0_stops_before_the_preroll_and_the_clock(tmp_path, monkeypatch, c
     assert "A0: is Mix a linear dry/wet blend?" in out
     assert "| 0.9 |" in out
     assert "A1: preroll" not in out and "A1: time" not in out
+
+
+def test_fitted_weights_reject_a_plain_blend_when_the_noise_leaves_the_residual_unclear():
+    """Kohinainen malli: jäännöksen marginaali jää alle 10 dB, mutta painot puhuvat."""
+    residuals = {0.25: -17.3, 0.5: -15.9}
+    fits = {0.25: (0.51, 0.49, -25.7), 0.5: (0.21, 0.79, -25.0)}
+    text = am.format_linearity(residuals, control=-25.6, fits=fits)
+    assert "Not a plain dry/wet blend" in text
+    assert "0.51" in text and "0.75" in text
+    assert "Inconclusive" not in text
+
+
+def test_weights_that_match_a_plain_blend_leave_the_verdict_inconclusive():
+    residuals = {0.25: -17.3, 0.5: -15.9}
+    fits = {0.25: (0.75, 0.25, -25.7), 0.5: (0.50, 0.50, -25.0)}
+    text = am.format_linearity(residuals, control=-25.6, fits=fits)
+    assert "Inconclusive" in text
