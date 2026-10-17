@@ -129,21 +129,54 @@ def linear_mix_residual_db(
     return residual_db(partial, blend)
 
 
-def settled_preroll(renders: dict[float, np.ndarray]) -> float | None:
-    """Lyhin esiaika, jonka tulos on pidimmän kanssa ``LINEAR_DB``:n sisällä.
+def settled_preroll(
+    renders: dict[float, np.ndarray], floor_db: float | None = None
+) -> float | None:
+    """Lyhin esiaika, jonka tulos on pidimmän kanssa samaa.
 
     ``renders`` on esiaika -> ikkuna. Pisin esiaika on viite, joten se on
     itsensä kanssa aina sama eikä ratkaise mitään: palautetaan lyhin
     **lyhyempi** joka asettuu, tai ``None`` jos mikään ei ole.
+
+    «Samaa» on ``LINEAR_DB``, ellei liitännäinen itse toista itseään sitä
+    tarkemmin: ``floor_db`` on kahden samanlaisen ajon ero (``repeat_residual_db``),
+    ja raja nousee sen yläpuolelle kolme desibeliä. Ilman tätä ei toistettava
+    liitännäinen ei koskaan «asettuisi», vaikka syy olisi kohinassa eikä muistissa.
     """
+    limit = LINEAR_DB if floor_db is None else max(LINEAR_DB, floor_db + 3.0)
     reference_key = max(renders)
     reference = renders[reference_key]
     for key in sorted(renders):
         if key == reference_key:
             continue
-        if residual_db(reference, renders[key]) < LINEAR_DB:
+        if residual_db(reference, renders[key]) < limit:
             return key
     return None
+
+
+def repeat_residual_db(
+    plugin,
+    audio: np.ndarray,
+    rate: int,
+    start: float,
+    end: float,
+    preroll: float,
+    tail: float = DEFAULT_TAIL,
+) -> float:
+    """Kahden samanlaisen ajon ero, dB: mittauksen oma kohinalattia.
+
+    Sama ikkuna, samat asetukset, kaksi täyttä ``reset=True``-ajoa. Jos tämä
+    on jo −60 dB:n yläpuolella, liitännäinen ei toista itseään (generatiivinen
+    malli tai ajosta riippuva tila), ja **kaikki muut tämän skriptin jäännökset
+    sisältävät saman kohinan**: ne eivät kerro Mixistä eivätkä esiajasta mitään
+    sen alapuolella. Lineaarisuuden «ei» ilman tätä kontrollia on väite jota ei
+    ole osoitettu.
+    """
+    first, lag = render_window(plugin, audio, rate, start, end, preroll, tail=tail)
+    second, _ = render_window(
+        plugin, audio, rate, start, end, preroll, tail=tail, lag=lag
+    )
+    return residual_db(first, second)
 
 
 def render_variants(
@@ -191,13 +224,27 @@ def render_variants(
     return [window for window, _ in results], seconds
 
 
-def format_linearity(residuals: dict[float, float]) -> str:
-    """Taulukko ``SHARED-AUDIO.md``:hen ja yksi lause siitä mitä se tarkoittaa."""
+def format_linearity(residuals: dict[float, float], control: float | None = None) -> str:
+    """Taulukko ``SHARED-AUDIO.md``:hen ja yksi lause siitä mitä se tarkoittaa.
+
+    ``control`` on kahden samanlaisen ajon ero (``repeat_residual_db``). Jos
+    se on ``LINEAR_DB``:n yläpuolella, jäännökset eivät kerro lineaarisuudesta
+    mitään, ja lause sanoo niin.
+    """
     lines = ["| level | residual vs raw/100 % blend |", "|---|---|"]
     for level in sorted(residuals):
         lines.append(f"| {level:g} | {residuals[level]:.1f} dB |")
+    if control is not None:
+        lines.append(f"| repeat (same setting twice) | {control:.1f} dB |")
     worst = max(residuals.values())
-    if is_linear(worst):
+    if control is not None and not is_linear(control):
+        verdict = (
+            f"Inconclusive: two identical renders already differ by {control:.1f} dB "
+            f"(repeat noise), above {LINEAR_DB:.0f} dB, so the residuals above "
+            "include the plug-in's own run-to-run variation. Neither linear nor "
+            "non-linear is shown."
+        )
+    elif is_linear(worst):
         verdict = (
             f"Linear: the worst residual {worst:.1f} dB is below {LINEAR_DB:.0f} dB, "
             "so one 100 % render can serve a continuous level slider."
@@ -210,14 +257,21 @@ def format_linearity(residuals: dict[float, float]) -> str:
     return "\n".join([*lines, "", verdict])
 
 
-def format_preroll(residuals: dict[float, float], settled: float | None) -> str:
+def format_preroll(
+    residuals: dict[float, float], settled: float | None, control: float | None = None
+) -> str:
     lines = ["| preroll | residual vs longest |", "|---|---|"]
     for preroll in sorted(residuals):
         lines.append(f"| {preroll:g} s | {residuals[preroll]:.1f} dB |")
+    limit = LINEAR_DB
+    if control is not None:
+        lines.append(f"| repeat of the longest | {control:.1f} dB |")
+        limit = max(LINEAR_DB, control + 3.0)
     if settled is None:
         verdict = "No shorter preroll settled: use at least the longest tried."
     else:
-        verdict = f"Settled from {settled:g} s (residual below {LINEAR_DB:.0f} dB)."
+        verdict = f"Settled from {settled:g} s (residual below {limit:.0f} dB"
+        verdict += ", repeat noise + 3 dB)." if limit > LINEAR_DB else ")."
     return "\n".join([*lines, "", verdict])
 
 
@@ -269,7 +323,13 @@ def main(argv: list[str] | None = None) -> int:
         "--values", default="25,50,75", help="osittaiset Mix-arvot, yksiköissä"
     )
     parser.add_argument("--full", type=float, default=100.0, help="täyden ajon Mix")
-    parser.add_argument("--prerolls", default="0,1,2,4,8")
+    parser.add_argument(
+        "--preroll",
+        type=float,
+        default=8.0,
+        help="esiaika A0:lle ja kelloille (A1:n lista on erikseen)",
+    )
+    parser.add_argument("--prerolls", default="0,2,4,8,16")
     parser.add_argument("--workers", default="1,2,4")
     args = parser.parse_args(argv)
 
@@ -289,7 +349,7 @@ def main(argv: list[str] | None = None) -> int:
 
     info = sf.info(args.audio)
     rate = info.samplerate
-    first = int(max(0.0, args.start - max(prerolls)) * rate)
+    first = int(max(0.0, args.start - max(*prerolls, args.preroll)) * rate)
     last = int((end + DEFAULT_TAIL) * rate)
     data, _ = sf.read(args.audio, start=first, stop=last, dtype="float32", always_2d=True)
     # Ikkunan origo: luettu pala alkaa `first`:stä, joten ajat suhteutetaan siihen.
@@ -301,7 +361,7 @@ def main(argv: list[str] | None = None) -> int:
     levels = [*values, args.full]
     instances = _load_instances(args.plugin, state, len(levels) + 1)
     dry_plugin, level_plugins = instances[0], instances[1:]
-    preroll = max(prerolls)
+    preroll = args.preroll
     chain.apply_parameters(dry_plugin, {param: 0.0})
     # Viive mitataan täydestä ajosta ja käytetään kaikkiin, ks. render_variants.
     chain.apply_parameters(level_plugins[-1], {param: args.full})
@@ -323,8 +383,11 @@ def main(argv: list[str] | None = None) -> int:
         v / args.full: linear_mix_residual_db(dry, full, renders[i], v / args.full)
         for i, v in enumerate(values)
     }
+    # Kontrolli: sama asetus kahdesti. Ilman sitä jäännös voi olla pelkkää
+    # liitännäisen omaa vaihtelua.
+    control = repeat_residual_db(level_plugins[-1], audio, rate, start, stop, preroll)
     print("## A0: is Mix a linear dry/wet blend?\n")
-    print(format_linearity(residuals), "\n")
+    print(format_linearity(residuals, control), "\n")
 
     # A1: esiaika, täydellä Mixillä, yksi instanssi
     plugin = level_plugins[-1]
@@ -336,8 +399,10 @@ def main(argv: list[str] | None = None) -> int:
     preroll_residuals = {
         p: residual_db(longest, by_preroll[p]) for p in prerolls if p != max(prerolls)
     }
+    floor = repeat_residual_db(plugin, audio, rate, start, stop, max(prerolls))
     print("## A1: preroll\n")
-    print(format_preroll(preroll_residuals, settled_preroll(by_preroll)), "\n")
+    settled = settled_preroll(by_preroll, floor_db=floor)
+    print(format_preroll(preroll_residuals, settled, control=floor), "\n")
 
     # A1: kello. Uudet instanssit joka kierrokselle, jotta lataus ei sotkeudu.
     timing: dict[int, float] = {}

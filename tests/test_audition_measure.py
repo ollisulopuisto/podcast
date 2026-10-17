@@ -171,3 +171,57 @@ def test_the_report_says_which_way_it_went_and_carries_the_numbers():
     text = am.format_linearity({0.5: -71.234, 0.25: -12.5})
     assert "-71.2" in text and "-12.5" in text
     assert "linear" in text.lower() and "not" in text.lower()
+
+
+class NoisyPlugin(FakePlugin):
+    """Ei toistettava: jokainen ajo lisää eri kohinaa, kuten generatiivinen malli."""
+
+    def process(self, audio, rate, reset=True):
+        out = super().process(audio, rate, reset=reset)
+        noise = np.random.default_rng().standard_normal(out.shape) * 0.02
+        return (out + noise).astype(np.float32)
+
+
+def test_a_repeatable_plugin_repeats_to_the_noise_floor():
+    audio = _speechlike()
+    residual = am.repeat_residual_db(FakePlugin(), audio, RATE, 4.0, 8.0, 2.0)
+    assert residual < -100.0
+
+
+def test_a_plugin_that_does_not_repeat_shows_it():
+    audio = _speechlike()
+    residual = am.repeat_residual_db(NoisyPlugin(), audio, RATE, 4.0, 8.0, 2.0)
+    assert residual > -30.0
+
+
+def test_a_repeatable_plugin_keeps_the_linearity_verdict():
+    text = am.format_linearity({0.5: -13.4}, control=-100.0)
+    assert "Not linear" in text
+    assert "Inconclusive" not in text
+
+
+def test_without_a_repeatable_plugin_the_linearity_verdict_is_inconclusive():
+    residuals = {0.25: -15.0, 0.5: -13.4, 0.75: -16.9}
+    text = am.format_linearity(residuals, control=-14.0)
+    assert "Inconclusive" in text
+    assert "Not linear" not in text
+    assert "-14.0" in text  # kontrolli näkyy taulukossa ja lauseessa
+
+
+def test_the_preroll_limit_rises_with_the_repeat_noise():
+    rng = np.random.default_rng(7)
+    reference = rng.standard_normal((1, 8000)).astype(np.float32)
+
+    def off_by(db):
+        return reference + 10 ** (db / 20) * rng.standard_normal(reference.shape).astype(
+            np.float32
+        ) * float(np.sqrt(np.mean(reference**2)))
+
+    renders = {0.0: off_by(-20.0), 4.0: off_by(-20.0), 8.0: reference}
+    assert am.settled_preroll(renders) is None  # -20 dB ei ole -60 dB
+    assert am.settled_preroll(renders, floor_db=-19.0) == 0.0  # kohinan sisällä
+
+
+def test_the_preroll_report_names_the_repeat_noise():
+    text = am.format_preroll({0.0: -19.2, 4.0: -26.2}, None, control=-19.0)
+    assert "-19.0" in text and "repeat" in text.lower()
