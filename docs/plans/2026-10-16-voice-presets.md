@@ -5,9 +5,10 @@ as presets; **Part B** (`audition`) renders a window at several plug-in settings
 so an editor can choose by ear; **Part C** asks whether tone should be matched
 for consistency, and starts with a measurement.
 
-**Status (2026-10-16):** Part B's measurement script is written and tested
-(`scripts/ab/audition_measure.py`); its numbers wait for a run on the owner's
-Mac with dxRevive. Parts A and C have no code yet.
+**Status (2026-10-17):** the two measurement scripts are written and tested:
+`scripts/ab/audition_measure.py` (Part B, A0/A1) and `scripts/ab/tone_measure.py`
+(Part C, C0). Their numbers wait for runs on the owner's Mac (dxRevive and real
+episodes). Part A has no code yet and Part C's correction stage waits for C0.
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -421,8 +422,10 @@ synthetic tracks first: two voices with a known 3 dB tilt difference must read
 
 **Decision rules, set before looking at the numbers:**
 
-- Between-speaker spread under about 2 dB in a band: that band is not worth
-  correcting.
+- The larger of the two spreads (between speakers, same speaker across
+  episodes) under about 2 dB in a band: that band is not worth correcting. (As
+  built in `tone_measure.verdicts`: a band where speakers are alike but one
+  speaker moves 3 dB between episodes is still worth a per-show profile.)
 - Same-speaker spread across episodes larger than the between-speaker spread:
   item 1 above is the feature, and the stored per-show profile is built first.
 - Frame-to-frame band movement within a track that the rider and compressors
