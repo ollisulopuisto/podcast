@@ -155,6 +155,21 @@ slot and would need that rule restated, not bypassed.
 
 ## Tasks
 
+### Task 0 result (2026-10-18): the model is in the saved state, and it restores
+
+Done on the owner's Mac (details in `SHARED-AUDIO.md` §3.11). Saving a state
+from the editor window and loading it with `state=` restores the model:
+`tila-studio2.b64` opens as **Studio 2**, `tila-studio.b64` as **Studio**.
+The states are 524 and 539 bytes (they carry the model choice and the four
+published parameters, not model weights), differ in 112 bytes, and **behave
+differently** (−8.3 dB apart in audio at fixed Mix; Studio is 13 dB noisier
+per render). The window did not follow the pick while saving (it kept showing
+Studio 2), but the state did. So a preset can choose the model by a stored
+state blob. What is not known: whether a blob survives a plug-in update, and
+which bytes are the model (the two-byte difference between Mix 25 % and 50 %
+suggests Mix is stored as a float at offsets 200–201). The fallback below is
+not needed for now.
+
 ### Task 0: dxRevive model capture (spike, owner's Mac)
 
 **Files:** a throwaway script in the scratch area, then a note in this file.
