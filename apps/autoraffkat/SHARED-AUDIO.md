@@ -578,8 +578,21 @@ cache keyed on settings returns a different realisation than a fresh run would
 slider built from one 100 % render (below) is **more consistent** than separate
 renders at each setting: moving it reuses one realisation of the noise, where
 separate renders would add −38 dB of run-to-run difference on top of the real
-difference between settings. Not tested: the other state (A), whose repeat
-noise was −25.5 dB, is probably the same kind of noise at a higher level.
+difference between settings.
+
+**The other state is the same kind of noise at a higher level.** A second
+saved state (`tila-studio.b64`, saved after trying to pick the model "Studio";
+the window itself showed Studio 2 each time, so the model label is **not
+confirmed**) differs from the first in 112 bytes and in the audio (−8.3 dB
+against the Studio 2 render, 17 dB above its repeat noise). `reset_check.py` on
+it: fresh instances −25.5, −25.5, −25.3 dB; one instance reused −25.7, −25.4,
+−25.7 dB; after other audio −25.4 dB; after `reset()` −25.6 dB. Again every
+comparison is the same to 0.4 dB, so again random and not stateful, and
+13 dB noisier than the first state (about −28 dB per render against −41 dB).
+Whether that state is the other model or the same model with another stored
+setting (input or output gain; the plug-in publishes `bypass`, `input_gain`,
+`output_gain` and `mix`) is open: the parameters of each saved state have not
+been read yet.
 
 **Mix is not (1−m)·dry + m·wet.** The residual against that blend is −15.0,
 −13.4 and −16.9 dB at 25, 50 and 75 %, i.e. 21–25 dB above the repeat noise.
