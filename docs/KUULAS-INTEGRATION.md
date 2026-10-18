@@ -10,6 +10,48 @@ read. The field list in section 2 is as the kuulas session described it.
 "Today" means verified in the code. "Proposed" means not built, and not
 decided until the owner says so.
 
+## Status (2026-10-19)
+
+Built, in this branch, after the kuulas session's reply:
+
+- **Disk route for a kuulas export.** `automixer "<folder>" -o out.wav`, where
+  the folder holds the stems and `tracks.json`, runs the same `stems_mix`
+  pipeline as a `.nhsx` session (stems on disk, never the whole episode in
+  memory). `automixer <folder>/tracks.json` works too. The default output is
+  `<folder>/<edit> automixer.wav`. kuulas must pass the folder, not a list of
+  files: a file list still takes the in-memory route of section 0.
+  See `automixer/stem_folder.py`; the tests are
+  `apps/automixer/tests/test_stems_folder.py`.
+- **`--progress`**: one line per step, `PROGRESS <0-100> <message>`, ending
+  with `PROGRESS 100 done`. Percentages never fall. Both routes report.
+- **Exit 1 when no tracks are found.** podcast-magic already treated any
+  non-zero code as an error and also checks that the file exists.
+- **`tracks.json` is read, not guessed**, and a manifest that does not match
+  is refused with the track and the field named: `version` (only 1), `rate`
+  (only 48000), `start_frame` (only 0), `processing` (only `"dry"`), `frames`
+  against every file, the sample rate and channel count of every file, a
+  missing file, a duplicate name, `music` that is not stereo. A track with
+  `audible: false` is left out.
+- **`gain_db` and `pan` are ignored**, as in a session (`session.load` drops
+  the track fader). Speech is levelled to a reference and music is fitted to
+  the speech, so a fader would be undone, and the speakers are spread
+  automatically. The run prints a note for every track with a non-zero
+  `gain_db`.
+- **`speech-mix` is refused** with the reason. The owner said it is a speech
+  bus with several speakers in one file. The speech chain needs one
+  microphone per track (the speech grid decides who speaks by comparing
+  microphones), so such a file would always look like speech and break the
+  ducking and de-bleed of the others. kuulas should export the speakers as
+  separate `speech` tracks or leave the bus out. A separate kind of
+  treatment for a bus (level it, skip the chain and the grid) is possible
+  but is its own decision.
+
+Not built: `mix_tracks` (section 3), cancel by `SIGINT` testing,
+`--progress` for the `.nhsx` route's flags-only mode.
+
+Not run on this machine: the 25 automixer tests that need `mlx` or PortAudio
+(they run on the macOS CI). The 157 others, including the 32 new ones, pass.
+
 ## 0. Two paths, and only one of them is safe for a full episode
 
 `automixer <something>` takes one of two routes (`cli_mix.main`):
