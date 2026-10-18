@@ -51,6 +51,11 @@ MIN_PAUSE_S = 1.0
 #: Kuinka paljon yhteistä taukoa vedetään sisään puheesta kummastakin päästä.
 GUARD_S = 0.3
 
+#: Alle tämän yhteistä taukoa huoneäänen profiili on liian kohinainen luotettavaksi.
+#: Ensimmäisellä oikealla ajolla (diet woke 05, neljä mikkiä, viisi minuuttia) taukoa
+#: löytyi 4 s, ja kaksi mikkiä sai 12 dB:n katon osuvan ylimäärän: ei johtopäätöksiä.
+MIN_TRUSTED_PAUSE_S = 20.0
+
 #: Alle tämän yksin puhuvien kehysten määrän oma taso lasketaan kaikista omista.
 MIN_SOLO_FRAMES = 50
 
@@ -128,14 +133,21 @@ def _room_db(x: np.ndarray, rate: int, spans: list[tuple[float, float]]) -> floa
     return _db(float(np.mean(np.concatenate(pieces).astype(np.float64) ** 2)))
 
 
-def run(floor, tracks: dict[str, np.ndarray], rate: int, out_dir: Path) -> dict:
+def run(
+    floor,
+    tracks: dict[str, np.ndarray],
+    rate: int,
+    out_dir: Path,
+    guard_s: float = GUARD_S,
+    min_pause_s: float = MIN_PAUSE_S,
+) -> dict:
     """Mittaa ja kirjoittaa ``floor``:n (``speechmix.floormatch``) avulla."""
     import soundfile as sf
 
     if len(tracks) < 2:
         raise ValueError("floormatch compares microphones: give at least two tracks")
     masks = frame_masks(tracks, rate)
-    spans = common_pauses(masks)
+    spans = common_pauses(masks, guard_s, min_pause_s)
     speech_db: dict[str, float] = {}
     skipped: list[str] = []
     for name, x in tracks.items():
@@ -185,8 +197,15 @@ def run(floor, tracks: dict[str, np.ndarray], rate: int, out_dir: Path) -> dict:
 def format_report(result: dict) -> str:
     spans = result["spans"]
     total = sum(b - a for a, b in spans)
-    lines = [
-        f"Common pauses: {len(spans)} spans, {total:.0f} s in total.",
+    lines = [f"Common pauses: {len(spans)} spans, {total:.0f} s in total."]
+    if total < MIN_TRUSTED_PAUSE_S:
+        lines += [
+            f"WARNING: too little pause ({total:.0f} s, want at least "
+            f"{MIN_TRUSTED_PAUSE_S:.0f} s): the room tone profiles are noisy and the "
+            "excess below is not to be trusted. Use a longer --seconds, another --start, "
+            "or a shorter --guard and --min-pause.",
+        ]
+    lines += [
         "",
         "| mic | speech | room tone | max excess | " + " | ".join(BANDS) + " |",
         "|---|---|---|---|" + "---|" * len(BANDS),
@@ -236,6 +255,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--out", default="temp/floormatch", help="kansio tulostiedostoille"
     )
+    parser.add_argument(
+        "--guard",
+        type=float,
+        default=GUARD_S,
+        help="sekuntia, kuinka paljon yhteisen tauon reunoista jätetään pois",
+    )
+    parser.add_argument(
+        "--min-pause",
+        type=float,
+        default=MIN_PAUSE_S,
+        help="lyhin hyväksytty yhteinen tauko, sekuntia",
+    )
     args = parser.parse_args(argv)
 
     tracks: dict[str, np.ndarray] = {}
@@ -258,7 +289,14 @@ def main(argv: list[str] | None = None) -> int:
     if len(rates) != 1:
         print(f"The tracks have different sample rates: {sorted(rates)}", file=sys.stderr)
         return 2
-    result = run(_import_floormatch(), tracks, rates.pop(), Path(args.out))
+    result = run(
+        _import_floormatch(),
+        tracks,
+        rates.pop(),
+        Path(args.out),
+        args.guard,
+        args.min_pause,
+    )
     print(format_report(result))
     return 0
 

@@ -10,6 +10,7 @@ ja mitä se tulostaa ja kirjoittaa.
 from __future__ import annotations
 
 import importlib.util
+import re
 from pathlib import Path
 
 import numpy as np
@@ -178,3 +179,42 @@ def test_the_own_level_prefers_frames_where_no_other_mic_speaks():
     level = ft.own_speech_level_db(tracks["A"], masks, "A", RATE)
     # Yksinpuhe on 0,1 = -20 dB; kaikista omista kehyksistä keskiarvo olisi noin -13 dB.
     assert level == pytest.approx(-20.0, abs=1.5)
+
+
+def test_the_report_warns_when_there_is_too_little_pause_to_trust():
+    short = {"spans": [(0.0, 4.0)], "rows": [], "skipped": [], "out_dir": Path("x")}
+    assert "too little" in ft.format_report(short).lower()
+    enough = {"spans": [(0.0, 30.0)], "rows": [], "skipped": [], "out_dir": Path("x")}
+    assert "too little" not in ft.format_report(enough).lower()
+
+
+def test_a_shorter_guard_and_minimum_find_more_pause(tmp_path):
+    strict = ft.run(FakeFloor(), _tracks(), RATE, tmp_path / "a")
+    loose = ft.run(
+        FakeFloor(), _tracks(), RATE, tmp_path / "b", guard_s=0.05, min_pause_s=0.3
+    )
+    seconds = lambda r: sum(b - a for a, b in r["spans"])  # noqa: E731
+    assert seconds(loose) > seconds(strict)
+
+
+def test_main_passes_the_guard_and_the_minimum_to_the_run(tmp_path, monkeypatch, capsys):
+    paths = []
+    for name, track in _tracks().items():
+        path = tmp_path / f"{name}.wav"
+        sf.write(path, track, RATE)
+        paths.append(f"{name}={path}")
+    monkeypatch.setattr(ft, "_import_floormatch", lambda: FakeFloor())
+    ft.main(
+        [
+            "--track", paths[0], "--track", paths[1], "--out", str(tmp_path / "o1"),
+            "--guard", "0.05", "--min-pause", "0.3",
+        ]
+    )  # fmt: skip
+    loose = capsys.readouterr().out
+    ft.main(["--track", paths[0], "--track", paths[1], "--out", str(tmp_path / "o2")])
+    strict = capsys.readouterr().out
+
+    def total(text):
+        return float(re.search(r"(\d+) s in total", text).group(1))
+
+    assert total(loose) > total(strict)
