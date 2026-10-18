@@ -5,6 +5,11 @@ All notable changes to the speechmix package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [Unreleased]
+
+### Added
+- `mixlaw`: dxRevive's Mix as a slider from one render. `dry_weight(mix)` is `(1 - mix)^2.37` (`MIX_EXPONENT`, fitted to seven measured levels of Studio 2, largest error 0.0095), and `mix_blend(raw, wet, mix, wet_lag=0)` blends the raw with one 100 % render by that law. The consumer is kuulas, outside this repository, so `tests/test_workspace_agrees.py` gets an explicit `EXTERNAL_CONSUMERS` exception with a written reason, and a test that fails when an exception is stale or hides a module that has a consumer here.
+
 ## [2026.10.9.1] - 2026-10-09
 
 ### Fixed
