@@ -961,6 +961,21 @@ def main():
             shutil.rmtree(workdir, ignore_errors=True)
 
 
+def _exit_on_sigterm() -> None:
+    """``SIGTERM`` lopettaa ajon poistumalla, jolloin ``finally`` siivoaa.
+
+    Ilman tätä käyttöjärjestelmä tappaa prosessin heti, ja istunnon tai
+    kansion työhakemisto (``automixer-*`` tulostiedoston vieressä, käsitellyt
+    stemit, jakson kokoiset) jää levylle. kuulas peruuttaa näin.
+    """
+    import signal
+
+    def stop(signum, _frame):
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, stop)
+
+
 def _print_progress(percent, message) -> None:
     """``PROGRESS <0-100> <viesti>``: yksi rivi, jonka isäntä voi jäsentää."""
     text = " ".join(str(message).split()) or "-"
@@ -971,6 +986,7 @@ def _mix_session(args, path: str, loader=None) -> None:
     """Istunto tai kuulaksen kansio ``stems_mix``in kautta, CLI:n asetuksilla."""
     from . import stem_folder, stems_mix
 
+    _exit_on_sigterm()
     if loader is None:
         output = args.output or os.path.splitext(path)[0] + " automixer.wav"
     else:

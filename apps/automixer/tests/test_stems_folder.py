@@ -402,3 +402,43 @@ def test_no_tracks_exits_with_one_not_zero(tmp_path, monkeypatch, capsys):
         _run(monkeypatch)
     assert caught.value.code == 1
     assert "No tracks" in capsys.readouterr().out
+
+
+# --- Peruutus --------------------------------------------------------------
+
+
+def test_sigterm_cancels_the_mix_and_removes_the_work_folder(tmp_path):
+    """kuulas peruuttaa ``SIGTERM``illä. Työhakemisto (käsitellyt stemit levyllä,
+    jakson kokoiset) ei saa jäädä tulostiedoston viereen."""
+    import os
+    import signal
+    import subprocess
+    import sys
+    import time
+
+    folder = _folder(tmp_path, seconds=120.0)
+    out_dir = tmp_path / "ulos"
+    out_dir.mkdir()
+    out = out_dir / "out.wav"
+    code = (
+        "import sys; from automixer import cli_mix; "
+        "sys.argv = ['automixer', sys.argv[1], '-o', sys.argv[2]]; cli_mix.main()"
+    )
+    proc = subprocess.Popen(
+        [sys.executable, "-c", code, str(folder), str(out)],
+        env=os.environ.copy(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.time() + 60
+        while not list(out_dir.glob("automixer-*")):
+            assert proc.poll() is None, "the mix ended before it could be cancelled"
+            assert time.time() < deadline, "no work folder appeared"
+            time.sleep(0.05)
+        proc.send_signal(signal.SIGTERM)
+        status = proc.wait(timeout=60)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+    assert status != 0
+    assert not list(out_dir.glob("automixer-*"))
+    assert not out.exists()

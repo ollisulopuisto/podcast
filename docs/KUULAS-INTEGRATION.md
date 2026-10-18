@@ -46,8 +46,12 @@ Built, in this branch, after the kuulas session's reply:
   treatment for a bus (level it, skip the chain and the grid) is possible
   but is its own decision.
 
-Not built: `mix_tracks` (section 3), cancel by `SIGINT` testing,
-`--progress` for the `.nhsx` route's flags-only mode.
+Second kuulas round (answered): kuulas passes the folder, parses `PROGRESS`,
+checks the manifest rules itself and leaves `speech-mix` out of the export, so
+the refusal never triggers from kuulas. `SIGTERM` now cleans up (section 1).
+
+Not built: `mix_tracks` (section 3), `--progress` for the `.nhsx` route's
+flags-only mode.
 
 Not run on this machine: the 25 automixer tests that need `mlx` or PortAudio
 (they run on the macOS CI). The 157 others, including the 32 new ones, pass.
@@ -96,15 +100,15 @@ disk-based route for a folder of stems.
   `--progress`, one extra line per update: `PROGRESS 40 Engine: Running
   Speech Bus...`. The messages contain emoji and are free text; do not parse
   them.
-- **Cancel:** there is no signal handling in `cli_mix.py` or `stems_mix.py`.
-  `SIGTERM` kills the process at once. For the stem route that is harmless:
-  no temporary folder. For `.nhsx` the `automixer-XXXX` folder stays beside
-  the output, because the cleanup is a `finally` that `SIGTERM` skips.
-  `SIGINT` raises `KeyboardInterrupt`, so the cleanup runs. Not tested here:
-  whether `SIGINT` stops the plug-in worker threads promptly, and a process
-  started in the background of a non-interactive shell may have `SIGINT`
-  ignored. Until tested, treat cancel as `SIGTERM` and delete any
-  `automixer-*` folder beside the output afterwards.
+- **Cancel:** `SIGTERM` is handled for a session or a kuulas folder: it
+  exits (code 143), the `finally` runs, and the work folder `automixer-XXXX`
+  beside the output (processed stems, about the size of the speech tracks) is
+  removed. Tested by sending `SIGTERM` to a running mix. A `SIGKILL` skips
+  all cleanup, so if kuulas escalates to it after a grace period, delete any
+  `automixer-*` folder beside the output. The older in-memory route (a file
+  list) has no work folder and no handler; `SIGTERM` simply ends it. Not
+  tested: whether `SIGTERM` stops plug-in worker threads promptly when a
+  dxRevive render is in flight.
 
 ## 2. Roles from `tracks.json` (proposed; needs the real file)
 
