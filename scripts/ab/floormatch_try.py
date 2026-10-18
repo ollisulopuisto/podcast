@@ -182,16 +182,37 @@ def run(
             label: float(excess[(freqs >= lo) & (freqs < hi)].mean())
             for label, (lo, hi) in BANDS.items()
         }
+        room_before = _room_db(x, rate, spans)
+        room_after = _room_db(matched, rate, spans)
+        speech_after = own_speech_level_db(matched, masks, name, rate)
+        speech_delta = None if speech_after is None else speech_after - speech_db[name]
+        room_delta = (
+            None
+            if room_before is None or room_after is None
+            else room_after - room_before
+        )
         rows.append(
             {
                 "name": name,
                 "speech_db": speech_db[name],
-                "room_db": _room_db(x, rate, spans),
+                "room_db": room_before,
                 "excess_max": float(excess.max()),
                 "bands": bands,
+                # Mitä korjaus teki puheelle ja huoneäänelle erikseen (dB). ``net`` on
+                # huoneäänen muutos puheeseen nähden: negatiivinen = kohina laski
+                # enemmän kuin puhe. Äänekkyyden lasku yksin ei kerro kumpaan se osui.
+                "speech_delta": speech_delta,
+                "room_delta": room_delta,
+                "net": None
+                if speech_delta is None or room_delta is None
+                else room_delta - speech_delta,
             }
         )
     return {"spans": spans, "rows": rows, "skipped": skipped, "out_dir": Path(out_dir)}
+
+
+def _delta(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:+.1f} dB"
 
 
 def format_report(result: dict) -> str:
@@ -207,15 +228,18 @@ def format_report(result: dict) -> str:
         ]
     lines += [
         "",
-        "| mic | speech | room tone | max excess | " + " | ".join(BANDS) + " |",
-        "|---|---|---|---|" + "---|" * len(BANDS),
+        "| mic | speech | room tone | max excess | "
+        + " | ".join(BANDS)
+        + " | speech Δ | room Δ | net |",
+        "|---|---|---|---|" + "---|" * len(BANDS) + "---|---|---|",
     ]
     for row in result["rows"]:
         room = "n/a" if row["room_db"] is None else f"{row['room_db']:.1f} dB"
         bands = " | ".join(f"{row['bands'][label]:.1f} dB" for label in BANDS)
         lines.append(
             f"| {row['name']} | {row['speech_db']:.1f} dB | {room} | "
-            f"{row['excess_max']:.1f} dB | {bands} |"
+            f"{row['excess_max']:.1f} dB | {bands} | {_delta(row['speech_delta'])} | "
+            f"{_delta(row['room_delta'])} | {_delta(row['net'])} |"
         )
     for name in result["skipped"]:
         lines.append(

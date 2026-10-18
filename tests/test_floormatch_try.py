@@ -243,3 +243,38 @@ def test_main_passes_the_minimum_pause_too(tmp_path, monkeypatch, capsys):
     strict = spans()
     loose = spans("--min-pause", "0.3")
     assert loose == strict + 1
+
+
+def test_the_report_measures_what_the_correction_did_to_speech_and_to_the_room(tmp_path):
+    """Äänekkyyden lasku ei kerro, kumpaan se osui: mitataan puhe ja huoneääni erikseen."""
+    result = ft.run(FakeFloor(), _tracks(), RATE, tmp_path)
+    rows = {row["name"]: row for row in result["rows"]}
+    # FakeFloor kertoo A:n 0,5:llä (-6,02 dB kaikkialla) ja jättää B:n ennalleen.
+    assert rows["A"]["speech_delta"] == pytest.approx(-6.02, abs=0.2)
+    assert rows["A"]["room_delta"] == pytest.approx(-6.02, abs=0.2)
+    assert rows["A"]["net"] == pytest.approx(
+        0.0, abs=0.3
+    )  # kohina ei laskenut puheeseen nähden
+    assert rows["B"]["speech_delta"] == pytest.approx(0.0, abs=0.05)
+    assert rows["B"]["room_delta"] == pytest.approx(0.0, abs=0.05)
+
+
+def test_a_correction_that_only_lowers_the_room_shows_as_a_net_gain(tmp_path):
+    class RoomOnly(FakeFloor):
+        """Vaimentaa vain hiljaiset kohdat (puheen ulkopuolella), puhe koskematon."""
+
+        def apply(self, audio, rate, tone, excess_db):
+            self.calls["apply"].append(float(np.max(excess_db)))
+            loud = np.abs(audio) > 0.02
+            return np.where(loud, audio, audio * 0.25).astype(np.float32)
+
+    result = ft.run(RoomOnly(), _tracks(), RATE, tmp_path)
+    for row in result["rows"]:
+        assert row["speech_delta"] == pytest.approx(0.0, abs=0.5)
+        assert row["room_delta"] < -6.0
+        assert row["net"] < -6.0
+
+
+def test_the_report_has_columns_for_the_speech_and_room_change(tmp_path):
+    text = ft.format_report(ft.run(FakeFloor(), _tracks(), RATE, tmp_path))
+    assert "speech Δ" in text and "room Δ" in text and "net" in text

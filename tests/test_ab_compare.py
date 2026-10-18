@@ -17,7 +17,9 @@ import numpy as np
 import soundfile as sf
 
 ROOT = Path(__file__).resolve().parents[1]
-_spec = importlib.util.spec_from_file_location("ab_compare", ROOT / "scripts" / "ab" / "compare.py")
+_spec = importlib.util.spec_from_file_location(
+    "ab_compare", ROOT / "scripts" / "ab" / "compare.py"
+)
 compare = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(compare)
 
@@ -37,8 +39,10 @@ def test_a_set_is_numbered_measured_and_drawn(tmp_path):
 
     rows = json.loads((folder / "files.json").read_text(encoding="utf-8"))
     assert [r["name"] for r in rows] == ["1 oma render.wav", "2 automixer.wav"]
-    assert all((folder / r["name"]).resolve() == p.resolve()
-               for r, p in zip(rows, (a, b), strict=True))
+    assert all(
+        (folder / r["name"]).resolve() == p.resolve()
+        for r, p in zip(rows, (a, b), strict=True)
+    )
     # Tasoero näkyy lukemissa, jotta tasattu kuuntelu on mahdollinen.
     assert abs((rows[0]["lufs"] - rows[1]["lufs"]) - 20 * np.log10(5)) < 0.1
     assert len(rows[0]["peaks"]) == compare.PEAKS
@@ -70,5 +74,48 @@ def test_the_server_answers_a_byte_range(tmp_path):
             assert response.status == 206
             assert response.headers["Content-Range"] == "bytes 10-19/256"
             assert response.read() == bytes(range(10, 20))
+    finally:
+        server.shutdown()
+
+
+def _server(directory):
+    import functools
+    import http.server
+    import threading
+
+    handler = functools.partial(compare.RangeHandler, directory=str(directory))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def test_a_port_with_nothing_on_it_is_used_as_it_is():
+    import socket
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        free = probe.getsockname()[1]
+    assert compare.choose_port(free, "x") == (free, False)
+
+
+def test_a_server_that_already_has_this_page_is_reused(tmp_path):
+    (tmp_path / "x").mkdir()
+    (tmp_path / "x" / "vertailu.html").write_text("<html></html>")
+    server = _server(tmp_path)
+    try:
+        port = server.server_address[1]
+        assert compare.choose_port(port, "x") == (port, True)
+    finally:
+        server.shutdown()
+
+
+def test_a_server_for_another_folder_is_not_trusted_and_a_free_port_is_asked_for(
+    tmp_path,
+):
+    """Vanha palvelin portissa palvelee toista kansiota: 404 eikä vertailua."""
+    server = _server(tmp_path)  # tyhjä kansio: sivua "x" ei ole
+    try:
+        port = server.server_address[1]
+        assert compare.choose_port(port, "x") == (0, False)
     finally:
         server.shutdown()
