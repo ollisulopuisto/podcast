@@ -218,3 +218,28 @@ def test_main_passes_the_guard_and_the_minimum_to_the_run(tmp_path, monkeypatch,
         return float(re.search(r"(\d+) s in total", text).group(1))
 
     assert total(loose) > total(strict)
+
+
+def test_main_passes_the_minimum_pause_too(tmp_path, monkeypatch, capsys):
+    """Yksi 0,9 s:n yhteinen tauko: vain alennettu vähimmäisraja hyväksyy sen.
+
+    Raidat ovat 40 s, ja hiljaisuutta on yli 20 %: gridin kohinalattia on 20.
+    persentiili, joten mikki joka puhuu yli 80 % ajasta ei saisi yhtään puhekehystä.
+    """
+    both = [(2.0, 10.0), (10.9, 20.0)]
+    paths = []
+    for name, seed in (("A", 1), ("B", 2)):
+        path = tmp_path / f"{name}.wav"
+        sf.write(path, _voice(both, seconds=40.0, seed=seed), RATE)
+        paths.append(f"{name}={path}")
+    monkeypatch.setattr(ft, "_import_floormatch", lambda: FakeFloor())
+
+    def spans(*extra):
+        ft.main(
+            ["--track", paths[0], "--track", paths[1], "--out", str(tmp_path / "o"), "--guard", "0.05", *extra]
+        )  # fmt: skip
+        return int(re.search(r"(\d+) spans", capsys.readouterr().out).group(1))
+
+    strict = spans()
+    loose = spans("--min-pause", "0.3")
+    assert loose == strict + 1
