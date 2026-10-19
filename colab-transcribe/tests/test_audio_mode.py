@@ -789,3 +789,31 @@ def test_the_timing_label_follows_the_alignment_version():
     import wordalign
 
     assert pipeline.ALIGN_TIMING == "ctc-v" + wordalign.VERSION.removeprefix("ctc")
+
+
+def test_a_file_the_script_would_skip_is_refused_before_anything_is_uploaded(
+    tmp_path, capsys
+):
+    """Skripti litteroi vain tunnetut päätteet; muu ladattaisiin ja jäisi hiljaa väliin,
+    ja puute huomattaisiin vasta GPU-ajan jälkeen."""
+    odd = tmp_path / "puhe.ogg"
+    odd.write_bytes(b"x")
+    _refused(["--audio", str(odd), "--json", str(tmp_path / "o")], capsys, ".ogg")
+
+
+def test_every_ending_the_planner_knows_is_accepted(tmp_path):
+    from colabtranscribe import driver
+
+    for ending in driver._AUDIO_EXT:
+        path = tmp_path / f"puhe{ending}"
+        path.write_bytes(b"x")
+        args = cli.build_parser().parse_args(
+            ["--audio", str(path), "--json", str(tmp_path)]
+        )
+        assert cli._audio_problem(args) is None, ending
+
+
+def test_the_scripts_endings_are_the_drivers_endings():
+    from colabtranscribe import driver
+
+    assert tuple(pipeline.AUDIO_EXTENSIONS) == tuple(driver._AUDIO_EXT)

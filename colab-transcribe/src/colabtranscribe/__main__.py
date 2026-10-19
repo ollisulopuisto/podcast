@@ -223,6 +223,11 @@ def _audio_problem(args: argparse.Namespace) -> str | None:
         path = Path(name)
         if not path.is_file():
             return f"Äänitiedostoa ei löydy: {name}"
+        if path.suffix.lower() not in driver._AUDIO_EXT:
+            return (
+                f"Tiedostotyyppiä {path.suffix or '(ei päätettä)'} ei litteroida: {name}. "
+                f"Tuetut: {', '.join(driver._AUDIO_EXT)}."
+            )
         previous = stems.setdefault(path.stem, name)
         if previous != name:
             return (
