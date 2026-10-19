@@ -129,6 +129,40 @@ with `--suppress_tokens "" --suppress_blank False`, and so does this, because
 "um" and "you know" are speech: leave them out and the silencer mutes the
 half-second where somebody was clearly talking.
 
+### Word starts: Whisper is early, and there is a correction
+
+Whisper's word start is an estimate from its attention, and measured against
+word starts marked by hand on the waveform (15 words, one speaker) it is early
+almost every time: median 87 ms, from 118 ms late to 557 ms early, and for
+about one word in a hundred 1.0–2.5 s early. After a pause the median is
+263 ms. No constant fixes that.
+
+**Correct word starts** (off by default) runs a forced aligner after the
+transcription: torchaudio's `MMS_FA`, which fits the *text* to the audio in 20 ms
+frames and knows Finnish. On the same 15 words its median error is 28 ms
+against Whisper's 117 ms, and it is the one that was right in the four words
+listened to that Whisper had 1.0–2.5 s early. It reads Whisper's saved JSON,
+so turning it on does not transcribe again, and its result has its own cache
+file (`<name>.<fingerprint>.align-ctc1.json`) next to the transcript.
+
+What it is not: the word *ends* are not measured, so a word keeps the longer of
+the two ends. Drift over a long recording, other speakers and the Colab GPU
+path are not measured either.
+
+It needs torch, which is not in the lockfile (the `fcp-subs-whisper` app already
+pins another version of it). Run the app with it like this; the first run
+downloads about 1.2 GB of weights:
+
+```
+uv run --package podcast-magic --with torch==2.8.0 --with torchaudio==2.8.0 podcast-magic
+```
+
+Version 2.8.0 is deliberate: torchaudio removes `forced_align` in 2.9. The
+option is greyed out in the transcribe tab, with this command, when torch is
+missing, and a run with it on stops before transcribing anything rather than
+quietly doing nothing. `scripts/ab/ctc_align.py` measures the aligner against
+your own hand-marked starts with the same code.
+
 ## The silencer
 
 Speech intervals come from the transcription, not from a level threshold. A

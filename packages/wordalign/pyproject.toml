@@ -1,0 +1,33 @@
+# Sanojen alkujen pakotettu kohdistus ääneen: yksi tiedosto, numpy.
+#
+# Yksi tiedosto, koska se ladataan sellaisenaan Colabiin colab-transcriben
+# skriptin viereen: Colabissa ei ole työtilaa. torch ja torchaudio eivät ole
+# riippuvuuksia (ks. README): ne tuodaan vasta kun kohdistin tehdään.
+
+[project]
+name = "wordalign"
+version = "2026.10.19.1"
+description = "Forced alignment of Whisper word starts to the audio (one file, numpy; torch only when the aligner is made)"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+authors = [{ name = "Olli Sulopuisto" }]
+keywords = ["whisper", "alignment", "ctc", "podcast"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = ["numpy>=2.4.2"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src/wordalign.py"]
+sources = ["src"]
+dev-mode-dirs = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

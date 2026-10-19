@@ -16,6 +16,13 @@ class Options:
     käyttötarkoitus tässä on löytää missä kohtaa ääntä puhutaan — «tota noin»
     on puhetta siinä missä muukin, ja ilman sitä leikkuri vaientaa sen.
 
+    ``align``: sanojen alkujen korjaus Whisperin jälkeen (``align.py``). Whisper
+    laittaa sanan alun lähes aina liian aikaisin, mediaani 87 ms ja joskus yli
+    sekunnin; kohdistin osuu 28 ms:n mediaaniin. Se **ei ole** tunnisteessa:
+    se korjaa Whisperin tuloksen eikä tuota uutta, joten päällekytkentä lukee
+    valmiin litteroinnin ja kohdistuksella on oma välimuistinsa. Pois päältä,
+    koska se vaatii torchin ja ensimmäisellä ajolla noin 1,2 Gt painoja.
+
     ``vad``: hiljaisuuden poisto ennen tunnistusta. Estää mallia keksimästä
     sanoja tauolle. faster-whisperissä oma suodin, mlx-whisperissä
     ``hallucination_silence_threshold``.
@@ -31,6 +38,7 @@ class Options:
     # yhteen <p>:hen kuten Colab-muistikirja, jotta sama istunto voidaan ajaa
     # kahdesti ja verrata.
     paragraphs: bool = True
+    align: bool = False
 
     @classmethod
     def from_dict(cls, raw: dict | None) -> "Options":

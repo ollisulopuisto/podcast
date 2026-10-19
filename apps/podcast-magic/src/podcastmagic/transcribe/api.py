@@ -8,6 +8,7 @@ from .. import settings as saved
 from ..jobs import RUNNER
 from ..nhsx import NhsxError, verify
 from ..nhsx import read as read_session
+from . import align
 from . import run as runner
 from .backends import infos
 from .models import DEFAULT_MODEL, MODELS
@@ -40,6 +41,7 @@ def info() -> dict:
             for m in MODELS
         ],
         "defaultModel": DEFAULT_MODEL,
+        "aligner": align.availability(),
         "options": {**Options().to_dict(), **saved.section(SECTION)},
     }
 

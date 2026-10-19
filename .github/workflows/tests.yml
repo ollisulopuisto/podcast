@@ -87,6 +87,12 @@ jobs:
         if: ${{ !cancelled() }}
         run: uv run --directory packages/silencelearn pytest -q
 
+      # Sanojen alkujen kohdistus: sama tiedosto ladataan Colabiin, ja testit
+      # purkavat oikean äänen oikealla ffmpegillä.
+      - name: wordalign
+        if: ${{ !cancelled() }}
+        run: uv run --directory packages/wordalign pytest -q
+
       - name: autoraffkat
         if: ${{ !cancelled() }}
         run: uv run --directory apps/autoraffkat pytest -q

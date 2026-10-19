@@ -58,6 +58,29 @@ numpy ei ole pinnattu: se tulee faster-whisperin mukana. Ajuri kertoo
 valmiin tiedoston `Käsikirjoitus luotu:` -rivillä; `.md` tulee alas koko
 tulostekansion mukana, joten uutta `driver.parse_*`-markeria ei tarvita.
 
+## Pelkkä ääni on kuulaksen rajapinta
+
+`--source audio` (`--audio`/`--json`) ei ole sisäinen tila: tulostiedosto
+`<nimi>.words.json`, `PROGRESS <0-100> <viesti>` -rivit, poistumiskoodit ja
+SIGTERM ovat sopimus (`docs/KUULAS-COLAB.md`), jonka toisessa päässä on toinen
+ohjelma. Siksi: sanat järjestetään ja `s < e` taataan `words_document`issa
+(snapshot, ei muuta tilaa), edistymisluku ei laske eikä ylitä sataa, ja
+`*.words.json` poistetaan ennen ajoa, koska muuten vanha tiedosto kelpaisi
+puuttuvan uuden tilalle. Suunnitelma on `driver.plan_audio_commands`, ei
+`plan_commands`: aina suora siirto, ei `silencelearn`ia. Äänitila ei tuota
+`.nhsx`:ää, joten sen virheet näkyvät vain tiedostossa ja poistumiskoodissa.
+Pilvipään ajoa ei ole kokeiltu oikealla Colabilla tässä ympäristössä.
+
+`--align` lataa Colabiin toisen yhden tiedoston, `wordalign.py`n
+(`driver.ALIGN_MODULE`), samalla tavalla kuin `silencelearn`in. Kohdistin
+ajetaan **omassa prosessissaan** ja torch omaan kansioonsa
+(`pipeline.ALIGN_SITE`, `aligner_env`), koska CTranslate2 käyttää
+järjestelmän pip-nvidia-kirjastoja ja torch 2.8 tuo omansa: erillään ne eivät
+tarvitse sopia yhteen. Se on suunnitteluvalinta, ei mitattu tosiasia. Kohdistin
+tarkistetaan ennen litterointia (`check_aligner`), ja jos mikään sana ei
+kohdistu, ajo kaatuu: korjatuksi merkitty tiedosto, jossa on Whisperin aika, olisi
+juuri se hiljainen vika. `ALIGN_TIMING` seuraa `wordalign.VERSION`ia testillä.
+
 ## Opittu kynnys ladataan, ei kopioida
 
 `--preset learned` opettaa kynnyksen käsin vaimennetuista alueista, ja

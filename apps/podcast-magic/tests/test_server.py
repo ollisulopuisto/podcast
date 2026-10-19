@@ -101,3 +101,21 @@ def test_one_job_at_a_time(client, session_file, monkeypatch):
         assert response.status_code == 409
     finally:
         gate.set()
+
+
+def test_transcribe_info_says_whether_the_aligner_can_run(client, monkeypatch):
+    """Käyttöliittymä näyttää puuttuvan kohdistimen ennen ajoa, ei vasta tunnin litteroinnin jälkeen."""
+    from podcastmagic.transcribe import align
+
+    monkeypatch.setattr(
+        align,
+        "availability",
+        lambda: {"available": False, "reason": "puuttuu: torch", "install": "uv sync --extra align"},
+    )
+    info = client.get("/api/transcribe/info").json()
+    assert info["aligner"] == {
+        "available": False,
+        "reason": "puuttuu: torch",
+        "install": "uv sync --extra align",
+    }
+    assert info["options"]["align"] is False

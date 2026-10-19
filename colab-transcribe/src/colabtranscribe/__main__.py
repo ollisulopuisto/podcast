@@ -8,7 +8,9 @@ komennot varmistettavaksi ennen kuin mitään läheteään pilveen.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import shlex
+import signal
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -29,6 +31,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output", default="output", help="tulostekansio (oletus: output)"
+    )
+    parser.add_argument(
+        "--audio",
+        action="append",
+        default=[],
+        metavar="TIEDOSTO",
+        help="pelkkä äänitiedosto, toistettavissa; sanat tulevat --json-kansioon "
+        "<nimi>.words.json (ei .nhsx:ää, aina suora siirto)",
+    )
+    parser.add_argument(
+        "--json", metavar="KANSIO", help="--audio-tilan tulostekansio"
+    )
+    parser.add_argument("--model", default=None, help="Whisper-malli (--audio, oletus: turbo)")
+    parser.add_argument("--language", default=None, help="kieli (--audio, oletus: fi)")
+    parser.add_argument(
+        "--align",
+        action="store_true",
+        help="--audio: kohdista sanojen alut ääneen Colabissa (timing: ctc-v1). "
+        "Asentaa torchin Colab-koneelle; ei vielä mitattu kuinka kauan se kestää",
+    )
+    parser.add_argument(
+        "--progress",
+        action="store_true",
+        help="--audio: kirjoita rivit 'PROGRESS <0-100> <viesti>' (prosentti ei laske)",
     )
 
     parser.add_argument("--session", default="whisper", help="Colab-istunnon nimi")
@@ -159,6 +185,145 @@ def options_from_args(args: argparse.Namespace) -> RunOptions:
     )
 
 
+def _sigterm_as_interrupt(_signum, _frame):
+    """SIGTERM kulkee samaa tietä kuin Ctrl+C, jotta Colab-istunto suljetaan."""
+    raise KeyboardInterrupt
+
+
+@contextlib.contextmanager
+def _sigterm_cancels():
+    previous = signal.signal(signal.SIGTERM, _sigterm_as_interrupt)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
+def _refuse(message: str) -> int:
+    print(message, file=sys.stderr)
+    return 1
+
+
+def _audio_problem(args: argparse.Namespace) -> str | None:
+    """Miksi ``--audio``-kutsu on virheellinen, tai None."""
+    if not args.audio:
+        if args.json:
+            return "--json vaatii vähintään yhden --audio-tiedoston."
+        if args.align:
+            return "--align kuuluu --audio-tilaan: anna myös --audio ja --json."
+        return None
+    if not args.json:
+        return "--audio vaatii tulostekansion: anna --json <kansio>."
+    if args.input:
+        return "--audio ja --input eivät mene yhteen: valitse toinen."
+    if args.transfer == "drive":
+        return "--audio käyttää aina suoraa siirtoa: Drive ei ole tässä tilassa käytössä."
+    stems = {}
+    for name in args.audio:
+        path = Path(name)
+        if not path.is_file():
+            return f"Äänitiedostoa ei löydy: {name}"
+        if path.suffix.lower() not in driver._AUDIO_EXT:
+            return (
+                f"Tiedostotyyppiä {path.suffix or '(ei päätettä)'} ei litteroida: {name}. "
+                f"Tuetut: {', '.join(driver._AUDIO_EXT)}."
+            )
+        previous = stems.setdefault(path.stem, name)
+        if previous != name:
+            return (
+                f"Kahdella tiedostolla on sama nimi ({path.stem}): {previous} ja {name}. "
+                "Tulokset kirjoittaisivat toistensa päälle."
+            )
+    return None
+
+
+def _progress_printer():
+    """``PROGRESS <0-100> <viesti>``: kokonaisluku, joka ei laske eikä ylitä sataa."""
+    shown = 0
+
+    def report(percent: float, message: str) -> None:
+        nonlocal shown
+        shown = max(shown, min(100, int(percent)))
+        print(f"PROGRESS {shown} {message}", flush=True)
+
+    return report
+
+
+def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
+    """Pelkkä ääni sisään, ``<nimi>.words.json`` ulos (``docs/KUULAS-COLAB.md``)."""
+    env_opts = RunOptions.from_env()
+    audio = [str(Path(a).resolve()) for a in args.audio]
+    options = RunOptions(
+        session=args.session if args.session != "whisper" else env_opts.session,
+        gpu=args.gpu if args.gpu != "T4" else env_opts.gpu,
+        output_dir=args.json,
+        transfer="direct",
+        source="audio",
+        prompt=args.prompt if args.prompt != DEFAULT_PROMPT else env_opts.prompt,
+        reset_session=args.reset_session or env_opts.reset_session,
+        keep_session=args.keep_session or env_opts.keep_session,
+        model=args.model or "turbo",
+        language=args.language or "fi",
+        align=args.align,
+    )
+    reuse_session = False
+    if session.is_session_alive(options.session):
+        if options.reset_session:
+            if not dry_run:
+                print(f"Suljetaan olemassa oleva Colab-istunto '{options.session}'...")
+                session.stop_session(options.session)
+        else:
+            reuse_session = True
+            if not dry_run:
+                print(f"Käytetään olemassa olevaa Colab-istuntoa '{options.session}'.")
+
+    commands = driver.plan_audio_commands(options, audio, reuse_session=reuse_session)
+    if dry_run:
+        for command in commands:
+            print(shlex.join(command))
+        return 0
+
+    report = check_environment()
+    if not report.is_ready:
+        print("Tarvittavat apuohjelmat tai tunnistetiedot puuttuvat:\n", file=sys.stderr)
+        print(report.summary(), file=sys.stderr)
+        return 1
+
+    out_dir = options.resolved_output_dir()
+    expected = [out_dir / f"{Path(a).stem}.words.json" for a in audio]
+    # Vanha tiedosto ei saa mennä uuden ajon tuloksesta: puuttuva tulos olisi
+    # muuten hiljaa «onnistunut».
+    for path in expected:
+        path.unlink(missing_ok=True)
+
+    def log(line: str) -> None:
+        print(line, flush=True)
+
+    with _sigterm_cancels():
+        code = driver.run(
+            commands,
+            log,
+            timeout=driver.COMMAND_TIMEOUT,
+            on_progress=_progress_printer() if args.progress else None,
+        )
+    if code == 130 and not options.keep_session:
+        print(f"Suljetaan Colab-istunto '{options.session}'...")
+        session.stop_session(options.session)
+    if code != 0:
+        return code
+    missing = [p for p in expected if not p.is_file()]
+    if missing:
+        names = ", ".join(p.name for p in missing)
+        return _refuse(
+            f"Ajo päättyi, mutta sanatiedostot puuttuvat: {names}. "
+            "Katso lokista, löysikö Whisper puhetta."
+        )
+    print(f"\nValmiit sanatiedostot ({len(expected)}):")
+    for path in expected:
+        print(f"  {path}")
+    return 0
+
+
 def run_headless(options: RunOptions, dry_run: bool) -> int:
     """Skriptattava ajo: suunnitelma, joko tulosteena tai totuutena."""
     input_path = Path(options.input_dir)
@@ -282,6 +447,12 @@ def main(argv: list[str] | None = None) -> int:
         report = check_environment()
         print(report.summary())
         return 0 if report.is_ready else 1
+
+    problem = _audio_problem(args)
+    if problem:
+        return _refuse(problem)
+    if args.audio:
+        return run_audio_mode(args, dry_run=args.dry_run)
 
     if not args.input or args.tui:
         from .tui import TranscribeApp

@@ -121,3 +121,10 @@ def test_index_loads_every_registered_module_script():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     for module in MODULES:
         assert f'src="/static/{module.script}"' in html, module.script
+
+
+def test_the_transcribe_panel_offers_alignment_and_disables_it_when_it_is_missing():
+    """Kenttä on olemassa, ja puuttuva kohdistin näkyy kentässä eikä vasta ajon virheenä."""
+    script = (STATIC / "mod_transcribe.js").read_text(encoding="utf-8")
+    assert "'tr-align'" in script and "align: root.querySelector('#tr-align').checked" in script
+    assert "state.info.aligner" in script and "tr.alignMissing" in script

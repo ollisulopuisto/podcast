@@ -64,6 +64,47 @@ levyltä eikä uutta mallia ajettaisi, eikä siitä sanottaisi mitään.
 Kenttäluettelo on kirjoitettu käsin `test_fingerprint_fields_are_written_out_by_hand`iin,
 jotta uusi asetus ei livahda tunnisteeseen tai siitä pois huomaamatta.
 
+## Sanan alku kohdistetaan ääneen, ja se on jälkivaihe
+
+`transcribe/align.py` on sovelluksen puoli; laskenta ja säännöt ovat `packages/wordalign`issa (yksi tiedosto, jonka myös colab-transcribe lataa Colabiin), ja sen testit siellä. Whisperin sanan alku on arvio, ja se on lähes aina liian
+aikaisin: käsin merkityillä 15 sanalla mediaani +87 ms (−118…+557), tauon jälkeen
++263 ms, ja joka sadannella sanalla 1,0–2,5 s. Kohdistin (torchaudion `MMS_FA`,
+CTC) osuu 28 ms:n mediaaniin (Whisper 117). Mittausten luvut ovat
+`docs/KUULAS-TIMECODES.md`:ssä ja `scripts/ab/ctc_align.py` mittaa saman koodin
+omilla merkinnöillä.
+
+* **Jälkivaihe, ei moottori.** Se lukee Whisperin raakatuloksen
+  (`segments[].words[]`), joten kaikki moottorit saavat sen ja litterointia ei
+  ajeta uudestaan. **`Options.align` ei ole tunnisteessa**: kohdistus korjaa
+  tuloksen eikä tuota uutta, ja sillä on oma välimuistinsa
+  (`<nimi>.<tunniste>.align-<versio>.json`; `VERSION` vaihtuu kun sääntö tai
+  malli vaihtuu). Testi `test_alignment_is_not_in_the_fingerprint…` pitää sen
+  tahallisena eikä unohduksena.
+* **Neljä sääntöä on mitattu, ei keksitty** (luvut ja syyt moduulin ohjeessa):
+  ryhmät katkaistaan yli 0,5 s tauoista (segmentissä oli 2,9 s tauko ja toisen
+  mikin ääntä, ja kohdistin sijoitti sanan sinne 2,7 s liian aikaisin), siirto
+  myöhemmäksi hyväksytään 3 s asti, aikaisemmaksi vain 0,3 s (alle `PAD_S`, tai
+  raja olisi tyhjä), ja hylätty sana jää Whisperin aikaan eikä sille arvata.
+* **Alku kohdistimelta, loppu pidemmästä kahdesta.** Loppua ei ole mitattu, ja
+  vaimennus käyttää sanojen välejä äänen paikkana, joten liian lyhyt sana
+  leikkaisi äänen. Vaimennus lisää alkuun ja loppuun `tail`-varan, joten alun
+  siirtyminen kymmeniä millisekunteja ei leikkaa.
+* **Ominaisuus, joka ei tuottanut mitään, sanoo sen.** Kohdistus päällä ja torch
+  puuttuu: ajo pysähtyy **ennen** litterointia. Kohdistus päällä ja yksikään sana
+  ei kohdistunut: ajo ei kirjoita istuntoa. Tämä oli juuri se hiljainen vika:
+  kytkin lupaa korjatut alut ja tulos on Whisperin alkuperäinen.
+* **Torch ei ole lukossa, ja se on tahallista.** `fcp-subs-whisper` vaatii jo
+  `torch>=2.5.1` (lukossa 2.13), ja kohdistin tarvitsee torchaudion 2.8:n, koska
+  `forced_align` poistuu 2.9:stä. Lisäriippuvuus (`--extra`) pakottaisi toisen
+  sovelluksen torchin hiljaa toiseen versioon: kokeiltu, `uv lock` muutti noin
+  160 riviä lukkoa. Siksi `--with torch==2.8.0 --with torchaudio==2.8.0`
+  (`align.INSTALL`). Paketoitu `.app` ei sisällä torchia: se on oma päätöksensä
+  (satoja megatavuja), ja siihen asti asetus on harmaa ja sanoo miksi.
+* **Mitattu vain yhdellä puhujalla, yhdellä jaksolla ja 15 merkinnällä.**
+  Ajautumista, loppuja, muita puhujia ja Colabin GPU-reittiä ei ole mitattu.
+  Pehmeiden alkuäänten (n, j, h, s) viive kohdistimessa (30–80 ms myöhässä) on
+  tendenssi, ei sääntö, eikä sitä korjata.
+
 ## Käsikirjoitusnäkymän kohdistin: mitä tiedetään ja mitä ei
 
 Oire: aikajananäkymässä sanat osuvat kohdalleen, käsikirjoitusnäkymässä

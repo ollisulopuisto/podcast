@@ -19,6 +19,7 @@
       vad: root.querySelector('#tr-vad').checked,
       initial_prompt: root.querySelector('#tr-prompt').value,
       paragraphs: root.querySelector('#tr-paragraphs').checked,
+      align: root.querySelector('#tr-align').checked,
     };
   }
 
@@ -30,9 +31,13 @@
     ]);
   }
 
-  function check(id, label, why, checked) {
+  function check(id, label, why, checked, disabled) {
     return PM.el('label', { class: 'check' }, [
-      PM.el('input', { type: 'checkbox', id, ...(checked ? { checked: true } : {}) }),
+      PM.el('input', {
+        type: 'checkbox', id,
+        ...(checked && !disabled ? { checked: true } : {}),
+        ...(disabled ? { disabled: true } : {}),
+      }),
       PM.el('span', { class: 'body' }, [
         PM.el('span', { text: label }),
         PM.el('span', { class: 'why', text: why }),
@@ -150,6 +155,12 @@
         check('tr-vad', PM.t('tr.vad'), PM.t('tr.vadWhy'), saved.vad),
         check('tr-paragraphs', PM.t('tr.paragraphs'), PM.t('tr.paragraphsWhy'),
               saved.paragraphs !== false),
+        check('tr-align', PM.t('tr.align'),
+              state.info.aligner.available
+                ? PM.t('tr.alignWhy')
+                : `${PM.t('tr.alignWhy')} ${PM.t('tr.alignMissing', {
+                    reason: state.info.aligner.reason, cmd: state.info.aligner.install })}`,
+              saved.align === true, !state.info.aligner.available),
         check('tr-force', PM.t('tr.force'), PM.t('tr.forceWhy'), false),
       ]);
       root.appendChild(PM.el('div', { class: 'cols' }, [left, right]));
