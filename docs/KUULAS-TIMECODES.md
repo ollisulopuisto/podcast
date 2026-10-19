@@ -1,9 +1,12 @@
 # Transcription word times: what was measured, what exists, what kuulas can use
 
 Answers the kuulas session's five questions on the transcription timecodes. Written
-2026-10-19 by the podcast-repo session. Short version: **there is no fix to integrate
-yet.** There is a measurement, and a candidate correction that exists only as an
-experimental script on an open pull request. The owner decides whether and where it goes.
+2026-10-19 by the podcast-repo session; **status updated the same day after the fix was
+merged** (PR [#62](https://github.com/ollisulopuisto/podcast/pull/62)). Short version: the
+correction **exists and runs on Colab** (`colab-transcribe --audio ... --json ... --align`),
+and the file says whether it was applied (`"timing": "ctc-v1"` or `"whisper"`). It has been
+measured on **one speaker in one episode**, so treat it as a measured improvement there and not
+as a guarantee elsewhere.
 
 "Measured" means checked against word starts the owner placed by hand on the waveform.
 "Proposed" means not built.
@@ -42,25 +45,29 @@ So it is not a per-media offset.
   window; no trend is visible in 15 words, but that is not a drift test.
 - *Word end precision:* not measured at all. Only starts were marked.
 - *Mismatch between the .nhsx and the audio:* not examined.
-- *The Colab path:* the transcription was made locally on a Mac (CPU, `compute_type auto`) with
-  the same flags as the Colab script, not on the Colab GPU.
+- *The Colab path:* the 15 marks above were measured with a local transcription on a Mac (CPU).
+  Afterwards the same 10-minute clip was run once on a real Colab T4: Whisper's own starts showed
+  the same pattern (four hand-marked words 0.7-2.4 s early), and the aligned starts (section 2)
+  were within 41 ms of the 12 marks in that clip. One run, one clip; no timing or cost was recorded.
 - *Other speakers, other episodes:* one speaker, one episode.
 - The marks are one person's, placed by eye on the waveform at about 100 ms zoom (so about
   +-20-30 ms), and a soft-onset consonant can be audible a little before the visible rise.
 
 ## 2. Where the fix lives
 
-**Nowhere yet.** `nhsx`, `speechmix`, the transcribe app and `colab-transcribe`'s
-`pipeline.py` are unchanged.
+On `main`:
 
-What exists: `scripts/ab/ctc_align.py` and `tests/test_ctc_align.py`, on branch
-`feat/ctc-word-align`, pull request
-[ollisulopuisto/podcast#59](https://github.com/ollisulopuisto/podcast/pull/59), **open, not
-merged**. It forces the transcript's text onto the audio with torchaudio's `MMS_FA` (CTC,
-20 ms frames, multilingual including Finnish), one group of words at a time, and writes each
-word's aligned start and end. It does not change any transcript.
+- `packages/wordalign/` is the aligner, **one file** (`wordalign.py`, numpy; torch only when the
+  aligner is made). It forces the transcript's text onto the audio with torchaudio's `MMS_FA` (CTC,
+  20 ms frames, multilingual including Finnish), one group of words at a time. The transcribe app
+  imports it, and `colab-transcribe` uploads the same file to the Colab VM.
+- `podcast-magic`: *Correct word starts* (`Options.align`, off by default), a post-step on Whisper's
+  saved JSON.
+- `colab-transcribe --audio ... --json ... --align`: Whisper and the aligner both run on the VM.
+  The result is `<stem>.words.json` (section 3).
+- `scripts/ab/ctc_align.py` measures the same code against hand-marked starts.
 
-The candidate correction, on the same 15 words:
+The correction, on the 15 marked words (one speaker, local run):
 
 | | Whisper | forced aligner |
 |---|---|---|
@@ -70,45 +77,45 @@ The candidate correction, on the same 15 words:
 | within 100 ms | 7 / 15 | 14 / 15 |
 | after a pause | +263 ms | -6 ms |
 
-One word is far off (`Mitäs`, +173 ms). Words starting with a soft consonant (n, j, h, s) tend to
-be 30-80 ms *late* in the aligner (5 of 7), plosives and vowels are within about +-40 ms; the
-tendency is not a rule (`Joo.` once +7 ms, once -44 ms) and is not corrected for.
+On the Colab run, 12 marked words in the same clip: aligned start within 6-41 ms of the mark (median
+about 23 ms), Whisper's median error about 180 ms with a worst case of 2.4 s. **This second check is not
+independent**: the same words and speaker are what the rules below were tuned on. It shows that the
+Colab path works and gives the same quality, not that the result holds for other voices.
 
-Safety rules in the script, from what was measured: words are aligned in groups split at
-pauses over 0.5 s (a 2.9 s pause with another microphone's sound in it once made the aligner place
-a word 2.7 s early); an alignment more than 3 s later than Whisper's stamp, or more than 0.3 s
-earlier, is rejected and the word keeps no aligned time (`ctc_start` empty). The
-asymmetry is deliberate: Whisper is almost always early.
+One word is far off in the first measurement (`Mitäs`, +173 ms). Words starting with a soft consonant
+(n, j, h, s) tend to be 30-80 ms *late* in the aligner (5 of 7); the tendency is not a rule and is not
+corrected for.
+
+Safety rules, from what was measured: words are aligned in groups split at pauses over 0.5 s (a 2.9 s
+pause with another microphone's sound in it once made the aligner place a word 2.7 s early); an
+alignment more than 3 s later than Whisper's stamp, or more than 0.3 s earlier, is rejected and the word
+keeps Whisper's time. The asymmetry is deliberate: Whisper is almost always early. The word end is the
+longer of Whisper's end and the aligner's; ends are not validated.
 
 ## 3. Does the data format change?
 
-Not today: nothing in the repo writes or reads a changed format. The script reads Whisper's own
-JSON (`segments[].words[]` with `word`, `start`, `end`, in seconds) and writes a CSV:
+Yes, in `colab-transcribe`'s plain-audio mode (`docs/KUULAS-COLAB.md` has the whole contract):
 
+```json
+{"version": 1, "timing": "ctc-v1", "language": "fi", "rejected": 2,
+ "words": [{"w": "Niin,", "s": 8.923, "e": 9.48}]}
 ```
-word,whisper_start,whisper_end,ctc_start,ctc_end
-```
 
-- **Unit:** seconds, floats, written with 3 decimals.
-- **Origin:** the start of the audio file that was passed in, the same clock as Whisper's
-  stamps. Kuulas would convert to flicks from the media's start as it does now.
-- **Empty fields:** `ctc_start` / `ctc_end` are empty for a word that was not aligned (no letters in
-  it, or rejected). Empty is not zero.
-- **Ends are not validated.** If kuulas uses `ctc_start`, it should use `ctc_end` from the same row so
-  that start < end, and treat ends as unverified.
-
-If this is integrated, a marker is needed that tells a corrected transcript from an old one
-(for example a `timing` field on the media, `whisper` or `ctc-v1`). That does not exist; it is
-a decision for the integration, not yet made.
+- **Unit:** seconds, floats, 3 decimals. **Origin:** the start of that audio file (Whisper's clock).
+- **`words`** are in time order with `s < e`. An overlap shortens the earlier word, not the next.
+- **`timing`:** `ctc-v1` when the starts were corrected, `whisper` when they are Whisper's own.
+  `rejected` is the number of words the aligner could not place (they keep Whisper's time).
+- **Ends are approximate** and unvalidated.
+- The app's `.nhsx` path is unchanged: with the option on, corrected starts are written into the
+  session instead of Whisper's.
 
 ## 4. Do existing transcripts need redoing?
 
-They carry Whisper's raw times, so yes, to benefit; the fix does not apply on import. It needs
-the audio and a model run (the first run downloads about 1.2 GB of weights, and a 10-minute
-window took a few minutes on a Mac CPU), but **not a new transcription**: the aligner takes
-Whisper's JSON. podcast-magic keeps that JSON next to the job (`transcripts/<stem>.<fingerprint>.json`,
-`transcribe/run.py`). An adapter from the words stored in an `.nhsx` back to the aligner's input has not
-been written. There is no version field to tell a fixed transcript from an old one.
+They carry Whisper's raw times, so yes, to benefit; the fix does not apply on import. For a
+`podcast-magic` job the correction does **not** repeat the transcription: it reads the saved Whisper
+JSON (`transcripts/<stem>.<fingerprint>.json`) and keeps its own cache. For kuulas, re-run
+`colab-transcribe --audio ... --align` on the media. An adapter from words stored in an `.nhsx` back to the
+aligner's input has not been written. The `timing` field tells a corrected file from an old one.
 
 For kuulas's word deletion: a cut from Whisper's start includes a little silence in the usual case,
 which is harmless, but for the 1 % of words stamped 1-2.5 s early it would also cut the previous
@@ -116,23 +123,21 @@ word. That is the case a correction matters for.
 
 ## 5. How kuulas should call it
 
-Today, a command line only:
-
 ```
-uv run --package speechmix --with torch==2.8.0 --with torchaudio==2.8.0 \
-    python scripts/ab/ctc_align.py <whisper.json> <audio.wav> --csv <out.csv>
+uvx --from "git+https://github.com/ollisulopuisto/podcast#subdirectory=colab-transcribe" \
+    colab-transcribe --audio "/path/media.wav" --json ~/words --align --progress
 ```
 
-The audio must be the one the transcript was made from, with the same time zero. The pieces are
-importable from the script (`align_transcript(data, audio_16k, aligner, pad, errors)`,
-`make_torchaudio_aligner()`, `resample(x, rate)`), but a script is not an API and nothing promises its
-shape. torch 2.8.0 is pinned because `torchaudio.functional.forced_align` is removed after it, and
-torch is a heavy dependency for kuulas to take on. Do not call this from kuulas yet.
+The command string is a setting in kuulas; the cloud side installs torch 2.8 into its own folder, and
+checks the aligner before it transcribes. `--progress` prints `PROGRESS <0-100> <message>` lines;
+SIGTERM stops the Colab session; a missing result is exit 1 with the reason on stderr. First run: it
+installs torch on a fresh VM and downloads about 1.2 GB of weights. Cost and wall time were not recorded;
+transcription speed does not matter much when the run is in the background.
 
 ## What decides the next step
 
-1. Whether the owner wants the aligner in the pipeline, and where (the transcribe app's post-step,
-   a `speechmix` module, and the Colab script as a copy, which then drifts).
+1. A second speaker and a window from another episode, with a few hand-marked starts each, before the
+   numbers above are trusted beyond one voice. This is the largest open question.
 2. Ends: measure a few word ends before anything uses them.
-3. A second speaker, and a window from another episode, before the numbers above are trusted
-   beyond one voice.
+3. Drift over a long recording (the clip is 10 minutes).
+4. Cost of a Colab run per hour of audio, if it matters.
