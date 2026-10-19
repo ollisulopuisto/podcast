@@ -1,6 +1,6 @@
 """Pakotettu kohdistus: Whisperin sanat ääneen, ja vertailu käsin merkittyihin alkuihin.
 
-    uv run --package speechmix --with torch==2.8.0 --with torchaudio==2.8.0 \\
+    uv run --package podcast-magic --with torch==2.8.0 --with torchaudio==2.8.0 \\
         python scripts/ab/ctc_align.py olli.json olli.wav \\
         --marks merkinnat.txt --csv ctc.csv
 
@@ -12,9 +12,10 @@ sama asia. Tämä kohdistaa **tekstin** ääneen foneettisesti (CTC, torchaudion
 omaan aika-arvioon. Mitä se antaa, ratkaisee vertailu sinun merkintöihisi:
 ``ctc_error`` (oma - kohdistin) ``whisper_error``in (oma - Whisper) rinnalla.
 
-Kohdistin ajetaan **segmentti kerrallaan** (``PAD_S`` täytettä molemmin puolin),
-ei koko äänelle: CTC:n ristikko kasvaa ajan ja tekstin pituuden tulona, eikä
-kymmenen minuutin pätkä mahdu siihen kohtuullisella muistilla.
+Kohdistus itse on sovelluksessa (``podcastmagic.transcribe.align``), ja tämä on
+sen mittari: sama koodi, jota litterointi käyttää, ajettuna käsin merkittyjä
+alkuja vasten. Kohdistin ajetaan ryhmä kerrallaan eikä koko äänelle: CTC:n
+ristikko kasvaa ajan ja tekstin pituuden tulona.
 
 Merkintätiedosto: rivit ``whisper_aika sana oma_aika``, otsikot ``TAUON
 JÄLKEEN`` ja ``SISÄLLÄ``; ajat sekunteina tai muodossa ``m:ss,mmm``;
@@ -22,7 +23,6 @@ rivit joilla on ``XX`` ohitetaan.
 
 Neuroverkko annetaan ``main``ille parametrina (``aligner``), jotta kaikki sen
 ympärillä on testattavissa ilman torchia (``tests/test_ctc_align.py``).
-Itse malli ladataan vasta ajossa (``make_torchaudio_aligner``).
 """
 
 from __future__ import annotations
@@ -33,47 +33,11 @@ import json
 import math
 import statistics
 import sys
-import unicodedata
 from pathlib import Path
 
 import numpy as np
 
-#: Kohdistimen näytetaajuus (``torchaudio.pipelines.MMS_FA.sample_rate``).
-RATE = 16000
-
-#: Täyte segmentin molemmin puolin sekunteina. Whisperin segmentin raja voi olla
-#: sadan millisekunnin verran pielessä (mitattu), joten ikkunan pitää ulottua
-#: sanan oikean alun taakse. Liian suuri täyte vetää viereisen sanan äänen
-#: mukaan pakotettuun kohdistukseen.
-PAD_S = 0.5
-
-#: Litteroinnin, jossa on vain tasainen sanalista, ryhmittely: tätä pidempi tauko
-#: aloittaa uuden ryhmän, ja ryhmä on enintään näin pitkä.
-GROUP_GAP_S = 1.0
-GROUP_MAX_S = 25.0
-
-#: Tätä pidempi tauko Whisperin sanojen välillä aloittaa uuden kohdistusryhmän.
-#: Mitattu: segmentissä oli 2,9 s tauko, jossa kuului toisen mikin ääntä, ja
-#: pakotettu kohdistus ahtaa sanat peräkkäin ja sijoitti tauon jälkeisen sanan
-#: sinne, 2,7 s liian aikaisin. Ihmisen puheen sisäiset tauot ovat harvoin yli
-#: puolen sekunnin, joten ryhmä ei menetä kontekstia, jota kohdistin tarvitsee.
-SPLIT_GAP_S = 0.5
-
-#: Kohdistimen siirto Whisperin leimasta on epäsymmetrinen, koska Whisperin virhe
-#: on: se on lähes aina liian aikaisin. Käsin kuunnellen (kolme sanaa) Whisper
-#: oli 1,0, 2,5 ja 1,4 s liian aikaisin ja kohdistin osui 34 ms:n sisään, joten
-#: suuri siirto *myöhemmäksi* on korjaus. Kaikki kahdeksan sellaista olivat
-#: myöhemmäksi, enintään 2,5 s; yli ``MAX_LATE_S`` on selittämätön.
-MAX_LATE_S = 3.0
-
-#: Siirto *aikaisemmaksi* on epäilyttävä: Whisper ei ole koskaan ollut yli
-#: 0,12 s myöhässä (mitattu, 10 sanaa), ja ainoa mitattu suuri siirto
-#: aikaisemmaksi (2,4 s, ennen taukoryhmittelyä) oli väärin. Raja on 2,5-kertainen
-#: suurimpaan mitattuun myöhästymiseen nähden, ja se pitää olla alle ``PAD_S``:n:
-#: ikkuna alkaa ``PAD_S`` ennen Whisperin leimaa, joten sitä suurempi siirto
-#: aikaisemmaksi olisi mahdoton ja raja olisi tyhjä. Sana jää ilman aikaa ja
-#: syy kirjataan.
-MAX_EARLY_S = 0.3
+from podcastmagic.transcribe import align as core
 
 #: Merkinnän ja arvion ero, jota pidetään osumana (sama kuin muissa mittareissa).
 HIT_S = 0.030
@@ -81,16 +45,6 @@ HIT_S = 0.030
 #: Merkintä yhdistetään sanaan, jonka Whisper-alku on näin lähellä merkinnän
 #: Whisper-aikaa (aika on kopioitu samasta litteroinnista).
 MATCH_S = 0.005
-
-
-def normalise_word(text: str) -> str:
-    """Sana sellaiseksi kuin malli tuntee: pienet kirjaimet a-z ja heittomerkki.
-
-    ä, ö ja å romanisoidaan ``a``, ``o`` ja ``a``; numerot ja välimerkit
-    pudotetaan. Tyhjä tulos tarkoittaa sanaa, jota ei voi kohdistaa.
-    """
-    text = unicodedata.normalize("NFKD", text.replace("’", "'").lower())
-    return "".join(c for c in text if ("a" <= c <= "z") or c == "'")
 
 
 def seconds(token: str) -> float:
@@ -134,38 +88,9 @@ def parse_marks(text: str) -> list[dict]:
     return marks
 
 
-def _clean_words(raw) -> list[dict]:
-    return [
-        {
-            "word": w.get("word", ""),
-            "start": float(w["start"]),
-            "end": float(w.get("end", w["start"])),
-        }
-        for w in raw
-        if isinstance(w, dict) and w.get("start") is not None
-    ]
-
-
 def segments_of(data: dict) -> list[list[dict]]:
-    """Whisperin JSON ryhmiksi, joista jokainen kohdistetaan erikseen."""
-    groups: list[list[dict]] = []
-    if isinstance(data, dict) and data.get("segments"):
-        for segment in data["segments"]:
-            words = _clean_words(segment.get("words") or [])
-            if words:
-                groups.append(words)
-    elif isinstance(data, dict) and data.get("words"):
-        current: list[dict] = []
-        for word in _clean_words(data["words"]):
-            if current and (
-                word["start"] - current[-1]["end"] > GROUP_GAP_S
-                or word["end"] - current[0]["start"] > GROUP_MAX_S
-            ):
-                groups.append(current)
-                current = []
-            current.append(word)
-        if current:
-            groups.append(current)
+    """Whisperin JSON ryhmiksi; kieltäytyy, jos sanoja ei ole."""
+    groups = core.groups_of(data)
     if not groups:
         raise SystemExit("ei sanoja, joilla on alkuaika (segments[].words[].start).")
     return groups
@@ -173,81 +98,20 @@ def segments_of(data: dict) -> list[list[dict]]:
 
 def resample(x: np.ndarray, rate: int) -> np.ndarray:
     """Ääni kohdistimen taajuudelle (16 kHz); sama taulukko jos jo oikea."""
-    if rate == RATE:
+    if rate == core.RATE:
         return x
     from scipy.signal import resample_poly
 
-    g = math.gcd(RATE, rate)
-    return resample_poly(x, RATE // g, rate // g).astype(np.float32)
+    g = math.gcd(core.RATE, rate)
+    return resample_poly(x, core.RATE // g, rate // g).astype(np.float32)
 
 
-def split_at_pauses(
-    groups: list[list[dict]], gap: float = SPLIT_GAP_S
-) -> list[list[dict]]:
-    """Ryhmät katkaistuna kohdista, joissa sanojen välissä on yli ``gap`` sekuntia."""
-    out: list[list[dict]] = []
-    for words in groups:
-        current: list[dict] = []
-        for word in words:
-            if current and word["start"] - current[-1]["end"] > gap:
-                out.append(current)
-                current = []
-            current.append(word)
-        if current:
-            out.append(current)
-    return out
-
-
-def window(words: list[dict], audio_s: float, pad: float = PAD_S) -> tuple[float, float]:
-    """Segmentin ikkuna täytteineen, rajattuna äänen sisään."""
-    return max(0.0, words[0]["start"] - pad), min(audio_s, words[-1]["end"] + pad)
-
-
-def align_words(
-    words, audio, align, pad: float = PAD_S, errors: list | None = None
-) -> list[dict]:
-    """Yhden segmentin sanat kohdistettuna; ajat koko äänen aika-akselilla.
-
-    ``align(chunk, words) -> [(alku, loppu), ...]`` sekunteina palan alusta.
-    Epäonnistuminen ei kaada ajoa: segmentin sanat jäävät ilman aikaa ja syy
-    kirjataan ``errors``iin. ``None`` ei ole nolla.
-    """
-    out = [{**w, "ctc_start": None, "ctc_end": None} for w in words]
-    texts = [normalise_word(w["word"]) for w in words]
-    keep = [i for i, t in enumerate(texts) if t]
-    if not keep:
-        return out
-    start, end = window(words, len(audio) / RATE, pad)
-    chunk = audio[int(round(start * RATE)) : int(round(end * RATE))]
-    try:
-        spans = align(chunk, [texts[i] for i in keep])
-        if len(spans) != len(keep):
-            raise RuntimeError(
-                f"aligner returned {len(spans)} spans for {len(keep)} words"
-            )
-    except Exception as exc:  # mallin virhe ei saa kaataa muita segmenttejä
-        if errors is not None:
-            errors.append(f"{start:.1f}-{end:.1f} s: {exc}")
-        return out
-    for i, (a, b) in zip(keep, spans, strict=True):
-        shift = start + a - words[i]["start"]
-        if shift > MAX_LATE_S or shift < -MAX_EARLY_S:
-            if errors is not None:
-                errors.append(
-                    f"{words[i]['word'].strip()} at {words[i]['start']:.2f} s: aligner said "
-                    f"{start + a:.2f} s ({shift:+.1f} s from Whisper), rejected"
-                )
-            continue
-        out[i]["ctc_start"] = start + a
-        out[i]["ctc_end"] = start + b
-    return out
-
-
-def align_transcript(data, audio, align, pad: float = PAD_S, errors: list | None = None):
-    rows: list[dict] = []
-    for words in split_at_pauses(segments_of(data)):
-        rows.extend(align_words(words, audio, align, pad, errors))
-    return rows
+def align_transcript(
+    data, audio, aligner, pad: float = core.PAD_S, errors: list | None = None
+):
+    """Kaikki sanat kohdistettuna sovelluksen ytimellä; kieltäytyy, jos sanoja ei ole."""
+    segments_of(data)
+    return core.align_raw(data, audio, aligner, pad, errors)
 
 
 def compare(marks: list[dict], rows: list[dict]) -> list[dict]:
@@ -347,30 +211,6 @@ def write_csv(rows: list[dict], path: Path) -> None:
             )
 
 
-def make_torchaudio_aligner():
-    """Torchaudion ``MMS_FA``: monikielinen CTC-kohdistin (tukee suomea).
-
-    Painot (noin 1,2 Gt) ladataan ensimmäisellä ajolla ja jäävät välimuistiin.
-    """
-    import torch
-    import torchaudio
-
-    bundle = torchaudio.pipelines.MMS_FA
-    model = bundle.get_model(with_star=False).eval()
-    tokenizer = bundle.get_tokenizer()
-    aligner = bundle.get_aligner()
-
-    def align(chunk, words):
-        waveform = torch.from_numpy(np.asarray(chunk, dtype=np.float32))[None, :]
-        with torch.inference_mode():
-            emission, _ = model(waveform)
-        spans = aligner(emission[0], tokenizer(words))
-        ratio = waveform.size(1) / emission.size(1) / bundle.sample_rate
-        return [(s[0].start * ratio, s[-1].end * ratio) for s in spans]
-
-    return align
-
-
 def main(argv=None, aligner=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("transcript", type=Path, help="Whisperin JSON")
@@ -380,7 +220,7 @@ def main(argv=None, aligner=None) -> int:
     parser.add_argument("--marks", type=Path, help="käsin merkityt alut")
     parser.add_argument("--csv", type=Path, help="kirjoita sanakohtaiset ajat tänne")
     parser.add_argument(
-        "--pad", type=float, default=PAD_S, help="täyte segmentin ympärillä (s)"
+        "--pad", type=float, default=core.PAD_S, help="täyte segmentin ympärillä (s)"
     )
     args = parser.parse_args(argv)
 
@@ -393,11 +233,11 @@ def main(argv=None, aligner=None) -> int:
 
     if aligner is None:
         try:
-            aligner = make_torchaudio_aligner()
-        except ImportError as exc:
+            aligner = core.make_aligner()
+        except core.AlignerUnavailable as exc:
             print(
-                f"Kohdistin tarvitsee torchin ja torchaudion ({exc}). Aja näin:\n"
-                "  uv run --package speechmix --with torch==2.8.0 --with torchaudio==2.8.0 "
+                f"{exc}\nAja näin:\n"
+                "  uv run --package podcast-magic --with torch==2.8.0 --with torchaudio==2.8.0 "
                 "python scripts/ab/ctc_align.py ..."
             )
             sys.exit(1)

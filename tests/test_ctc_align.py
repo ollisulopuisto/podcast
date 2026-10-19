@@ -43,77 +43,7 @@ def _word(text, start, end):
 # --- Tekstin siistiminen -------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        (" Niin,", "niin"),
-        ("Kysytäänpäs", "kysytaanpas"),
-        ("tekoälyllä.", "tekoalylla"),
-        ("työ", "tyo"),
-        ("Åland", "aland"),
-        ("don't", "don't"),
-        ("don\u2019t", "don't"),
-        ("...", ""),
-        ("2026", ""),
-        ("  ", ""),
-    ],
-)
-def test_words_are_romanised_to_what_the_model_knows(text, expected):
-    assert ca.normalise_word(text) == expected
-
-
 # --- Ikkunointi ja ajan siirto -------------------------------------------------
-
-
-def test_the_window_is_the_segment_with_padding_clipped_to_the_audio():
-    words = [_word("a", 2.0, 2.5), _word("b", 2.5, 3.0)]
-    assert ca.window(words, 10.0, pad=0.5) == (1.5, 3.5)
-    assert ca.window(words, 3.2, pad=0.5) == (1.5, 3.2)
-    assert ca.window([_word("a", 0.2, 0.4)], 10.0, pad=0.5) == (0.0, 0.9)
-
-
-def test_aligned_times_are_moved_back_to_the_whole_audio_clock():
-    audio = np.zeros(10 * RATE, dtype=np.float32)
-    words = [_word(" Niin,", 2.0, 2.4), _word("kyllä", 2.5, 3.0)]
-    out = ca.align_words(words, audio, fake_align, pad=0.5)
-    assert out[0]["ctc_start"] == pytest.approx(2.0)
-    assert out[0]["ctc_end"] == pytest.approx(2.05)
-    assert out[1]["ctc_start"] == pytest.approx(2.5)
-    # Alkuperäiset kentät säilyvät.
-    assert out[1]["start"] == 2.5 and out[1]["word"] == "kyllä"
-
-
-def test_the_aligner_gets_the_padded_chunk_and_the_cleaned_words():
-    audio = np.zeros(10 * RATE, dtype=np.float32)
-    seen = {}
-
-    def spy(chunk, words):
-        seen["samples"], seen["words"] = len(chunk), list(words)
-        return [(0.0, 0.1)] * len(words)
-
-    ca.align_words(
-        [_word("Niin,", 2.0, 2.4), _word("Äiti!", 2.5, 3.0)], audio, spy, pad=0.5
-    )
-    assert seen["words"] == ["niin", "aiti"]
-    assert abs(seen["samples"] - int(2.0 * RATE)) <= 1
-
-
-def test_a_word_without_letters_is_skipped_and_gets_no_time():
-    audio = np.zeros(10 * RATE, dtype=np.float32)
-    seen = []
-
-    def spy(chunk, words):
-        seen.extend(words)
-        return [(0.5 + 0.4 * i, 0.6 + 0.4 * i) for i in range(len(words))]
-
-    out = ca.align_words(
-        [_word("niin", 2.0, 2.2), _word("...", 2.2, 2.3), _word("joo", 2.4, 2.6)],
-        audio,
-        spy,
-    )
-    assert seen == ["niin", "joo"]
-    assert out[1]["ctc_start"] is None and out[1]["ctc_end"] is None
-    assert out[0]["ctc_start"] is not None and out[2]["ctc_start"] is not None
 
 
 def test_every_rejected_word_is_printed_not_only_the_first_few(tmp_path, capsys):
@@ -132,150 +62,12 @@ def test_every_rejected_word_is_printed_not_only_the_first_few(tmp_path, capsys)
     assert printed.count("rejected") == 12
 
 
-def test_a_failing_aligner_gives_no_times_and_a_recorded_error_not_a_crash():
-    audio = np.zeros(10 * RATE, dtype=np.float32)
-
-    def broken(chunk, words):
-        raise RuntimeError("trellis too large")
-
-    errors = []
-    out = ca.align_words([_word("niin", 2.0, 2.2)], audio, broken, errors=errors)
-    assert out[0]["ctc_start"] is None
-    assert len(errors) == 1 and "trellis too large" in errors[0]
-
-
-def test_an_aligner_that_returns_the_wrong_number_of_spans_is_a_recorded_error():
-    audio = np.zeros(10 * RATE, dtype=np.float32)
-    errors = []
-    out = ca.align_words(
-        [_word("niin", 2.0, 2.2), _word("joo", 2.4, 2.6)],
-        audio,
-        lambda chunk, words: [(0.0, 0.1)],
-        errors=errors,
-    )
-    assert [r["ctc_start"] for r in out] == [None, None]
-    assert len(errors) == 1 and "spans" in errors[0]
-
-
-def test_a_transcript_is_aligned_one_segment_at_a_time_in_order():
-    audio = np.zeros(20 * RATE, dtype=np.float32)
-    calls = []
-
-    def spy(chunk, words):
-        calls.append(list(words))
-        return fake_align(chunk, words)
-
-    data = {
-        "segments": [
-            _segment([_word("yksi", 1.0, 1.2), _word("kaksi", 1.3, 1.6)], 1.0, 1.6),
-            _segment([_word("kolme", 8.0, 8.4)], 8.0, 8.4),
-        ]
-    }
-    rows = ca.align_transcript(data, audio, spy)
-    assert calls == [["yksi", "kaksi"], ["kolme"]]
-    assert [r["word"] for r in rows] == ["yksi", "kaksi", "kolme"]
-    assert rows[2]["ctc_start"] == pytest.approx(8.0)
-
-
-def test_a_segment_is_split_at_long_pauses_so_foreign_sound_is_not_aligned_as_a_word():
-    """Mitattu: segmentissä oli 2,9 s tauko, jossa kuului toisen mikin ääntä, ja
-    pakotettu kohdistus sijoitti tauon jälkeisen sanan sinne (2,7 s liian
-    aikaisin). Ryhmät erotetaan tauoista."""
-    audio = np.zeros(20 * RATE, dtype=np.float32)
-    calls = []
-
-    def spy(chunk, words):
-        calls.append(list(words))
-        return fake_align(chunk, words)
-
-    data = {
-        "segments": [
-            _segment(
-                [
-                    _word("kyllä", 1.0, 1.4),
-                    _word("niin", 1.5, 1.8),
-                    _word("mitäs", 4.7, 5.0),
-                ],
-                1.0,
-                5.0,
-            )
-        ]
-    }
-    ca.align_transcript(data, audio, spy)
-    assert calls == [["kylla", "niin"], ["mitas"]]
-
-
-def test_a_pause_shorter_than_half_a_second_keeps_the_words_in_one_group():
-    """Rajat kirjaimellisina: 0,4 s on puheen sisäinen tauko, 0,6 s ei ole."""
-    one = ca.split_at_pauses([[_word("a", 1.0, 1.2), _word("b", 1.6, 2.0)]])
-    assert len(one) == 1
-    two = ca.split_at_pauses([[_word("a", 1.0, 1.2), _word("b", 1.8, 2.0)]])
-    assert len(two) == 2
-
-
-def _shifted(shift_s):
-    """Kohdistin sanoo sanan alkavan ``shift_s`` Whisperin leimasta (5,0 s); ikkuna alkaa 4,5 s."""
-    audio = np.zeros(20 * RATE, dtype=np.float32)
-    errors = []
-    out = ca.align_words(
-        [_word("niin", 5.0, 5.3)],
-        audio,
-        lambda chunk, w: [(0.5 + shift_s, 0.7 + shift_s)],
-        pad=0.5,
-        errors=errors,
-    )
-    return out[0], errors
-
-
-def test_a_late_shift_is_accepted_up_to_what_was_observed():
-    """Mitattu käsin kuunnellen: Whisper oli 1,0, 2,5 ja 1,4 s liian aikaisin, ja
-    kohdistin osui 34 ms:n sisään. Suuri siirto *myöhemmäksi* on se virhe, jonka
-    kohdistin korjaa, ei sen virhe."""
-    word, errors = _shifted(2.5)
-    assert word["ctc_start"] == pytest.approx(7.5)
-    assert errors == []
-
-
-def test_a_late_shift_beyond_the_limit_is_rejected():
-    word, errors = _shifted(3.5)
-    assert word["ctc_start"] is None and word["ctc_end"] is None
-    assert len(errors) == 1 and "niin" in errors[0]
-    # Molemmat ajat näkyvät, jotta ihminen voi ratkaista kumpi on oikeassa.
-    assert "5.00" in errors[0] and "aligner said" in errors[0]
-
-
-def test_the_early_limit_is_below_the_padding_or_it_could_never_fire():
-    assert ca.MAX_EARLY_S < ca.PAD_S
-
-
-def test_an_early_shift_is_accepted_only_a_little():
-    """Mitattu: kohdistin siirsi sanan 2,4 s *aikaisemmaksi* ja oli väärässä.
-    Whisper ei ole koskaan ollut yli 0,12 s myöhässä."""
-    word, errors = _shifted(-0.25)
-    assert word["ctc_start"] is not None and errors == []
-    word, errors = _shifted(-0.35)
-    assert word["ctc_start"] is None
-    assert len(errors) == 1
-
-
 def test_words_without_a_start_time_are_left_out_of_the_transcript():
     audio = np.zeros(5 * RATE, dtype=np.float32)
     data = {
         "segments": [_segment([_word("niin", 1.0, 1.2), {"word": "ei aikaa"}], 1.0, 1.2)]
     }
     assert [r["word"] for r in ca.align_transcript(data, audio, fake_align)] == ["niin"]
-
-
-def test_a_flat_word_list_is_split_at_long_gaps():
-    data = {
-        "words": [
-            _word("a", 1.0, 1.2),
-            _word("b", 1.3, 1.5),
-            _word("c", 6.0, 6.2),
-        ]
-    }
-    groups = ca.segments_of(data)
-    assert [[w["word"] for w in g] for g in groups] == [["a", "b"], ["c"]]
 
 
 def test_a_file_without_words_is_refused():
@@ -429,9 +221,9 @@ def test_without_the_neural_aligner_installed_the_error_says_how_to_run_it(
     transcript, audio = _inputs(tmp_path)
 
     def missing():
-        raise ImportError("No module named 'torchaudio'")
+        raise ca.core.AlignerUnavailable("torchaudio puuttuu")
 
-    monkeypatch.setattr(ca, "make_torchaudio_aligner", missing)
+    monkeypatch.setattr(ca.core, "make_aligner", missing)
     with pytest.raises(SystemExit) as caught:
         ca.main([str(transcript), str(audio)])
     assert caught.value.code not in (0, None)
