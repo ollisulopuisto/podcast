@@ -84,8 +84,11 @@ MAX_EARLY_S = 0.3
 #: jolloin vanha tulos ei kelpaa uuden nimen alla.
 VERSION = "ctc1"
 
-#: Asennus kuten moottoreilla (``backends``).
-INSTALL = "uv sync --all-packages --extra align"
+#: Asennus. Ei ole ``--extra``: torch on jo ``fcp-subs-whisper``in riippuvuus eri
+#: versiolla (>=2.5.1, lukossa 2.13), ja kohdistin tarvitsee torchaudion 2.8:n,
+#: koska ``forced_align`` poistuu 2.9:stä. Lisäriippuvuus pakottaisi toisen
+#: sovelluksen torchin toiseen versioon hiljaa. ``--with`` ei kosketa lukkoa.
+INSTALL = "uv run --package podcast-magic --with torch==2.8.0 --with torchaudio==2.8.0 podcast-magic"
 
 
 class AlignerUnavailable(RuntimeError):
@@ -325,9 +328,10 @@ def _load(path: Path, source: list) -> tuple[list[dict], list[str]] | None:
 def refine(raw: dict, samples: np.ndarray, get_aligner, cache: Path | None = None):
     """Whisperin raakatuloksesta korjatut sanat ja yhteenveto.
 
-    ``get_aligner()`` palauttaa kohdistimen vasta kun sitä tarvitaan, joten
-    välimuistista luettaessa mallia ei ladata. Välimuisti kelpaa vain jos se
-    on tehty samoista sanoista samalla versiolla.
+    ``get_aligner()`` palauttaa kohdistimen ja ``samples`` äänen (16 kHz float32
+    -taulukko tai sen palauttava funktio) vasta kun niitä tarvitaan, joten
+    välimuistista luettaessa mallia ei ladata eikä ääntä pureta. Välimuisti
+    kelpaa vain jos se on tehty samoista sanoista samalla versiolla.
     """
     flat = [w for group in groups_of(raw) for w in group]
     if not flat:
@@ -338,7 +342,8 @@ def refine(raw: dict, samples: np.ndarray, get_aligner, cache: Path | None = Non
         rows, rejected = cached
         return refined_words(rows), summarize(rows, rejected)
     rejected: list[str] = []
-    rows = align_raw(raw, samples, get_aligner(), errors=rejected)
+    audio = samples() if callable(samples) else samples
+    rows = align_raw(raw, audio, get_aligner(), errors=rejected)
     summary = summarize(rows, rejected)
     if cache:
         try:

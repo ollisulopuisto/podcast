@@ -140,6 +140,41 @@ Whisper siistii puheen ellei toisin sanota. Muistikirja otti sen pois päältä
 koska «tota noin» on puhetta: ilman sitä vaimennus sulkee puolikkaan sekunnin
 kohdalta, jossa joku selvästi puhui.
 
+### Sanojen alut: Whisper on aikaisessa, ja korjaus on olemassa
+
+Whisperin sanan alku on huomiomatriisin arvio, ja käsin aaltomuodosta merkittyjä
+alkuja vasten (15 sanaa, yksi puhuja) se on lähes aina liian aikaisin:
+mediaani 87 ms, 118 ms myöhässä … 557 ms aikaisin, ja joka sadannella sanalla
+alku on 1,0–2,5 s liian aikaisin. Tauon jälkeen mediaani on 263 ms. Mikään
+vakio ei korjaa sitä.
+
+**Korjaa sanojen alut** (oletuksena pois) ajaa litteroinnin jälkeen
+pakotetun kohdistimen: torchaudion `MMS_FA` sovittaa *tekstin* ääneen 20 ms:n
+kehyksillä ja osaa suomea. Samoilla 15 sanalla sen mediaanivirhe on 28 ms ja
+Whisperin 117 ms, ja neljässä kuunnellussa sanassa, jotka Whisper oli 1,0–2,5 s
+liian aikaisin, oikeassa oli kohdistin. Se lukee Whisperin talletetun JSONin,
+joten päällekytkentä ei litteroi uudestaan, ja tuloksella on oma
+välimuistitiedostonsa (`<nimi>.<tunniste>.align-ctc1.json`) litteroinnin
+vieressä.
+
+Mitä se ei ole: sanojen *loppuja* ei ole mitattu, joten sana pitää pidemmän
+kahdesta lopusta. Ajautumista pitkässä äänityksessä, muita puhujia eikä Colabin
+GPU-reittiä ole mitattu.
+
+Se tarvitsee torchin, joka ei ole lukossa (`fcp-subs-whisper` kiinnittää
+siitä jo toisen version). Aja sovellus näin; ensimmäisellä ajolla ladataan
+noin 1,2 Gt painoja:
+
+```
+uv run --package podcast-magic --with torch==2.8.0 --with torchaudio==2.8.0 podcast-magic
+```
+
+Versio 2.8.0 on tahallinen: torchaudio poistaa `forced_align`in 2.9:ssä.
+Asetus on harmaa litterointivälilehdellä tämän komennon kanssa, kun torch
+puuttuu, ja ajo, jossa se on päällä, pysähtyy ennen litterointia eikä jätä asiaa
+hiljaa tekemättä. `scripts/ab/ctc_align.py` mittaa kohdistimen omia käsin
+merkittyjä alkujasi vasten samalla koodilla.
+
 ## Vaimennus
 
 Puhejaksot tulevat litteroinnista, eivät tasokynnyksestä. Sanan aikaleima on

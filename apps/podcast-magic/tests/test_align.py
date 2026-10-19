@@ -324,6 +324,21 @@ def test_the_aligner_is_not_loaded_when_the_alignment_is_cached(tmp_path):
     assert second[1]["aligned"] == first[1]["aligned"] == 2
 
 
+def test_the_audio_is_decoded_only_when_the_alignment_is_not_cached(tmp_path):
+    """Tunnin ääni on 115 MB int16:na: välimuistiosuma ei saa purkaa sitä turhaan."""
+    cache = tmp_path / "a.json"
+    decoded = []
+
+    def decode():
+        decoded.append(1)
+        return _audio()
+
+    align.refine(_raw(), decode, lambda: fake_align, cache)
+    assert decoded == [1]
+    align.refine(_raw(), decode, lambda: pytest.fail("loaded"), cache)
+    assert decoded == [1]
+
+
 def test_a_cache_made_from_other_words_is_ignored(tmp_path):
     cache = tmp_path / "a.json"
     align.refine(_raw(), _audio(), lambda: fake_align, cache)

@@ -25,6 +25,7 @@ from .. import audio as audio_io
 from .. import nhsx
 from ..jobs import Progress
 from ..nhsx.write import next_free_path, set_transcription
+from . import align
 from .backends import resolve
 from .backends.base import words_from_segments
 from .options import Options
@@ -119,11 +120,22 @@ def run(
 ) -> dict:
     """Litteroi istunnon äänipoolin ja kirjoittaa uuden istuntotiedoston."""
     backend = resolve(options.backend)
+    if options.align:
+        # Ennen kuin mitään litteroidaan: puuttuva kohdistin selviäisi muuten vasta
+        # tunnin litteroinnin jälkeen, ja kytkin lupasi korjatut alut.
+        status = align.availability()
+        if not status["available"]:
+            raise RuntimeError(
+                f"Kohdistus on päällä, mutta sitä ei voi ajaa ({status['reason']}). "
+                f"Asenna: {status['install']}"
+            )
     info = backend.info()
     progress.log(f"Moottori: {info.label} — {info.device}")
 
     session = nhsx.read(session_path)
-    progress.log(f"Istunto: {Path(session_path).name} — {len(session.files)} tiedostoa poolissa")
+    progress.log(
+        f"Istunto: {Path(session_path).name} — {len(session.files)} tiedostoa poolissa"
+    )
 
     directory = transcripts_dir(session_path)
     directory.mkdir(parents=True, exist_ok=True)
@@ -142,10 +154,22 @@ def run(
     total = len(work)
     if total == 0:
         progress.log("Ei mitään litteroitavaa.")
-        return {"written": "", "files": 0, "words": 0}
+        return {"written": "", "files": 0, "words": 0, "aligned": 0}
 
     written_words = 0
     changed = 0
+    aligned_words = 0
+    align_candidates = 0
+    loaded_aligner: list = []
+
+    def get_aligner():
+        if not loaded_aligner:
+            progress.log(
+                "Ladataan kohdistin (ensimmäisellä kerralla noin 1,2 Gt painoja)…"
+            )
+            loaded_aligner.append(align.make_aligner())
+        return loaded_aligner[0]
+
     for index, (file_info, path) in enumerate(work):
         progress.check()
         progress.step(Path(path).name, done=index, total=total)
@@ -153,6 +177,7 @@ def run(
 
         cache = cache_path(directory, path, options)
         result_raw = None
+        samples = None
         if cache.is_file() and not force:
             try:
                 result_raw = json.loads(cache.read_text(encoding="utf-8"))
@@ -184,6 +209,33 @@ def run(
         else:
             words = words_from_segments(list(result_raw.get("segments") or ()))
 
+        if options.align and words:
+            progress.log("  kohdistetaan sanojen alut…")
+            source = samples if samples is not None else (lambda: audio_io.decode(path))
+            words, summary = align.refine(
+                result_raw,
+                source,
+                get_aligner,
+                align.cache_path(directory, path, options),
+            )
+            align_candidates += summary["words"]
+            aligned_words += summary["aligned"]
+            shift = summary["median_shift_ms"]
+            progress.log(
+                f"  kohdistettu {summary['aligned']}/{summary['words']} sanaa"
+                + (
+                    f", alut siirtyivät mediaanissa {shift:+.0f} ms"
+                    if shift is not None
+                    else ""
+                )
+            )
+            for message in summary["rejected"][:10]:
+                progress.log(f"  ! {message}")
+            if len(summary["rejected"]) > 10:
+                progress.log(f"  … ja {len(summary['rejected']) - 10} muuta hylättyä")
+            if summary["cache_error"]:
+                progress.log(f"  kohdistusta ei saatu talteen: {summary['cache_error']}")
+
         if not words:
             # Tyhjä litterointi on kelvollinen <Transcription> ja täysin
             # väärä tulos: vaimennus vaientaisi koko raidan. Se selviäisi
@@ -208,6 +260,14 @@ def run(
         progress.fraction(1.0)
         progress.step(Path(path).name, done=index + 1, total=total)
 
+    if options.align and align_candidates and aligned_words == 0:
+        # Kytkin lupasi korjatut alut. Jos yksikään sana ei kohdistunut, tulos on
+        # Whisperin alkuperäinen ja ajo näyttäisi onnistuneelta.
+        raise RuntimeError(
+            f"Kohdistus oli päällä, mutta yksikään {align_candidates} sanasta ei kohdistunut. "
+            "Istuntoa ei kirjoitettu. Syyt ovat ajon lokissa."
+        )
+
     if written_words == 0:
         raise RuntimeError(
             f"Litterointi ajettiin {changed} tiedostolle eikä yhtäkään sanaa "
@@ -217,5 +277,12 @@ def run(
 
     target = next_free_path(output_path(session_path))
     nhsx.write(session.tree, target)
-    progress.log(f"Kirjoitettiin {target.name} — {written_words} sanaa {changed} tiedostosta.")
-    return {"written": str(target), "files": changed, "words": written_words}
+    progress.log(
+        f"Kirjoitettiin {target.name} — {written_words} sanaa {changed} tiedostosta."
+    )
+    return {
+        "written": str(target),
+        "files": changed,
+        "words": written_words,
+        "aligned": aligned_words,
+    }
