@@ -25,8 +25,10 @@ TRANSFERS = ("drive", "direct")
 
 #: Mitä litteroidaan. "tracks" litteroi raidat erikseen (puhujat tiedossa),
 #: "downmix" litteroi koko miksauksen kerran ilman puhujia — ks. podcast-magicin
-#: ``transcribe/downmix.py``. Oletus on raidat, eikä sitä kerrota skriptille.
-SOURCES = ("tracks", "downmix")
+#: ``transcribe/downmix.py``. "audio" litteroi pelkät äänitiedostot ilman istuntoa
+#: ja palauttaa sanat JSONina (``docs/KUULAS-COLAB.md``). Oletus on raidat, eikä
+#: sitä kerrota skriptille.
+SOURCES = ("tracks", "downmix", "audio")
 
 #: Täytesanat Whispereille. Oletus on sama kuin skriptissa itsessään; jos
 #: se muuttuu sinne, se muuttuu tänne samaan hengessä.
@@ -60,6 +62,10 @@ class RunOptions:
     bleed_filter: bool = True
     # Käsikirjoitus: lyhyet huomautukset kappaleen sisään, ei omille riveilleen.
     inline_remarks: bool = False
+    # Vain ``source="audio"``: malli ja kieli. Muissa tiloissa skripti käyttää
+    # omia kiinteitä arvojaan (turbo, fi), eikä näitä viedä sille.
+    model: str = "turbo"
+    language: str = "fi"
 
     def __post_init__(self):
         if self.gpu not in GPUS:
@@ -76,6 +82,10 @@ class RunOptions:
             raise ValueError(
                 f"Tuntematon source: {self.source} (sallitut: {', '.join(SOURCES)})"
             )
+        if not self.model.strip():
+            raise ValueError("model ei saa olla tyhjä")
+        if not self.language.strip():
+            raise ValueError("language ei saa olla tyhjä")
         if self.tail <= 0:
             raise ValueError(f"tail on oltava positiivinen, ei {self.tail}")
         if self.gap <= 0:
@@ -162,6 +172,8 @@ def pipeline_args(options: RunOptions) -> list[str]:
     ]
     if options.source != "tracks":
         args += ["--source", options.source]
+    if options.source == "audio":
+        args += ["--model", options.model, "--language", options.language]
     if options.rms:
         args.append("--rms")
     if not options.silence:

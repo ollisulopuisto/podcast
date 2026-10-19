@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [Unreleased]
+
+### Added
+- **Plain-audio mode: `--audio <file>` (repeatable) and `--json <folder>`.** Audio in, `<name>.words.json` out (words with start and end in seconds, in time order), no `.nhsx` and no Auto-Silence; always the direct transfer. `--model`, `--language`, `--progress` (`PROGRESS <0-100> <message>`, never falling) and exit 1 with the reason on stderr when a result is missing. SIGTERM now takes the Ctrl+C path in this mode and stops the Colab session unless `--keep-session`. Contract: `docs/KUULAS-COLAB.md`. The word starts are Whisper's own; the forced aligner is not in this mode yet.
+
 ## [2026.10.15.1] - 2026-10-15
 
 ### Fixed

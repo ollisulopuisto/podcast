@@ -405,31 +405,11 @@ def plan_commands(
         except OSError:
             remote = remote_input  # ei luettavissa: suunnitelma näyttää sen silti
         uploads.append((str(source), remote, remote_input))
-    dirs = {str(Path(r).parent) for _, r, _ in uploads if r.startswith(REMOTE_CACHE)}
-    dirs |= {str(Path(i).parent) for _, _, i in uploads}
-    dirs |= {f"{REMOTE_INPUT}/{Path(a).parent.as_posix()}" for a in aliases}
-    dirs = sorted(dirs)
-    if dirs:
-        commands.append(
-            ["colab", "exec", "-s", options.session,
-             "mkdir -p " + " ".join(shlex.quote(d) for d in dirs)]
+    commands.extend(
+        _upload_commands(
+            options, uploads, [f"{REMOTE_INPUT}/{Path(a).parent.as_posix()}" for a in aliases]
         )
-    for source_str, remote, _ in uploads:
-        try:
-            big = Path(source_str).stat().st_size > CHUNK_ABOVE
-        except OSError:
-            big = False
-        if big and options.compress and _flac_bitdepth(Path(source_str)):
-            commands.append(["flac-upload", options.session, source_str, remote])
-        elif big:
-            commands.append(["chunked-upload", options.session, source_str, remote])
-        else:
-            commands.append(["colab", "upload", "-s", options.session, source_str, remote])
-    links = [
-        f"ln -f {shlex.quote(r)} {shlex.quote(i)}" for _, r, i in uploads if r != i
-    ]
-    if links:
-        commands.append(["colab", "exec", "-s", options.session, " && ".join(links)])
+    )
 
     # Kopiot vasta kun alkuperäiset ovat perillä: kova linkki, ja kopio jos
     # linkki ei onnistu.
@@ -457,6 +437,90 @@ def plan_commands(
             "-s",
             options.session,
             f"{REMOTE_OUTPUT}/",
+            str(options.resolved_output_dir()),
+        ]
+    )
+    if not options.keep_session:
+        commands.append(["colab", "stop", "-s", options.session])
+    return commands
+
+
+def _upload_commands(
+    options: RunOptions,
+    uploads: list[tuple[str, str, str]],
+    extra_dirs: list[str] = (),
+) -> list[list[str]]:
+    """Kansiot, lataukset ja kovat linkit: ``(lähde, välimuistipolku, syötepolku)``."""
+    commands: list[list[str]] = []
+    dirs = {str(Path(r).parent) for _, r, _ in uploads if r.startswith(REMOTE_CACHE)}
+    dirs |= {str(Path(i).parent) for _, _, i in uploads}
+    dirs |= set(extra_dirs)
+    dirs = sorted(dirs)
+    if dirs:
+        commands.append(
+            ["colab", "exec", "-s", options.session,
+             "mkdir -p " + " ".join(shlex.quote(d) for d in dirs)]
+        )
+    for source_str, remote, _ in uploads:
+        try:
+            big = Path(source_str).stat().st_size > CHUNK_ABOVE
+        except OSError:
+            big = False
+        if big and options.compress and _flac_bitdepth(Path(source_str)):
+            commands.append(["flac-upload", options.session, source_str, remote])
+        elif big:
+            commands.append(["chunked-upload", options.session, source_str, remote])
+        else:
+            commands.append(["colab", "upload", "-s", options.session, source_str, remote])
+    links = [
+        f"ln -f {shlex.quote(r)} {shlex.quote(i)}" for _, r, i in uploads if r != i
+    ]
+    if links:
+        commands.append(["colab", "exec", "-s", options.session, " && ".join(links)])
+    return commands
+
+
+def plan_audio_commands(
+    options: RunOptions, audio_files: list[str], reuse_session: bool = False
+) -> list[list[str]]:
+    """Pelkkä ääni sisään, sanat ulos (``--source audio``).
+
+    Aina suora siirto: ääni lähtee suoraan Colab-koneelle eikä kulje Driven
+    kautta. Ei ``silencelearn``ia eikä istuntoa, koska skripti ei tee kumpaakaan.
+    Jokainen tiedosto päätyy syötekansioon omalla nimellään; nimien on oltava
+    yksilöllisiä (CLI tarkistaa).
+    """
+    commands: list[list[str]] = []
+    if not reuse_session:
+        commands.append(["colab", "new", "-s", options.session, "--gpu", options.gpu])
+    commands.append(
+        [
+            "colab", "exec", "-s", options.session,
+            f"rm -rf {REMOTE_INPUT}/* {REMOTE_OUTPUT}/* && mkdir -p {REMOTE_INPUT} {REMOTE_OUTPUT}",
+        ]
+    )
+    commands.append(
+        ["colab", "upload", "-s", options.session, str(PIPELINE_SCRIPT), "/content/pipeline.py"]
+    )
+    if reuse_session:
+        commands.append(["cache-list", options.session])
+    uploads = []
+    for f in audio_files:
+        source = Path(f)
+        remote_input = f"{REMOTE_INPUT}/{source.name}"
+        try:
+            remote = cache_path(source)
+        except OSError:
+            remote = remote_input
+        uploads.append((str(source), remote, remote_input))
+    commands.extend(_upload_commands(options, uploads))
+    remote_call = " ".join(
+        ["python3", "/content/pipeline.py", *map(shlex.quote, pipeline_args(options))]
+    )
+    commands.append(["colab", "exec", "-s", options.session, remote_call])
+    commands.append(
+        [
+            "colab", "download", "-s", options.session, f"{REMOTE_OUTPUT}/",
             str(options.resolved_output_dir()),
         ]
     )
@@ -940,6 +1004,14 @@ def run(
                         on_progress(
                             base_pct + 0.2 * step_span,
                             f"[{i + 1}/{total}] Litteroidaan ääntä...",
+                        )
+                elif "[ääni (" in line_s:
+                    m = re.search(r"\[ääni \((\d+)/(\d+)\)\]", line_s)
+                    if m:
+                        idx, tot_items = int(m.group(1)), int(m.group(2))
+                        on_progress(
+                            base_pct + (0.2 + 0.7 * (idx - 1) / max(tot_items, 1)) * step_span,
+                            f"[{i + 1}/{total}] Litteroidaan ({idx}/{tot_items})...",
                         )
                 elif "[vaihe 3/4]" in line_s:
                     on_progress(

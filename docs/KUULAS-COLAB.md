@@ -2,8 +2,10 @@
 
 Answer to the kuulas session's proposed plain-audio contract (`colab-transcribe --audio ... --json <folder>`).
 Written 2026-10-19 by the podcast-repo session from the code on `main` plus PR #60
-(the word-start aligner in the transcribe app). **Nothing in this contract is built.** It is
-a plan, and the owner decides. Where I know a number I say so; where I do not, I say that.
+(the word-start aligner in the transcribe app). **Status 2026-10-19:** item (1) below, the plain-audio mode
+(`--audio`/`--json`, `timing: "whisper"`, `--progress`, exit codes, SIGTERM), is built on branch
+`feat/colab-audio-mode` and tested against a fake Colab transport. It has **not been run on a real Colab**.
+The aligner (2, 3) is not built. The owner has decided: the heavy calculation runs on Colab (option B), local later. Where I know a number I say so; where I do not, I say that.
 
 ## What exists today (verified in the code)
 

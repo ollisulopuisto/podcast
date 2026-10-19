@@ -58,6 +58,19 @@ numpy ei ole pinnattu: se tulee faster-whisperin mukana. Ajuri kertoo
 valmiin tiedoston `Käsikirjoitus luotu:` -rivillä; `.md` tulee alas koko
 tulostekansion mukana, joten uutta `driver.parse_*`-markeria ei tarvita.
 
+## Pelkkä ääni on kuulaksen rajapinta
+
+`--source audio` (`--audio`/`--json`) ei ole sisäinen tila: tulostiedosto
+`<nimi>.words.json`, `PROGRESS <0-100> <viesti>` -rivit, poistumiskoodit ja
+SIGTERM ovat sopimus (`docs/KUULAS-COLAB.md`), jonka toisessa päässä on toinen
+ohjelma. Siksi: sanat järjestetään ja `s < e` taataan `words_document`issa
+(snapshot, ei muuta tilaa), edistymisluku ei laske eikä ylitä sataa, ja
+`*.words.json` poistetaan ennen ajoa, koska muuten vanha tiedosto kelpaisi
+puuttuvan uuden tilalle. Suunnitelma on `driver.plan_audio_commands`, ei
+`plan_commands`: aina suora siirto, ei `silencelearn`ia. Äänitila ei tuota
+`.nhsx`:ää, joten sen virheet näkyvät vain tiedostossa ja poistumiskoodissa.
+Pilvipään ajoa ei ole kokeiltu oikealla Colabilla tässä ympäristössä.
+
 ## Opittu kynnys ladataan, ei kopioida
 
 `--preset learned` opettaa kynnyksen käsin vaimennetuista alueista, ja

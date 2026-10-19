@@ -89,6 +89,26 @@ as its speech, falls back to `--thr` and the log says why; a session with no
 muted region at all stops without writing anything. The numbers are taste, not
 measured. The calculation is the `silencelearn` library, which is uploaded to Colab next to the script.
 
+### Plain audio: words as JSON (`--audio`, `--json`)
+
+For callers that want the words and nothing else (the kuulas editor calls it so):
+
+```bash
+colab-transcribe --audio "Olli 1.wav" --audio Panu.mp3 --json words/ --progress
+```
+
+Every `--audio` file goes up in the same Colab session and `words/<name>.words.json` comes
+back: `{"version":1,"timing":"whisper","language":"fi","rejected":0,"words":[{"w","s","e"}]}`,
+seconds from the start of that file, in time order with `s < e` (an overlap shortens the
+earlier word). No `.nhsx`, no Auto-Silence. The transfer is always direct: the audio goes to
+a Google Colab VM and not through Drive. `--model` (default `turbo`) and `--language`
+(default `fi`) are passed to Whisper. `--progress` prints `PROGRESS <0-100> <message>`
+lines whose number never falls. A file that gets no words, or a missing result, makes the
+exit code 1 with the reason on stderr; old `*.words.json` of the same names are deleted
+before the run so they cannot pass for new ones. SIGTERM and Ctrl+C stop the Colab session
+(unless `--keep-session`) and exit 130. Word starts are Whisper's own (`timing: "whisper"`):
+they run early (see `docs/KUULAS-TIMECODES.md`).
+
 ## Requirements
 
 * [uv](https://docs.astral.sh/uv/) (`brew install uv`). The `colab` command-line tool is a dependency and comes with `uvx`, pinned to a version with Google's own `jupyter-kernel-client`.

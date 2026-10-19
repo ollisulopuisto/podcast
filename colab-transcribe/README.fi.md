@@ -90,6 +90,25 @@ lukee miksi; istunto jossa ei ole yhtään vaimennettua aluetta pysähtyy
 kirjoittamatta mitään. Luvut ovat makuasioita eikä niitä ole mitattu, ja
 laskenta on `silencelearn`-kirjasto, joka ladataan Colabiin skriptin viereen.
 
+### Pelkkä ääni: sanat JSONina (`--audio`, `--json`)
+
+Kutsujalle, joka haluaa vain sanat (kuulas-editori kutsuu näin):
+
+```bash
+colab-transcribe --audio "Olli 1.wav" --audio Panu.mp3 --json sanat/ --progress
+```
+
+Kaikki `--audio`-tiedostot menevät samaan Colab-istuntoon ja `sanat/<nimi>.words.json` tulee
+takaisin: `{"version":1,"timing":"whisper","language":"fi","rejected":0,"words":[{"w","s","e"}]}`,
+sekunteja kyseisen tiedoston alusta, aikajärjestyksessä ja `s < e` (päällekkäisyys lyhentää
+aiempaa sanaa). Ei `.nhsx`:ää eikä Auto-Silencea. Siirto on aina suora: ääni menee Googlen
+Colab-koneelle eikä Driven kautta. `--model` (oletus `turbo`) ja `--language` (oletus `fi`)
+menevät Whisperille. `--progress` tulostaa rivit `PROGRESS <0-100> <viesti>`, joiden luku ei
+laske. Sanaton tiedosto tai puuttuva tulos antaa poistumiskoodin 1 ja syyn stderriin; samannimiset
+vanhat `*.words.json` poistetaan ennen ajoa, ettei vanha kelpaa uudeksi. SIGTERM ja Ctrl+C
+sulkevat Colab-istunnon (ellei `--keep-session`) ja palauttavat 130. Sanojen alut ovat Whisperin
+omia (`timing: "whisper"`): ne ovat yleensä liian aikaisia (`docs/KUULAS-TIMECODES.md`).
+
 ## Vaatimukset
 
 * [uv](https://docs.astral.sh/uv/) (`brew install uv`). `colab`-komentorivityökalu on riippuvuus ja tulee `uvx`:n mukana, kiinnitettynä versioon jossa on Googlen oma `jupyter-kernel-client`.
