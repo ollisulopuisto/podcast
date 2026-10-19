@@ -534,3 +534,17 @@ def test_the_version_changes_only_on_purpose():
     tiedostossa. Jos sääntö tai malli vaihtuu, numero vaihtuu tahallaan ja
     colab-transcriben ``ALIGN_TIMING`` seuraa (sen testi vertaa näitä)."""
     assert align.VERSION == "ctc1"
+
+
+def test_the_chunk_given_to_torch_is_a_writable_copy(monkeypatch):
+    """``decode`` palauttaa ``np.frombuffer``in, joka on vain luettava; torch varoittaa
+    sellaisesta ja sen kirjoittaminen olisi määrittelemätöntä (nähty Colabin lokissa)."""
+    _fake_libraries(monkeypatch)
+    seen = []
+    torch = sys.modules["torch"]
+    original = torch.from_numpy
+    torch.from_numpy = lambda array: seen.append(array.flags.writeable) or original(array)
+    read_only = np.frombuffer(np.zeros(RATE, dtype="<f4").tobytes(), dtype="<f4")
+    assert not read_only.flags.writeable
+    align.make_aligner()(read_only, ["niin"])
+    assert seen == [True]

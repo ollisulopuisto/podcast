@@ -118,7 +118,7 @@ def make_aligner(install: str = INSTALL):
     aligner = bundle.get_aligner()
 
     def align(chunk, words):
-        waveform = torch.from_numpy(np.asarray(chunk, dtype=np.float32))[None, :]
+        waveform = torch.from_numpy(np.array(chunk, dtype=np.float32))[None, :]
         with torch.inference_mode():
             emission, _ = model(waveform)
         spans = aligner(emission[0], tokenizer(words))

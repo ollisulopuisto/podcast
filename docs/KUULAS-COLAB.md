@@ -102,3 +102,13 @@ What I need from the owner: whether to start with (1) alone, and A or B for the 
 One speaker, one episode, 15 hand-marked starts; word ends, drift over a long recording, other speakers and the Colab GPU
 path are unmeasured (see `docs/KUULAS-TIMECODES.md`). A transcript marked `ctc-v1` is a measured improvement on
 those 15 words, not a guarantee.
+
+
+## First real Colab runs (2026-10-19)
+
+Run on the 10-minute clip `olli.wav` (600 s cut from the raw `Olli 1.wav`, 760 words), T4, direct transfer.
+
+- **Plain-audio mode** (branch `feat/colab-audio-mode`): worked; the file is valid and sorted; the session was stopped afterwards. Whisper's own starts reproduce the local error pattern (four hand-marked words 0.7-2.4 s early).
+- **`--align`** (branch `feat/colab-align`): worked on the first attempt: torch 2.8.0 installed into its own folder, the model loaded, 758 of 760 words aligned (rejected: `Error,` by the early-shift rule, and `20`, which has no letters). Against the 12 words hand-marked in this clip the aligned start is within 6-41 ms of the mark (median about 23 ms); Whisper's start for the same words had a median error of about 180 ms and a worst case of 2.4 s.
+- **This is not an independent test.** The same 12 words by the same speaker are what the rules were tuned on. It shows that the Colab path works and gives the same quality as the local one; it does not show that the result holds for other speakers or episodes. Word ends are still unmeasured.
+- **Still unmeasured:** wall time and cost for the whole run and per stage (install, weights, transcribe, align) - the log has no timestamps, and the number should be taken from a timed run, not from memory; a long recording (drift); a second speaker.
