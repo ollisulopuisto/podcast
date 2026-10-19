@@ -59,10 +59,21 @@ GROUP_MAX_S = 25.0
 #: puolen sekunnin, joten ryhmä ei menetä kontekstia, jota kohdistin tarvitsee.
 SPLIT_GAP_S = 0.5
 
-#: Kohdistin, joka siirtää sanan alun yli näin kauas Whisperin leimasta, on
-#: erehtynyt: mitatut oikeat virheet Whisperissä olivat enintään 0,56 s. Sana
-#: jää ilman aikaa ja syy kirjataan, ei arvata.
-MAX_SHIFT_S = 1.0
+#: Kohdistimen siirto Whisperin leimasta on epäsymmetrinen, koska Whisperin virhe
+#: on: se on lähes aina liian aikaisin. Käsin kuunnellen (kolme sanaa) Whisper
+#: oli 1,0, 2,5 ja 1,4 s liian aikaisin ja kohdistin osui 34 ms:n sisään, joten
+#: suuri siirto *myöhemmäksi* on korjaus. Kaikki kahdeksan sellaista olivat
+#: myöhemmäksi, enintään 2,5 s; yli ``MAX_LATE_S`` on selittämätön.
+MAX_LATE_S = 3.0
+
+#: Siirto *aikaisemmaksi* on epäilyttävä: Whisper ei ole koskaan ollut yli
+#: 0,12 s myöhässä (mitattu, 10 sanaa), ja ainoa mitattu suuri siirto
+#: aikaisemmaksi (2,4 s, ennen taukoryhmittelyä) oli väärin. Raja on 2,5-kertainen
+#: suurimpaan mitattuun myöhästymiseen nähden, ja se pitää olla alle ``PAD_S``:n:
+#: ikkuna alkaa ``PAD_S`` ennen Whisperin leimaa, joten sitä suurempi siirto
+#: aikaisemmaksi olisi mahdoton ja raja olisi tyhjä. Sana jää ilman aikaa ja
+#: syy kirjataan.
+MAX_EARLY_S = 0.3
 
 #: Merkinnän ja arvion ero, jota pidetään osumana (sama kuin muissa mittareissa).
 HIT_S = 0.030
@@ -219,12 +230,12 @@ def align_words(
             errors.append(f"{start:.1f}-{end:.1f} s: {exc}")
         return out
     for i, (a, b) in zip(keep, spans, strict=True):
-        shift = abs(start + a - words[i]["start"])
-        if shift > MAX_SHIFT_S:
+        shift = start + a - words[i]["start"]
+        if shift > MAX_LATE_S or shift < -MAX_EARLY_S:
             if errors is not None:
                 errors.append(
                     f"{words[i]['word'].strip()} at {words[i]['start']:.2f} s: aligner said "
-                    f"{start + a:.2f} s ({shift:.1f} s away), rejected"
+                    f"{start + a:.2f} s ({shift:+.1f} s from Whisper), rejected"
                 )
             continue
         out[i]["ctc_start"] = start + a

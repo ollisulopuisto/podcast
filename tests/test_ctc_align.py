@@ -27,8 +27,9 @@ RATE = 16000
 
 
 def fake_align(chunk, words):
-    """Sana i alkaa 0,1 * i sekuntia ikkunan alusta."""
-    return [(0.1 * i, 0.1 * i + 0.05) for i in range(len(words))]
+    """Sana i alkaa 0,5 + 0,5 * i sekuntia ikkunan alusta: ensimmäinen osuu Whisperin
+    leimaan, kun täyte on oletus (0,5 s), ja seuraavat noin puolen sekunnin välein."""
+    return [(0.5 + 0.5 * i, 0.55 + 0.5 * i) for i in range(len(words))]
 
 
 def _segment(words, start, end):
@@ -75,9 +76,9 @@ def test_aligned_times_are_moved_back_to_the_whole_audio_clock():
     audio = np.zeros(10 * RATE, dtype=np.float32)
     words = [_word(" Niin,", 2.0, 2.4), _word("kyllä", 2.5, 3.0)]
     out = ca.align_words(words, audio, fake_align, pad=0.5)
-    assert out[0]["ctc_start"] == pytest.approx(1.5)
-    assert out[0]["ctc_end"] == pytest.approx(1.55)
-    assert out[1]["ctc_start"] == pytest.approx(1.6)
+    assert out[0]["ctc_start"] == pytest.approx(2.0)
+    assert out[0]["ctc_end"] == pytest.approx(2.05)
+    assert out[1]["ctc_start"] == pytest.approx(2.5)
     # Alkuperäiset kentät säilyvät.
     assert out[1]["start"] == 2.5 and out[1]["word"] == "kyllä"
 
@@ -103,7 +104,7 @@ def test_a_word_without_letters_is_skipped_and_gets_no_time():
 
     def spy(chunk, words):
         seen.extend(words)
-        return [(0.0, 0.1)] * len(words)
+        return [(0.5 + 0.4 * i, 0.6 + 0.4 * i) for i in range(len(words))]
 
     out = ca.align_words(
         [_word("niin", 2.0, 2.2), _word("...", 2.2, 2.3), _word("joo", 2.4, 2.6)],
@@ -124,7 +125,7 @@ def test_every_rejected_word_is_printed_not_only_the_first_few(tmp_path, capsys)
     sf.write(tmp_path / "olli.wav", np.zeros(30 * 16000, dtype=np.float32), 16000)
 
     def far(chunk, w):
-        return [(ca.MAX_SHIFT_S + 0.7, ca.MAX_SHIFT_S + 0.9)] * len(w)
+        return [(4.2, 4.4)] * len(w)
 
     ca.main([str(tmp_path / "olli.json"), str(tmp_path / "olli.wav")], aligner=far)
     printed = capsys.readouterr().out
@@ -173,7 +174,7 @@ def test_a_transcript_is_aligned_one_segment_at_a_time_in_order():
     rows = ca.align_transcript(data, audio, spy)
     assert calls == [["yksi", "kaksi"], ["kolme"]]
     assert [r["word"] for r in rows] == ["yksi", "kaksi", "kolme"]
-    assert rows[2]["ctc_start"] == pytest.approx(7.5)
+    assert rows[2]["ctc_start"] == pytest.approx(8.0)
 
 
 def test_a_segment_is_split_at_long_pauses_so_foreign_sound_is_not_aligned_as_a_word():
@@ -204,39 +205,57 @@ def test_a_segment_is_split_at_long_pauses_so_foreign_sound_is_not_aligned_as_a_
     assert calls == [["kylla", "niin"], ["mitas"]]
 
 
-def test_a_pause_shorter_than_the_limit_keeps_the_words_in_one_group():
-    groups = ca.split_at_pauses(
-        [[_word("a", 1.0, 1.2), _word("b", 1.2 + ca.SPLIT_GAP_S - 0.01, 2.0)]]
-    )
-    assert len(groups) == 1
-    groups = ca.split_at_pauses(
-        [[_word("a", 1.0, 1.2), _word("b", 1.2 + ca.SPLIT_GAP_S + 0.01, 2.0)]]
-    )
-    assert len(groups) == 2
+def test_a_pause_shorter_than_half_a_second_keeps_the_words_in_one_group():
+    """Rajat kirjaimellisina: 0,4 s on puheen sisäinen tauko, 0,6 s ei ole."""
+    one = ca.split_at_pauses([[_word("a", 1.0, 1.2), _word("b", 1.6, 2.0)]])
+    assert len(one) == 1
+    two = ca.split_at_pauses([[_word("a", 1.0, 1.2), _word("b", 1.8, 2.0)]])
+    assert len(two) == 2
 
 
-def test_an_alignment_far_from_whisper_is_rejected_and_recorded():
-    """Kohdistin, joka siirtää sanan yli sekunnin Whisperin leimasta, on erehtynyt
-    (mitattu: 2,7 s); se jää ilman aikaa, ja syy kirjataan."""
+def _shifted(shift_s):
+    """Kohdistin sanoo sanan alkavan ``shift_s`` Whisperin leimasta (5,0 s); ikkuna alkaa 4,5 s."""
     audio = np.zeros(20 * RATE, dtype=np.float32)
     errors = []
-    words = [_word("niin", 5.0, 5.3)]
     out = ca.align_words(
-        words, audio, lambda chunk, w: [(0.0, 0.2)], pad=0.5, errors=errors
-    )
-    # Ikkuna alkaa 4,5 s: kohdistin sanoo 4,5 s, Whisper 5,0 s: 0,5 s, sallittu.
-    assert out[0]["ctc_start"] == pytest.approx(4.5)
-    out = ca.align_words(
-        words,
+        [_word("niin", 5.0, 5.3)],
         audio,
-        lambda chunk, w: [(ca.MAX_SHIFT_S + 0.6, ca.MAX_SHIFT_S + 0.8)],
+        lambda chunk, w: [(0.5 + shift_s, 0.7 + shift_s)],
         pad=0.5,
         errors=errors,
     )
-    assert out[0]["ctc_start"] is None and out[0]["ctc_end"] is None
+    return out[0], errors
+
+
+def test_a_late_shift_is_accepted_up_to_what_was_observed():
+    """Mitattu käsin kuunnellen: Whisper oli 1,0, 2,5 ja 1,4 s liian aikaisin, ja
+    kohdistin osui 34 ms:n sisään. Suuri siirto *myöhemmäksi* on se virhe, jonka
+    kohdistin korjaa, ei sen virhe."""
+    word, errors = _shifted(2.5)
+    assert word["ctc_start"] == pytest.approx(7.5)
+    assert errors == []
+
+
+def test_a_late_shift_beyond_the_limit_is_rejected():
+    word, errors = _shifted(3.5)
+    assert word["ctc_start"] is None and word["ctc_end"] is None
     assert len(errors) == 1 and "niin" in errors[0]
     # Molemmat ajat näkyvät, jotta ihminen voi ratkaista kumpi on oikeassa.
-    assert "5.00" in errors[0] and "6.10" in errors[0]
+    assert "5.00" in errors[0] and "aligner said" in errors[0]
+
+
+def test_the_early_limit_is_below_the_padding_or_it_could_never_fire():
+    assert ca.MAX_EARLY_S < ca.PAD_S
+
+
+def test_an_early_shift_is_accepted_only_a_little():
+    """Mitattu: kohdistin siirsi sanan 2,4 s *aikaisemmaksi* ja oli väärässä.
+    Whisper ei ole koskaan ollut yli 0,12 s myöhässä."""
+    word, errors = _shifted(-0.25)
+    assert word["ctc_start"] is not None and errors == []
+    word, errors = _shifted(-0.35)
+    assert word["ctc_start"] is None
+    assert len(errors) == 1
 
 
 def test_words_without_a_start_time_are_left_out_of_the_transcript():
