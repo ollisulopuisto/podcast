@@ -223,7 +223,8 @@ def align_words(
         if shift > MAX_SHIFT_S:
             if errors is not None:
                 errors.append(
-                    f"{words[i]['word'].strip()} at {words[i]['start']:.2f} s moved {shift:.1f} s: rejected"
+                    f"{words[i]['word'].strip()} at {words[i]['start']:.2f} s: aligner said "
+                    f"{start + a:.2f} s ({shift:.1f} s away), rejected"
                 )
             continue
         out[i]["ctc_start"] = start + a
@@ -396,7 +397,7 @@ def main(argv=None, aligner=None) -> int:
     print(
         f"Sanoja {len(rows)}, kohdistettu {aligned}, epäonnistuneita segmenttejä {len(errors)}."
     )
-    for message in errors[:5]:
+    for message in errors:
         print("  !", message)
     if args.csv:
         write_csv(rows, args.csv)

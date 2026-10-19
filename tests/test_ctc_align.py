@@ -115,6 +115,22 @@ def test_a_word_without_letters_is_skipped_and_gets_no_time():
     assert out[0]["ctc_start"] is not None and out[2]["ctc_start"] is not None
 
 
+def test_every_rejected_word_is_printed_not_only_the_first_few(tmp_path, capsys):
+    words = [_word(f"sana{i}", 1.0 + 2 * i, 1.4 + 2 * i) for i in range(12)]
+    (tmp_path / "olli.json").write_text(
+        json.dumps({"segments": [_segment([w], w["start"], w["end"]) for w in words]}),
+        encoding="utf-8",
+    )
+    sf.write(tmp_path / "olli.wav", np.zeros(30 * 16000, dtype=np.float32), 16000)
+
+    def far(chunk, w):
+        return [(ca.MAX_SHIFT_S + 0.7, ca.MAX_SHIFT_S + 0.9)] * len(w)
+
+    ca.main([str(tmp_path / "olli.json"), str(tmp_path / "olli.wav")], aligner=far)
+    printed = capsys.readouterr().out
+    assert printed.count("rejected") == 12
+
+
 def test_a_failing_aligner_gives_no_times_and_a_recorded_error_not_a_crash():
     audio = np.zeros(10 * RATE, dtype=np.float32)
 
@@ -219,6 +235,8 @@ def test_an_alignment_far_from_whisper_is_rejected_and_recorded():
     )
     assert out[0]["ctc_start"] is None and out[0]["ctc_end"] is None
     assert len(errors) == 1 and "niin" in errors[0]
+    # Molemmat ajat näkyvät, jotta ihminen voi ratkaista kumpi on oikeassa.
+    assert "5.00" in errors[0] and "6.10" in errors[0]
 
 
 def test_words_without_a_start_time_are_left_out_of_the_transcript():
