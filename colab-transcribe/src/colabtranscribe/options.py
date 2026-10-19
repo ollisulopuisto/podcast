@@ -66,6 +66,9 @@ class RunOptions:
     # omia kiinteitä arvojaan (turbo, fi), eikä näitä viedä sille.
     model: str = "turbo"
     language: str = "fi"
+    # Vain ``source="audio"``: sanojen alut kohdistetaan ääneen Colabissa
+    # (``wordalign``), ja tiedoston ``timing`` on silloin ``ctc-v1``.
+    align: bool = False
 
     def __post_init__(self):
         if self.gpu not in GPUS:
@@ -82,6 +85,8 @@ class RunOptions:
             raise ValueError(
                 f"Tuntematon source: {self.source} (sallitut: {', '.join(SOURCES)})"
             )
+        if self.align and self.source != "audio":
+            raise ValueError("align vaatii source=audio")
         if not self.model.strip():
             raise ValueError("model ei saa olla tyhjä")
         if not self.language.strip():
@@ -174,6 +179,8 @@ def pipeline_args(options: RunOptions) -> list[str]:
         args += ["--source", options.source]
     if options.source == "audio":
         args += ["--model", options.model, "--language", options.language]
+        if options.align:
+            args.append("--align")
     if options.rms:
         args.append("--rms")
     if not options.silence:

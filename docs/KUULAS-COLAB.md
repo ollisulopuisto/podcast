@@ -5,7 +5,7 @@ Written 2026-10-19 by the podcast-repo session from the code on `main` plus PR #
 (the word-start aligner in the transcribe app). **Status 2026-10-19:** item (1) below, the plain-audio mode
 (`--audio`/`--json`, `timing: "whisper"`, `--progress`, exit codes, SIGTERM), is built on branch
 `feat/colab-audio-mode` and tested against a fake Colab transport. It has **not been run on a real Colab**.
-The aligner (2, 3) is not built. The owner has decided: the heavy calculation runs on Colab (option B), local later. Where I know a number I say so; where I do not, I say that.
+The owner has decided: the heavy calculation runs on Colab (option B), local later. Items (2) and (3b) are built on branch `feat/colab-align` (`--align`, `timing: "ctc-v1"`): the aligner is a single-file library, `packages/wordalign`, uploaded to the VM. Still **not run on a real Colab**: install size and time, and whether it coexists with the transcriber's CUDA libraries. Where I know a number I say so; where I do not, I say that.
 
 ## What exists today (verified in the code)
 

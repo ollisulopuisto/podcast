@@ -24,6 +24,7 @@ dependencies = [
     # Kynnyksen oppiminen käsin vaimennetuista alueista: yksi tiedosto joka
     # ladataan myös Colabiin, joten sitä ei ole kopioitu tänne.
     "silencelearn",
+    "wordalign",
     "numpy>=2.4.2",
     "lxml>=5.0",
     "fastapi>=0.115",
@@ -51,6 +52,7 @@ faster = ["faster-whisper>=1.1.0"]
 speechmix = { workspace = true }
 nhsx = { workspace = true }
 silencelearn = { workspace = true }
+wordalign = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

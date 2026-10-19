@@ -1300,25 +1300,164 @@ def transcribe_file(path, model, language, initial_prompt):
             return json.load(f)
 
 
-def run_audio(input_dir, output_dir, model, language, initial_prompt):
-    """Jokaisen äänitiedoston sanat: ``<nimi>.words.json``, ei ``.nhsx``:ää."""
+#: Kohdistimen torch asennetaan omaan kansioonsa eikä järjestelmän pythoniin:
+#: CTranslate2 (litterointi) käyttää järjestelmän pip-nvidia-kirjastoja, ja
+#: torch 2.8 tuo omansa eri versioina. Erillään niiden ei tarvitse sopia yhteen.
+#: Ei kokeiltu oikealla Colabilla: kuinka suuri lataus ja kuinka kauan se kestää
+#: on mittaamatta.
+ALIGN_SITE = "/content/aligner_site"
+ALIGN_PIP_TIMEOUT = 1800
+ALIGN_TIMEOUT = 7200
+ALIGN_MODULE = "/content/wordalign.py"
+ALIGN_PACKAGES = ["torch==2.8.0", "torchaudio==2.8.0"]
+ALIGN_TIMING = "ctc-v1"
+
+
+def aligner_env():
+    """Kohdistimen ympäristö: sen oma kansio ensin, ei pip-nvidia-kirjastoja.
+
+    ``configure_cuda_libs`` lisää ne ``LD_LIBRARY_PATH``iin CTranslate2:n takia;
+    torch löytää omansa asennuskansionsa vierestä.
+    """
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = ":".join(p for p in (ALIGN_SITE, existing) if p)
+    kept = [
+        p for p in env.get("LD_LIBRARY_PATH", "").split(":") if p and "/nvidia/" not in p
+    ]
+    if kept:
+        env["LD_LIBRARY_PATH"] = ":".join(kept)
+    else:
+        env.pop("LD_LIBRARY_PATH", None)
+    return env
+
+
+def install_aligner():
+    subprocess.run(
+        ["pip", "install", "-q", "--target", ALIGN_SITE, *ALIGN_PACKAGES],
+        check=True,
+        timeout=ALIGN_PIP_TIMEOUT,
+    )
+
+
+def check_aligner():
+    """Kohdistin käynnistyy (painot ladataan): ennen litterointia, ei sen jälkeen."""
+    try:
+        subprocess.run(
+            ["python3", ALIGN_MODULE, "--check"],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=aligner_env(),
+            timeout=ALIGN_TIMEOUT,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"Kohdistin ei käynnisty: {(exc.stderr or exc.stdout or '').strip()}"
+        ) from exc
+
+
+def align_files(jobs):
+    """Kaikki tiedostot kerralla omassa prosessissaan; ``{nimi: {rows, rejected}}``.
+
+    Jokainen työ on ``{"name", "audio", "raw"}``, ``raw`` Whisperin tulos.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        plan = []
+        for index, job in enumerate(jobs):
+            raw_path = os.path.join(tmp, f"{index}.raw.json")
+            with open(raw_path, "w", encoding="utf-8") as f:
+                json.dump(job["raw"], f)
+            plan.append(
+                {
+                    "audio": job["audio"],
+                    "raw": raw_path,
+                    "out": os.path.join(tmp, f"{index}.rows.json"),
+                }
+            )
+        jobs_path = os.path.join(tmp, "jobs.json")
+        with open(jobs_path, "w", encoding="utf-8") as f:
+            json.dump(plan, f)
+        subprocess.run(
+            ["python3", ALIGN_MODULE, jobs_path],
+            check=True,
+            env=aligner_env(),
+            timeout=ALIGN_TIMEOUT,
+        )
+        result = {}
+        for job, step in zip(jobs, plan, strict=True):
+            with open(step["out"], encoding="utf-8") as f:
+                data = json.load(f)
+            result[job["name"]] = {"rows": data["rows"], "rejected": data["rejected"]}
+        return result
+
+
+def _aligned_document(rows, language):
+    """Kohdistetut rivit sanatiedostoksi; ``rejected`` on sanat joita ei kohdistettu."""
+    import wordalign
+
+    words = wordalign.refined(rows)
+    unplaced = sum(1 for r in rows if r.get("ctc_start") is None)
+    return words_document(
+        {"segments": [{"words": words}]}, language, timing=ALIGN_TIMING, rejected=unplaced
+    )
+
+
+def run_audio(input_dir, output_dir, model, language, initial_prompt, align=False):
+    """Jokaisen äänitiedoston sanat: ``<nimi>.words.json``, ei ``.nhsx``:ää.
+
+    ``align``: alut kohdistetaan ääneen (``wordalign``) litteroinnin jälkeen ja
+    tiedosto merkitään ``ctc-v1``. Kohdistin tarkistetaan **ennen** litterointia:
+    GPU-aikaa ei kulu ajoon, jonka luvattua korjausta ei voi tehdä. Jos mikään
+    sana ei kohdistu, ajo päättyy virheeseen eikä tiedostoa merkitä korjatuksi.
+    """
     names = sorted(f for f in os.listdir(input_dir) if f.lower().endswith(AUDIO_EXTENSIONS))
     if not names:
         # Hiljainen onnistuminen ilman tulosta näyttäisi onnistuneelta ajolta.
         raise RuntimeError(f"Syötekansiosta {input_dir} ei löydy yhtään äänitiedostoa.")
     os.makedirs(output_dir, exist_ok=True)
+    if align:
+        print("[kohdistin] Asennetaan torch ja ladataan kohdistin...", flush=True)
+        install_aligner()
+        check_aligner()
     total = len(names)
+    transcribed = []
     for idx, filename in enumerate(names, 1):
         print(f"[ääni ({idx}/{total})] Litteroidaan: {filename}", flush=True)
         raw = transcribe_file(os.path.join(input_dir, filename), model, language, initial_prompt)
-        document = words_document(raw, language)
-        if not document["words"]:
+        if not words_document(raw, language)["words"]:
             print(
                 f"  VAROITUS: {filename}: ei tunnistettu yhtään sanaa. "
                 "Onko siinä puhetta, ja onko kieli oikein? Tiedostoa ei kirjoitettu.",
                 flush=True,
             )
             continue
+        transcribed.append((filename, raw))
+    aligned = {}
+    if align and transcribed:
+        aligned = align_files(
+            [
+                {"name": name, "audio": os.path.join(input_dir, name), "raw": raw}
+                for name, raw in transcribed
+            ]
+        )
+    for filename, raw in transcribed:
+        if align:
+            rows = aligned[filename]["rows"]
+            if not any(r.get("ctc_start") is not None for r in rows):
+                raise RuntimeError(
+                    f"Kohdistus oli päällä, mutta yksikään {filename}:n sanoista ei kohdistunut. "
+                    "Tiedostoa ei kirjoitettu."
+                )
+            document = _aligned_document(rows, language)
+            placed = len(rows) - document["rejected"]
+            print(f"  {filename}: kohdistettu {placed}/{len(rows)} sanaa.", flush=True)
+            for reason in aligned[filename]["rejected"][:10]:
+                print(f"    hylätty: {reason}", flush=True)
+        else:
+            document = words_document(raw, language)
         output_path = os.path.join(output_dir, _swap_audio_ext(filename, ".words.json"))
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(document, f, ensure_ascii=False)
@@ -1377,6 +1516,11 @@ def main():
     )
     parser.add_argument("--model", default="turbo", help="Whisper-malli (vain --source audio)")
     parser.add_argument("--language", default="fi", help="kieli (vain --source audio)")
+    parser.add_argument(
+        "--align",
+        action="store_true",
+        help="--source audio: kohdista sanojen alut ääneen (wordalign) litteroinnin jälkeen",
+    )
     args = parser.parse_args()
 
     # Esiasetusten logiikka
@@ -1409,7 +1553,7 @@ def main():
     install_dependencies()
     print("[vaihe 1/4] Riippuvuudet asennettu.", flush=True)
     if args.source == "audio":
-        run_audio(input_dir, output_dir, args.model, args.language, args.prompt)
+        run_audio(input_dir, output_dir, args.model, args.language, args.prompt, align=args.align)
         print("\nKoko putki suoritettu onnistuneesti.", flush=True)
         return
     if args.source == "downmix":

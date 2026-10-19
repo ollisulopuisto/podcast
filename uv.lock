@@ -20,6 +20,7 @@ members = [
     "podcast-magic",
     "silencelearn",
     "speechmix",
+    "wordalign",
 ]
 
 [manifest.dependency-groups]
@@ -554,6 +555,7 @@ dependencies = [
     { name = "silencelearn" },
     { name = "soundfile" },
     { name = "textual" },
+    { name = "wordalign" },
 ]
 
 [package.metadata]
@@ -563,6 +565,7 @@ requires-dist = [
     { name = "silencelearn", editable = "packages/silencelearn" },
     { name = "soundfile", specifier = ">=0.13.1" },
     { name = "textual", specifier = ">=8.0.0" },
+    { name = "wordalign", editable = "packages/wordalign" },
 ]
 
 [[package]]
@@ -2701,6 +2704,7 @@ dependencies = [
     { name = "silencelearn" },
     { name = "speechmix" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "wordalign" },
 ]
 
 [package.optional-dependencies]
@@ -2729,6 +2733,7 @@ requires-dist = [
     { name = "silencelearn", editable = "packages/silencelearn" },
     { name = "speechmix", editable = "packages/speechmix" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
+    { name = "wordalign", editable = "packages/wordalign" },
 ]
 provides-extras = ["mlx", "faster"]
 
@@ -4705,6 +4710,17 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ce/3c/8b9a225b523f06a9389be81f1b0ab07c49bec6014742e6aa359c1f920f1f/websockets-17.1-cp315-cp315t-win_arm64.whl", hash = "sha256:e552e0037230ac16e5f568de7012041344d1b18c9feed30ec2891b8eba55af81", size = 217372, upload-time = "2026-08-26T14:58:22.807Z" },
     { url = "https://files.pythonhosted.org/packages/41/63/23572870e01836a98346075b9e17a8bc24a6ddd9800a3204ceee58677f3c/websockets-17.1-py3-none-any.whl", hash = "sha256:f221081107b8c48184d99f7019604486376e7ef826037e70aad6b02540732c23", size = 211134, upload-time = "2026-08-26T17:25:31.397Z" },
 ]
+
+[[package]]
+name = "wordalign"
+version = "2026.10.19.1"
+source = { editable = "packages/wordalign" }
+dependencies = [
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "numpy", specifier = ">=2.4.2" }]
 
 [[package]]
 name = "wyoming"

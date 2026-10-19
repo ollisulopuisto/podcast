@@ -27,6 +27,9 @@ dependencies = [
     # standardikirjasto (``driver.LEARN_MODULE``). Ainoa työtilan paketti jonka
     # tämä sovellus ottaa, ja siksi että se ei tuo mitään mukanaan.
     "silencelearn",
+    # Sama kuin ``silencelearn``: ladataan Colabiin tiedostona (``--align``),
+    # ei tuoda täällä. Mukana vain numpy; torch tulee Colabiin erikseen.
+    "wordalign",
     # FLAC-pakkaus ennen suoraa siirtoa; pyörän mukana tulee libsndfile, joten
     # ffmpegiä ei tarvita paikallisesti. Sama määrittely kuin automixerissa.
     "soundfile>=0.13.1",
@@ -34,6 +37,7 @@ dependencies = [
 
 [tool.uv.sources]
 silencelearn = { workspace = true }
+wordalign = { workspace = true }
 
 [project.scripts]
 colab-transcribe = "colabtranscribe.__main__:main"

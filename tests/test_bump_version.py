@@ -112,6 +112,7 @@ def test_the_script_only_offers_real_members(capsys):
         "podcast-magic",
         "silencelearn",
         "speechmix",
+        "wordalign",
     }
     for member in bump.members().values():
         assert re.match(r"^\d{4}\.\d{1,2}\.\d{1,2}\.\d+$", bump.current_version(member))

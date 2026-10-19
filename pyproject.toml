@@ -95,6 +95,7 @@ known-first-party = [
     "podcastmagic",
     "silencelearn",
     "speechmix",
+    "wordalign",
 ]
 
 [tool.ruff.lint.per-file-ignores]

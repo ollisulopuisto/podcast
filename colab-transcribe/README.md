@@ -109,6 +109,16 @@ before the run so they cannot pass for new ones. SIGTERM and Ctrl+C stop the Col
 (unless `--keep-session`) and exit 130. Word starts are Whisper's own (`timing: "whisper"`):
 they run early (see `docs/KUULAS-TIMECODES.md`).
 
+`--align` (with `--audio`) corrects the word starts on the Colab VM with a forced aligner
+(`packages/wordalign`, torchaudio `MMS_FA`) and marks the file `"timing": "ctc-v1"`; `rejected` is the
+number of words that could not be placed (they keep Whisper's time). It installs torch 2.8 into its
+own folder on the VM and loads about 1.2 GB of weights, and it checks that **before** transcribing, so a
+broken aligner stops the run without spending GPU time. If no word at all gets aligned the run fails
+instead of writing a file marked as corrected. **Not run on a real Colab yet:** the install size and
+time, and whether the aligner coexists with the transcriber's CUDA libraries, are unmeasured.
+Measured quality (one speaker, 15 hand-marked starts): median error 28 ms against Whisper's 117 ms;
+word ends and other speakers are not measured (`docs/KUULAS-TIMECODES.md`).
+
 ## Requirements
 
 * [uv](https://docs.astral.sh/uv/) (`brew install uv`). The `colab` command-line tool is a dependency and comes with `uvx`, pinned to a version with Google's own `jupyter-kernel-client`.

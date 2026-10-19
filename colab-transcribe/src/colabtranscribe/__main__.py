@@ -46,6 +46,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", default=None, help="Whisper-malli (--audio, oletus: turbo)")
     parser.add_argument("--language", default=None, help="kieli (--audio, oletus: fi)")
     parser.add_argument(
+        "--align",
+        action="store_true",
+        help="--audio: kohdista sanojen alut ääneen Colabissa (timing: ctc-v1). "
+        "Asentaa torchin Colab-koneelle; ei vielä mitattu kuinka kauan se kestää",
+    )
+    parser.add_argument(
         "--progress",
         action="store_true",
         help="--audio: kirjoita rivit 'PROGRESS <0-100> <viesti>' (prosentti ei laske)",
@@ -201,7 +207,11 @@ def _refuse(message: str) -> int:
 def _audio_problem(args: argparse.Namespace) -> str | None:
     """Miksi ``--audio``-kutsu on virheellinen, tai None."""
     if not args.audio:
-        return "--json vaatii vähintään yhden --audio-tiedoston." if args.json else None
+        if args.json:
+            return "--json vaatii vähintään yhden --audio-tiedoston."
+        if args.align:
+            return "--align kuuluu --audio-tilaan: anna myös --audio ja --json."
+        return None
     if not args.json:
         return "--audio vaatii tulostekansion: anna --json <kansio>."
     if args.input:
@@ -249,6 +259,7 @@ def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
         keep_session=args.keep_session or env_opts.keep_session,
         model=args.model or "turbo",
         language=args.language or "fi",
+        align=args.align,
     )
     reuse_session = False
     if session.is_session_alive(options.session):

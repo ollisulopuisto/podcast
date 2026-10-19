@@ -66,7 +66,7 @@ def root() -> dict:
     return toml(ROOT / "pyproject.toml")
 
 
-def test_the_members_are_the_eight_we_think_they_are():
+def test_the_members_are_the_nine_we_think_they_are():
     """Sattumalta tyhjä luettelo tekisi jokaisesta alla olevasta testin joka ei testaa mitään.
 
     colab-transcribe on jäsen vaikka ei ole `apps/`issa — se on juuressa
@@ -80,6 +80,9 @@ def test_the_members_are_the_eight_we_think_they_are():
     yksi tiedosto ja pelkkä standardikirjasto, koska se ladataan sellaisenaan
     Colabiin. Sitä ennen sama laskenta oli kopiona colab-transcriben
     skriptissä ja pidettiin yhdenmukaisena vertailutestillä.
+
+    wordalign on sanojen alkujen pakotettu kohdistus ääneen: samoin yksi tiedosto,
+    jonka podcast-magic tuo ja colab-transcribe lataa Colabiin.
     """
     assert [name(m) for m in MEMBERS] == [
         "automixer",
@@ -90,6 +93,7 @@ def test_the_members_are_the_eight_we_think_they_are():
         "podcast-magic",
         "silencelearn",
         "speechmix",
+        "wordalign",
     ]
 
 

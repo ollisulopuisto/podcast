@@ -23,6 +23,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import silencelearn
+import wordalign
 
 from .options import RunOptions, pipeline_args
 
@@ -36,6 +37,11 @@ PIPELINE_SCRIPT = Path(__file__).parent / "colab" / "pipeline.py"
 #: jos tähän tulisi oma kopio, olisimme takaisin siinä mistä paketti pelasti.
 LEARN_MODULE = Path(silencelearn.__file__)
 LEARN_REMOTE = "/content/silencelearn.py"
+
+#: Sanojen alkujen kohdistin: sama yksi tiedosto kuin sovelluksessa, ladataan
+#: Colabiin skriptin viereen vain kun ``--align`` on päällä.
+ALIGN_MODULE = Path(wordalign.__file__)
+ALIGN_REMOTE = "/content/wordalign.py"
 
 #: Suora siirto: tätä isommat syötteet lähetetään paloina. Mitattu: 409 667 072
 #: tavun WAV kaatui `colab upload`issa HTTP 500:een (Colabin tiedostorajapinta),
@@ -502,6 +508,10 @@ def plan_audio_commands(
     commands.append(
         ["colab", "upload", "-s", options.session, str(PIPELINE_SCRIPT), "/content/pipeline.py"]
     )
+    if options.align:
+        commands.append(
+            ["colab", "upload", "-s", options.session, str(ALIGN_MODULE), ALIGN_REMOTE]
+        )
     if reuse_session:
         commands.append(["cache-list", options.session])
     uploads = []
@@ -1010,8 +1020,16 @@ def run(
                     if m:
                         idx, tot_items = int(m.group(1)), int(m.group(2))
                         on_progress(
-                            base_pct + (0.2 + 0.7 * (idx - 1) / max(tot_items, 1)) * step_span,
+                            base_pct + (0.2 + 0.5 * (idx - 1) / max(tot_items, 1)) * step_span,
                             f"[{i + 1}/{total}] Litteroidaan ({idx}/{tot_items})...",
+                        )
+                elif "[kohdistus (" in line_s:
+                    m = re.search(r"\[kohdistus \((\d+)/(\d+)\)\]", line_s)
+                    if m:
+                        idx, tot_items = int(m.group(1)), int(m.group(2))
+                        on_progress(
+                            base_pct + (0.7 + 0.2 * (idx - 1) / max(tot_items, 1)) * step_span,
+                            f"[{i + 1}/{total}] Kohdistetaan ({idx}/{tot_items})...",
                         )
                 elif "[vaihe 3/4]" in line_s:
                     on_progress(

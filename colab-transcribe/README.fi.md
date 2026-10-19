@@ -109,6 +109,16 @@ vanhat `*.words.json` poistetaan ennen ajoa, ettei vanha kelpaa uudeksi. SIGTERM
 sulkevat Colab-istunnon (ellei `--keep-session`) ja palauttavat 130. Sanojen alut ovat Whisperin
 omia (`timing: "whisper"`): ne ovat yleensä liian aikaisia (`docs/KUULAS-TIMECODES.md`).
 
+`--align` (`--audio`:n kanssa) korjaa sanojen alut Colab-koneella pakotetulla kohdistimella
+(`packages/wordalign`, torchaudion `MMS_FA`) ja merkitsee tiedoston `"timing": "ctc-v1"`; `rejected` on
+niiden sanojen määrä, joita ei saatu sijoitettua (ne jäävät Whisperin aikaan). Se asentaa torch 2.8:n
+koneella omaan kansioonsa ja lataa noin 1,2 Gt painoja, ja tarkistaa sen **ennen** litterointia, joten
+rikkinäinen kohdistin pysäyttää ajon kuluttamatta GPU-aikaa. Jos yksikään sana ei kohdistu, ajo
+epäonnistuu eikä korjatuksi merkittyä tiedostoa kirjoiteta. **Ei vielä ajettu oikealla Colabilla:**
+asennuksen koko ja kesto sekä se, sopiiko kohdistin yhteen litteroinnin CUDA-kirjastojen kanssa, on
+mittaamatta. Mitattu laatu (yksi puhuja, 15 käsin merkittyä alkua): mediaanivirhe 28 ms, Whisperillä
+117 ms; sanojen loppuja ja muita puhujia ei ole mitattu (`docs/KUULAS-TIMECODES.md`).
+
 ## Vaatimukset
 
 * [uv](https://docs.astral.sh/uv/) (`brew install uv`). `colab`-komentorivityökalu on riippuvuus ja tulee `uvx`:n mukana, kiinnitettynä versioon jossa on Googlen oma `jupyter-kernel-client`.

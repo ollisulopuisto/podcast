@@ -204,7 +204,7 @@ def test_main_audio_runs_only_the_audio_step(monkeypatch):
     )
     monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
-    monkeypatch.setattr(pipeline, "run_audio", lambda *a: called.append(a))
+    monkeypatch.setattr(pipeline, "run_audio", lambda *a, **k: called.append((a, k)))
     for name in (
         "run_transcription",
         "inject_transcriptions_to_nhsx",
@@ -214,7 +214,8 @@ def test_main_audio_runs_only_the_audio_step(monkeypatch):
     ):
         monkeypatch.setattr(pipeline, name, boom)
     pipeline.main()
-    assert called[0][:4] == ("/content/input", "/content/output", "large-v3", "en")
+    assert called[0][0][:4] == ("/content/input", "/content/output", "large-v3", "en")
+    assert called[0][1] == {"align": False}
 
 
 # --- Komentorivi: suunnitelma ---------------------------------------------------------
@@ -501,7 +502,7 @@ def test_the_driver_turns_audio_markers_into_progress_between_the_steps(monkeypa
     ]
     percents = [p for p, _ in marked]
     assert percents == sorted(percents) and len(set(percents)) == 3
-    assert percents == pytest.approx([20.0, 20.0 + 70 / 3, 20.0 + 140 / 3])
+    assert percents == pytest.approx([20.0, 20.0 + 50 / 3, 20.0 + 100 / 3])
 
 
 def test_the_audio_plan_gives_each_file_its_own_name_in_the_input_folder(tmp_path):
@@ -527,3 +528,264 @@ def test_a_reused_session_lists_its_cache_before_uploading(audio):
     assert reused[0][:2] != ["colab", "new"]
     assert ["cache-list", "whisper"] not in fresh
     assert fresh[0][:2] == ["colab", "new"]
+
+
+# --- Kohdistus Colabissa ---------------------------------------------------------------------------
+
+
+def test_align_is_off_by_default_and_only_for_audio():
+    assert RunOptions().align is False
+    assert "--align" not in pipeline_args(RunOptions(source="audio"))
+    assert "--align" in pipeline_args(RunOptions(source="audio", align=True))
+    with pytest.raises(ValueError, match="align"):
+        RunOptions(source="tracks", align=True)
+
+
+def test_main_passes_align_on(monkeypatch):
+    import sys
+
+    called = []
+    monkeypatch.setattr(sys, "argv", ["pipeline.py", "--source", "audio", "--align"])
+    monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
+    monkeypatch.setattr(pipeline, "run_audio", lambda *a, **k: called.append(k))
+    pipeline.main()
+    assert called == [{"align": True}]
+
+
+def test_the_aligner_runs_with_its_own_libraries_and_not_the_nvidia_pip_ones(monkeypatch):
+    monkeypatch.setenv(
+        "LD_LIBRARY_PATH",
+        "/usr/local/lib/python3.12/dist-packages/nvidia/cublas/lib:/opt/other/lib",
+    )
+    monkeypatch.setenv("PYTHONPATH", "/vanha")
+    env = pipeline.aligner_env()
+    assert env["LD_LIBRARY_PATH"] == "/opt/other/lib"
+    assert env["PYTHONPATH"].split(":")[:2] == [pipeline.ALIGN_SITE, "/vanha"]
+
+
+def test_the_aligner_env_drops_ld_library_path_when_only_nvidia_dirs_were_in_it(
+    monkeypatch,
+):
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/x/nvidia/cudnn/lib")
+    assert "LD_LIBRARY_PATH" not in pipeline.aligner_env()
+
+
+def test_torch_goes_to_its_own_folder_at_the_pinned_versions(monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        pipeline.subprocess, "run", lambda cmd, **k: seen.append((cmd, k))
+    )
+    pipeline.install_aligner()
+    cmd, kwargs = seen[0]
+    assert cmd[:3] == ["pip", "install", "-q"] or cmd[1:3] == ["-m", "pip"]
+    assert "--target" in cmd and cmd[cmd.index("--target") + 1] == pipeline.ALIGN_SITE
+    assert "torch==2.8.0" in cmd and "torchaudio==2.8.0" in cmd
+    assert kwargs["check"] is True and kwargs["timeout"] == pipeline.ALIGN_PIP_TIMEOUT
+
+
+def test_a_check_that_fails_says_why(monkeypatch):
+    def failing(cmd, **k):
+        raise pipeline.subprocess.CalledProcessError(
+            1, cmd, stderr="OSError: libcudnn puuttuu"
+        )
+
+    monkeypatch.setattr(pipeline.subprocess, "run", failing)
+    with pytest.raises(RuntimeError, match="libcudnn puuttuu"):
+        pipeline.check_aligner()
+
+
+def test_the_check_runs_the_uploaded_library_with_the_aligner_env(monkeypatch):
+    seen = []
+
+    def fake(cmd, **k):
+        seen.append((cmd, k))
+
+    monkeypatch.setattr(pipeline.subprocess, "run", fake)
+    pipeline.check_aligner()
+    cmd, kwargs = seen[0]
+    assert cmd[-2:] == ["/content/wordalign.py", "--check"]
+    assert kwargs["env"]["PYTHONPATH"].startswith(pipeline.ALIGN_SITE)
+
+
+def _align_fixture(tmp_path, monkeypatch, shift=0.5, align_all=True):
+    """Valekone: Whisper antaa kaksi sanaa, kohdistin siirtää ensimmäisen myöhemmäksi."""
+    (tmp_path / "in").mkdir()
+    (tmp_path / "in" / "puhe.wav").write_bytes(b"x")
+    order = []
+    monkeypatch.setattr(pipeline, "install_aligner", lambda: order.append("install"))
+    monkeypatch.setattr(pipeline, "check_aligner", lambda: order.append("check"))
+
+    def transcribe(path, model, language, prompt):
+        order.append("whisper")
+        return _raw(("moi", 1.0, 1.3), ("hei", 2.0, 2.2))
+
+    def align_files(jobs):
+        order.append("align")
+        rows = {}
+        for job in jobs:
+            first = {"word": "moi", "start": 1.0, "end": 1.3}
+            second = {"word": "hei", "start": 2.0, "end": 2.2}
+            if align_all:
+                first |= {"ctc_start": 1.0 + shift, "ctc_end": 1.4 + shift}
+                second |= {"ctc_start": None, "ctc_end": None}
+            else:
+                first |= {"ctc_start": None, "ctc_end": None}
+                second |= {"ctc_start": None, "ctc_end": None}
+            rows[job["name"]] = {"rows": [first, second], "rejected": ["hei: hylätty"]}
+        return rows
+
+    monkeypatch.setattr(pipeline, "transcribe_file", transcribe)
+    monkeypatch.setattr(pipeline, "align_files", align_files)
+    return order
+
+
+def test_aligned_starts_go_into_the_file_marked_ctc_v1(tmp_path, monkeypatch):
+    _align_fixture(tmp_path, monkeypatch)
+    pipeline.run_audio(
+        str(tmp_path / "in"), str(tmp_path / "out"), "turbo", "fi", "", align=True
+    )
+    doc = json.loads((tmp_path / "out" / "puhe.words.json").read_text(encoding="utf-8"))
+    assert doc["timing"] == "ctc-v1"
+    assert doc["words"][0] == {"w": "moi", "s": 1.5, "e": 1.9}
+    assert doc["words"][1]["s"] == 2.0  # hylätty sana jää Whisperin aikaan
+    assert doc["rejected"] == 1
+
+
+def test_the_aligner_is_checked_before_whisper_runs(tmp_path, monkeypatch):
+    order = _align_fixture(tmp_path, monkeypatch)
+    pipeline.run_audio(
+        str(tmp_path / "in"), str(tmp_path / "out"), "turbo", "fi", "", align=True
+    )
+    assert order == ["install", "check", "whisper", "align"]
+
+
+def test_a_broken_aligner_stops_the_run_before_any_transcribing(tmp_path, monkeypatch):
+    order = _align_fixture(tmp_path, monkeypatch)
+
+    def broken():
+        raise RuntimeError("Kohdistin ei käynnisty: torch")
+
+    monkeypatch.setattr(pipeline, "check_aligner", broken)
+    with pytest.raises(RuntimeError, match="Kohdistin ei käynnisty"):
+        pipeline.run_audio(
+            str(tmp_path / "in"), str(tmp_path / "out"), "turbo", "fi", "", align=True
+        )
+    assert "whisper" not in order
+    assert not (tmp_path / "out").exists() or not list((tmp_path / "out").iterdir())
+
+
+def test_nothing_aligned_is_an_error_not_a_file_marked_corrected(tmp_path, monkeypatch):
+    _align_fixture(tmp_path, monkeypatch, align_all=False)
+    with pytest.raises(RuntimeError, match="yksikään"):
+        pipeline.run_audio(
+            str(tmp_path / "in"), str(tmp_path / "out"), "turbo", "fi", "", align=True
+        )
+    assert list((tmp_path / "out").glob("*.words.json")) == []
+
+
+def test_without_align_the_aligner_is_never_touched(tmp_path, monkeypatch):
+    order = _align_fixture(tmp_path, monkeypatch)
+    pipeline.run_audio(str(tmp_path / "in"), str(tmp_path / "out"), "turbo", "fi", "")
+    assert order == ["whisper"]
+    doc = json.loads((tmp_path / "out" / "puhe.words.json").read_text(encoding="utf-8"))
+    assert doc["timing"] == "whisper"
+
+
+def test_the_aligned_file_is_in_time_order_even_when_a_word_moved_past_the_next(
+    tmp_path, monkeypatch
+):
+    _align_fixture(tmp_path, monkeypatch, shift=1.8)  # moi 2.8 > hei 2.0
+    pipeline.run_audio(
+        str(tmp_path / "in"), str(tmp_path / "out"), "turbo", "fi", "", align=True
+    )
+    doc = json.loads((tmp_path / "out" / "puhe.words.json").read_text(encoding="utf-8"))
+    assert [w["w"] for w in doc["words"]] == ["hei", "moi"]
+    assert all(w["e"] > w["s"] for w in doc["words"])
+
+
+def test_align_files_hands_the_library_one_jobs_file_and_reads_the_rows_back(
+    tmp_path, monkeypatch
+):
+    seen = {}
+
+    def fake(cmd, **k):
+        seen["cmd"], seen["env"] = cmd, k["env"]
+        jobs = json.loads(open(cmd[-1], encoding="utf-8").read())
+        seen["jobs"] = jobs
+        for job in jobs:
+            with open(job["out"], "w", encoding="utf-8") as f:
+                json.dump(
+                    {"version": "ctc1", "rows": [{"word": "x"}], "rejected": ["a"]}, f
+                )
+
+    monkeypatch.setattr(pipeline.subprocess, "run", fake)
+    jobs = [
+        {"name": "a.wav", "audio": "/in/a.wav", "raw": _raw(("x", 1.0, 1.2))},
+        {"name": "b.wav", "audio": "/in/b.wav", "raw": _raw(("y", 1.0, 1.2))},
+    ]
+    result = pipeline.align_files(jobs)
+    assert seen["cmd"][-2] == "/content/wordalign.py"
+    assert [j["audio"] for j in seen["jobs"]] == ["/in/a.wav", "/in/b.wav"]
+    assert seen["env"]["PYTHONPATH"].startswith(pipeline.ALIGN_SITE)
+    assert result["a.wav"] == {"rows": [{"word": "x"}], "rejected": ["a"]}
+    assert set(result) == {"a.wav", "b.wav"}
+
+
+# --- Kohdistus: komentorivi ja ajuri -------------------------------------------------------------------
+
+
+def test_align_uploads_the_library_before_the_script_runs(audio, capsys):
+    cli.main(_args(audio, "--align", "--dry-run"))
+    lines = capsys.readouterr().out.splitlines()
+    upload = next(i for i, x in enumerate(lines) if "/content/wordalign.py" in x)
+    run = next(i for i, x in enumerate(lines) if "python3 /content/pipeline.py" in x)
+    assert upload < run
+    assert "--align" in lines[run]
+
+
+def test_without_align_the_library_is_not_uploaded(audio, capsys):
+    cli.main(_args(audio, "--dry-run"))
+    assert "wordalign" not in capsys.readouterr().out
+
+
+def test_align_outside_audio_mode_is_refused(tmp_path, capsys):
+    _refused(["--align", "--input", str(tmp_path)], capsys, "--audio")
+
+
+def test_the_driver_places_alignment_progress_after_transcribing(monkeypatch):
+    from colabtranscribe import driver
+
+    def fake_execute(command, log, timeout=None, on_line=None, **_):
+        if "pipeline.py" in command[-1]:
+            on_line("[ääni (2/2)] Litteroidaan: b.wav")
+            on_line("[kohdistus (1/2)] a.wav")
+            on_line("[kohdistus (2/2)] b.wav")
+        return 0
+
+    monkeypatch.setattr(driver, "_execute_single", fake_execute)
+    seen = []
+    plan = [["colab", "exec", "-s", "s", "python3 /content/pipeline.py"]]
+    driver.run(plan, lambda _: None, on_progress=lambda p, m: seen.append((p, m)))
+    aligned = [p for p, m in seen if "Kohdistetaan" in m]
+    transcribed = [p for p, m in seen if "Litteroidaan (" in m]
+    assert aligned == pytest.approx([70.0, 80.0])
+    assert max(transcribed) < min(aligned)
+
+
+def test_the_log_says_how_many_words_were_aligned_and_why_others_were_not(
+    tmp_path, monkeypatch, capsys
+):
+    _align_fixture(tmp_path, monkeypatch)
+    pipeline.run_audio(
+        str(tmp_path / "in"), str(tmp_path / "out"), "turbo", "fi", "", align=True
+    )
+    printed = capsys.readouterr().out
+    assert "puhe.wav: kohdistettu 1/2 sanaa" in printed
+    assert "hylätty: hei: hylätty" in printed
+
+
+def test_the_timing_label_follows_the_alignment_version():
+    import wordalign
+
+    assert pipeline.ALIGN_TIMING == "ctc-v" + wordalign.VERSION.removeprefix("ctc")

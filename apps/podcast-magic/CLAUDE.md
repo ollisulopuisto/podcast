@@ -66,7 +66,7 @@ jotta uusi asetus ei livahda tunnisteeseen tai siitä pois huomaamatta.
 
 ## Sanan alku kohdistetaan ääneen, ja se on jälkivaihe
 
-`transcribe/align.py`. Whisperin sanan alku on arvio, ja se on lähes aina liian
+`transcribe/align.py` on sovelluksen puoli; laskenta ja säännöt ovat `packages/wordalign`issa (yksi tiedosto, jonka myös colab-transcribe lataa Colabiin), ja sen testit siellä. Whisperin sanan alku on arvio, ja se on lähes aina liian
 aikaisin: käsin merkityillä 15 sanalla mediaani +87 ms (−118…+557), tauon jälkeen
 +263 ms, ja joka sadannella sanalla 1,0–2,5 s. Kohdistin (torchaudion `MMS_FA`,
 CTC) osuu 28 ms:n mediaaniin (Whisper 117). Mittausten luvut ovat
