@@ -160,6 +160,67 @@ def test_a_transcript_is_aligned_one_segment_at_a_time_in_order():
     assert rows[2]["ctc_start"] == pytest.approx(7.5)
 
 
+def test_a_segment_is_split_at_long_pauses_so_foreign_sound_is_not_aligned_as_a_word():
+    """Mitattu: segmentissä oli 2,9 s tauko, jossa kuului toisen mikin ääntä, ja
+    pakotettu kohdistus sijoitti tauon jälkeisen sanan sinne (2,7 s liian
+    aikaisin). Ryhmät erotetaan tauoista."""
+    audio = np.zeros(20 * RATE, dtype=np.float32)
+    calls = []
+
+    def spy(chunk, words):
+        calls.append(list(words))
+        return fake_align(chunk, words)
+
+    data = {
+        "segments": [
+            _segment(
+                [
+                    _word("kyllä", 1.0, 1.4),
+                    _word("niin", 1.5, 1.8),
+                    _word("mitäs", 4.7, 5.0),
+                ],
+                1.0,
+                5.0,
+            )
+        ]
+    }
+    ca.align_transcript(data, audio, spy)
+    assert calls == [["kylla", "niin"], ["mitas"]]
+
+
+def test_a_pause_shorter_than_the_limit_keeps_the_words_in_one_group():
+    groups = ca.split_at_pauses(
+        [[_word("a", 1.0, 1.2), _word("b", 1.2 + ca.SPLIT_GAP_S - 0.01, 2.0)]]
+    )
+    assert len(groups) == 1
+    groups = ca.split_at_pauses(
+        [[_word("a", 1.0, 1.2), _word("b", 1.2 + ca.SPLIT_GAP_S + 0.01, 2.0)]]
+    )
+    assert len(groups) == 2
+
+
+def test_an_alignment_far_from_whisper_is_rejected_and_recorded():
+    """Kohdistin, joka siirtää sanan yli sekunnin Whisperin leimasta, on erehtynyt
+    (mitattu: 2,7 s); se jää ilman aikaa, ja syy kirjataan."""
+    audio = np.zeros(20 * RATE, dtype=np.float32)
+    errors = []
+    words = [_word("niin", 5.0, 5.3)]
+    out = ca.align_words(
+        words, audio, lambda chunk, w: [(0.0, 0.2)], pad=0.5, errors=errors
+    )
+    # Ikkuna alkaa 4,5 s: kohdistin sanoo 4,5 s, Whisper 5,0 s: 0,5 s, sallittu.
+    assert out[0]["ctc_start"] == pytest.approx(4.5)
+    out = ca.align_words(
+        words,
+        audio,
+        lambda chunk, w: [(ca.MAX_SHIFT_S + 0.6, ca.MAX_SHIFT_S + 0.8)],
+        pad=0.5,
+        errors=errors,
+    )
+    assert out[0]["ctc_start"] is None and out[0]["ctc_end"] is None
+    assert len(errors) == 1 and "niin" in errors[0]
+
+
 def test_words_without_a_start_time_are_left_out_of_the_transcript():
     audio = np.zeros(5 * RATE, dtype=np.float32)
     data = {

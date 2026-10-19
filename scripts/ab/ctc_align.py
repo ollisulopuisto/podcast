@@ -52,6 +52,18 @@ PAD_S = 0.5
 GROUP_GAP_S = 1.0
 GROUP_MAX_S = 25.0
 
+#: Tätä pidempi tauko Whisperin sanojen välillä aloittaa uuden kohdistusryhmän.
+#: Mitattu: segmentissä oli 2,9 s tauko, jossa kuului toisen mikin ääntä, ja
+#: pakotettu kohdistus ahtaa sanat peräkkäin ja sijoitti tauon jälkeisen sanan
+#: sinne, 2,7 s liian aikaisin. Ihmisen puheen sisäiset tauot ovat harvoin yli
+#: puolen sekunnin, joten ryhmä ei menetä kontekstia, jota kohdistin tarvitsee.
+SPLIT_GAP_S = 0.5
+
+#: Kohdistin, joka siirtää sanan alun yli näin kauas Whisperin leimasta, on
+#: erehtynyt: mitatut oikeat virheet Whisperissä olivat enintään 0,56 s. Sana
+#: jää ilman aikaa ja syy kirjataan, ei arvata.
+MAX_SHIFT_S = 1.0
+
 #: Merkinnän ja arvion ero, jota pidetään osumana (sama kuin muissa mittareissa).
 HIT_S = 0.030
 
@@ -158,6 +170,23 @@ def resample(x: np.ndarray, rate: int) -> np.ndarray:
     return resample_poly(x, RATE // g, rate // g).astype(np.float32)
 
 
+def split_at_pauses(
+    groups: list[list[dict]], gap: float = SPLIT_GAP_S
+) -> list[list[dict]]:
+    """Ryhmät katkaistuna kohdista, joissa sanojen välissä on yli ``gap`` sekuntia."""
+    out: list[list[dict]] = []
+    for words in groups:
+        current: list[dict] = []
+        for word in words:
+            if current and word["start"] - current[-1]["end"] > gap:
+                out.append(current)
+                current = []
+            current.append(word)
+        if current:
+            out.append(current)
+    return out
+
+
 def window(words: list[dict], audio_s: float, pad: float = PAD_S) -> tuple[float, float]:
     """Segmentin ikkuna täytteineen, rajattuna äänen sisään."""
     return max(0.0, words[0]["start"] - pad), min(audio_s, words[-1]["end"] + pad)
@@ -190,6 +219,13 @@ def align_words(
             errors.append(f"{start:.1f}-{end:.1f} s: {exc}")
         return out
     for i, (a, b) in zip(keep, spans, strict=True):
+        shift = abs(start + a - words[i]["start"])
+        if shift > MAX_SHIFT_S:
+            if errors is not None:
+                errors.append(
+                    f"{words[i]['word'].strip()} at {words[i]['start']:.2f} s moved {shift:.1f} s: rejected"
+                )
+            continue
         out[i]["ctc_start"] = start + a
         out[i]["ctc_end"] = start + b
     return out
@@ -197,7 +233,7 @@ def align_words(
 
 def align_transcript(data, audio, align, pad: float = PAD_S, errors: list | None = None):
     rows: list[dict] = []
-    for words in segments_of(data):
+    for words in split_at_pauses(segments_of(data)):
         rows.extend(align_words(words, audio, align, pad, errors))
     return rows
 
