@@ -87,6 +87,34 @@ spawns and reads, `main` is what it spawns.
 Plug-ins also print to stdout whenever they feel like it, so a line that is
 not JSON is logged rather than fatal.
 
+## The fourth seam: dxRevive's Mix as a slider
+
+`mixlaw.py` lets a host move dxRevive's Mix without rendering again. Mix is
+not `(1 - m)·dry + m·wet`: it is a gain-preserving crossfade with a steep
+taper, dry weight `(1 - m)^2.37` and wet weight one minus that (50 % is already
+80 % wet). So one 100 % render and the raw are enough for any setting:
+
+```python
+from speechmix import chain, mixlaw
+
+wet = chain.apply_plugin(plugin, raw, rate)        # Mix 100 %, once
+out = mixlaw.mix_blend(raw, wet, 0.25)             # the plug-in's 25 %, instantly
+```
+
+`mix` is the plug-in's percent divided by 100 and anything outside 0–1 is an
+error. `wet_lag` moves a wet render that sits a few samples off the raw
+(positive = late, as `chain.lag_samples`) before blending; the estimate is the
+caller's, and whether such an offset is real is open (`SHARED-AUDIO.md` §3.11).
+The law was measured on Studio 2 (seven levels, two windows, one speaker) and
+checked on Studio at two points. The output of dxRevive is random from run to
+run (−38 dB Studio 2, −25 dB Studio), so a slider from one render is more
+consistent than separate renders per setting: every setting shares one
+realisation of the noise.
+
+The consumer is outside this repository (kuulas), which is why
+`tests/test_workspace_agrees.py` lists `mixlaw` as an external-consumer
+exception with its reason written out.
+
 ## Why the measurements live here
 
 Every constant in this package came from measuring real material, and the

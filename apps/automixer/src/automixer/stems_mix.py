@@ -194,13 +194,13 @@ def write_flags(path: str, found: dict, loud: dict, block_level: bool = True) ->
     return len(rows)
 
 
-def flags(session_path: str, path: str) -> int:
+def flags(session_path: str, path: str, loader=None) -> int:
     """Pelkkä kuuntelulista ilman miksausta: lohkot ja kovat jaksot."""
     workdir = tempfile.mkdtemp(
         prefix="automixer-", dir=os.path.dirname(os.path.abspath(path)) or None
     )
     try:
-        loaded = hindenburg.load(session_path, workdir)
+        loaded = (loader or hindenburg.load)(session_path, workdir)
         speech = [t for t in loaded.tracks if t["type"] == "speech"]
         lanes = stems.grid_from_files({t["name"]: t["path"] for t in speech}) if speech else None
         count = write_flags(path, *review(speech, lanes))
@@ -226,16 +226,31 @@ def mix(
     mic_duck: bool = True,
     mic_duck_db: float | None = None,
     block_level: bool = True,
+    loader=None,
+    progress=None,
 ) -> stems.StemResult:
-    """Miksaa istunnon ``output``iin. Palauttaa ohjelman tason tulokset."""
+    """Miksaa istunnon ``output``iin. Palauttaa ohjelman tason tulokset.
+
+    ``loader(path, workdir)`` antaa raidat ``session.Loaded``ina; oletus lukee
+    Hindenburgin istunnon. ``mix_folder`` antaa kuulaksen kansion.
+
+    ``progress(prosentti, viesti)`` saa kokonaisluvun 0–100 ja lyhyen viestin;
+    prosentit nousevat eivätkä laske. Keskeytys: nosta poikkeus takaisinkutsusta,
+    työhakemisto siivotaan.
+    """
+    def tick(percent, message):
+        if progress is not None:
+            progress(int(percent), message)
+
     result = stems.StemResult()
     workdir = tempfile.mkdtemp(
         prefix="automixer-", dir=os.path.dirname(os.path.abspath(output)) or None
     )
     try:
-        loaded = hindenburg.load(session_path, workdir)
+        loaded = (loader or hindenburg.load)(session_path, workdir)
         for note in loaded.notes:
             _log(f"! {note}")
+        tick(5, "loaded the tracks")
         speech = [t for t in loaded.tracks if t["type"] == "speech"]
         music = [t for t in loaded.tracks if t["type"] == "music"]
         if not speech and not music:
@@ -271,6 +286,7 @@ def mix(
         listing = os.path.splitext(output)[0] + " flags.txt"
         count = write_flags(listing, found_all, loud_all, block_level)
         _log(f"{count} places to listen to → {listing}")
+        tick(15, "checked the levels")
         for name, items in loud_all.items():
             for x in items:
                 _log(f"loud {name} {_mmss(x.start)}–{_mmss(x.end)}: "
@@ -338,10 +354,13 @@ def mix(
             [stems.stem_size(j["source"]) for j in jobs], report=_log
         )
         try:
-            for job, gain, error in stems.run_parallel(jobs, work, workers):
+            for done, (job, gain, error) in enumerate(
+                stems.run_parallel(jobs, work, workers), start=1
+            ):
                 if error is not None:
                     raise error
                 result.gains[job["key"]] = gain
+                tick(15 + 60 * done / len(jobs), f"{job['name']} processed")
         finally:
             for pool in pools.values():
                 if hasattr(pool, "close"):
@@ -395,6 +414,7 @@ def mix(
                     extra[job["key"]] = extra.get(job["key"], 0.0) + change
                 _log(f"beds: loudest {bed_level:.1f} LUFS, speech {spoken_level:.1f} "
                      f"→ beds {change:+.1f} dB")
+        tick(80, "mastering")
         stems.program_deliver(jobs, result, ducks, extra, deliver,
                               stems.anyone_speaking(grid, 0.0),
                               layout=stereo_layout)
@@ -409,11 +429,23 @@ def mix(
                          ducked=ducked_by.get(job["key"]), carve_db=CARVE_DB)
             for job in jobs[len(speech):]
         ]
+        tick(92, "writing the mix")
         _log("writing the mix")
         stems.sum_to_file(sources, 0.0, seconds, output)
         _log(f"mastered: {result.program_lufs:.1f} LUFS, "
              f"lift {result.program_boost:+.1f} dB, "
              f"limiting {result.program_limit_cost:.1f} LU → {output}")
+        tick(100, "done")
         return result
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+def mix_folder(folder: str, output: str, **options) -> stems.StemResult:
+    """Kuulaksen kansio (``tracks.json`` ja stemit) miksaukseksi levyltä.
+
+    Sama putki kuin ``mix``: ``stem_folder.load`` korvaa vain istunnon luvun.
+    """
+    from . import stem_folder
+
+    return mix(folder, output, loader=stem_folder.load, **options)

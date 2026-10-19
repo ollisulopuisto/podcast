@@ -36,6 +36,7 @@ from automixer.domain.processor import (
 )
 from automixer.domain.track import Track
 from speechmix import panning, programme
+from speechmix.stems import StemError
 
 #: Puheraitojen taso ennen masterointia. Kynnykset liukuvat sen mukana
 #: kirjastossa; `session.MUSIC_LUFS` sovittaa musiikin tähän samaan.
@@ -793,6 +794,11 @@ def main():
         "saved by the TUI, an autoraffkat episode's settings, or base64 text",
     )
     parser.add_argument(
+        "--progress", action="store_true",
+        help="Print one 'PROGRESS <0-100> <message>' line per step, for a host "
+        "that shows a bar",
+    )
+    parser.add_argument(
         "--track-params", default="",
         help="Per-track plugin parameters, winning over --plugin-params "
         "(e.g. 'panu/dxrevive:mix=50; kari/dxrevive:mix=25')",
@@ -826,6 +832,28 @@ def main():
     config_tracks = []
     sessions = [p for p in args.tracks if p.lower().endswith(".nhsx")]
     workdir = None
+    from . import stem_folder
+
+    # Kansio ilman luetteloa on virhe, ei raita: muuten sen avaus kaatuu
+    # äänitiedoston lukuun ("Format not recognised") kaukana syystä.
+    for p in args.tracks:
+        if os.path.isdir(p) and stem_folder.manifest_path(p) is None:
+            print(f"{p} is a folder without {stem_folder.MANIFEST}: give audio files, "
+                  "a .nhsx session, or a kuulas export folder.")
+            sys.exit(1)
+    folders = [p for p in args.tracks if stem_folder.manifest_path(p) is not None]
+    if folders:
+        # kuulaksen vienti: stemit levyltä saman putken kautta kuin istunto.
+        if len(args.tracks) > 1 or args.speech or args.music or sessions:
+            print("A kuulas export is mixed on its own: give one folder "
+                  f"(or its {stem_folder.MANIFEST}).")
+            sys.exit(1)
+        try:
+            _mix_session(args, folders[0], loader=stem_folder.load)
+        except StemError as exc:
+            print(exc)
+            sys.exit(1)
+        return
     if sessions:
         # Hindenburgin istunto: editointi sieltä, miksaus täältä — stemeinä
         # levyllä kuten autoraffkatissa (``stems_mix``), koska muistissa
@@ -860,7 +888,7 @@ def main():
 
     if not config_tracks:
         print("No tracks found or specified.")
-        return
+        sys.exit(1)
 
     # Log detected roles
     print("Detected Track Roles:")
@@ -924,19 +952,47 @@ def main():
     }
 
     try:
-        Mixer(config).run()
+        if args.progress:
+            Mixer(config).run(progress_callback=_print_progress)
+        else:
+            Mixer(config).run()
     finally:
         if workdir is not None:
             shutil.rmtree(workdir, ignore_errors=True)
 
 
-def _mix_session(args, path: str) -> None:
-    """Istunto ``stems_mix``in kautta, CLI:n asetuksilla."""
-    from . import stems_mix
+def _exit_on_sigterm() -> None:
+    """``SIGTERM`` lopettaa ajon poistumalla, jolloin ``finally`` siivoaa.
 
-    output = args.output or os.path.splitext(path)[0] + " automixer.wav"
+    Ilman tätä käyttöjärjestelmä tappaa prosessin heti, ja istunnon tai
+    kansion työhakemisto (``automixer-*`` tulostiedoston vieressä, käsitellyt
+    stemit, jakson kokoiset) jää levylle. kuulas peruuttaa näin.
+    """
+    import signal
+
+    def stop(signum, _frame):
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, stop)
+
+
+def _print_progress(percent, message) -> None:
+    """``PROGRESS <0-100> <viesti>``: yksi rivi, jonka isäntä voi jäsentää."""
+    text = " ".join(str(message).split()) or "-"
+    print(f"PROGRESS {int(percent)} {text}", flush=True)
+
+
+def _mix_session(args, path: str, loader=None) -> None:
+    """Istunto tai kuulaksen kansio ``stems_mix``in kautta, CLI:n asetuksilla."""
+    from . import stem_folder, stems_mix
+
+    _exit_on_sigterm()
+    if loader is None:
+        output = args.output or os.path.splitext(path)[0] + " automixer.wav"
+    else:
+        output = args.output or stem_folder.default_output(path)
     if args.flags_only:
-        stems_mix.flags(path, os.path.splitext(output)[0] + " flags.txt")
+        stems_mix.flags(path, os.path.splitext(output)[0] + " flags.txt", loader=loader)
         return
     plugins = list(args.speech_plugins or [])
     if len(plugins) > 1:
@@ -966,6 +1022,8 @@ def _mix_session(args, path: str) -> None:
         mic_duck=args.speech_mic_duck,
         mic_duck_db=args.mic_duck_db,
         block_level=args.block_level,
+        loader=loader,
+        progress=_print_progress if args.progress else None,
     )
 
 

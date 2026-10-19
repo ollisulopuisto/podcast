@@ -26,6 +26,7 @@ import shutil
 import socket
 import sys
 import threading
+import urllib.request
 import webbrowser
 from pathlib import Path
 
@@ -57,8 +58,9 @@ class _Loudness:
         import pyloudnorm as pyln
 
         self.rate = rate
-        self.filters = [(f.b, f.a, f.passband_gain)
-                        for f in pyln.Meter(rate)._filters.values()]
+        self.filters = [
+            (f.b, f.a, f.passband_gain) for f in pyln.Meter(rate)._filters.values()
+        ]
         self.state = [[None] * len(self.filters) for _ in range(channels)]
         self.bin = rate // 10
         self.carry = np.zeros((0, channels))
@@ -79,7 +81,9 @@ class _Loudness:
             out[:, ch] = x
         joined = np.concatenate([self.carry, out])
         usable = len(joined) // self.bin * self.bin
-        self.bins.append((joined[:usable] ** 2).reshape(-1, self.bin, out.shape[1]).sum(axis=1))
+        self.bins.append(
+            (joined[:usable] ** 2).reshape(-1, self.bin, out.shape[1]).sum(axis=1)
+        )
         self.carry = joined[usable:]
 
     def value(self) -> float:
@@ -88,7 +92,7 @@ class _Loudness:
         power = np.concatenate(self.bins)
         if len(power) < 4:
             return float("nan")
-        windows = sum(power[i:len(power) - 3 + i] for i in range(4)) / (4 * self.bin)
+        windows = sum(power[i : len(power) - 3 + i] for i in range(4)) / (4 * self.bin)
         z = windows.sum(axis=1)
         level = -0.691 + 10 * np.log10(z + 1e-20)
         z = z[level > -70]
@@ -164,8 +168,10 @@ def build(files, base: Path = DEFAULT_DIR, name: str = "") -> Path:
         row = measure(source)
         row["name"] = link.name
         rows.append(row)
-        print(f"  {link.name}: {row['lufs']} LUFS, {row['tp']} dBTP, "
-              f"crest {row['crest']}, PSR {row['psr']}")
+        print(
+            f"  {link.name}: {row['lufs']} LUFS, {row['tp']} dBTP, "
+            f"crest {row['crest']}, PSR {row['psr']}"
+        )
     (folder / "files.json").write_text(
         json.dumps(rows, ensure_ascii=False), encoding="utf-8"
     )
@@ -228,6 +234,29 @@ def _serving(port: int) -> bool:
         return probe.connect_ex(("127.0.0.1", port)) == 0
 
 
+def _page_exists(url: str) -> bool:
+    try:
+        with urllib.request.urlopen(url, timeout=2) as response:
+            return response.status == 200
+    except OSError:  # myös HTTPError (404) ja yhteysvirheet
+        return False
+
+
+def choose_port(port: int, folder_name: str) -> tuple[int, bool]:
+    """``(portti, onko sivu jo palvelimella)``.
+
+    Portissa oleva palvelin voi olla **toisen kansion** palvelin (vanha ajo toisesta
+    työhakemistosta): silloin sivu antaa 404:n, vaikka vertailu on koottu oikein. Vanha
+    palvelin kelpaa vain, jos tämä sivu löytyy siitä; muuten pyydetään vapaa portti
+    (``0``) ja käynnistetään oma palvelin.
+    """
+    if not _serving(port):
+        return port, False
+    if _page_exists(f"http://127.0.0.1:{port}/{folder_name}/vertailu.html"):
+        return port, True
+    return 0, False
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Synkattu A/B-kuuntelu selaimessa")
     parser.add_argument("files", nargs="+", help="äänitiedostot vertailuun")
@@ -239,16 +268,18 @@ def main(argv=None) -> int:
         print("Ei löydy: " + ", ".join(missing), file=sys.stderr)
         return 1
     folder = build(args.files, DEFAULT_DIR, args.name)
-    url = f"http://127.0.0.1:{args.port}/{folder.name}/vertailu.html"
-    if _serving(args.port):
-        # Palvelin on jo käynnissä, oletettavasti tämän hakemiston.
+    port, reuse = choose_port(args.port, folder.name)
+    if reuse:
+        url = f"http://127.0.0.1:{port}/{folder.name}/vertailu.html"
         webbrowser.open(url)
         print(url)
         return 0
-    handler = functools.partial(
-        RangeHandler, directory=str(DEFAULT_DIR)
-    )
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", args.port), handler)
+    handler = functools.partial(RangeHandler, directory=str(DEFAULT_DIR))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    port = server.server_address[1]
+    url = f"http://127.0.0.1:{port}/{folder.name}/vertailu.html"
+    if port != args.port:
+        print(f"Port {args.port} serves something else: using {port}.")
     threading.Timer(0.5, webbrowser.open, (url,)).start()
     print(f"{url}  (Ctrl-C lopettaa)")
     with contextlib.suppress(KeyboardInterrupt):

@@ -93,7 +93,6 @@ def test_the_members_are_the_eight_we_think_they_are():
     ]
 
 
-
 # --------------------------------------------------------------------------
 # Python
 # --------------------------------------------------------------------------
@@ -149,7 +148,9 @@ def test_a_shared_library_has_one_floor():
             seen.setdefault(pkg, {})[name(member)] = spec
 
     disagreeing = {
-        pkg: who for pkg, who in seen.items() if len(who) > 1 and len(set(who.values())) > 1
+        pkg: who
+        for pkg, who in seen.items()
+        if len(who) > 1 and len(set(who.values())) > 1
     }
     assert not disagreeing, disagreeing
 
@@ -254,6 +255,42 @@ def imports_in(path: Path) -> set[str]:
     return found
 
 
+#: Moduulit, joiden kuluttaja on tämän repositorion **ulkopuolella**. Vartija
+#: ei näe toista repositoriota, mutta poikkeus kirjoitetaan auki: kuka kuluttaja
+#: on ja miksi moduuli kuuluu tänne eikä sen omaan repoon. Merkintä poistetaan,
+#: kun moduulilla on kuluttaja täällä (ks. testi alla), ja uusi merkintä on
+#: päätös, ei oletus. Tämä on se rikottu väite, jonka repon CLAUDE.md sallii kun
+#: syy kirjoitetaan samaan commitiin.
+EXTERNAL_CONSUMERS: dict[str, str] = {
+    "mixlaw": (
+        "kuulas (a separate repository, ../kuulas, imports speechmix as an editable "
+        "path dependency) needs dxRevive's Mix slider from one wet render; the law "
+        "is the plug-in's, measured here (SHARED-AUDIO.md 3.11), and every host of "
+        "the plug-in editor can use it, so it belongs next to chain.apply_plugin."
+    ),
+}
+
+
+def shared_orphans() -> list[str]:
+    """`speechmix`in moduulit, joita ei tuo yksikään sovellus eikä sisarmoduuli."""
+    package = ROOT / "packages" / "speechmix" / "src" / "speechmix"
+    modules = {p.stem for p in package.glob("*.py")} - {"__init__"}
+
+    from_apps = imports_in(ROOT / "apps")
+    siblings = {
+        sibling.stem: imports_in(sibling)
+        for sibling in package.glob("*.py")
+        if sibling.stem != "__init__"
+    }
+
+    return sorted(
+        module
+        for module in modules
+        if module not in from_apps
+        and not any(module in names for stem, names in siblings.items() if stem != module)
+    )
+
+
 def test_every_shared_module_has_a_consumer():
     """Kirjasto johon kirjoitetaan koodia jota mikään ei kutsu ei ole kirjasto.
 
@@ -271,23 +308,27 @@ def test_every_shared_module_has_a_consumer():
     `__init__.py` ei kelpaa kuluttajaksi: se tuo kaiken julkisen, joten sen
     laskeminen tekisi tästä testin joka ei voi koskaan kaatua.
     """
+    orphans = [module for module in shared_orphans() if module not in EXTERNAL_CONSUMERS]
+    assert not orphans, orphans
+
+
+def test_every_external_consumer_exception_is_still_needed():
+    """Poikkeuslista ei saa muuttua paikaksi, johon orvot kätketään.
+
+    Jokaisella merkinnällä on oltava kirjoitettu syy (kuluttaja ja mitä se
+    tarvitsee), moduulin on oltava olemassa, eikä sillä saa olla kuluttajaa
+    täällä: heti kun on, poikkeus on turha ja se poistetaan, jotta sama vartija
+    koskee moduulia taas.
+    """
     package = ROOT / "packages" / "speechmix" / "src" / "speechmix"
     modules = {p.stem for p in package.glob("*.py")} - {"__init__"}
-
-    from_apps = imports_in(ROOT / "apps")
-    siblings = {
-        sibling.stem: imports_in(sibling)
-        for sibling in package.glob("*.py")
-        if sibling.stem != "__init__"
-    }
-
-    orphans = sorted(
-        module
-        for module in modules
-        if module not in from_apps
-        and not any(module in names for stem, names in siblings.items() if stem != module)
-    )
-    assert not orphans, orphans
+    orphans = set(shared_orphans())
+    for module, reason in EXTERNAL_CONSUMERS.items():
+        assert module in modules, f"{module}: the exception names a module that is gone"
+        assert module in orphans, (
+            f"{module}: has a consumer here now, remove the exception"
+        )
+        assert len(reason.split()) >= 12, f"{module}: write down the consumer and why"
 
 
 def declared_version(member: Path) -> str:
@@ -297,7 +338,10 @@ def declared_version(member: Path) -> str:
 @pytest.mark.parametrize("member", MEMBERS, ids=name)
 def test_the_version_is_calver(member: Path):
     """CalVer, `YYYY.M.D.N`, kuten työskentelysäännöt sanovat."""
-    assert CALVER.match(declared_version(member)), (name(member), declared_version(member))
+    assert CALVER.match(declared_version(member)), (
+        name(member),
+        declared_version(member),
+    )
 
 
 def package_dir(member: Path) -> Path:
@@ -334,7 +378,8 @@ def bundle_specs(app: Path) -> list[Path]:
     tekee — ei tiedoston nimi, joka voi olla mitä tahansa.
     """
     return [
-        spec for spec in sorted(app.glob("*.spec"))
+        spec
+        for spec in sorted(app.glob("*.spec"))
         if "BUNDLE(" in spec.read_text(encoding="utf-8")
     ]
 
@@ -356,7 +401,9 @@ def test_the_bundle_reports_the_version_that_was_built(app: Path):
     for spec in bundle_specs(app):
         text = spec.read_text(encoding="utf-8")
         found = re.search(r'os\.environ\.get\("[A-Z_]+VERSION", "(.+?)"\)', text)
-        assert found, f"{name(app)}/{spec.name}: ei lue versiota ympäristöstä oletuksineen"
+        assert found, (
+            f"{name(app)}/{spec.name}: ei lue versiota ympäristöstä oletuksineen"
+        )
         assert found.group(1) == declared_version(app), f"{name(app)}/{spec.name}"
 
 
@@ -405,9 +452,14 @@ def test_a_release_workflow_syncs_the_whole_workspace(app: Path):
     Molemmat paketointiputket kaatuivat tähän ensimmäisellä ajollaan, eli
     kumpikaan ei ollut koskaan ajanut loppuun.
     """
-    text = (ROOT / ".github" / "workflows" / f"build-{name(app)}.yml").read_text(encoding="utf-8")
-    syncs = [line.strip() for line in text.splitlines()
-             if "uv sync" in line and line.lstrip().startswith("run:")]
+    text = (ROOT / ".github" / "workflows" / f"build-{name(app)}.yml").read_text(
+        encoding="utf-8"
+    )
+    syncs = [
+        line.strip()
+        for line in text.splitlines()
+        if "uv sync" in line and line.lstrip().startswith("run:")
+    ]
     assert syncs, name(app)
     for line in syncs:
         assert "--all-packages" in line, f"{name(app)}: {line}"
