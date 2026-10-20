@@ -30,7 +30,7 @@ tasoon, joten vaimennettu alue mitataan sanan mittaisilla ikkunoilla
 **Opittu kynnys tarkistetaan puhetta vasten.** Jos käyttäjä on vaimentanut
 vahingossa puhetta, kynnys on puheen tasolla ja vaientaisi kaiken: liikaa
 vaimennettu jakso on pahempi virhe kuin liian vähän vaimennettu. Kynnys, joka
-ei jää selvästi vaimentamattomien sanojen hiljaisimman neljänneksen alle
+ei jää selvästi vaimentamattomien sanojen tason alle
 (``GUARD_DB``), hylätään ja sanotaan miksi, ja raita ajetaan tavallisella
 säännöllä.
 
@@ -87,9 +87,23 @@ MARGIN_DB = 1.0
 MIN_SECONDS = 3.0
 
 # Kuinka monta vaimentamatonta sanaa mitataan puheen tasoksi, ja kuinka paljon
-# kynnyksen pitää jäädä sen hiljaisimman neljänneksen alle. Makuarvot.
+# kynnyksen pitää jäädä puheen tason alle. Makuarvot.
 SPEECH_WORDS = 400
 GUARD_DB = 3.0
+
+# Puheen taso on muokatulla ajalla vaimentamatta jätettyjen sanojen hiljaisin
+# neljännes (käyttäjä on kuullut ne ja jättänyt puheeksi). Jos niitä ei ole,
+# taso mitataan litteroidusta alusta, jossa on kohinasanoja: 07 uutiset,
+# Perttu, sanat 60–180 s mediaani −49 dBFS (kohina, puhe −25…−31) ja Olli
+# 180–300 s −54 dBFS. Silloin hiljaisin neljännes on kohinaa ja kynnys
+# (Perttu −38,7, Olli −43,9 dBFS) näytti olevan 'puheen tasolla'; yläneljännes
+# on puhetta. Luvut ovat PR 57:n mittauksia, ei tässä uudelleen mitattu.
+SPEECH_PERCENTILE_VETTED = 25.0
+SPEECH_PERCENTILE_TRANSCRIPT = 75.0
+
+# Peräkkäiset vaimennetut palat ovat yksi lohko: yksi puheenvuoro on voitu
+# pätkiä moneen alueeseen. Rako alle tämän (s) ei erota lohkoja. Makuarvo.
+BLOCK_GAP = 0.01
 
 # Vuotokehyksiä (vaimennettu, toinen puhuu) pitää olla näin monta, jotta niistä
 # lasketaan mitään. Makuarvo.
@@ -113,9 +127,10 @@ GAP_MARGIN_DB = 2.0
 KEEP_MARGIN_DB = 0.5
 
 __all__ = [
-    "BLEED_GAP_PERCENTILE", "FLOOR_DB", "GAP_MARGIN_DB", "GUARD_DB", "HOP",
+    "BLEED_GAP_PERCENTILE", "BLOCK_GAP", "FLOOR_DB", "GAP_MARGIN_DB", "GUARD_DB", "HOP",
     "KEEP_MARGIN_DB", "MARGIN_DB", "MIN_BLEED_FRAMES", "MIN_SECONDS",
-    "MIN_SPEECH_WORDS", "PERCENTILE", "SPEECH_GAP_PERCENTILE", "SPEECH_WORDS",
+    "MIN_SPEECH_WORDS", "PERCENTILE", "SPEECH_GAP_PERCENTILE",
+    "SPEECH_PERCENTILE_TRANSCRIPT", "SPEECH_PERCENTILE_VETTED", "SPEECH_WORDS",
     "WINDOW", "Calibration", "Region", "Source", "Track", "calibrate",
     "horizon", "percentile",
 ]
@@ -162,7 +177,7 @@ class Calibration:
     threshold: float | None = None   # dBFS sanan ikkunassa; ``None`` = ei opittu
     muted_seconds: float = 0.0
     frames: int = 0
-    speech_p25: float | None = None
+    speech_level: float | None = None
     reason: str = ""
     # Sidechain: kuinka monta desibeliä kovimman toisen raidan alle sana saa
     # jäädä ja olla silti puhetta. ``None`` = ei opittu, käytetään oletusta.
@@ -200,6 +215,18 @@ def _region_at(regions: list[Region], programme_time: float) -> Region | None:
         if region.start <= programme_time < region.end:
             return region
     return None
+
+
+def _muted_blocks(regions: list[Region]) -> list[tuple[float, float]]:
+    """Vaimennetut alueet lohkoina ``(alku, pituus)``: vierekkäiset yhdistetty."""
+    spans = sorted((r.start, r.end) for r in regions if r.muted)
+    blocks: list[list[float]] = []
+    for start, end in spans:
+        if blocks and start <= blocks[-1][1] + BLOCK_GAP:
+            blocks[-1][1] = max(blocks[-1][1], end)
+        else:
+            blocks.append([start, end])
+    return [(a, b - a) for a, b in blocks]
 
 
 def _windows(start: float, length: float):
@@ -313,11 +340,9 @@ def calibrate(tracks: list[Track], source: Source) -> dict[str, Calibration]:
         muted_levels: list[float] = []
         bleed_levels: list[float] = []
         bleed_gaps: list[float] = []
-        for region in regions[name]:
-            if not region.muted:
-                continue
-            found.muted_seconds += region.length
-            for begin, end in _windows(region.start, region.length):
+        for block_start, block_length in _muted_blocks(regions[name]):
+            found.muted_seconds += block_length
+            for begin, end in _windows(block_start, block_length):
                 mine = level_at(name, begin, end)
                 if mine is None:
                     continue
@@ -375,15 +400,18 @@ def calibrate(tracks: list[Track], source: Source) -> dict[str, Calibration]:
             # estää.
             threshold = max(threshold, percentile(bleed_levels, PERCENTILE) + MARGIN_DB)
 
-        speech = speech_levels(name)
-        if speech:
-            found.speech_p25 = percentile(speech, 25)
-            if threshold >= found.speech_p25 - GUARD_DB:
-                found.reason = (
-                    f"vaimennettujen alueiden taso ({threshold:.1f} dBFS) on puheen "
-                    f"tasolla ({found.speech_p25:.1f} dBFS) — vaimennettiinko puhetta?")
-                out[name] = found
-                continue
+        if len(passable) >= MIN_SPEECH_WORDS:
+            found.speech_level = percentile(passable, SPEECH_PERCENTILE_VETTED)
+        else:
+            speech = speech_levels(name)
+            if speech:
+                found.speech_level = percentile(speech, SPEECH_PERCENTILE_TRANSCRIPT)
+        if found.speech_level is not None and threshold >= found.speech_level - GUARD_DB:
+            found.reason = (
+                f"vaimennettujen alueiden taso ({threshold:.1f} dBFS) on puheen "
+                f"tasolla ({found.speech_level:.1f} dBFS) — vaimennettiinko puhetta?")
+            out[name] = found
+            continue
 
         # Päästettävä on päästettävä: muokatulla ajalla vaimentamatta jätetty
         # sana on käyttäjän oma päätös, eikä kynnys saa jäädä sen yläpuolelle.
