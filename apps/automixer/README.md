@@ -202,6 +202,7 @@ Stages that read the speech grid, all off under `--minimal`:
   On by default; -9 dB sounded best in a listen against -6 and -15.
 - `--mic-duck-db`: how far a closed microphone drops (default: the measured
   -9 dB, which is deliberately shallow — the benefit is in the timing).
+- `--bed-under-speech-db FLOAT`: where the loudest 3 s of the music beds sits against the processed speech, dB, -30..+6; negative is quieter than the speech. Default +1 (just above it); a bed that sounds too loud next to the speech wants something like -9. The `beds:` line in the log shows what was applied.
 
 These need two or more speech tracks at the mixer's sample rate; with one
 microphone there is no grid to build, and each stage is skipped rather than

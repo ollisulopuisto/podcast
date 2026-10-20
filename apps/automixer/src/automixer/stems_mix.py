@@ -56,6 +56,28 @@ def _duration(path: str) -> float:
 #: miksauksessa +7…+10. Tutkimus (Sound On Sound, Transom): selvästi soiva
 #: musiikki puheen tasolle, koska musiikin huiput ovat kovemmat.
 BED_UNDER_SPEECH_DB = 1.0
+#: Sallittu väli lipulle ``--bed-under-speech-db`` (dB käsitellyn puheen
+#: suhteen). Alaraja: pohja kuuluu vielä; yläraja: selvästi puheen päällä.
+BED_OFFSET_RANGE = (-30.0, 6.0)
+
+
+def check_bed_offset(value) -> float:
+    """Pohjan taso puheeseen nähden liukulukuna, tai ``ValueError`` jos se ei kelpaa.
+
+    ``nan`` ja äärettömät hylätään: ``nan`` ei ole minkään välin sisällä, ja ne
+    muuttaisivat pohjan vahvistuksen ``nan``iksi ilman että mikään kaatuu.
+    """
+    number = float(value)
+    low, high = BED_OFFSET_RANGE
+    if not (low <= number <= high):  # NaN ei ole välillä
+        raise ValueError(f"{value}: must be between {low:g} and {high:g} dB")
+    return number
+
+
+def bed_change(spoken_level: float, bed_level: float, offset: float) -> float:
+    """Kuinka paljon pohjia muutetaan, dB: kovin hetki ``offset`` puheen yllä."""
+    return round(spoken_level + offset - bed_level, 2)
+
 #: Musiikin keskikaistan leikkaus kun pohja on täysin (12 dB) puheen alla,
 #: dB. Oletus, ei mitattu: käyttäjä halusi tilaa puheelle ja bassoon ja
 #: kickiin koskematta; kuunneltava ennen kuin luku on tosi.
@@ -226,6 +248,7 @@ def mix(
     mic_duck: bool = True,
     mic_duck_db: float | None = None,
     block_level: bool = True,
+    bed_under_speech_db: float | None = None,
     loader=None,
     progress=None,
 ) -> stems.StemResult:
@@ -237,7 +260,17 @@ def mix(
     ``progress(prosentti, viesti)`` saa kokonaisluvun 0–100 ja lyhyen viestin;
     prosentit nousevat eivätkä laske. Keskeytys: nosta poikkeus takaisinkutsusta,
     työhakemisto siivotaan.
+
+    ``bed_under_speech_db``: musiikkipohjan kovin hetki näin monta dB käsitellyn
+    puheen **suhteen** (negatiivinen = hiljempaa); ``None`` on
+    ``BED_UNDER_SPEECH_DB``. Virheellinen arvo pysäyttää ennen työtä.
     """
+    bed_offset = (
+        BED_UNDER_SPEECH_DB
+        if bed_under_speech_db is None
+        else check_bed_offset(bed_under_speech_db)
+    )
+
     def tick(percent, message):
         if progress is not None:
             progress(int(percent), message)
@@ -409,11 +442,12 @@ def mix(
             spoken_level, _ = _loudness(speech_jobs, stems.anyone_speaking(grid, 0.0))
             _, bed_level = _loudness(music_jobs)
             if spoken_level is not None and bed_level is not None:
-                change = round(spoken_level + BED_UNDER_SPEECH_DB - bed_level, 2)
+                change = bed_change(spoken_level, bed_level, bed_offset)
                 for job in music_jobs:
                     extra[job["key"]] = extra.get(job["key"], 0.0) + change
                 _log(f"beds: loudest {bed_level:.1f} LUFS, speech {spoken_level:.1f} "
-                     f"→ beds {change:+.1f} dB")
+                     f"→ beds {change:+.1f} dB "
+                     f"(loudest moment {bed_offset:+.1f} dB from the speech)")
         tick(80, "mastering")
         stems.program_deliver(jobs, result, ducks, extra, deliver,
                               stems.anyone_speaking(grid, 0.0),

@@ -140,6 +140,31 @@ def test_the_bed_is_no_louder_than_the_speech(tmp_path):
     assert abs((bed - speech) - 1.0) < 1.0, bed - speech
 
 
+def test_the_bed_level_against_the_speech_can_be_chosen(tmp_path, capsys):
+    """``bed_under_speech_db=-9``: pohjan kovin hetki 9 dB puheen alle (oletus +1),
+    ja loki kertoo mitä pyydettiin (kuulas etsii rivin etuliitettä ``beds:``)."""
+    path = _session(tmp_path, seconds=40.0)
+    out = tmp_path / "mix.wav"
+    stems_mix.mix(str(path), str(out), target_lufs=-16.0, bed_under_speech_db=-9.0)
+    mix, _ = sf.read(out, always_2d=True)
+    meter = pyln.Meter(RATE)
+    bed = meter.integrated_loudness(mix[int(21.0 * RATE):int(25.5 * RATE)])
+    speech = meter.integrated_loudness(mix[int(30.0 * RATE):int(40.0 * RATE)])
+    assert abs((bed - speech) - (-9.0)) < 1.5, bed - speech
+    printed = capsys.readouterr().out
+    beds = [line for line in printed.splitlines() if "beds:" in line]
+    assert len(beds) == 1 and "-9.0 dB from the speech" in beds[0], beds
+
+
+def test_a_bad_bed_level_stops_before_any_work(tmp_path):
+    import pytest
+
+    path = _session(tmp_path, seconds=10.0)
+    with pytest.raises(ValueError, match="-30"):
+        stems_mix.mix(str(path), str(tmp_path / "mix.wav"), bed_under_speech_db=9.0)
+    assert not (tmp_path / "mix.wav").exists()
+
+
 def test_a_hot_take_is_brought_to_the_speakers_level(tmp_path, capsys):
     """Ollin intro oli +8…+13 dB hänen tasonsa yllä (vst s13e03), ja
     käyttäjä laski sen alueen vahvistuksella. Sama automaattisesti:
