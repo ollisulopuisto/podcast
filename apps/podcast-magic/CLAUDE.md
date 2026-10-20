@@ -208,9 +208,13 @@ on helppo tehdä väärin:
   eivät ole vertailukelpoisia.
 * **Opittu kynnys tarkistetaan puhetta vasten.** Vahingossa vaimennettu
   puhe antaa kynnyksen joka vaientaa kaiken, ja liikaa vaimennettu on
-  pahempi virhe kuin liian vähän. Kynnys joka ei jää vaimentamattomien
-  sanojen hiljaisimman neljänneksen (`GUARD_DB`) alle hylätään ja syy
-  kirjoitetaan lokiin; raita ajetaan tavallisella säännöllä.
+  pahempi virhe kuin liian vähän. Kynnys joka ei jää puheen tason
+  (`GUARD_DB`) alle hylätään ja syy kirjoitetaan lokiin; raita ajetaan
+  tavallisella säännöllä. **Puheen taso** on muokatulla ajalla vaimentamatta
+  jätettyjen sanojen hiljaisin neljännes; jos niitä ei ole, litteroitujen
+  sanojen **ylin** neljännes, koska litteroidun alun hiljaisin neljännes on
+  usein kohinasanoja (Perttu −49 dBFS, puhe −25…−31). Luvut ovat PR 57:n
+  mittauksia, ja ne on portattu kirjastoon uudelleen mittaamatta.
 * **Käsin vaimennettu alue pysyy vaiti.** `speech_intervals` ohittaa
   sanat jotka ovat `Muted`-alueen sisällä kun `learn` on päällä, muuten
   `split_track` avaisi alueen uudestaan jos Whisper kuuli siinä sanan. Ilman

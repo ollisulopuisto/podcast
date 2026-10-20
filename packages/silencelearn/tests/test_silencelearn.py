@@ -200,3 +200,122 @@ def test_the_library_imports_nothing_but_the_standard_library():
     stdlib = set(sys.stdlib_module_names) | {"__future__"}
     assert names <= stdlib, sorted(names - stdlib)
     assert source.name == "silencelearn.py", "Colabiin ladataan yhtenä tiedostona"
+
+
+# --- Puheen taso ja lohkot (PR 57, siirretty kirjastoon) --------------------
+
+
+def test_muted_pieces_next_to_each_other_are_one_block():
+    pieces = [Region("a", i * 0.08, 0.08, i * 0.08, muted=True) for i in range(125)]
+    blocks = sl._muted_blocks(pieces)
+    assert len(blocks) == 1
+    assert blocks[0][0] == pytest.approx(0.0) and blocks[0][1] == pytest.approx(10.0)
+
+
+def test_muted_blocks_are_split_by_a_real_gap_and_ignore_unmuted_regions():
+    regions = [
+        Region("a", 20.0, 5.0, 20.0, muted=True),
+        Region("a", 0.0, 4.0, 0.0, muted=True),
+        Region("a", 4.0, 16.0, 4.0),          # vaimentamaton: rako
+        Region("a", 3.0, 3.0, 3.0, muted=True),  # limittyy: loppu on suurempi
+    ]
+    assert sl._muted_blocks(regions) == [(0.0, 6.0), (20.0, 5.0)]
+
+
+def test_a_gap_just_above_the_limit_keeps_two_blocks():
+    one = Region("a", 0.0, 5.0, 0.0, muted=True)
+    two = Region("a", 5.0 + 0.02, 5.0, 5.02, muted=True)
+    assert len(sl._muted_blocks([one, two])) == 2
+    close = Region("a", 5.0 + 0.005, 5.0, 5.005, muted=True)
+    assert len(sl._muted_blocks([one, close])) == 1
+
+
+def test_a_turn_cut_into_many_pieces_gives_its_seconds_and_its_windows():
+    """125 palaa à 0,08 s ovat alle ikkunan (ja alle 0,1 s), joten kukin pala yksin
+    ei antaisi yhtään mittausta; yhtenä lohkona ne ovat 10 s."""
+    pieces = [Region("a", i * 0.08, 0.08, i * 0.08, muted=True) for i in range(125)]
+    track = Track("a", [*pieces, Region("a", 10.0, 50.0, 10.0)])
+    source = Fake({"a": [(0.0, 10.0, -30.5), *speech([12, 14, 20, 30])]},
+                  {"a": [word(t) for t in (12.0, 14.0, 20.0, 30.0)]})
+    found = sl.calibrate([track], source)["a"]
+    assert found.threshold is not None, found.reason
+    assert found.muted_seconds == pytest.approx(10.0)
+    assert found.frames > 30
+
+
+def test_the_speech_level_is_taken_from_the_words_the_user_left_unmuted():
+    """Muokatun ajan jälkeen litteroidut sanat voivat olla kohinaa (Perttu, 07
+    uutiset: −49 dBFS, puhe −25…−31) eivätkä saa laskea puheen tasoa."""
+    track = Track("a", [
+        Region("a", 0.0, 10.0, 0.0, muted=True),
+        Region("a", 10.0, 50.0, 10.0),
+        Region("a", 60.0, 5.0, 60.0, muted=True),
+        Region("a", 65.0, 55.0, 65.0),
+    ])
+    vetted = {12.0: -20.0, 14.0: -16.0, 16.0: -14.0, 18.0: -10.0}
+    noise = [70.0 + i for i in range(11)]
+    spans = [(1.0, 9.0, -30.5)]
+    spans += [(t, t + 0.5, db) for t, db in vetted.items()]
+    spans += [(t, t + 0.5, -49.0) for t in noise]
+    source = Fake({"a": spans}, {"a": [word(t) for t in (*vetted, *noise)]})
+    found = sl.calibrate([track], source)["a"]
+    assert found.threshold is not None, found.reason
+    assert found.speech_level == pytest.approx(sl.percentile(list(vetted.values()), 25.0))
+
+
+def test_without_vetted_words_the_speech_level_is_the_upper_quarter_of_the_transcript():
+    """Ei yhtään vaimentamatta jätettyä sanaa muokatulla ajalla: puhetaso mitataan
+    litteroiduista sanoista, mutta niiden hiljaisin neljännes on usein kohinaa."""
+    starts = [12.0 + 1.4 * i for i in range(40)]
+    loud = starts[15:]
+    spans = [(1.0, 9.0, -30.5)] + [(t, t + 0.5, -14.0) for t in loud]
+    spans += [(t, t + 0.5, -60.0) for t in starts[:15]]
+    source = Fake({"a": spans}, {"a": [word(t) for t in starts]})
+    found = sl.calibrate([head("a")], source)["a"]
+    assert found.threshold is not None, found.reason
+    assert found.speech_level == pytest.approx(-14.0)
+
+
+def test_pieces_that_touch_exactly_are_one_block_and_the_gap_limit_is_inclusive():
+    one = Region("a", 0.0, 5.0, 0.0, muted=True)
+    touching = Region("a", 5.0, 5.0, 5.0, muted=True)
+    assert sl._muted_blocks([one, touching]) == [(0.0, 10.0)]
+    at_limit = Region("a", 5.0 + sl.BLOCK_GAP, 5.0, 5.0, muted=True)
+    assert len(sl._muted_blocks([one, at_limit])) == 1
+
+
+def test_a_short_piece_inside_a_long_one_does_not_shorten_the_block():
+    long = Region("a", 0.0, 10.0, 0.0, muted=True)
+    inside = Region("a", 2.0, 3.0, 2.0, muted=True)
+    assert sl._muted_blocks([long, inside]) == [(0.0, 10.0)]
+
+
+def test_exactly_the_minimum_number_of_vetted_words_is_enough_for_the_speech_level():
+    """``MIN_SPEECH_WORDS`` sanaa riittää: kolme vaimentamatonta sanaa ennen horisonttia."""
+    track = Track("a", [
+        Region("a", 0.0, 10.0, 0.0, muted=True),
+        Region("a", 10.0, 50.0, 10.0),
+        Region("a", 60.0, 5.0, 60.0, muted=True),
+        Region("a", 65.0, 55.0, 65.0),
+    ])
+    vetted = [12.0, 14.0, 16.0]
+    assert len(vetted) == sl.MIN_SPEECH_WORDS
+    noise = [70.0 + i for i in range(11)]
+    spans = [(1.0, 9.0, -30.5)] + [(t, t + 0.5, -14.0) for t in vetted]
+    spans += [(t, t + 0.5, -49.0) for t in noise]
+    source = Fake({"a": spans}, {"a": [word(t) for t in (*vetted, *noise)]})
+    found = sl.calibrate([track], source)["a"]
+    assert found.speech_level == pytest.approx(-14.0)  # ei kohinan p75/p25
+
+
+def test_a_threshold_exactly_guard_db_below_the_speech_level_is_refused():
+    """Raja on avoin ylös: kynnys = puhetaso − ``GUARD_DB`` hylätään."""
+    speech_db = -30.5 + sl.MARGIN_DB + sl.GUARD_DB   # kynnys = −30,5 + 1 = −29,5
+    source = Fake({"a": [(1.0, 9.0, -30.5), *speech([12, 14, 20, 30], db=speech_db)]},
+                  {"a": [word(t) for t in (12.0, 14.0, 20.0, 30.0)]})
+    found = sl.calibrate([head("a")], source)["a"]
+    assert found.threshold is None and "puheen" in found.reason
+    just_above = Fake(
+        {"a": [(1.0, 9.0, -30.5), *speech([12, 14, 20, 30], db=speech_db + 0.2)]},
+        {"a": [word(t) for t in (12.0, 14.0, 20.0, 30.0)]})
+    assert sl.calibrate([head("a")], just_above)["a"].threshold is not None
