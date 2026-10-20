@@ -752,6 +752,23 @@ def main():
         "speech, dB, -30..+6; negative is quieter than the speech (default: +1, "
         "just above it)",
     )
+    parser.add_argument(
+        "--balance-speakers-max-db",
+        type=_balance_max_db,
+        default=None,
+        metavar="FLOAT",
+        help="Most the automixer may move a speaker's overall level towards the "
+        "group's median, dB, 0..60: 0 leaves your levels, a large value levels "
+        "the speakers fully (default: fully)",
+    )
+    parser.add_argument(
+        "--balance-speakers-tolerance-db",
+        type=_balance_tolerance_db,
+        default=0.0,
+        metavar="FLOAT",
+        help="Speakers already within this many dB of each other are left as "
+        "they are, 0..30 (default: 0)",
+    )
     parser.set_defaults(
         speech_hp=True, speech_peak=True, speech_lev=True, speech_desmack=True,
         speech_debleed=True, speech_rider=True, speech_mic_duck=True,
@@ -1032,9 +1049,31 @@ def _mix_session(args, path: str, loader=None) -> None:
         mic_duck_db=args.mic_duck_db,
         block_level=args.block_level,
         bed_under_speech_db=args.bed_under_speech_db,
+        balance_speakers_max_db=args.balance_speakers_max_db,
+        balance_speakers_tolerance_db=args.balance_speakers_tolerance_db,
         loader=loader,
         progress=_print_progress if args.progress else None,
     )
+
+
+def _balance_max_db(text: str) -> float:
+    """argparse-tyyppi lipulle ``--balance-speakers-max-db``: luku väliltä 0..60."""
+    from . import stems_mix
+
+    try:
+        return stems_mix.check_balance_max(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _balance_tolerance_db(text: str) -> float:
+    """argparse-tyyppi lipulle ``--balance-speakers-tolerance-db``: luku väliltä 0..30."""
+    from . import stems_mix
+
+    try:
+        return stems_mix.check_balance_tolerance(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _bed_db(text: str) -> float:
