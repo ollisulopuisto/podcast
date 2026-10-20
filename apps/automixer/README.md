@@ -207,6 +207,8 @@ These need two or more speech tracks at the mixer's sample rate; with one
 microphone there is no grid to build, and each stage is skipped rather than
 approximated.
 
+- `--bed-under-speech-db FLOAT`: where the loudest 3 s of the music beds sits against the processed speech, dB, -30..+6; negative is quieter than the speech. Default +1 (just above it); a bed that sounds too loud next to the speech wants something like -9. The `beds:` line in the log shows what was applied.
+
 ### **Utility Commands**
 - **Analyze Ad Spots**: `autoanalyze <file> <output_spots>`
 - **Launch TUI**: `autotui`
