@@ -5,6 +5,12 @@ All notable changes to automixer are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.20.1] - 2026-10-20
+
+### Added
+- **`--bed-under-speech-db`: the music bed level against the speech.** The loudest moment of a bed sits this many dB from the processed speech (default +1.0, range -30..+6). The log says where each bed landed.
+- **`--balance-speakers-max-db` and `--balance-speakers-tolerance-db`: how far speakers are levelled.** Every speech track is lifted to -23 LUFS by the chain, so a balance made by hand was always levelled away. The first flag bounds how far a speaker may move towards the group's median (0 keeps the relative levels, default is full levelling as before); the second leaves speakers already within that many dB of each other alone. Checked on synthetic voices only, not on a real episode.
+
 ## [2026.10.14.1] - 2026-10-14
 
 ### Changed
