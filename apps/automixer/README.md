@@ -208,6 +208,8 @@ microphone there is no grid to build, and each stage is skipped rather than
 approximated.
 
 - `--bed-under-speech-db FLOAT`: where the loudest 3 s of the music beds sits against the processed speech, dB, -30..+6; negative is quieter than the speech. Default +1 (just above it); a bed that sounds too loud next to the speech wants something like -9. The `beds:` line in the log shows what was applied.
+- `--balance-speakers-max-db FLOAT` (0..60): how far the automixer may move a speaker's overall level towards the group's median. Every speech track is lifted to the same reference loudness before the dynamics (the chain's thresholds follow that target, so this cannot be skipped); this flag puts back the part of the difference you did not want levelled. `0` leaves your relative levels as they arrive, a large value levels the speakers fully (the default, unchanged). The `balance:` line in the log lists each speaker's measured level and the correction applied.
+- `--balance-speakers-tolerance-db FLOAT` (0..30, default 0): speakers whose levels are already within this many dB of each other are left as they are.
 
 ### **Utility Commands**
 - **Analyze Ad Spots**: `autoanalyze <file> <output_spots>`

@@ -18,6 +18,7 @@ samana stemien joukossa kuin puhe — summa on ohjelma, ja katto on summan.
 
 from __future__ import annotations
 
+import math
 import os
 import shutil
 import tempfile
@@ -77,6 +78,82 @@ def check_bed_offset(value) -> float:
 def bed_change(spoken_level: float, bed_level: float, offset: float) -> float:
     """Kuinka paljon pohjia muutetaan, dB: kovin hetki ``offset`` puheen yllä."""
     return round(spoken_level + offset - bed_level, 2)
+
+#: Sallitut välit puhujien tasauksen lipuille (dB). Ylärajat ovat selvästi
+#: kaiken järkevän yli: raja 0 jättää käyttäjän tasot, suuri raja tasaa täysin.
+BALANCE_MAX_RANGE = (0.0, 60.0)
+BALANCE_TOLERANCE_RANGE = (0.0, 30.0)
+
+
+def _checked(value, flag: str, low: float, high: float) -> float:
+    number = float(value)
+    if not (low <= number <= high):  # NaN ei ole välillä
+        raise ValueError(f"{flag}: {value} must be between {low:g} and {high:g} dB")
+    return number
+
+
+def check_balance_max(value) -> float:
+    """``--balance-speakers-max-db`` liukulukuna, tai ``ValueError``."""
+    return _checked(value, "--balance-speakers-max-db", *BALANCE_MAX_RANGE)
+
+
+def check_balance_tolerance(value) -> float:
+    """``--balance-speakers-tolerance-db`` liukulukuna, tai ``ValueError``."""
+    return _checked(value, "--balance-speakers-tolerance-db", *BALANCE_TOLERANCE_RANGE)
+
+
+def balance_corrections(
+    levels: dict[str, float], max_db: float, tolerance_db: float = 0.0
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Puhujien tasaus rajattuna: ``(tehty korjaus, jälkivahvistus)`` dB, puhuja kohti.
+
+    ``levels`` on kunkin puhujan tulotaso (LUFS). Ryhmän viite on mediaani, ja
+    täysi tasaus veisi jokaisen siihen. Korjaus on viiteeseen päin enintään
+    ``max_db``; jos puhujien välinen ero (suurin − pienin) on enintään
+    ``tolerance_db``, korjausta ei tehdä lainkaan, koska hyvää käsin tehtyä
+    tasapainoa ei kuulu näpertää.
+
+    Ketju on jo nostanut jokaisen samalle tasolle (kynnykset seuraavat
+    tavoitetta, joten sitä ei voi ohittaa), joten *jälkivahvistus* palauttaa
+    sen osan keskinäisestä erosta jota ei haluttu tasata: ``tulotaso +
+    korjaus − viite``. Täydessä tasauksessa se on nolla.
+    """
+    import statistics
+
+    if len(levels) < 2:
+        return dict.fromkeys(levels, 0.0), dict.fromkeys(levels, 0.0)
+    reference = statistics.median(levels.values())
+    within = max(levels.values()) - min(levels.values()) <= tolerance_db
+    applied = {
+        name: 0.0 if within else max(-max_db, min(max_db, reference - level))
+        for name, level in levels.items()
+    }
+    after = {name: levels[name] + applied[name] - reference for name in levels}
+    return applied, after
+
+
+def scale_file(path: str, gain_db: float) -> None:
+    """Kertoo tiedoston vahvistuksella paikallaan, paloittain, 32-bittisenä.
+
+    Nolla desibeliä ei kirjoita mitään. Kirjoitus väliaikaiseen tiedostoon ja
+    vaihto, jottei kesken jäänyt kirjoitus jätä puolikasta puhuja-stemiä.
+    """
+    if abs(gain_db) < 0.005:
+        return
+    from pedalboard.io import AudioFile
+
+    factor = 10.0 ** (gain_db / 20.0)
+    tmp = path + ".tmp.wav"
+    with AudioFile(path) as src:
+        rate = int(src.samplerate)
+        with AudioFile(tmp, "w", rate, src.num_channels, bit_depth=32) as out:
+            position, step = 0, 60 * rate
+            while position < src.frames:
+                piece = src.read(min(step, src.frames - position))
+                out.write(piece * factor)
+                position += piece.shape[-1]
+    os.replace(tmp, path)
+
 
 #: Musiikin keskikaistan leikkaus kun pohja on täysin (12 dB) puheen alla,
 #: dB. Oletus, ei mitattu: käyttäjä halusi tilaa puheelle ja bassoon ja
@@ -249,6 +326,8 @@ def mix(
     mic_duck_db: float | None = None,
     block_level: bool = True,
     bed_under_speech_db: float | None = None,
+    balance_speakers_max_db: float | None = None,
+    balance_speakers_tolerance_db: float = 0.0,
     loader=None,
     progress=None,
 ) -> stems.StemResult:
@@ -264,12 +343,23 @@ def mix(
     ``bed_under_speech_db``: musiikkipohjan kovin hetki näin monta dB käsitellyn
     puheen **suhteen** (negatiivinen = hiljempaa); ``None`` on
     ``BED_UNDER_SPEECH_DB``. Virheellinen arvo pysäyttää ennen työtä.
+
+    ``balance_speakers_max_db``: enintään näin monta dB automaatio saa siirtää
+    puhujan tasoa ryhmän mediaaniin päin (0 = käyttäjän tasot jäävät); ``None``
+    on täysi tasaus kuten ennen. ``balance_speakers_tolerance_db``: jos puhujat
+    ovat enintään näin lähellä toisiaan, heitä ei koske.
     """
     bed_offset = (
         BED_UNDER_SPEECH_DB
         if bed_under_speech_db is None
         else check_bed_offset(bed_under_speech_db)
     )
+    balance_max = (
+        float("inf")
+        if balance_speakers_max_db is None
+        else check_balance_max(balance_speakers_max_db)
+    )
+    balance_tolerance = check_balance_tolerance(balance_speakers_tolerance_db)
 
     def tick(percent, message):
         if progress is not None:
@@ -398,6 +488,28 @@ def mix(
             for pool in pools.values():
                 if hasattr(pool, "close"):
                     pool.close()
+
+        # Puhujien keskinäinen taso. Ketju nosti jokaisen samalle tasolle; raja
+        # palauttaa osan erosta, jonka käyttäjä halusi jättää.
+        levels = {
+            job["name"]: SPEECH_REFERENCE_LUFS - result.gains[job["key"]]
+            for job in jobs
+            if result.gains.get(job["key"]) is not None
+        }
+        if len(levels) >= 2:
+            applied, after = balance_corrections(levels, balance_max, balance_tolerance)
+            for job in jobs:
+                if job["name"] in after:
+                    scale_file(job["target"], after[job["name"]])
+            limit = "no limit" if math.isinf(balance_max) else f"limit {balance_max:.1f} dB"
+            _log(
+                "balance: "
+                + ", ".join(
+                    f"{name} {level:.1f} LUFS → {applied[name] + 0.0:+.1f} dB"
+                    for name, level in levels.items()
+                )
+                + f" ({limit}, tolerance {balance_tolerance:.1f} dB)"
+            )
 
         ducked_by = {t["name"]: t.get("ducked") for t in music}
         for t in music:
