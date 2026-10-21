@@ -5,6 +5,11 @@ All notable changes to automixer are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.21.2] - 2026-10-21
+
+### Added
+- **`--keep-music-level`: the music keeps the balance you made.** Instead of fitting the beds to the processed speech (`--bed-under-speech-db`), each music stem gets the same gain change the speech got (processed speech level minus raw speech level, measured gated like the `beds:` rule), so a music-to-speech balance made by ear survives the automatic levelling. The `beds:` line says `kept your levels`; the `bed` event has `mode` `keep` (and `fit` for the old rule) and, for `keep`, `speech_raw_lufs`. Not together with `--bed-under-speech-db`. The track fader (`gain_db`) is not read: bake it into the stems if it should count. Checked on synthetic voices only, not on a real episode.
+
 ## [2026.10.21.1] - 2026-10-21
 
 ### Added
