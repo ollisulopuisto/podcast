@@ -212,7 +212,7 @@ name = "automixer"
 version = "2026.10.20.1"
 source = { editable = "apps/automixer" }
 dependencies = [
-    { name = "mlx" },
+    { name = "mlx", marker = "sys_platform == 'darwin'" },
     { name = "nhsx" },
     { name = "numpy" },
     { name = "pedalboard" },
@@ -228,7 +228,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "mlx", specifier = ">=0.30.6" },
+    { name = "mlx", marker = "sys_platform == 'darwin'", specifier = ">=0.30.6" },
     { name = "nhsx", editable = "packages/nhsx" },
     { name = "numpy", specifier = ">=2.4.2" },
     { name = "pedalboard", specifier = ">=0.9.24" },

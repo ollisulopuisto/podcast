@@ -31,7 +31,7 @@ LIB = ROOT / "packages" / "speechmix" / "src" / "speechmix"
 CONSUMERS = [
     ("autoraffkat", "autoraffkat.model", "AudioSettings",
      ("chain", "masks", "envelopes")),
-    ("automixer", "automixer.domain.processor", "SpeechSettings", ("chain",)),
+    ("automixer", "automixer.domain.settings", "SpeechSettings", ("chain",)),
     ("automixer", "automixer.domain.room", "DuckSettings", ("masks", "envelopes")),
 ]
 

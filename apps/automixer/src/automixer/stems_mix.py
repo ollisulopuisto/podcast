@@ -29,8 +29,7 @@ from speechmix import blocks, chain, envelopes, masks, panning, programme, stems
 from speechmix.timeline import Span, Track
 
 from . import session as hindenburg
-from .domain import shared
-from .domain.processor import SpeechSettings
+from .domain.settings import HIGH_PASS_HZ, SpeechSettings
 
 #: Puhestemien taso ennen masterointia: sama viite kuin muistissa
 #: miksatessa (``cli_mix.SPEECH_REFERENCE_LUFS``), jotta kynnykset ja
@@ -387,7 +386,7 @@ def mix(
 
         settings = SimpleNamespace(
             **asdict(SpeechSettings(
-                high_pass_hz=shared.HIGH_PASS_HZ if high_pass else 0.0,
+                high_pass_hz=HIGH_PASS_HZ if high_pass else 0.0,
                 declick=declick,
                 declick_sensitivity=declick_sensitivity,
                 rider=rider,
