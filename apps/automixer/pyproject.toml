@@ -8,6 +8,9 @@ dependencies = [
     "speechmix",
     # Hindenburgin istunnon luku ja aluesijoittelu, ks. `session.py`.
     "nhsx",
+    # Apple Silicon only: the TUI and the in-memory mixer use mlx. The stems
+    # route (`automixer <stems-folder>`) does not, so Linux installs without it.
+    "mlx>=0.30.6; sys_platform == 'darwin'",
     "numpy>=2.4.2",
     "pedalboard>=0.9.24",
     "psutil>=7.2.2",
@@ -18,9 +21,6 @@ dependencies = [
     "soundfile>=0.13.1",
     "textual>=8.0.0",
 ]
-
-[project.optional-dependencies]
-mlx = ["mlx>=0.30.6; sys_platform == 'darwin'"]
 
 [project.scripts]
 automixer = "automixer.cli_mix:main"

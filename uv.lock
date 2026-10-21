@@ -212,6 +212,7 @@ name = "automixer"
 version = "2026.10.20.1"
 source = { editable = "apps/automixer" }
 dependencies = [
+    { name = "mlx", marker = "sys_platform == 'darwin'" },
     { name = "nhsx" },
     { name = "numpy" },
     { name = "pedalboard" },
@@ -225,14 +226,9 @@ dependencies = [
     { name = "textual" },
 ]
 
-[package.optional-dependencies]
-mlx = [
-    { name = "mlx", marker = "sys_platform == 'darwin'" },
-]
-
 [package.metadata]
 requires-dist = [
-    { name = "mlx", marker = "extra == 'mlx' and sys_platform == 'darwin'", specifier = ">=0.30.6" },
+    { name = "mlx", marker = "sys_platform == 'darwin'", specifier = ">=0.30.6" },
     { name = "nhsx", editable = "packages/nhsx" },
     { name = "numpy", specifier = ">=2.4.2" },
     { name = "pedalboard", specifier = ">=0.9.24" },
@@ -245,7 +241,6 @@ requires-dist = [
     { name = "speechmix", editable = "packages/speechmix" },
     { name = "textual", specifier = ">=8.0.0" },
 ]
-provides-extras = ["mlx"]
 
 [[package]]
 name = "autoraffkat"
