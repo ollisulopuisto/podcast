@@ -831,6 +831,13 @@ def main():
         "that shows a bar",
     )
     parser.add_argument(
+        "--keep-music-level", action="store_true",
+        help="Do not fit the music beds to the speech: give them the same gain "
+        "change the speech got (processed minus raw level), so the balance you "
+        "made by ear survives. The track fader (gain_db) is not read: bake it "
+        "into the stems if it should count. Not with --bed-under-speech-db",
+    )
+    parser.add_argument(
         "--events", action="store_true",
         help="Also print live events, one per line: '@@kuulas ' and a JSON object "
         "(progress, track, stage, bed, balance, mastered, warning, done). The "
@@ -849,6 +856,8 @@ def main():
     )
 
     args = parser.parse_args()
+    if args.keep_music_level and args.bed_under_speech_db is not None:
+        parser.error("--keep-music-level and --bed-under-speech-db exclude each other")
     _resolve_plugin_args(args, parser)
     if args.verbose:
         from speechmix import log
@@ -1066,6 +1075,7 @@ def _mix_session(args, path: str, loader=None) -> None:
         loader=loader,
         progress=_print_progress if args.progress else None,
         events=args.events,
+        keep_music_level=args.keep_music_level,
     )
 
 

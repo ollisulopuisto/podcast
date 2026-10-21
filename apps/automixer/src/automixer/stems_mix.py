@@ -75,6 +75,15 @@ def check_bed_offset(value) -> float:
     return number
 
 
+def keep_change(processed_level: float, raw_level: float) -> float:
+    """Musiikin muutos kun se saa saman kuin puhe: käsitelty miinus raaka, dB.
+
+    Omistajan korvalla tekemä suhde musiikin ja puheen välillä säilyy, kun
+    molempia siirretään yhtä paljon. Pyöristys on sama kuin ``bed_change``illa.
+    """
+    return round(processed_level - raw_level, 2)
+
+
 def bed_change(spoken_level: float, bed_level: float, offset: float) -> float:
     """Kuinka paljon pohjia muutetaan, dB: kovin hetki ``offset`` puheen yllä."""
     return round(spoken_level + offset - bed_level, 2)
@@ -328,6 +337,7 @@ def mix(
     bed_under_speech_db: float | None = None,
     balance_speakers_max_db: float | None = None,
     balance_speakers_tolerance_db: float = 0.0,
+    keep_music_level: bool = False,
     loader=None,
     progress=None,
     events: bool = False,
@@ -345,11 +355,21 @@ def mix(
     puheen **suhteen** (negatiivinen = hiljempaa); ``None`` on
     ``BED_UNDER_SPEECH_DB``. Virheellinen arvo pysäyttää ennen työtä.
 
+    ``keep_music_level``: pohjia ei soviteta puheeseen vaan ne saavat saman
+    muutoksen kuin puhe sai (käsitelty miinus raaka taso), jolloin käyttäjän
+    korvalla tekemä suhde säilyy. Raidan fader (``gain_db``) ei ole mukana:
+    kuulas päättää, onko se stemeissä. Ei yhdessä ``bed_under_speech_db``n kanssa.
+
     ``balance_speakers_max_db``: enintään näin monta dB automaatio saa siirtää
     puhujan tasoa ryhmän mediaaniin päin (0 = käyttäjän tasot jäävät); ``None``
     on täysi tasaus kuten ennen. ``balance_speakers_tolerance_db``: jos puhujat
     ovat enintään näin lähellä toisiaan, heitä ei koske.
     """
+    if keep_music_level and bed_under_speech_db is not None:
+        raise ValueError(
+            "keep_music_level and bed_under_speech_db exclude each other "
+            "(--keep-music-level, --bed-under-speech-db)"
+        )
     bed_offset = (
         BED_UNDER_SPEECH_DB
         if bed_under_speech_db is None
@@ -585,17 +605,34 @@ def mix(
         speech_jobs = jobs[: len(speech)]
         music_jobs = jobs[len(speech):]
         if speech_jobs and music_jobs:
-            spoken_level, _ = _loudness(speech_jobs, stems.anyone_speaking(grid, 0.0))
-            _, bed_level = _loudness(music_jobs)
-            if spoken_level is not None and bed_level is not None:
-                change = bed_change(spoken_level, bed_level, bed_offset)
-                for job in music_jobs:
-                    extra[job["key"]] = extra.get(job["key"], 0.0) + change
-                _log(f"beds: loudest {bed_level:.1f} LUFS, speech {spoken_level:.1f} "
-                     f"→ beds {change:+.1f} dB "
-                     f"(loudest moment {bed_offset:+.1f} dB from the speech)")
-                live.emit("bed", loudest_lufs=bed_level, speech_lufs=spoken_level,
-                          change_db=change, offset_db=bed_offset)
+            gate = stems.anyone_speaking(grid, 0.0)
+            spoken_level, _ = _loudness(speech_jobs, gate)
+            if keep_music_level:
+                # Sama mittaus raakana: stemit sellaisina kuin ne tulivat.
+                raw_level, _ = _loudness(
+                    [dict(job, target=job["source"]) for job in speech_jobs], gate
+                )
+                if spoken_level is not None and raw_level is not None:
+                    change = keep_change(spoken_level, raw_level)
+                    for job in music_jobs:
+                        extra[job["key"]] = extra.get(job["key"], 0.0) + change
+                    _log(f"beds: kept your levels: speech {raw_level:.1f} → "
+                         f"{spoken_level:.1f} LUFS → beds {change:+.1f} dB "
+                         f"(the same as the speech)")
+                    live.emit("bed", mode="keep", speech_lufs=spoken_level,
+                              speech_raw_lufs=raw_level, change_db=change)
+            else:
+                _, bed_level = _loudness(music_jobs)
+                if spoken_level is not None and bed_level is not None:
+                    change = bed_change(spoken_level, bed_level, bed_offset)
+                    for job in music_jobs:
+                        extra[job["key"]] = extra.get(job["key"], 0.0) + change
+                    _log(f"beds: loudest {bed_level:.1f} LUFS, speech {spoken_level:.1f} "
+                         f"→ beds {change:+.1f} dB "
+                         f"(loudest moment {bed_offset:+.1f} dB from the speech)")
+                    live.emit("bed", mode="fit", loudest_lufs=bed_level,
+                              speech_lufs=spoken_level, change_db=change,
+                              offset_db=bed_offset)
         tick(80, "mastering")
         stems.program_deliver(jobs, result, ducks, extra, deliver,
                               stems.anyone_speaking(grid, 0.0),
