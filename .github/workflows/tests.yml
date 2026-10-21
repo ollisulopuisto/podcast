@@ -93,6 +93,12 @@ jobs:
         if: ${{ !cancelled() }}
         run: uv run --directory packages/wordalign pytest -q
 
+      # Kuvien pisteytys ja järjestys: pure Python, ajetaan kaikilla alustoilla
+      # samoilla testeillä, jotka pycapslap ja youthumber luottavat.
+      - name: framescore
+        if: ${{ !cancelled() }}
+        run: uv run --directory packages/framescore pytest -q
+
       - name: autoraffkat
         if: ${{ !cancelled() }}
         run: uv run --directory apps/autoraffkat pytest -q
