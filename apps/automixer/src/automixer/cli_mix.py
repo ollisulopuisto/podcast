@@ -15,26 +15,11 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-import mlx.core as mx
 import numpy as np
 import psutil
 import soundfile as sf
 import yaml
 
-from automixer.domain import room, shared
-from automixer.domain.bus import Bus
-from automixer.domain.processor import (
-    CompressorProcessor,
-    DuckingProcessor,
-    ExternalPluginProcessor,
-    GainProcessor,
-    HighPassProcessor,
-    MicDuckProcessor,
-    SpectralCarverProcessor,
-    SpeechChainProcessor,
-    SpeechSettings,
-)
-from automixer.domain.track import Track
 from speechmix import panning, programme
 from speechmix.stems import StemError
 
@@ -87,6 +72,13 @@ class Mixer:
         Returns:
             Processor: An instance of a Processor subclass, or None if unknown type.
         """
+        from automixer.domain.processor import (
+            CompressorProcessor,
+            ExternalPluginProcessor,
+            GainProcessor,
+            HighPassProcessor,
+        )
+
         p_type = p_cfg["type"]
         if p_type == "highpass":
             return HighPassProcessor(cut_freq=p_cfg.get("freq", 100))
@@ -124,6 +116,20 @@ class Mixer:
         Returns:
             np.ndarray or None: Returns the final mix array in preview mode, None in full mode.
         """
+
+        import mlx.core as mx
+
+        from automixer.domain import room, shared
+        from automixer.domain.bus import Bus
+        from automixer.domain.processor import (
+            DuckingProcessor,
+            GainProcessor,
+            MicDuckProcessor,
+            SpectralCarverProcessor,
+            SpeechChainProcessor,
+        )
+        from automixer.domain.settings import SpeechSettings
+        from automixer.domain.track import Track
 
         def update_progress(val, msg):
             self.log_perf(msg)

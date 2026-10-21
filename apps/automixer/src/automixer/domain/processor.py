@@ -7,7 +7,6 @@ ducking, and external VST/AU plugins.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 
 import mlx.core as mx
 import numpy as np
@@ -16,6 +15,7 @@ from scipy import signal as sp_signal
 from speechmix import chain
 
 from . import shared
+from .settings import SpeechSettings
 
 
 class Processor(ABC):
@@ -347,32 +347,6 @@ class ExternalPluginProcessor(Processor):
         block = sig_np[None, :] if mono else sig_np.T
         done = chain.apply_plugin(self.plugin, block, sr)
         return mx.array(done[0] if mono else done.T)
-
-
-@dataclass
-class SpeechSettings:
-    """Mitä jaettu ketju lukee. Oletukset ovat kirjaston omat.
-
-    `chain.process` on ankkatyypitetty: se lukee näitä kuutta nimeä eikä
-    tiedä mistä ne tulevat. Numerot **eivät** ole tässä kirjoitettuina auki
-    -- ne on viritetty yhdessä kynnysviitteen, suhteiden ja aikojen kanssa,
-    ja irrallaan niistä ne ovat vain numeroita, jotka voivat erota
-    autoraffkatin numeroista ilman että mikään kertoo eroa.
-    """
-
-    high_pass_hz: float = shared.HIGH_PASS_HZ
-    peak_threshold_db: float = shared.PEAK_THRESHOLD_DB
-    leveler_threshold_db: float = shared.LEVELER_THRESHOLD_DB
-    declick: bool = True
-    declick_sensitivity: float = 0.5
-    # Tasonkuljettaja: hidas tason tasaus **ennen** kompressoreita, se vaihe
-    # joka käsityönä tehdyssä miksauksessa on ensin. Se tarvitsee puhemaskin,
-    # ja `domain/room.py` rakentaa sellaisen automixerin omista raidoista —
-    # tämä oli `False` niin kauan kuin sitä ei ollut. Ilman maskia
-    # `chain.process` ohittaa vaiheen joka tapauksessa eikä arvaa signaalista:
-    # mitattuna tasoheuristiikka kutsui 74 % lohkoista puheeksi kun 53 % oli
-    # omaa, ja kuljettaja nosti toisen puhujan vuotoa.
-    rider: bool = True
 
 
 class SpeechChainProcessor(Processor):
