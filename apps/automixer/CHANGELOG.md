@@ -5,6 +5,17 @@ All notable changes to automixer are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.21.1] - 2026-10-21
+
+### Added
+- **`--events`: live, structured progress for a host such as kuulas.** Besides the text lines (unchanged) the automixer prints one line per event on stdout: `@@kuulas ` and a JSON object with `schema` and `event` (`progress`, `track`, `stage`, `bed`, `balance`, `block`, `loud`, `mastered`, `warning`, `done`). A stage is announced when it starts, not only when it is done, so a slow plug-in stage no longer looks like the one before it. Fields may be added, never renamed. The flag is listed in `--help`. Works for a stems folder and a Hindenburg session.
+
+### Changed
+- **The stems route runs without mlx.** `automixer <stems-folder>` no longer imports Apple's mlx, so it runs on Linux and on a Colab VM. mlx is still installed on macOS (the terminal interface and the in-memory mixer use it).
+
+### Fixed
+- **A crash on computers without AVX-512.** `import pedalboard` died with SIGILL for pedalboard 0.9.20 and 0.9.24 on CPUs without AVX-512 (measured on AMD EPYC 7763 and 9V74, 4 of 4 each; most AMD Ryzen 5000 desktops and many Intel ones are in that group). The requirement is now `pedalboard>=0.9.26`. The measured results of the test suites did not change with it; not listened to on a real episode.
+
 ## [2026.10.20.1] - 2026-10-20
 
 ### Added
