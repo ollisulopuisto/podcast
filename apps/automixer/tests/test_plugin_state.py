@@ -12,6 +12,7 @@ import asyncio
 import json
 
 import numpy as np
+import pytest
 import soundfile as sf
 
 from automixer import cli_mix
@@ -49,6 +50,7 @@ def test_the_cli_passes_the_state_to_the_speech_plugins(tmp_path, monkeypatch):
     assert [p["state"] for p in seen[0]["buses"]["speech"]["processors"]] == ["U3R1ZGlvIDI="]
 
 
+@pytest.mark.mlx
 def test_the_tui_opens_the_plugin_window_and_keeps_the_state(tmp_path, monkeypatch):
     from textual.widgets import Button
 

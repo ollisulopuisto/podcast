@@ -5,6 +5,7 @@ korvattuina kirjaavilla tyngillä."""
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -15,6 +16,23 @@ SCRIPT = ROOT / "run.sh"
 
 
 RECORDER = '#!/bin/sh\necho "$(basename "$0") $*" >> "$CALLS"\n'
+
+# What the script and the stubs run, and nothing else. The test used to give the
+# script ``/usr/bin:/bin``, so a machine with ffmpeg there (any Linux with ffmpeg
+# installed) made "a fresh Mac" not need ``brew install ffmpeg``. On a Mac ffmpeg
+# lives in /opt/homebrew/bin, which is why this never showed on macOS.
+TOOLS = ("sh", "basename", "cp", "tr", "uname")
+
+
+def _tools(tmp_path: Path) -> Path:
+    tools = tmp_path / "tools"
+    tools.mkdir(exist_ok=True)
+    for name in TOOLS:
+        found = shutil.which(name)
+        assert found, f"{name} is not on this machine"
+        if not (tools / name).exists():
+            (tools / name).symlink_to(found)
+    return tools
 
 
 def _recorder(bin_dir: Path, name: str) -> None:
@@ -47,7 +65,7 @@ def _run(tmp_path, *args, have=("brew",), token=False):
         )
         _recorder(bin_dir, ".recorder")
     env = {
-        "PATH": f"{bin_dir}:/usr/bin:/bin",
+        "PATH": f"{bin_dir}:{_tools(tmp_path)}",
         "HOME": str(home),
         "CALLS": str(calls),
         "PODCAST_TTY": os.devnull,

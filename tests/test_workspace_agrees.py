@@ -495,3 +495,88 @@ def test_ci_runs_every_members_tests_and_lints_everything():
             continue
         where = member.relative_to(ROOT).as_posix()
         assert f"--directory {where} pytest" in workflow, f"CI ei aja: {where}"
+
+
+# --------------------------------------------------------------------------
+# Linux
+# --------------------------------------------------------------------------
+
+
+def linux_workflow() -> str:
+    return (ROOT / ".github" / "workflows" / "tests-linux.yml").read_text(encoding="utf-8")
+
+
+def test_the_linux_job_runs_what_is_meant_to_run_without_mlx():
+    """Ilman tätä mlx-vapaa reitti on testattu vain sillä koneella jolla se tehtiin.
+
+    automixerin stems-reitti (se jota kuulas ajaa) toimii ilman mlx:ää, mutta
+    vain Linux-ajuri huomaa jos joku tuo `import mlx` takaisin sen reitille.
+    """
+    workflow = linux_workflow()
+    assert "ubuntu-latest" in workflow
+    assert "continue-on-error" not in workflow.replace("`continue-on-error`", "")
+    assert re.search(r"run: uv run ruff check \.\s*$", workflow, re.MULTILINE)
+    # Ei mlx-lisää: sen puute on se, mitä tämä ajo testaa.
+    assert "--extra mlx" not in workflow
+    # automixerin muu kuin mlx:ää tarvitseva osa ajetaan, ja vain se.
+    assert re.search(r"--directory apps/automixer pytest .*-m \"not mlx\"", workflow)
+
+
+def test_every_suite_the_linux_job_runs_belongs_to_a_member():
+    workflow = linux_workflow()
+    wanted = set(re.findall(r"--directory (\S+) pytest", workflow))
+    assert wanted
+    known = {member.relative_to(ROOT).as_posix() for member in MEMBERS}
+    assert wanted <= known, wanted - known
+
+
+def test_the_linux_job_has_what_the_tests_run_on_the_runner():
+    """zsh ja PortAudio puuttuvat ajurilta ellei niitä asenneta; testi joka
+    tarvitsee niitä ei saa ohittua vaan kaatuu."""
+    workflow = linux_workflow()
+    for package in ("ffmpeg", "zsh", "libportaudio2", "libsndfile1"):
+        assert package in workflow, package
+
+
+def test_macos_runs_the_tests_that_need_mlx_and_notices_if_none_did():
+    """Linux jättää ne pois (`-m "not mlx"`); macOS:n pitää ajaa ne, eikä
+    ohittunut testi ole vihreä testi."""
+    workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+    assert re.search(r"--directory apps/automixer pytest .*-m mlx", workflow)
+    assert "skipped" in workflow.split("-m mlx", 1)[1]
+
+
+# --------------------------------------------------------------------------
+# pedalboard
+# --------------------------------------------------------------------------
+
+#: 0.9.20 and 0.9.24 crash on `import pedalboard` (SIGILL) on CPUs without
+#: AVX-512 (measured on GitHub's runners, AMD EPYC 7763 and 9V74: 4 of 4 each;
+#: 0.9.16, 0.9.19, 0.9.21-0.9.23 and 0.9.26 import there). Without AVX-512 means
+#: most AMD Ryzen 5000 desktops and many Intel ones: kuulas runs everywhere.
+PEDALBOARD_FLOOR = (0, 9, 26)
+
+
+def version_tuple(text: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in text.split("."))
+
+
+def test_pedalboard_is_not_a_release_that_crashes_without_avx512():
+    seen = []
+    for member in MEMBERS:
+        for dependency in manifest(member).get("project", {}).get("dependencies", []):
+            found = re.match(r"pedalboard\s*>=\s*([\d.]+)", dependency)
+            if found:
+                seen.append(name(member))
+                assert version_tuple(found.group(1)) >= PEDALBOARD_FLOOR, (
+                    name(member),
+                    dependency,
+                )
+    assert seen, "no member depends on pedalboard any more: drop this test"
+
+
+def test_the_locked_pedalboard_is_not_one_of_them():
+    lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
+    found = re.search(r'name = "pedalboard"\nversion = "([\d.]+)"', lock)
+    assert found, "pedalboard is not in uv.lock"
+    assert version_tuple(found.group(1)) >= PEDALBOARD_FLOOR, found.group(1)

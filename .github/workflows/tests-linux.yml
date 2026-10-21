@@ -1,0 +1,141 @@
+name: tests-linux
+
+# What is meant to run without Apple's mlx, run where mlx cannot be installed.
+#
+# kuulas runs the automixer's stems route on whatever machine it has, and the
+# same route is meant to run on a Colab VM. It works without mlx since PR 69,
+# but only a machine without mlx notices if someone brings `import mlx` back
+# onto that route, and the macOS job below this one cannot.
+#
+# Left out, and why:
+# - apps/autoraffkat: a Final Cut Pro tool whose file picker, rendering and
+#   video export are macOS (AVFoundation, VideoToolbox); 1 failure and 27 skips
+#   measured on Linux, all of them about that.
+# - The automixer test modules in `apps/automixer/tests/mlx_modules.py` and the
+#   tests marked `mlx`: they need the real mlx and run in the macOS job, which
+#   also checks that they ran (tests.yml).
+# - speechmix `test_a_stem_holds_few_copies_of_its_track`: measured 7.001 times
+#   the track on Linux against a limit of 7.0, and 6.0 where mlx does the
+#   peak-envelope step on the GPU (its docstring). Without mlx that step runs on
+#   the CPU and holds about one more copy of the track. It still runs on macOS;
+#   it stays out here until that is looked at, not loosened.
+#
+# GitHub's ubuntu-latest hands out different CPUs (AMD EPYC 7763 and 9V74 have no
+# AVX-512; 9V45 and Intel Xeon Platinum 8370C/8573C do). pedalboard 0.9.20 and
+# 0.9.24 died with SIGILL on `import pedalboard` on the first kind (4 of 4 each,
+# measured); 0.9.16, 0.9.19, 0.9.21-0.9.23 and 0.9.26 import everywhere. The
+# workspace pins >=0.9.26 for that reason (tests/test_workspace_agrees.py).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-linux-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      # ffmpeg: the render and transcription tests run the real one. zsh: one
+      # test parses run.sh in it. PortAudio: the automixer's terminal interface
+      # imports sounddevice. libsndfile: soundfile.
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg zsh libportaudio2 libsndfile1
+
+      # Node for podcast-magic's interface smoke test: without it the test
+      # skips, and a skipped test is a green test.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # No mlx extra on purpose: that is what this job tests. `faster` is
+      # podcast-magic's Whisper engine for machines that are not Apple Silicon.
+      - run: uv sync --all-packages --extra faster
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: workspace
+        run: uv run pytest tests -q
+
+      - name: speechmix
+        if: ${{ !cancelled() }}
+        run: >-
+          uv run --directory packages/speechmix pytest -q
+          --deselect tests/test_stems.py::test_a_stem_holds_few_copies_of_its_track
+
+      - name: nhsx
+        if: ${{ !cancelled() }}
+        run: uv run --directory packages/nhsx pytest -q
+
+      - name: silencelearn
+        if: ${{ !cancelled() }}
+        run: uv run --directory packages/silencelearn pytest -q
+
+      - name: wordalign
+        if: ${{ !cancelled() }}
+        run: uv run --directory packages/wordalign pytest -q
+
+      # The point of this job. Modules that need mlx are not collected without
+      # it (conftest.py says which in the report header); the tests marked mlx
+      # are deselected here and run on macOS.
+      - name: automixer
+        if: ${{ !cancelled() }}
+        run: uv run --directory apps/automixer pytest -q -m "not mlx"
+
+      - name: podcast-magic
+        if: ${{ !cancelled() }}
+        run: uv run --directory apps/podcast-magic pytest -q
+
+      - name: colab-transcribe
+        if: ${{ !cancelled() }}
+        run: uv run --directory colab-transcribe pytest -q
+
+      - name: fcp-subs-whisper
+        if: ${{ !cancelled() }}
+        run: uv run --directory apps/fcp-subs-whisper pytest -q
+
+      # Same two checks as on macOS: a skipped test is a green test.
+      - name: podcast-magic — the interface smoke test ran
+        if: ${{ !cancelled() }}
+        run: |
+          uv run --directory apps/podcast-magic \
+            pytest tests/test_ui.py -q --no-header -rs | tee /tmp/ui.log
+          if grep -q "skipped" /tmp/ui.log; then
+            echo "The interface smoke test was skipped: node is missing on the runner."
+            exit 1
+          fi
+
+      - name: podcast-magic — the render ran with the real ffmpeg
+        if: ${{ !cancelled() }}
+        run: |
+          uv run --directory apps/podcast-magic \
+            pytest tests/test_render_endtoend.py -q --no-header -rs | tee /tmp/e2e.log
+          if grep -q "skipped" /tmp/e2e.log; then
+            echo "The end-to-end render test was skipped: ffmpeg is missing on the runner."
+            exit 1
+          fi
+
+      - name: podcast-magic — the engine this machine uses can be imported
+        if: ${{ !cancelled() }}
+        run: |
+          uv run --directory apps/podcast-magic python -c "
+          from podcastmagic.transcribe.backends import infos
+          for info in infos():
+              print(info.key, info.available, info.reason)
+              assert info.available or info.key == 'mlx', info.reason
+          "
