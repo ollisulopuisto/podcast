@@ -66,7 +66,7 @@ def root() -> dict:
     return toml(ROOT / "pyproject.toml")
 
 
-def test_the_members_are_the_nine_we_think_they_are():
+def test_the_members_are_the_ten_we_think_they_are():
     """Sattumalta tyhjä luettelo tekisi jokaisesta alla olevasta testin joka ei testaa mitään.
 
     colab-transcribe on jäsen vaikka ei ole `apps/`issa — se on juuressa
@@ -83,12 +83,17 @@ def test_the_members_are_the_nine_we_think_they_are():
 
     wordalign on sanojen alkujen pakotettu kohdistus ääneen: samoin yksi tiedosto,
     jonka podcast-magic tuo ja colab-transcribe lataa Colabiin.
+
+    framescore on kuvien pisteytys ja järjestys kasvojen valinnalle: pureaa Pythonia
+    ilman alustakoodia, jonka pycapslap ja youthumber molemmat tuovat. Lisätty
+    kymmenenneksi samassa commitissa kuin tämä testi muuttui.
     """
     assert [name(m) for m in MEMBERS] == [
         "automixer",
         "autoraffkat",
         "colab-transcribe",
         "fcp-subs-whisper",
+        "framescore",
         "nhsx",
         "podcast-magic",
         "silencelearn",

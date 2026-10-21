@@ -91,6 +91,7 @@ known-first-party = [
     "autoraffkat",
     "colabtranscribe",
     "fcp_subs_whisper",
+    "framescore",
     "nhsx",
     "podcastmagic",
     "silencelearn",
