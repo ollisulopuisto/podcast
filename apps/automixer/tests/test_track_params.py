@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from automixer import cli_mix
 
 DXREVIVE = "/Library/Audio/Plug-Ins/VST3/Accentize-dxRevive.vst3"
@@ -30,6 +32,7 @@ def test_a_tracks_own_params_win_over_the_bus():
     assert cli_mix.track_plugin_params(bus, "olli", own) == {"mix": 25.0, "gain": 0.0}
 
 
+@pytest.mark.mlx
 def test_the_mixer_gives_each_speaker_their_own_params(tmp_path, monkeypatch):
     import numpy as np
     import soundfile as sf
@@ -64,6 +67,7 @@ def test_the_mixer_gives_each_speaker_their_own_params(tmp_path, monkeypatch):
     assert seen == [{"mix": 25.0}, {"mix": 50.0}]
 
 
+@pytest.mark.mlx
 def test_the_tui_sends_track_params_to_the_mixer(tmp_path):
     from textual.widgets import Input
 
@@ -81,6 +85,7 @@ def test_the_tui_sends_track_params_to_the_mixer(tmp_path):
     assert config["track_params"] == {"panu": {"dxrevive": {"mix": 50.0}}}
 
 
+@pytest.mark.mlx
 def test_the_plugin_runs_in_parallel_pieces_like_autoraffkat(monkeypatch):
     """dxRevive käyttää yhtä ydintä, ja ainoa tie muihin on useampi
     instanssi rinnakkain (`chain.load_pool`). autoraffkat teki niin —

@@ -101,6 +101,19 @@ jobs:
         if: ${{ !cancelled() }}
         run: uv run --directory apps/automixer pytest -q
 
+      # The Linux job (tests-linux.yml) leaves out the tests that need the real
+      # mlx, so this is where they must run. A skipped test is a green test:
+      # fail if one was skipped, or if none ran at all.
+      - name: automixer — the mlx tests ran
+        if: ${{ !cancelled() }}
+        run: |
+          uv run --directory apps/automixer pytest -m mlx -q --no-header -rs | tee /tmp/mlx.log
+          if grep -q "skipped" /tmp/mlx.log; then
+            echo "A test marked mlx was skipped on macOS."
+            exit 1
+          fi
+          grep -q " passed" /tmp/mlx.log
+
       - name: podcast-magic
         if: ${{ !cancelled() }}
         run: uv run --directory apps/podcast-magic pytest -q

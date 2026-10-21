@@ -50,6 +50,9 @@ packages = ["src/automixer"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "mlx: needs the real mlx at run time (Apple Silicon); the Linux job runs -m 'not mlx'",
+]
 
 # Jaettu ketju tulee työtilasta, ei julkaisusta — sama rivi kuin
 # autoraffkatilla, ja samasta syystä: mittauksen korjaama vika näkyy
