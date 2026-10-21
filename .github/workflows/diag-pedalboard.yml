@@ -1,0 +1,26 @@
+name: diag-pedalboard
+
+# Throwaway: which runner CPUs crash on `import pedalboard` (SIGILL seen once).
+on:
+  push:
+    branches: ['diag/**']
+
+permissions:
+  contents: read
+
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        n: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    steps:
+      - uses: astral-sh/setup-uv@v5
+      - name: Probe
+        run: |
+          echo "CPU: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2)"
+          echo "FLAGS: $(grep -m1 flags /proc/cpuinfo | tr ' ' '\n' | grep -E '^(avx|fma|bmi|sse4|f16c)' | tr '\n' ' ')"
+          uv run --python 3.13 --with pedalboard==0.9.24 python -X faulthandler -c "import pedalboard; print('RESULT: import ok', pedalboard.__version__)" 2>&1 | tail -4 || true
+          echo "RESULT-CODE: ${PIPESTATUS[0]}"
