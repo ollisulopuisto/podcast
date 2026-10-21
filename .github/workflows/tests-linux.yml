@@ -60,6 +60,14 @@ jobs:
       # podcast-magic's Whisper engine for machines that are not Apple Silicon.
       - run: uv sync --all-packages --extra faster
 
+      # Temporary: the first run died with SIGILL on `import pedalboard`.
+      - name: Diagnose the runner
+        run: |
+          grep -m1 "model name" /proc/cpuinfo
+          grep -m1 flags /proc/cpuinfo | tr ' ' '\n' | grep -E "^(avx|fma|bmi|sse4|f16c)" | tr '\n' ' '; echo
+          uv pip list 2>/dev/null | grep -iE "pedalboard|numpy|scipy|numba|llvmlite|soundfile" || true
+          uv run python -X faulthandler -c "import pedalboard; print('pedalboard', pedalboard.__version__)" || echo "pedalboard import failed: $?"
+
       - name: Lint
         run: uv run ruff check .
 
