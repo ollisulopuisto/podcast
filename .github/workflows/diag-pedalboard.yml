@@ -1,6 +1,7 @@
 name: diag-pedalboard
 
-# Throwaway: which runner CPUs crash on `import pedalboard` (SIGILL seen once).
+# Throwaway: which pedalboard versions import on which runner CPUs
+# (0.9.24 died with SIGILL on CPUs without AVX-512).
 on:
   push:
     branches: ['diag/**']
@@ -15,12 +16,39 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        n: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        version: ['0.9.24', '0.9.23', '0.9.22', '0.9.21', '0.9.20', '0.9.19', '0.9.16', 'latest']
+        n: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: astral-sh/setup-uv@v5
       - name: Probe
         run: |
-          echo "CPU: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2)"
-          echo "FLAGS: $(grep -m1 flags /proc/cpuinfo | tr ' ' '\n' | grep -E '^(avx|fma|bmi|sse4|f16c)' | tr '\n' ' ')"
-          uv run --python 3.13 --with pedalboard==0.9.24 python -X faulthandler -c "import pedalboard; print('RESULT: import ok', pedalboard.__version__)" 2>&1 | tail -4 || true
-          echo "RESULT-CODE: ${PIPESTATUS[0]}"
+          cpu="$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
+          if grep -m1 flags /proc/cpuinfo | grep -q avx512f; then a=avx512; else a=avx2only; fi
+          spec="pedalboard"; [ "${{ matrix.version }}" != "latest" ] && spec="pedalboard==${{ matrix.version }}"
+          set +e
+          out="$(uv run --python 3.13 --with "$spec" python -c "import pedalboard; print(pedalboard.__version__)" 2>&1)"; code=$?
+          set -e
+          echo "$out" | tail -2
+          mkdir -p res
+          echo "${{ matrix.version }} | $a | $cpu | code=$code | $(echo "$out" | tail -1 | cut -c1-60)" > "res/${{ matrix.version }}-${{ matrix.n }}.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: res-${{ matrix.version }}-${{ matrix.n }}
+          path: res/
+
+  report:
+    needs: cpu
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: res-*
+          merge-multiple: true
+          path: res
+      - name: Table
+        run: |
+          echo "=== version | avx | cpu | exit code | last line"
+          cat res/*.txt | sort
+          echo "=== summary: version avx exit count"
+          cat res/*.txt | awk -F' [|] ' '{print $1, $2, $4}' | sort | uniq -c
