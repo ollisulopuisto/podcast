@@ -831,6 +831,12 @@ def main():
         "that shows a bar",
     )
     parser.add_argument(
+        "--events", action="store_true",
+        help="Also print live events, one per line: '@@kuulas ' and a JSON object "
+        "(progress, track, stage, bed, balance, mastered, warning, done). The "
+        "text lines stay as they are. For a host (kuulas); not for people",
+    )
+    parser.add_argument(
         "--track-params", default="",
         help="Per-track plugin parameters, winning over --plugin-params "
         "(e.g. 'panu/dxrevive:mix=50; kari/dxrevive:mix=25')",
@@ -1059,6 +1065,7 @@ def _mix_session(args, path: str, loader=None) -> None:
         balance_speakers_tolerance_db=args.balance_speakers_tolerance_db,
         loader=loader,
         progress=_print_progress if args.progress else None,
+        events=args.events,
     )
 
 
