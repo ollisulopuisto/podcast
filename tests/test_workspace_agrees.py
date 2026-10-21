@@ -544,3 +544,39 @@ def test_macos_runs_the_tests_that_need_mlx_and_notices_if_none_did():
     workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
     assert re.search(r"--directory apps/automixer pytest .*-m mlx", workflow)
     assert "skipped" in workflow.split("-m mlx", 1)[1]
+
+
+# --------------------------------------------------------------------------
+# pedalboard
+# --------------------------------------------------------------------------
+
+#: 0.9.20 and 0.9.24 crash on `import pedalboard` (SIGILL) on CPUs without
+#: AVX-512 (measured on GitHub's runners, AMD EPYC 7763 and 9V74: 4 of 4 each;
+#: 0.9.16, 0.9.19, 0.9.21-0.9.23 and 0.9.26 import there). Without AVX-512 means
+#: most AMD Ryzen 5000 desktops and many Intel ones: kuulas runs everywhere.
+PEDALBOARD_FLOOR = (0, 9, 26)
+
+
+def version_tuple(text: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in text.split("."))
+
+
+def test_pedalboard_is_not_a_release_that_crashes_without_avx512():
+    seen = []
+    for member in MEMBERS:
+        for dependency in manifest(member).get("project", {}).get("dependencies", []):
+            found = re.match(r"pedalboard\s*>=\s*([\d.]+)", dependency)
+            if found:
+                seen.append(name(member))
+                assert version_tuple(found.group(1)) >= PEDALBOARD_FLOOR, (
+                    name(member),
+                    dependency,
+                )
+    assert seen, "no member depends on pedalboard any more: drop this test"
+
+
+def test_the_locked_pedalboard_is_not_one_of_them():
+    lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
+    found = re.search(r'name = "pedalboard"\nversion = "([\d.]+)"', lock)
+    assert found, "pedalboard is not in uv.lock"
+    assert version_tuple(found.group(1)) >= PEDALBOARD_FLOOR, found.group(1)

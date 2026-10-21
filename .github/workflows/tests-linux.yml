@@ -19,6 +19,12 @@ name: tests-linux
 #   peak-envelope step on the GPU (its docstring). Without mlx that step runs on
 #   the CPU and holds about one more copy of the track. It still runs on macOS;
 #   it stays out here until that is looked at, not loosened.
+#
+# GitHub's ubuntu-latest hands out different CPUs (AMD EPYC 7763 and 9V74 have no
+# AVX-512; 9V45 and Intel Xeon Platinum 8370C/8573C do). pedalboard 0.9.20 and
+# 0.9.24 died with SIGILL on `import pedalboard` on the first kind (4 of 4 each,
+# measured); 0.9.16, 0.9.19, 0.9.21-0.9.23 and 0.9.26 import everywhere. The
+# workspace pins >=0.9.26 for that reason (tests/test_workspace_agrees.py).
 on:
   push:
     branches: [main]
@@ -59,14 +65,6 @@ jobs:
       # No mlx extra on purpose: that is what this job tests. `faster` is
       # podcast-magic's Whisper engine for machines that are not Apple Silicon.
       - run: uv sync --all-packages --extra faster
-
-      # Temporary: the first run died with SIGILL on `import pedalboard`.
-      - name: Diagnose the runner
-        run: |
-          grep -m1 "model name" /proc/cpuinfo
-          grep -m1 flags /proc/cpuinfo | tr ' ' '\n' | grep -E "^(avx|fma|bmi|sse4|f16c)" | tr '\n' ' '; echo
-          uv pip list 2>/dev/null | grep -iE "pedalboard|numpy|scipy|numba|llvmlite|soundfile" || true
-          uv run python -X faulthandler -c "import pedalboard; print('pedalboard', pedalboard.__version__)" || echo "pedalboard import failed: $?"
 
       - name: Lint
         run: uv run ruff check .
