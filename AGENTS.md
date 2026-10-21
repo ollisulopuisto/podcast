@@ -37,7 +37,9 @@ Interfaces other programs depend on (change them only with a note in the PR):
 - The `automixer` command line: `automixer <stems-folder> -o <file>
   --target-lufs N --progress [flags]`, the flags listed by `--help`, the
   `PROGRESS <0-100> <message>` lines, the per-track stage lines, the `beds:`
-  and `mastered:` log lines and the `<output> flags.txt` file.
+  and `mastered:` log lines, the `<output> flags.txt` file and, with
+  `--events`, the `@@kuulas <json>` lines (`schema` 1; fields are added, never
+  renamed).
 - `tracks.json` version 1 (48 kHz, `start_frame` 0, "dry") read by
   `speechmix.stems`.
 - `<stem>.words.json` and its `timing` field, produced by `colab-transcribe`

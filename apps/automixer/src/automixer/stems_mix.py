@@ -28,6 +28,7 @@ from types import SimpleNamespace
 from speechmix import blocks, chain, envelopes, masks, panning, programme, stems
 from speechmix.timeline import Span, Track
 
+from . import events as live
 from . import session as hindenburg
 from .domain.settings import HIGH_PASS_HZ, SpeechSettings
 
@@ -329,6 +330,7 @@ def mix(
     balance_speakers_tolerance_db: float = 0.0,
     loader=None,
     progress=None,
+    events: bool = False,
 ) -> stems.StemResult:
     """Miksaa istunnon ``output``iin. Palauttaa ohjelman tason tulokset.
 
@@ -361,8 +363,13 @@ def mix(
     balance_tolerance = check_balance_tolerance(balance_speakers_tolerance_db)
 
     def tick(percent, message):
+        live.emit(
+            "progress", percent=int(percent), message=" ".join(str(message).split()) or "-"
+        )
         if progress is not None:
             progress(int(percent), message)
+
+    live.enable(events)
 
     result = stems.StemResult()
     workdir = tempfile.mkdtemp(
@@ -372,6 +379,7 @@ def mix(
         loaded = (loader or hindenburg.load)(session_path, workdir)
         for note in loaded.notes:
             _log(f"! {note}")
+            live.emit("warning", message=note)
         tick(5, "loaded the tracks")
         speech = [t for t in loaded.tracks if t["type"] == "speech"]
         music = [t for t in loaded.tracks if t["type"] == "music"]
@@ -413,6 +421,8 @@ def mix(
             for x in items:
                 _log(f"loud {name} {_mmss(x.start)}–{_mmss(x.end)}: "
                      f"{x.excess_db:+.1f} dB over its block (not changed)")
+                live.emit("loud", track=name, start_s=x.start, end_s=x.end,
+                          excess_db=x.excess_db)
         if block_level and lanes is not None:
             for number, t in enumerate(speech):
                 found = found_all[t["name"]]
@@ -420,6 +430,8 @@ def mix(
                 for b in fixed:
                     _log(f"block {t['name']} {_mmss(b.start)}–{_mmss(b.end)}: "
                          f"{b.deviation_db:+.1f} dB off, gain {b.gain_db:+.1f} dB")
+                    live.emit("block", track=t["name"], start_s=b.start, end_s=b.end,
+                              deviation_db=b.deviation_db, gain_db=b.gain_db)
                 if fixed:
                     leveled = os.path.join(workdir, f"{number:02d} {t['name']} [level].wav")
                     level_blocks(t["path"], leveled, found)
@@ -458,13 +470,33 @@ def mix(
                 )
             return pools[key]
 
+        speech_names = [j["name"] for j in jobs if j.get("speech")]
+
         def work(job):
             _log(f"{job['name']}: processing")
             partners = [o for o in jobs if o is not job]
+            plugin = plugin_for(job["name"])
+            if job.get("speech"):
+                live.emit("track", index=speech_names.index(job["name"]) + 1,
+                          total=len(speech_names), name=job["name"])
+            # The library reports a stage when it is done; the order is fixed,
+            # so the trail can say which one starts next. De-bleeding is the
+            # one stage that is switched off per track (``stems.process_stem``).
+            trail = live.StageTrail(
+                job["name"],
+                ["read", "debleed", *(chain.STAGES_PLUGIN if plugin else chain.STAGES_PLAIN),
+                 "duck", "write"],
+                skipped=set() if (debleed and job.get("speech") and partners) else {"debleed"},
+            )
+            trail.begin()
+
+            def stage_done(name, _share, who=job["name"]):
+                _log(f"  {who}: {name}")
+                trail.reached(name)
+
             return stems.process_stem(
-                job, settings, plugin_for(job["name"]), 0.0,
-                lambda name, _share, who=job["name"]: _log(f"  {who}: {name}"),
-                0.0, solos, partners, result, speaking,
+                job, settings, plugin, 0.0, stage_done, 0.0, solos, partners, result,
+                speaking,
             )
 
         # Liitännäisvarannot luodaan pääsäikeessä ennen rinnakkaisia ajoja:
@@ -500,6 +532,9 @@ def mix(
             for job in jobs:
                 if job["name"] in after:
                     scale_file(job["target"], after[job["name"]])
+            for name, level in levels.items():
+                live.emit("balance", track=name, lufs=level, applied_db=applied[name] + 0.0,
+                          limit_db=balance_max)
             limit = "no limit" if math.isinf(balance_max) else f"limit {balance_max:.1f} dB"
             _log(
                 "balance: "
@@ -559,6 +594,8 @@ def mix(
                 _log(f"beds: loudest {bed_level:.1f} LUFS, speech {spoken_level:.1f} "
                      f"→ beds {change:+.1f} dB "
                      f"(loudest moment {bed_offset:+.1f} dB from the speech)")
+                live.emit("bed", loudest_lufs=bed_level, speech_lufs=spoken_level,
+                          change_db=change, offset_db=bed_offset)
         tick(80, "mastering")
         stems.program_deliver(jobs, result, ducks, extra, deliver,
                               stems.anyone_speaking(grid, 0.0),
@@ -580,9 +617,13 @@ def mix(
         _log(f"mastered: {result.program_lufs:.1f} LUFS, "
              f"lift {result.program_boost:+.1f} dB, "
              f"limiting {result.program_limit_cost:.1f} LU → {output}")
+        live.emit("mastered", lufs=result.program_lufs, lift_db=result.program_boost,
+                  limiting_lu=result.program_limit_cost)
         tick(100, "done")
+        live.emit("done", path=output)
         return result
     finally:
+        live.enable(False)
         shutil.rmtree(workdir, ignore_errors=True)
 
 
