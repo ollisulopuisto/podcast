@@ -52,6 +52,15 @@ Ero-raja asetetaan vuodon eron ja puheen eron väliin. Jos ne menevät
 päällekkäin, raja menee puheen yläpuolelle ja syy kirjoitetaan: liikaa
 vaimennettu on pahempi virhe kuin liian vähän vaimennettu.
 
+**Ilman sanoja: klipit esimerkkeinä.** ``calibrate`` tarvitsee litteroinnin
+(``Source.words``). Editori, jolla on vain klipit (väli tiedostossa, jonka
+käyttäjä on vaimentanut tai jättänyt) ja tasoikkunat, käyttää
+``calibrate_clips``ia: vaimennetut klipit antavat kynnyksen kuten ennenkin,
+vaimentamattomat klipit puheen tason ja vartijan. Vaimentamaton klippi on
+puhetta **taukoineen**, joten sen puheen taso on ikkunoiden yläneljännes
+(``SPEECH_PERCENTILE_TRANSCRIPT``), ei alaneljännes: se olisi tauko. Kutsuja
+antaa vain ``level`` ja ``missing``; sanoja ei kysytä.
+
 Mikään tässä tiedostossa olevista luvuista ei ole mitattu. Ne ovat makuarvoja
 ja ensimmäisen oikean istunnon tarkistamatta: aja oppiminen istunnolla ja
 katso lokista mitä raita sai.
@@ -126,13 +135,18 @@ GAP_MARGIN_DB = 2.0
 # Kynnys jää tämän verran alle hiljaisimman päästettävän sanan. Makuarvo.
 KEEP_MARGIN_DB = 0.5
 
+# Klipeistä oppiessa vaimentamattomia ikkunoita pitää olla näin monta, jotta
+# puheen taso lasketaan ja vartija toimii: kuusi ikkunaa on noin sekunti
+# (WINDOW + 5 × HOP = 1,05 s). Makuarvo, ei mitattu.
+MIN_SPEECH_WINDOWS = 6
+
 __all__ = [
     "BLEED_GAP_PERCENTILE", "BLOCK_GAP", "FLOOR_DB", "GAP_MARGIN_DB", "GUARD_DB", "HOP",
     "KEEP_MARGIN_DB", "MARGIN_DB", "MIN_BLEED_FRAMES", "MIN_SECONDS",
-    "MIN_SPEECH_WORDS", "PERCENTILE", "SPEECH_GAP_PERCENTILE",
+    "MIN_SPEECH_WINDOWS", "MIN_SPEECH_WORDS", "PERCENTILE", "SPEECH_GAP_PERCENTILE",
     "SPEECH_PERCENTILE_TRANSCRIPT", "SPEECH_PERCENTILE_VETTED", "SPEECH_WORDS",
-    "WINDOW", "Calibration", "Region", "Source", "Track", "calibrate",
-    "horizon", "percentile",
+    "WINDOW", "Calibration", "Clip", "Levels", "Region", "Source", "Track",
+    "calibrate", "calibrate_clips", "horizon", "percentile",
 ]
 
 
@@ -155,6 +169,26 @@ class Region:
 class Track:
     name: str
     regions: list[Region]
+
+
+@dataclass(frozen=True)
+class Clip:
+    """Esimerkki ilman aikajanaa: väli tiedostossa ``ref`` (tiedoston aikaa, s)."""
+
+    ref: str
+    start: float
+    end: float
+    muted: bool = False
+
+
+class Levels(Protocol):
+    """Klipeistä oppimiseen riittää tämä: taso välillä, ei sanoja."""
+
+    def level(self, ref: str, start: float, end: float) -> float | None:
+        """Taso desibeleinä tiedoston ajassa, tai ``None`` kun ääntä ei ole."""
+
+    def missing(self) -> bool:
+        """Puuttuiko jokin äänitiedosto (selittää tyhjän tuloksen)."""
 
 
 class Source(Protocol):
@@ -189,6 +223,10 @@ class Calibration:
     # Selitys sille, että kynnys laskettiin pienemmäksi kuin vaimennetusta
     # ajasta: päästettävä sana oli sen alla.
     clamp_note: str = ""
+    # Vain ``calibrate_clips``: vaimentamattomien ikkunoiden määrä ja se osuus
+    # niistä, joka on kynnyksen yläpuolella (``None`` = ei vaimentamattomia).
+    unmuted_frames: int = 0
+    kept_share: float | None = None
 
 
 def percentile(values: list[float], q: float) -> float:
@@ -425,3 +463,68 @@ def calibrate(tracks: list[Track], source: Source) -> dict[str, Calibration]:
         found.threshold = threshold
         out[name] = found
     return out
+
+
+def _clip_level(levels: Levels, ref: str, begin: float, end: float) -> float | None:
+    level = levels.level(ref, begin, end)
+    return None if level is None else max(level, FLOOR_DB)
+
+
+def calibrate_clips(clips: list[Clip], levels: Levels) -> Calibration:
+    """Kynnys vaimennetuista klipeistä, puheen taso ja vartija vaimentamattomista.
+
+    Sama sääntö kuin ``calibrate``: kynnys on vaimennettujen ikkunoiden
+    ``PERCENTILE`` plus ``MARGIN_DB``; liian vähän vaimennettua ääntä ei opeta
+    mitään; kynnys joka ei jää ``GUARD_DB`` vaimentamattomien klippien tason
+    alle hylätään (vaimennettiinko puhetta?). Erona ei kysytä sanoja, ja
+    vartija toimii vasta kun vaimentamattomia ikkunoita on
+    ``MIN_SPEECH_WINDOWS``. Ei ero-rajaa eikä katto-leikkausta: ne tarvitsevat
+    sanoja ja toisia raitoja.
+    """
+    found = Calibration()
+    by_ref: dict[str, list[Region]] = {}
+    for clip in clips:
+        if clip.muted and clip.end > clip.start:
+            by_ref.setdefault(clip.ref, []).append(
+                Region(clip.ref, clip.start, clip.end - clip.start, clip.start, muted=True)
+            )
+    muted_levels: list[float] = []
+    for ref, regions in by_ref.items():
+        for block_start, block_length in _muted_blocks(regions):
+            found.muted_seconds += block_length
+            for begin, end in _windows(block_start, block_length):
+                mine = _clip_level(levels, ref, begin, end)
+                if mine is not None:
+                    muted_levels.append(mine)
+    found.frames = len(muted_levels)
+
+    if not muted_levels:
+        found.reason = ("ääntä ei löytynyt" if levels.missing()
+                        else "ei käsin vaimennettuja alueita")
+        return found
+    if found.muted_seconds < MIN_SECONDS:
+        found.reason = (f"vaimennettua ääntä vain {found.muted_seconds:.1f} s — "
+                        f"liian vähän, vähintään {MIN_SECONDS:.0f} s")
+        return found
+
+    kept: list[float] = []
+    for clip in clips:
+        if clip.muted or clip.end <= clip.start:
+            continue
+        for begin, end in _windows(clip.start, clip.end - clip.start):
+            level = _clip_level(levels, clip.ref, begin, end)
+            if level is not None:
+                kept.append(level)
+    found.unmuted_frames = len(kept)
+
+    threshold = percentile(muted_levels, PERCENTILE) + MARGIN_DB
+    if len(kept) >= MIN_SPEECH_WINDOWS:
+        found.speech_level = percentile(kept, SPEECH_PERCENTILE_TRANSCRIPT)
+        found.kept_share = sum(1 for level in kept if level >= threshold) / len(kept)
+        if threshold >= found.speech_level - GUARD_DB:
+            found.reason = (
+                f"vaimennettujen alueiden taso ({threshold:.1f} dBFS) on puheen "
+                f"tasolla ({found.speech_level:.1f} dBFS) — vaimennettiinko puhetta?")
+            return found
+    found.threshold = threshold
+    return found
