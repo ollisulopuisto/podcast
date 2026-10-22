@@ -15,13 +15,11 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-import numpy as np
-import psutil
-import soundfile as sf
-import yaml
-
-from speechmix import panning, programme
-from speechmix.stems import StemError
+# numpy, soundfile, psutil, yaml ja speechmix tuodaan siellä missä niitä
+# käytetään. kuulas ajaa ``automixer --help`` (10 s aikaraja, myös ssh:n
+# yli) ennen jokaista miksausta, ja ylätason tuonnit veivät siitä 0,87 s
+# ennen kuin argparse ehti mitään (Linux, lämmin välimuisti, ``-X
+# importtime``); ``tests/test_startup.py`` pitää ohjeen kevyenä.
 
 #: Puheraitojen taso ennen masterointia. Kynnykset liukuvat sen mukana
 #: kirjastossa; `session.MUSIC_LUFS` sovittaa musiikin tähän samaan.
@@ -45,6 +43,8 @@ class Mixer:
             config (dict or str): Either a parsed dictionary or a path to a YAML configuration file.
         """
         if isinstance(config, str):
+            import yaml
+
             with open(config, "r") as f:
                 self.config = yaml.safe_load(f)
         else:
@@ -58,6 +58,8 @@ class Mixer:
         Args:
             msg (str): The message to log.
         """
+        import psutil
+
         mem = psutil.Process().memory_info().rss / (1024 * 1024)
         timestamp = time.strftime("%H:%M:%S")
         print(f"[{timestamp}] [MEM: {mem:.0f}MB] {msg}")
@@ -118,6 +120,8 @@ class Mixer:
         """
 
         import mlx.core as mx
+        import numpy as np
+        import soundfile as sf
 
         from automixer.domain import room, shared
         from automixer.domain.bus import Bus
@@ -130,6 +134,7 @@ class Mixer:
         )
         from automixer.domain.settings import SpeechSettings
         from automixer.domain.track import Track
+        from speechmix import programme
 
         def update_progress(val, msg):
             self.log_perf(msg)
@@ -543,6 +548,8 @@ def speaker_pans(count: int) -> list[float]:
     kuvaa josta istumajärjestyksen voisi mitata, joten järjestys on
     raitojen oma.
     """
+    from speechmix import panning
+
     return [round(p / 100.0, 4) for p in panning.spread(count)]
 
 
@@ -895,6 +902,8 @@ def main():
             print("A kuulas export is mixed on its own: give one folder "
                   f"(or its {stem_folder.MANIFEST}).")
             sys.exit(1)
+        from speechmix.stems import StemError
+
         try:
             _mix_session(args, folders[0], loader=stem_folder.load)
         except StemError as exc:
@@ -1081,30 +1090,30 @@ def _mix_session(args, path: str, loader=None) -> None:
 
 def _balance_max_db(text: str) -> float:
     """argparse-tyyppi lipulle ``--balance-speakers-max-db``: luku väliltä 0..60."""
-    from . import stems_mix
+    from . import flag_ranges
 
     try:
-        return stems_mix.check_balance_max(text)
+        return flag_ranges.check_balance_max(text)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _balance_tolerance_db(text: str) -> float:
     """argparse-tyyppi lipulle ``--balance-speakers-tolerance-db``: luku väliltä 0..30."""
-    from . import stems_mix
+    from . import flag_ranges
 
     try:
-        return stems_mix.check_balance_tolerance(text)
+        return flag_ranges.check_balance_tolerance(text)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _bed_db(text: str) -> float:
     """argparse-tyyppi lipulle ``--bed-under-speech-db``: luku väliltä -30..+6."""
-    from . import stems_mix
+    from . import flag_ranges
 
     try:
-        return stems_mix.check_bed_offset(text)
+        return flag_ranges.check_bed_offset(text)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 

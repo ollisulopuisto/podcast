@@ -19,13 +19,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import soundfile as sf
-
-from nhsx import activity, fades, musicbed, read
-from nhsx.read import locate
-from speechmix.meter import Meter
-
-from .session import _is_music
+# Ääni, nhsx ja ``session`` tuodaan vasta lippujen jälkeen: ``--help`` vei
+# niiden kanssa 0,86 s (Linux, lämmin välimuisti), josta ``nhsx`` →
+# ``speechmix`` → ``scipy.signal`` lähes kaiken (``-X importtime``).
 
 #: Tasanteen voimakkuus. vst s13e03:n pohjat häivyttämättöminä ja käyttäjän
 #: tasanteen vahvistuksella: INTRO −7,63 − 10,0 = −17,6, MID −10,42 − 8,28
@@ -53,6 +49,10 @@ def _free_path(path: Path) -> Path:
 
 def _plateau_gain(source: str, offset: float, curve) -> float:
     """Vahvistus joka vie pohjan tasanteen ``PLATEAU_LUFS``:iin."""
+    import soundfile as sf
+
+    from speechmix.meter import Meter
+
     flat = [t for t, db in curve if db == 0.0]
     info = sf.info(source)
     meter = Meter(info.samplerate)
@@ -87,6 +87,11 @@ def main() -> None:
              "your own), so none are written over them. Repeatable; case-insensitive.",
     )
     args = parser.parse_args()
+
+    from nhsx import activity, fades, musicbed, read
+    from nhsx.read import locate
+
+    from .session import _is_music
 
     source = Path(args.session)
     session = read(source)

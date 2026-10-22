@@ -32,6 +32,14 @@ from . import events as live
 from . import session as hindenburg
 from .domain.settings import HIGH_PASS_HZ, SpeechSettings
 
+# Lippujen välit ja tarkistukset asuvat kevyessä moduulissa, jotta ``cli_mix``
+# hylkää huonon arvon tuomatta tätä moduulia (ks. ``flag_ranges``). Nimet
+# pysyvät tässäkin: ``stems_mix.check_bed_offset`` toimii kuten ennen.
+from .flag_ranges import BALANCE_MAX_RANGE as BALANCE_MAX_RANGE
+from .flag_ranges import BALANCE_TOLERANCE_RANGE as BALANCE_TOLERANCE_RANGE
+from .flag_ranges import BED_OFFSET_RANGE as BED_OFFSET_RANGE
+from .flag_ranges import check_balance_max, check_balance_tolerance, check_bed_offset
+
 #: Puhestemien taso ennen masterointia: sama viite kuin muistissa
 #: miksatessa (``cli_mix.SPEECH_REFERENCE_LUFS``), jotta kynnykset ja
 #: musiikin sovitus (``session.MUSIC_LUFS``) pysyvät samassa suhteessa.
@@ -57,22 +65,6 @@ def _duration(path: str) -> float:
 #: miksauksessa +7…+10. Tutkimus (Sound On Sound, Transom): selvästi soiva
 #: musiikki puheen tasolle, koska musiikin huiput ovat kovemmat.
 BED_UNDER_SPEECH_DB = 1.0
-#: Sallittu väli lipulle ``--bed-under-speech-db`` (dB käsitellyn puheen
-#: suhteen). Alaraja: pohja kuuluu vielä; yläraja: selvästi puheen päällä.
-BED_OFFSET_RANGE = (-30.0, 6.0)
-
-
-def check_bed_offset(value) -> float:
-    """Pohjan taso puheeseen nähden liukulukuna, tai ``ValueError`` jos se ei kelpaa.
-
-    ``nan`` ja äärettömät hylätään: ``nan`` ei ole minkään välin sisällä, ja ne
-    muuttaisivat pohjan vahvistuksen ``nan``iksi ilman että mikään kaatuu.
-    """
-    number = float(value)
-    low, high = BED_OFFSET_RANGE
-    if not (low <= number <= high):  # NaN ei ole välillä
-        raise ValueError(f"{value}: must be between {low:g} and {high:g} dB")
-    return number
 
 
 def keep_change(processed_level: float, raw_level: float) -> float:
@@ -87,28 +79,6 @@ def keep_change(processed_level: float, raw_level: float) -> float:
 def bed_change(spoken_level: float, bed_level: float, offset: float) -> float:
     """Kuinka paljon pohjia muutetaan, dB: kovin hetki ``offset`` puheen yllä."""
     return round(spoken_level + offset - bed_level, 2)
-
-#: Sallitut välit puhujien tasauksen lipuille (dB). Ylärajat ovat selvästi
-#: kaiken järkevän yli: raja 0 jättää käyttäjän tasot, suuri raja tasaa täysin.
-BALANCE_MAX_RANGE = (0.0, 60.0)
-BALANCE_TOLERANCE_RANGE = (0.0, 30.0)
-
-
-def _checked(value, flag: str, low: float, high: float) -> float:
-    number = float(value)
-    if not (low <= number <= high):  # NaN ei ole välillä
-        raise ValueError(f"{flag}: {value} must be between {low:g} and {high:g} dB")
-    return number
-
-
-def check_balance_max(value) -> float:
-    """``--balance-speakers-max-db`` liukulukuna, tai ``ValueError``."""
-    return _checked(value, "--balance-speakers-max-db", *BALANCE_MAX_RANGE)
-
-
-def check_balance_tolerance(value) -> float:
-    """``--balance-speakers-tolerance-db`` liukulukuna, tai ``ValueError``."""
-    return _checked(value, "--balance-speakers-tolerance-db", *BALANCE_TOLERANCE_RANGE)
 
 
 def balance_corrections(
