@@ -150,6 +150,71 @@ def delivery_lufs(settings) -> float:
     return 0.0
 
 
+#: Kuinka paljon jaettua vahvistuskäyrää mittausajo saa jättää kirjoittavan ajon
+#: käytettäväksi: enintään tämä, ja enintään ``GAIN_MEMO_SHARE`` koneen vapaasta
+#: muistista. Käyrä talletetaan bittimaskina siitä missä se poikkeaa ykkösestä
+#: ja noina arvoina (float64). Mitattu synteettisellä jaksolla (jatkuvaa puhetta
+#: ja musiikkia, 4 min): käyrä poikkeaa ykkösestä **joka** näytteessä, 23 Mt
+#: minuutissa, 93 Mt neljässä; oikea puhe taukoineen on harvempaa, mutta pahin
+#: tapaus on tämä. 2 Gt riittää siis 85 minuuttiin pahimmassakin tapauksessa, ja
+#: sen verran on aina vapaana vasta kun stemien käsittely (useita Gt) on ohi.
+#: Yli budjetin muisti hylätään kokonaan ja kirjoittava ajo laskee käyrän
+#: uudestaan kuten ennen.
+GAIN_MEMO_BYTES = 2 << 30
+GAIN_MEMO_SHARE = 0.25
+
+
+def _gain_memo() -> GainMemo:
+    import psutil
+
+    return GainMemo(min(GAIN_MEMO_BYTES,
+                        int(psutil.virtual_memory().available * GAIN_MEMO_SHARE)))
+
+
+class GainMemo:
+    """Edellisen mittausajon vahvistuskäyrät, kirjoittavaa ajoa varten.
+
+    Kirjoittava ajo on viimeinen mittausajo uudestaan: samat tiedostot, sama
+    nosto ja sama veto, ja siis sama käyrä. Sen laskeminen ja mittaaminen
+    toiseen kertaan on koko ajon hinta; kirjoittamiseen riittää että käyrä
+    kerrotaan äänelle. Talletus on häviötön (arvot ja paikat, ei pyöristystä),
+    joten kirjoitettu tiedosto on sama kuin täydestä uudelleenlaskennasta.
+    """
+
+    def __init__(self, limit: int = GAIN_MEMO_BYTES):
+        self.limit = limit
+        self.reset()
+
+    def reset(self) -> None:
+        self.pieces: dict = {}
+        self.worst: dict = {}
+        self.bytes = 0
+        self.broken = False
+
+    def put(self, group: tuple, position: int, gain: np.ndarray) -> None:
+        if self.broken:
+            return
+        differs = gain != 1.0
+        values = gain[differs]
+        packed = np.packbits(differs)
+        size = packed.nbytes + values.nbytes
+        if self.bytes + size > self.limit:
+            self.reset()
+            self.broken = True
+            return
+        self.pieces[(group, position)] = (gain.shape[0], gain.dtype, packed, values)
+        self.bytes += size
+
+    def get(self, group: tuple, position: int) -> np.ndarray:
+        count, dtype, packed, values = self.pieces[(group, position)]
+        gain = np.ones(count, dtype=dtype)
+        gain[np.unpackbits(packed, count=count).astype(bool)] = values
+        return gain
+
+    def complete(self, group: tuple, positions) -> bool:
+        return not self.broken and all((group, p) in self.pieces for p in positions)
+
+
 def program_deliver(jobs: list[dict], result, ducks: dict, extra: dict,
                     settings, speech=None, layout=None) -> None:
     """Ohjelma masterointitasoon: mittaa, nosta, rajoita, mittaa uudestaan.
@@ -202,6 +267,9 @@ def program_deliver(jobs: list[dict], result, ducks: dict, extra: dict,
     lift_db = float(getattr(settings, "program_lift_db", 0.0) or 0.0)
     step_sec = BLOCK_SEC / OVERLAP
 
+    memo = _gain_memo()
+    last: dict = {}
+
     def run(gain, curve, write=False):
         """Yksi ajo. Palauttaa ``(lukema, mittari, rajoittimen hinta LU)``.
 
@@ -210,17 +278,34 @@ def program_deliver(jobs: list[dict], result, ducks: dict, extra: dict,
         kuinka kovaa se tekee työtä — käyrän minimi on yhden näytteen
         vaatimus, ja keskiarvo on lähes nolla koska rajoitin ei tee mitään
         suurimman osan ajasta.
+
+        Kirjoittava ajo samalla noston ja vedon parilla kuin edellinen
+        mittausajo ei laske eikä mittaa mitään uudestaan: se kirjoittaa
+        mittausajon talletetulla käyrällä ja palauttaa sen lukeman.
         """
+        ride_step = step_sec if curve is not None else 0.0
+        label = f"mastering pass ({'write' if write else 'measure'}, lift {gain:+.2f} dB)"
+        if (write and last and not memo.broken and last["gain"] == gain
+                and last["curve"] is curve and last["step"] == ride_step):
+            with log.step(label):
+                program_ceiling(jobs, result, ducks, extra, gain, ceiling, None, curve,
+                                ride_step, False, None, speech, layout=layout,
+                                memo=memo, replay=True)
+            return last["found"]
         played, plain = IntegratedMeter(rate), IntegratedMeter(rate)
-        with log.step(f"mastering pass ({'write' if write else 'measure'}, "
-                      f"lift {gain:+.2f} dB)"):
+        if not write:
+            memo.reset()
+        with log.step(label):
             program_ceiling(jobs, result, ducks, extra, gain, ceiling, played,
-                            curve, step_sec if curve is not None else 0.0,
-                            not write, plain, speech, layout=layout)
+                            curve, ride_step, not write, plain, speech, layout=layout,
+                            memo=None if write else memo)
         gate = played.speech() > 0.5 if speech is not None else None
         after, before = played.value(keep=gate), plain.value(keep=gate)
         cost = 0.0 if (after is None or before is None) else before - after
-        return after, played, cost
+        found = (after, played, cost)
+        if not write:
+            last.update(gain=gain, curve=curve, step=ride_step, found=found)
+        return found
 
     measured, meter, cost = run(0.0, None)
     if measured is None:
@@ -310,7 +395,9 @@ def program_ceiling(jobs: list[dict], result,
                     dry_run: bool = False,
                     raw_meter=None,
                     speech=None,
-                    layout=None) -> None:
+                    layout=None,
+                    memo: GainMemo | None = None,
+                    replay: bool = False) -> None:
     """Huippukatto **ohjelmalle**, ei yhdelle stemille.
 
     ``layout(jäsenet, palat)`` kertoo miten stemit soivat isännän ulostulossa
@@ -350,7 +437,7 @@ def program_ceiling(jobs: list[dict], result,
     # Yksin oleva stemi *on* ohjelma, ja ketjun oma katto riittää sille —
     # paitsi masteroinnissa: siellä se nostetaan, ja nosto tarvitsee katon
     # ja mittauksen. Ennen yksittäinen mikki jäi masteroimatta kokonaan.
-    alone_ok = meter is not None
+    alone_ok = meter is not None or replay
     if not members_all or (len(members_all) < 2 and not alone_ok):
         return
 
@@ -389,7 +476,7 @@ def program_ceiling(jobs: list[dict], result,
                 worst = _ceiling_pass(
                     members, frames[0], AudioFile, envelopes_by_speaker, extra,
                     boost_db, ceiling_db, meter, ride_db, ride_step, dry_run,
-                    raw_meter, speech, layout,
+                    raw_meter, speech, layout, memo, replay,
                 )
             else:
                 worst = _ceiling_pass_timeline(
@@ -580,7 +667,9 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                   dry_run: bool = False,
                   raw_meter=None,
                   speech=None,
-                  layout=None) -> float:
+                  layout=None,
+                  memo: GainMemo | None = None,
+                  replay: bool = False) -> float:
     """Yksi ryhmä: summa paloittain, sama käyrä jokaiseen stemiin.
 
     ``envelopes_by_speaker`` on vaimennus puhujittain aikajanan aikana. Se
@@ -598,6 +687,12 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
     palautus ei ala nollasta jokaisen palan alussa — sama kuvio kuin
     ``chain.apply_plugin``in rinnakkaisilla paloilla.
     """
+    group = tuple(job["key"] for job in members)
+    if replay and memo is not None:
+        written = _ceiling_write(members, frames, AudioFile, group, extra, boost_db,
+                                 ride_db, ride_step, memo)
+        if written is not None:
+            return written
     handles = [AudioFile(job["target"]) for job in members]
     spoken = None
     try:
@@ -655,6 +750,8 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
                 worst = min(worst, programme.reduction_db(gain))
                 head = position - low
                 tail = head + min(chunk, frames - position)
+                if memo is not None and dry_run:
+                    memo.put(group, position, gain[head:tail])
                 if meter is not None:
                     # Mitataan **vaimennettu** summa rajoituksen jälkeen, eli
                     # juuri se ohjelma jonka isäntä soittaa. Sama ajo kirjoittaa
@@ -681,7 +778,15 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
             handle.close()
 
     if dry_run:
+        if memo is not None:
+            memo.worst[group] = worst
         return worst
+    _commit_written(members, frames)
+    return worst
+
+
+def _commit_written(members: list[dict], frames: int) -> None:
+    """Kirjoitetut tilapäistiedostot paikoilleen, jos pituus on oikea."""
     for job in members:
         tmp = job["target"] + ".ceil.tmp.wav"
         written = frame_count(tmp)
@@ -695,7 +800,56 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
             )
     for job in members:
         os.replace(job["target"] + ".ceil.tmp.wav", job["target"])
-    return worst
+
+
+def _ceiling_write(members: list[dict], frames: int, AudioFile, group: tuple,
+                   extra: dict | None, boost_db: float, ride_db, ride_step: float,
+                   memo: GainMemo) -> float | None:
+    """Kirjoittava ajo mittausajon talletetulla käyrällä: luku, nosto, veto,
+    käyrä, kirjoitus. Ei summaa, ei käyrän laskentaa eikä mittausta.
+
+    Jokainen vaihe on näytekohtainen, joten pala luettuna vain keskiosan
+    verran antaa samat näytteet kuin ``_ceiling_pass``in marginaalilla luettu
+    ja keskiosaan leikattu. Palauttaa suurimman vaimennuksen, tai ``None``
+    (mitään kirjoittamatta) jos muistissa ei ole tämän ryhmän koko käyrää.
+    """
+    handles = [AudioFile(job["target"]) for job in members]
+    outs: list = []
+    try:
+        rate = int(handles[0].samplerate)
+        if any(int(h.samplerate) != rate for h in handles):
+            raise ValueError("stemien näytetaajuudet eroavat")
+        chunk = int(programme.CEILING_CHUNK * rate)
+        if not memo.complete(group, range(0, frames, chunk)):
+            return None
+        outs = [
+            AudioFile(job["target"] + ".ceil.tmp.wav", "w", rate,
+                      int(h.num_channels), bit_depth=job.get("bit_depth", 24))
+            for job, h in zip(members, handles, strict=True)
+        ]
+        ridden = _ridden(members)
+        for position in range(0, frames, chunk):
+            count = min(chunk, frames - position)
+            gain = memo.get(group, position)
+            slide = None
+            if ride_db is not None and ride_step > 0:
+                when = (np.arange(position, position + count) / rate) / ride_step
+                curve = np.interp(when, np.arange(len(ride_db)), ride_db)
+                slide = (10.0 ** (curve / 20.0)).astype(np.float32)
+            for out, job, handle, rides in zip(outs, members, handles, ridden, strict=True):
+                handle.seek(position)
+                block = handle.read(count) * _linear(
+                    (extra or {}).get(job["key"], 0.0) + boost_db)
+                if slide is not None and rides:
+                    block = block * slide
+                out.write(np.ascontiguousarray(block * _applied(job, gain)))
+    finally:
+        for out in outs:
+            out.close()
+        for handle in handles:
+            handle.close()
+    _commit_written(members, frames)
+    return memo.worst[group]
 
 
 def _heard(members, blocks, layout, head: int, tail: int) -> np.ndarray:

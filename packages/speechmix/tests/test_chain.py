@@ -993,6 +993,81 @@ def test_true_peak_gain_memory_does_not_grow_with_the_episode(monkeypatch):
     assert peak < 1.0 * audio.nbytes, peak / audio.nbytes
 
 
+def _resample_threads(monkeypatch):
+    """Säikeet jotka kutsuvat ``resample_poly``ta: yksi per palan laskenta."""
+    import threading
+
+    from scipy import signal as _sig
+
+    seen = set()
+    real = _sig.resample_poly
+
+    def recording(*args, **kwargs):
+        seen.add(threading.get_ident())
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(_sig, "resample_poly", recording)
+    return seen
+
+
+def test_the_envelope_uses_several_threads_when_it_may(monkeypatch):
+    """Palat ovat toisistaan riippumattomia ja scipyn suodatin päästää GIL:n
+    irti: mastering-vaiheessa muut ytimet ovat vapaina. Mitattu 4 ytimellä
+    32 palaa × 4 s stereoa: 1,67 s -> 0,42 s neljällä säikeellä (3,9×)."""
+    monkeypatch.setenv("SPEECHMIX_NO_GPU", "1")
+    monkeypatch.setenv("SPEECHMIX_ENVELOPE_THREADS", "4")
+    seen = _resample_threads(monkeypatch)
+    audio = np.random.default_rng(8).normal(0, 0.3, (2, chain._TRUE_PEAK_CHUNK * 24 + 99))
+    chain.peak_envelope(audio)
+    assert len(seen) > 1
+
+
+def test_one_thread_runs_the_envelope_in_the_caller(monkeypatch):
+    """``SPEECHMIX_ENVELOPE_THREADS=1``: kuten ennen, kutsujan säikeessä."""
+    import threading
+
+    monkeypatch.setenv("SPEECHMIX_NO_GPU", "1")
+    monkeypatch.setenv("SPEECHMIX_ENVELOPE_THREADS", "1")
+    seen = _resample_threads(monkeypatch)
+    audio = np.random.default_rng(8).normal(0, 0.3, (2, chain._TRUE_PEAK_CHUNK * 24 + 99))
+    chain.peak_envelope(audio)
+    assert seen == {threading.get_ident()}
+
+
+@pytest.mark.parametrize("shape", [(2, 1), (2, 777), (1, chain._TRUE_PEAK_CHUNK * 7 + 5),
+                                   (2, chain._TRUE_PEAK_CHUNK * 9)])
+def test_threads_give_the_same_envelope_bit_for_bit(monkeypatch, shape):
+    """Sama laskenta jokaiselle palalle, vain eri säikeessä: ei toleranssia."""
+    monkeypatch.setenv("SPEECHMIX_NO_GPU", "1")
+    audio = np.random.default_rng(9).normal(0, 0.3, shape)
+    monkeypatch.setenv("SPEECHMIX_ENVELOPE_THREADS", "1")
+    want = chain.peak_envelope(audio)
+    monkeypatch.setenv("SPEECHMIX_ENVELOPE_THREADS", "4")
+    got = chain.peak_envelope(audio)
+    assert got.shape == want.shape and np.array_equal(got, want)
+    peak_threaded = chain.true_peak(audio)
+    monkeypatch.setenv("SPEECHMIX_ENVELOPE_THREADS", "1")
+    assert peak_threaded == chain.true_peak(audio)
+
+
+def test_a_failing_piece_raises_in_the_caller_and_a_closed_envelope_does_not_hang(monkeypatch):
+    from scipy import signal as _sig
+
+    monkeypatch.setenv("SPEECHMIX_NO_GPU", "1")
+    monkeypatch.setenv("SPEECHMIX_ENVELOPE_THREADS", "4")
+    audio = np.random.default_rng(10).normal(0, 0.3, (2, chain._TRUE_PEAK_CHUNK * 12))
+    pieces = chain._envelope_chunks_cpu(audio)
+    next(pieces)
+    pieces.close()  # ei jää odottamaan lopun paloja
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("palan virhe")
+
+    monkeypatch.setattr(_sig, "resample_poly", broken)
+    with pytest.raises(RuntimeError, match="palan virhe"):
+        chain.peak_envelope(audio)
+
+
 def test_peak_to_short_term_in_chunks_matches_and_stays_small(monkeypatch):
     """Sama 4× ylinäytteistys kokonaisena oli puheväylän seuraava
     muistihuippu (memray, 5 min synteettinen istunto, 2026-10-06)."""
