@@ -158,13 +158,14 @@ def stereo_layout(members, blocks):
     for job, block in zip(members, blocks, strict=True):
         block = np.atleast_2d(block)
         if job.get("stereo") and block.shape[0] == 2:
-            pair = block
+            first, second = block[0], block[1]
         else:
-            mono = block.mean(axis=0)
-            pair = np.stack([mono, mono])
+            # Both channels are the same mono stem: no pair is built, since
+            # copying it into (2, n) was two more full-length arrays per piece.
+            first = second = block.mean(axis=0)
         left, right = stems.pan_gains(job.get("pan", 0.0), job.get("pan_law", "balance"))
-        out[0] += pair[0] * left
-        out[1] += pair[1] * right
+        out[0] += first * left
+        out[1] += second * right
     return out
 
 
