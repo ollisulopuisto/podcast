@@ -36,7 +36,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import log
+from . import iir, log
 from .messages import t
 
 # Ylipäästön jyrkkyys ja kompressorien ajat. automixer ilmaisi kompressorin
@@ -877,7 +877,7 @@ def declick(audio: np.ndarray, rate: int, sensitivity: float = 0.5) -> np.ndarra
 
     def band(sos, data):
         """Kaista, sen itseisarvo ja paikallinen keskiarvo."""
-        level = np.abs(sp.sosfiltfilt(sos, data))
+        level = np.abs(iir.sosfiltfilt(sos, data))
         return level, uniform_filter1d(level, size=window)
 
     factor0 = DECLICK_FACTOR_MAX - (
@@ -1163,7 +1163,7 @@ def deess(
         for start in range(0, total, _COMPRESS_CHUNK):
             stop = min(total, start + _COMPRESS_CHUNK)
             piece = x2[:, start:stop]
-            low, state = _sig.sosfilt(sos, piece, axis=-1, zi=state)
+            low, state = iir.sosfilt(sos, piece, zi=state)
             high = piece - low
             if pending is not None:
                 collect(pending)
@@ -1693,7 +1693,7 @@ def split_bands(audio: np.ndarray, rate: int, edges=BANDS_HZ) -> list:
     bands, rest = [], audio
     for edge in edges:
         sos = _sig.butter(4, min(edge, rate / 2 * 0.95) / (rate / 2), output="sos")
-        low = _sig.sosfilt(sos, rest, axis=-1)
+        low = iir.sosfilt(sos, rest)
         bands.append(low)
         rest = rest - low
     bands.append(rest)
@@ -1762,7 +1762,7 @@ def multiband(
             rest = x2[:, start:stop]
             parts = []
             for i, sos in enumerate(soses):
-                low, states[i] = _sig.sosfilt(sos, rest, axis=-1, zi=states[i])
+                low, states[i] = iir.sosfilt(sos, rest, zi=states[i])
                 parts.append(low)
                 rest = rest - low
             parts.append(rest)

@@ -1278,10 +1278,10 @@ def test_deess_filters_the_next_piece_while_compressing(monkeypatch):
     aikaan. Mitattu 20 minuutista: 1,2 s peräkkäin, ks. muutosloki."""
     import threading
 
-    from scipy import signal as sp
+    from speechmix import iir
 
     meet = threading.Barrier(2, timeout=5)
-    real_filter = sp.sosfilt
+    real_filter = iir.sosfilt  # one call per piece (scipy's is called per block inside it)
     real_kernel = chain._kernels()["deess"]
     calls = {"filter": 0, "kernel": 0}
 
@@ -1297,7 +1297,7 @@ def test_deess_filters_the_next_piece_while_compressing(monkeypatch):
             meet.wait()
         return real_kernel(*args)
 
-    monkeypatch.setattr(sp, "sosfilt", filt)
+    monkeypatch.setattr(iir, "sosfilt", filt)
     monkeypatch.setitem(chain._KERNELS, "deess", kernel)
     rng = np.random.default_rng(0)
     chain.deess(rng.normal(0, 0.1, (1, 2 * chain._COMPRESS_CHUNK)), 48000)
