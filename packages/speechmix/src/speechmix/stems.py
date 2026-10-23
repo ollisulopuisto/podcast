@@ -29,6 +29,7 @@ import contextlib
 import json
 import os
 import subprocess
+import threading
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -716,6 +717,7 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
             for job, h in zip(members, handles, strict=True)
         ]
         worst = 0.0
+        reading = threading.Lock()
 
         def prepare(position: int):
             """Pala luettuna, nostettuna, vaimennettuna ja käyrä siitä: kaikki
@@ -724,14 +726,15 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
             high = min(frames, position + chunk + margin)
             blocks = []
             for job, handle in zip(members, handles, strict=True):
-                handle.seek(low)
+                with reading:  # kahva on yhden säikeen: haku ja luku yhdessä
+                    handle.seek(low)
+                    block = handle.read(high - low)
                 # Masterointitason nosto on jokaiselle sama, ja se tehdään
                 # **ennen** jaettua käyrää: silloin rajoitus osuu vain
                 # sinne missä huiput osuvat yhteen, eikä yksikään stemi
                 # maksa crestiä toisen puolesta.
                 blocks.append(
-                    handle.read(high - low)
-                    * _linear((extra or {}).get(job["key"], 0.0) + boost_db)
+                    block * _linear((extra or {}).get(job["key"], 0.0) + boost_db)
                 )
             if ride_db is not None and ride_step > 0:
                 # Hidas veto näytteille: käyrä on ohjelman aikaa, ja
@@ -790,30 +793,50 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
     return worst
 
 
-def _ahead(prepare, items):
-    """``prepare(item)`` kullekin alkiolle järjestyksessä; seuraava valmistuu
-    säikeessä kun kutsuja käsittelee tätä.
+#: Montako palaa valmistellaan etukäteen kun yhtä mitataan. Valmistelu (luku,
+#: nosto, käyrä) on raskaampi puoli: 8 min × 3 puhujaa, kolme mittausajoa:
+#: käyrä 29,6 s + vaimennus 10,5 s valmistelussa, mittari 9,4 s + asettelu 7,5 s
+#: mittauksessa. Yksi pala edellä jätti kolme neljästä ytimestä lepäämään.
+PREFETCH_DEPTH = 2
 
-    Valmistelu (luku, nosto, käyrä) on numpyä ja scipyä, jotka päästävät GIL:n
-    irti, eikä riipu edellisen palan mittauksesta tai kirjoituksesta, joten
-    tulokset ovat samat kuin peräkkäin ja kutsuja näkee ne samassa
-    järjestyksessä. Yksi pala edellä: muistissa on kerrallaan kaksi palaa.
-    ``SPEECHMIX_PREFETCH=0`` ajaa kaiken kutsujan säikeessä kuten ennen.
+
+def _prefetch_depth() -> int:
+    """``SPEECHMIX_PREFETCH``: 0 = ei etukäteen, N = N palaa edellä; muuten oletus."""
+    forced = os.environ.get("SPEECHMIX_PREFETCH", "").strip()
+    return int(forced) if forced.isdigit() else PREFETCH_DEPTH
+
+
+def _ahead(prepare, items):
+    """``prepare(item)`` kullekin alkiolle järjestyksessä; seuraavat valmistuvat
+    säikeissä kun kutsuja käsittelee tätä.
+
+    Valmistelu on numpyä ja scipyä, jotka päästävät GIL:n irti, eikä riipu
+    edellisen palan mittauksesta tai kirjoituksesta, joten tulokset ovat samat
+    kuin peräkkäin ja kutsuja näkee ne samassa järjestyksessä. Muistissa on
+    kerrallaan enintään syvyys + 1 palaa. ``SPEECHMIX_PREFETCH=0`` ajaa kaiken
+    kutsujan säikeessä kuten ennen.
     """
     items = list(items)
-    if len(items) < 2 or os.environ.get("SPEECHMIX_PREFETCH", "").strip() == "0":
+    depth = _prefetch_depth()
+    if depth < 1 or len(items) < 2:
         for item in items:
             yield prepare(item)
         return
+    from collections import deque
     from concurrent.futures import ThreadPoolExecutor
+    from itertools import islice
 
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(prepare, items[0])
-        for following in items[1:]:
-            ready = future.result()
-            future = pool.submit(prepare, following)
+    with ThreadPoolExecutor(max_workers=depth) as pool:
+        pending = deque()
+        rest = iter(items)
+        for item in islice(rest, depth):
+            pending.append(pool.submit(prepare, item))
+        for item in rest:
+            ready = pending.popleft().result()
+            pending.append(pool.submit(prepare, item))
             yield ready
-        yield future.result()
+        while pending:
+            yield pending.popleft().result()
 
 
 def _commit_written(members: list[dict], frames: int) -> None:
