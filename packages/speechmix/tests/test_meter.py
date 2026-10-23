@@ -203,6 +203,89 @@ def test_the_weighting_pass_matches_the_filters():
     assert np.max(np.abs(got - want)) < 1e-12
 
 
+def _plain_recursion(x, b1, a1, b2, a2, state):
+    """The two biquads and the squaring written out as a plain loop: the
+    arithmetic ``_weighted_power`` is meant to do, sample by sample."""
+    out = np.zeros(x.shape[1])
+    for c in range(x.shape[0]):
+        p0, p1, q0, q1 = state[c]
+        for i in range(x.shape[1]):
+            v = float(x[c, i])
+            u = b1[0] * v + p0
+            p0 = b1[1] * v - a1[1] * u + p1
+            p1 = b1[2] * v - a1[2] * u
+            y = b2[0] * u + q0
+            q0 = b2[1] * u - a2[1] * y + q1
+            q1 = b2[2] * u - a2[2] * y
+            out[i] += y * y
+        state[c] = p0, p1, q0, q1
+    return out
+
+
+def _burst_then_silence(rate=RATE):
+    """Noise, a click, digital silence that outlasts the filter's memory, then
+    the noise again: the shape of a stem whose speaker stops and starts."""
+    rng = np.random.default_rng(6)
+    x = np.zeros((2, 20000 + 100000 + 20000))
+    x[:, :20000] = rng.normal(0, 0.1, (2, 20000))
+    x[0, 20000] = 0.5
+    x[1, 20000] = -0.25
+    x[:, 120000:] = rng.normal(0, 0.1, (2, 20000))
+    return x
+
+
+def test_the_weighting_pass_is_the_plain_recursion_bit_for_bit_through_silence():
+    """In digital silence the filter state decays to denormal numbers and then
+    stays there for ever (a limit cycle at 1e-323). The squared output is zero
+    long before that, so the state is cleared once it cannot matter; this holds
+    the result fixed against the plain recursion, to the last bit, across a
+    stop and a restart."""
+    from speechmix import meter as m
+
+    x = _burst_then_silence()
+    (b1, a1), (b2, a2), _ = m._k_weighting(RATE)
+    want = _plain_recursion(x, b1, a1, b2, a2, np.zeros((2, 4)))
+    got = m._weighted_power(x, b1, a1, b2, a2, np.zeros((2, 4)))
+    assert np.array_equal(got, want)
+    assert (want == 0).sum() > 20000  # the silence really did reach exact zeros (measured 25 778)
+
+
+def test_the_filter_state_is_exactly_zero_after_long_silence():
+    from speechmix import meter as m
+
+    x = np.zeros((2, 6 * RATE))
+    x[:, 0] = 0.5
+    (b1, a1), (b2, a2), _ = m._k_weighting(RATE)
+    state = np.zeros((2, 4))
+    m._weighted_power(x, b1, a1, b2, a2, state)
+    assert not state.any()
+
+
+def test_digital_silence_does_not_make_the_filter_slower():
+    """Denormal numbers cost about 25x per sample on the CPUs measured (x86 and
+    ARM alike): a stem of a speaker who is not talking is mostly exact zeros, and
+    the loudness of every stem is measured several times per mix."""
+    import time
+
+    from speechmix import meter as m
+
+    (b1, a1), (b2, a2), _ = m._k_weighting(RATE)
+    noise = np.random.default_rng(7).normal(0, 0.1, (2, 10 * RATE))
+    silent = np.zeros((2, 10 * RATE))
+    silent[:, 0] = 0.5
+    m._weighted_power(noise[:, :1000], b1, a1, b2, a2, np.zeros((2, 4)))  # compile / load
+
+    def best(x):
+        times = []
+        for _ in range(3):
+            started = time.perf_counter()
+            m._weighted_power(x, b1, a1, b2, a2, np.zeros((2, 4)))
+            times.append(time.perf_counter() - started)
+        return min(times)
+
+    assert best(silent) < 4 * best(noise)
+
+
 def test_a_pyloudnorm_shaped_meter_reads_like_ours():
     """automixerin vanhat polut puhuvat pyloudnormin muotoa: näytteet ensin,
     ``-inf`` hiljaisuudelle. Sama mittari sen takana kuin muualla."""

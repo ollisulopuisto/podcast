@@ -68,6 +68,12 @@ def _k_weighting(rate: int):
     return (b, a), (b2, a2), _sig
 
 
+#: Below this a stage's filter states are cleared, see the kernel. Measured: a
+#: click followed by digital silence leaves the states at 1e-321...1e-324 for
+#: ever, and a 4 min mix spent 4.4 s of 7.4 s in this kernel on stems that were
+#: 60-70 % exact zeros (200+ ns per sample against 8).
+TINY = 1e-250
+
 _KERNEL: dict = {}
 
 
@@ -99,6 +105,25 @@ def _weighted_power(x, b1, a1, b2, a2, state) -> np.ndarray:
                     q0 = b2[1] * u - a2[1] * y + q1
                     q1 = b2[2] * u - a2[2] * y
                     out[i] += y * y
+                    # Silence: left alone the states decay into denormal
+                    # numbers and stay there (a limit cycle at 1e-323), where
+                    # every operation costs ~25x. Each stage's pair is cleared
+                    # once it is below TINY, which is still 10^58 times above
+                    # the denormals. That changes no output: ``y * y`` is
+                    # exactly 0 for any |y| < 2.2e-162, and where |y| is
+                    # larger the cleared amount (< 1e-248) is far below half a
+                    # unit in the last place of y and was absorbed anyway.
+                    # A pair, never one state of it: clearing one alone feeds
+                    # the other back and the pair hovers at TINY for ever.
+                    # Looked at every 64th sample: the states fall by at most
+                    # 0.5 % a sample, so 64 samples cannot take them from TINY
+                    # to a denormal, and the test costs 1 ns a sample instead
+                    # of 4 (measured 8.4 -> 12.9 ns on noise when done every sample).
+                    if i & 63 == 0:
+                        if abs(p0) + abs(p1) < TINY:
+                            p0 = p1 = 0.0
+                        if abs(q0) + abs(q1) < TINY:
+                            q0 = q1 = 0.0
                 state[c, 0], state[c, 1], state[c, 2], state[c, 3] = p0, p1, q0, q1
             return out
 
