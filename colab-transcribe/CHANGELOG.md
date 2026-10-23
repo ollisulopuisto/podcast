@@ -5,11 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
-## [Unreleased]
+## [2026.10.23.1] - 2026-10-23
 
 ### Added
+- **`--events` (with `--audio`): live, structured progress for a host such as kuulas.** Besides the text lines (unchanged, same order, same exit codes) one line per event on stdout: `@@kuulas ` and a JSON object with `schema` 1 and `event` (`session`, `stage`, `transfer`, `progress`, `warning`, `error`, `done`). The same protocol as `automixer --events`, so one reader serves both. Fields may be added, never renamed. A stage is announced when it starts. `transcribe` and `align` carry the file's `name`, `index` and `total`; `upload` carries `name`, `via` and the bytes (`total`, and `done` when it ends); files above 128 MiB report `transfer` after every 64 MiB chunk. The Colab CLI's update notices never reach `progress.message`; the first one is a `warning` with code `colab_update`. `error.message` is one short readable line (at most 200 characters), never the log. Contract: `docs/KUULAS-COLAB.md`. Written from the code and tested against a fake Colab transport; not run on a real Colab.
 - **`--align` (with `--audio`): word starts corrected on the Colab VM.** Uploads `wordalign.py` next to the script, installs torch/torchaudio 2.8.0 into `/content/aligner_site`, checks the aligner before transcribing, and writes `timing: "ctc-v1"` with `rejected`. Alignment runs in its own process without the pip-nvidia library path. Fails the run if no word aligns. Not run on a real Colab.
 - **Plain-audio mode: `--audio <file>` (repeatable) and `--json <folder>`.** Audio in, `<name>.words.json` out (words with start and end in seconds, in time order), no `.nhsx` and no Auto-Silence; always the direct transfer. `--model`, `--language`, `--progress` (`PROGRESS <0-100> <message>`, never falling) and exit 1 with the reason on stderr when a result is missing. SIGTERM now takes the Ctrl+C path in this mode and stops the Colab session unless `--keep-session`. Contract: `docs/KUULAS-COLAB.md`. The word starts are Whisper's own; the forced aligner is not in this mode yet.
+
+### Changed
+- **A lost Colab session is recovered inside the tool, with or without `--events`.** When the run fails and the Colab CLI says the session appears to be lost, the tool closes the session, starts a new one and runs once more (a `session` event with `state` `reset` and `reason` `lost`). A second loss, a cancel or any other failure is not retried.
 
 ## [2026.10.15.1] - 2026-10-15
 
