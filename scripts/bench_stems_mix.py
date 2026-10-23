@@ -181,9 +181,18 @@ def _music(rng, seconds: float) -> np.ndarray:
     return music
 
 
+#: Kuinka kauan puheenvuoron jälkeen mikki vielä soi, kun hiljaisuus on nollattu.
+ZERO_GAP_TAIL_S = 0.3
+
+
 def make_folder(folder: Path, minutes: float, speakers: int, music: bool,
-                seed: int) -> Path:
-    """Kuulaksen vientikansio: yksi WAV raitaa kohti ja ``tracks.json``."""
+                seed: int, zero_gaps: bool = False) -> Path:
+    """Kuulaksen vientikansio: yksi WAV raitaa kohti ja ``tracks.json``.
+
+    ``zero_gaps``: puhujan oman vuoron ulkopuolella mikki on tarkkaa nollaa,
+    kuten kuulaksen vaimennetuissa kohdissa. Ilman sitä hiljaisuudessa on
+    pohjakohinaa (ja toisen puhujan vuotoa), ja ``-65 dB`` kohina pitää
+    suotimien tilan kaukana denormaaleista: penkki ei näkisi niiden hintaa."""
     import soundfile as sf
 
     rng = np.random.default_rng(seed)
@@ -202,6 +211,11 @@ def make_folder(folder: Path, minutes: float, speakers: int, music: bool,
             if j != i:
                 mic += _bleed(rng, voices[j])
         mic += rng.normal(0, _db(NOISE_DB), n).astype(np.float32)
+        if zero_gaps:
+            mask = np.zeros(n, dtype=bool)
+            for a, b in turns[i]:
+                mask[int(a * RATE):int((b + ZERO_GAP_TAIL_S) * RATE)] = True
+            mic[~mask] = 0.0
         name = f"Jakso – P{i}.wav"
         sf.write(folder / name, mic, RATE, subtype="PCM_24")
         tracks.append({
@@ -403,6 +417,8 @@ def main(argv=None) -> int:
     parser.add_argument("--speakers", type=int, default=3)
     parser.add_argument("--no-music", dest="music", action="store_false")
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--zero-gaps", action="store_true",
+                        help="hiljaisuus tarkkaa nollaa puhujan vuorojen ulkopuolella")
     parser.add_argument("--target-lufs", type=float, default=-16.0)
     parser.add_argument("--keep-music-level", action="store_true")
     parser.add_argument("--bed-under-speech-db", type=float, default=None)
@@ -430,7 +446,8 @@ def main(argv=None) -> int:
     folder = Path(args.folder) if args.folder else base / "stems"
     if not (folder / "tracks.json").exists():
         started = time.perf_counter()
-        make_folder(folder, args.minutes, args.speakers, args.music, args.seed)
+        make_folder(folder, args.minutes, args.speakers, args.music, args.seed,
+                    args.zero_gaps)
         print(f"generated {folder} in {time.perf_counter() - started:.1f} s")
     else:
         print(f"using {folder}")
