@@ -3,7 +3,9 @@
 scipyn ``sosfilt`` jättää tilansa denormaaleihin lukuihin kun ääni loppuu, ja
 siitä lähtien jokainen laskutoimitus maksaa noin 25-kertaisesti koko
 hiljaisuuden ajan: tila jää rajasykliin (1e-321 ...1e-324) eikä enää koskaan
-vaimene nollaan. Puhujan stemi on suurimman osan ajasta tarkkaa nollaa
+vaimene nollaan. Hinta on prosessorin ominaisuus: mitattu x86-palvelimella
+(25×), mutta GitHubin Linux-ajurilla scipyn suodin ei hidastunut lainkaan
+(2,7 ms vs 2,0 ms kuudelta sekunnilta), eikä Apple-ytimiltä ole mittausta. Puhujan stemi on suurimman osan ajasta tarkkaa nollaa
 (kuulas vaimentaa sen mitä ei haluta), joten kaistajako, sihinänpoisto ja
 naksujen tunnistus maksoivat tämän useimmilla näytteillään. Mitattu 2 min
 stereomiksauksessa jossa 67 % stemeistä oli nollaa: ``sosfilt`` yksin 7,6 s
