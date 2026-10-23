@@ -59,29 +59,60 @@ class StageTrail:
     Ajuri tietää vain minkä vaiheen se aloittaa; edellisen päättyminen on
     sama hetki, ja ``colab exec`` ei erottele pilvipään vaiheita muuten kuin
     riveillään. Siksi ``enter`` sulkee edellisen itse. Sama vaihe samalla
-    indeksillä ei tule kahdesti (``[ääni (1/2)]`` voi toistua riveissä).
-    ``current`` on vaihe joka on alkanut mutta ei päättynyt: kaatuneen ajon
-    kohta, ``error``-tapahtumaa varten.
+    indeksillä ja nimellä ei tule kahdesti (``[ääni (1/2)]`` voi toistua
+    riveissä). ``current`` on vaihe joka on alkanut mutta ei päättynyt:
+    kaatuneen ajon kohta, ``error``-tapahtumaa varten.
+
+    ``name`` on äänitiedoston nimi (kuulaksen toast: «Take 1-Mic.wav»,
+    ei vain «tiedosto 1/2»). ``via`` ja ``size`` kuuluvat siirtovaiheelle:
+    ``drive`` tai ``direct``, ja tavut. ``size`` tulee tapahtumaan nimellä
+    ``total`` (kuten ``transfer``-tapahtumassa), ja päättyvässä tapahtumassa
+    ``done`` on sama luku: vaihe päättyi, joten kaikki lähti. ``total`` on
+    siis tavuja siirtovaiheessa ja tiedostojen lukumäärä ``transcribe``- ja
+    ``align``-vaiheissa, joissa on ``index``.
     """
 
     def __init__(self) -> None:
         self.current: str | None = None
         self._key: tuple | None = None
         self._fields: dict = {}
+        self._sized = False
 
-    def enter(self, stage: str, index: int | None = None, total: int | None = None) -> None:
-        key = (stage, index, total)
+    def enter(
+        self,
+        stage: str,
+        index: int | None = None,
+        total: int | None = None,
+        name: str | None = None,
+        via: str | None = None,
+        size: int | None = None,
+    ) -> None:
+        # Tiedostovaiheen identiteetti on (vaihe, indeksi, yhteensä): sama rivi voi
+        # tulla kahdesti, vain toisessa nimi. Siirrolla ei ole indeksiä, ja siellä
+        # identiteetti on tiedosto.
+        key = (stage, index, total) if index is not None else (stage, name, via, size)
         if key == self._key:
             return
         self._close()
-        fields = {} if index is None else {"index": index, "total": total}
+        fields: dict = {}
+        if index is not None:
+            fields.update(index=index, total=total)
+        if name:
+            fields["name"] = name
+        if via:
+            fields["via"] = via
+        if size is not None:
+            fields["total"] = size
         emit("stage", stage=stage, state="start", **fields)
         self.current, self._key, self._fields = stage, key, fields
+        self._sized = size is not None
 
     def finish(self) -> None:
         self._close()
 
     def _close(self) -> None:
         if self.current is not None:
-            emit("stage", stage=self.current, state="done", **self._fields)
+            done = {"done": self._fields["total"]} if self._sized else {}
+            emit("stage", stage=self.current, state="done", **self._fields, **done)
         self.current, self._key, self._fields = None, None, {}
+        self._sized = False

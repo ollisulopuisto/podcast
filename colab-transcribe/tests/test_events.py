@@ -286,8 +286,11 @@ def test_a_cancel_ends_in_an_error_event_with_reason_cancelled(
 
 
 def test_missing_tools_end_in_an_error_event(audio, monkeypatch, capsys):
+    from colabtranscribe.onboarding import OnboardingItem
+
     class NotReady:
         is_ready = False
+        items = [OnboardingItem("colab", "Colab CLI", False, "ei asennettu", "Asenna se")]
 
         def summary(self):
             return "colab puuttuu"
@@ -367,3 +370,272 @@ def test_the_driver_announces_each_step_and_the_cloud_markers_inside_the_run(
 def test_a_driver_without_a_trail_behaves_as_before(monkeypatch):
     monkeypatch.setattr(driver, "_execute_single", lambda *a, **k: 0)
     assert driver.run([["colab", "stop", "-s", "s"]], lambda _: None) == 0
+
+
+# --- Kuulaksen toiveet 2026-10-23 -----------------------------------------------------
+# docs/PODCAST-MAGIC.md (kuulas): nimi vaiheeseen, siirron tapa ja tavut, Colab CLI:n
+# päivitysilmoitukset pois edistymisestä, kadonneen istunnon korjaus työkalun sisällä ja
+# yksi lyhyt virherivi.
+
+
+def _stages(out: str, stage: str) -> list[dict]:
+    return [e for e in _events(out) if e["event"] == "stage" and e["stage"] == stage]
+
+
+def test_transcribe_and_align_stages_carry_the_audio_file_name(monkeypatch, capsys):
+    events.enable(True)
+
+    def fake_execute(command, log, timeout=None, on_line=None, **_):
+        if command[:2] == ["colab", "exec"] and "pipeline.py" in command[-1]:
+            on_line("[ääni (1/2)] Litteroidaan: Take 1-Mic.wav")
+            on_line("[ääni (2/2)] Litteroidaan: Panu.mp3")
+            on_line("[kohdistus (1/2)] /content/input/Take 1-Mic.wav")
+            on_line("[kohdistus (2/2)] /content/input/Panu.mp3")
+        return 0
+
+    monkeypatch.setattr(driver, "_execute_single", fake_execute)
+    plan = [["colab", "exec", "-s", "s", "python3 /content/pipeline.py --source audio"]]
+    assert driver.run(plan, lambda _: None, trail=events.StageTrail()) == 0
+    out = capsys.readouterr().out
+    for stage in ("transcribe", "align"):
+        got = [(e["state"], e["index"], e["name"]) for e in _stages(out, stage)]
+        assert got == [
+            ("start", 1, "Take 1-Mic.wav"),
+            ("done", 1, "Take 1-Mic.wav"),
+            ("start", 2, "Panu.mp3"),
+            ("done", 2, "Panu.mp3"),
+        ], stage
+
+
+def test_an_upload_stage_names_the_file_says_how_and_how_many_bytes(
+    tmp_path, monkeypatch, capsys
+):
+    events.enable(True)
+    source = tmp_path / "Take 1-Mic.wav"
+    source.write_bytes(b"x" * 1234)
+    monkeypatch.setattr(driver, "_execute_single", lambda *a, **k: 0)
+    plan = [["colab", "upload", "-s", "s", str(source), "/content/input/Take 1-Mic.wav"]]
+    assert driver.run(plan, lambda _: None, trail=events.StageTrail()) == 0
+    start, done = _stages(capsys.readouterr().out, "upload")
+    assert (start["state"], start["name"], start["via"], start["total"]) == (
+        "start", "Take 1-Mic.wav", "direct", 1234
+    )
+    assert (done["state"], done["name"], done["via"], done["total"], done["done"]) == (
+        "done", "Take 1-Mic.wav", "direct", 1234, 1234
+    )
+
+
+def test_each_uploaded_file_is_its_own_upload_stage(tmp_path, monkeypatch, capsys):
+    events.enable(True)
+    names = ["a.wav", "b.mp3"]
+    for n in names:
+        (tmp_path / n).write_bytes(b"xx")
+    monkeypatch.setattr(driver, "_execute_single", lambda *a, **k: 0)
+    plan = [["colab", "upload", "-s", "s", str(tmp_path / n), f"/content/input/{n}"] for n in names]
+    driver.run(plan, lambda _: None, trail=events.StageTrail())
+    got = _stages(capsys.readouterr().out, "upload")
+    assert [e["name"] for e in got if e["state"] == "start"] == names
+
+
+def test_a_file_already_on_the_vm_is_not_announced_as_an_upload(tmp_path, monkeypatch, capsys):
+    events.enable(True)
+    source = tmp_path / "a.wav"
+    source.write_bytes(b"xx")
+    remote = "/content/cache/xyz"
+    monkeypatch.setattr(driver, "_list_cache", lambda session, log, timeout: {remote})
+    monkeypatch.setattr(driver, "_execute_single", lambda *a, **k: 0)
+    plan = [
+        ["cache-list", "s"],
+        ["chunked-upload", "s", str(source), remote],
+    ]
+    driver.run(plan, lambda _: None, trail=events.StageTrail())
+    assert _stages(capsys.readouterr().out, "upload") == []
+
+
+def test_a_big_file_reports_bytes_after_every_chunk(tmp_path, monkeypatch, capsys):
+    events.enable(True)
+    source = tmp_path / "Big.wav"
+    source.write_bytes(b"x" * 25)
+    monkeypatch.setattr(driver, "CHUNK_BYTES", 10)
+    monkeypatch.setattr(driver, "_execute_single", lambda *a, **k: 0)
+    plan = [["chunked-upload", "s", str(source), "/content/input/Big.wav"]]
+    driver.run(plan, lambda _: None, trail=events.StageTrail())
+    got = [
+        (e["name"], e["via"], e["done"], e["total"])
+        for e in _events(capsys.readouterr().out)
+        if e["event"] == "transfer"
+    ]
+    assert got == [("Big.wav", "direct", 10, 25), ("Big.wav", "direct", 20, 25),
+                   ("Big.wav", "direct", 25, 25)]
+
+
+def test_a_packed_big_file_reports_bytes_of_the_original_file(tmp_path, monkeypatch, capsys):
+    """FLACina lähetettäessä lukua ei pidä näyttää eri yksiköissä: tavut ovat
+    alkuperäisen tiedoston, jotta ``done`` ja ``total`` kuuluvat yhteen."""
+    import numpy as np
+    import soundfile as sf
+
+    events.enable(True)
+    source = tmp_path / "Take.wav"
+    sf.write(source, np.random.default_rng(1).normal(0, 0.1, 48000).astype("float32"), 48000,
+             subtype="PCM_24")
+    size = source.stat().st_size
+    monkeypatch.setattr(driver, "CHUNK_ABOVE", 1)   # pakattukin menee paloina
+    monkeypatch.setattr(driver, "CHUNK_BYTES", 5000)
+    monkeypatch.setattr(driver, "_execute_single", lambda *a, **k: 0)
+    plan = [["flac-upload", "s", str(source), "/content/input/Take.wav"]]
+    assert driver.run(plan, lambda _: None, trail=events.StageTrail()) == 0
+    got = [e for e in _events(capsys.readouterr().out) if e["event"] == "transfer"]
+    assert len(got) >= 2
+    assert all(e["total"] == size for e in got)
+    done = [e["done"] for e in got]
+    assert done == sorted(done) and done[-1] == size
+
+
+def test_a_drive_upload_says_via_drive(monkeypatch, capsys):
+    events.enable(True)
+    monkeypatch.setattr(driver, "upload_input_to_drive", lambda *a, **k: None)
+    monkeypatch.setattr(driver, "_execute_single", lambda *a, **k: 0)
+    plan = [["drive", "upload", "/in", "ColabTranscribe/s/input.tar"]]
+    driver.run(plan, lambda _: None, trail=events.StageTrail())
+    (start, _done) = _stages(capsys.readouterr().out, "upload")
+    assert start["via"] == "drive"
+
+
+NOTICE = "[colab] A new version of Colab CLI is available (0.9 -> 0.10)"
+NOTICES = [
+    NOTICE,
+    "[colab] Run 'colab update' to upgrade",
+    "[colab] To silence this check, set COLAB_NO_UPDATE_CHECK=1",
+]
+
+
+def test_colab_update_notices_become_one_warning_and_stay_out_of_progress(
+    audio, ready, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        cli.driver, "run", _runner(progress=[(10.0, NOTICE), (20.0, "b")], lines=NOTICES)
+    )
+    assert cli.main(_args(audio, "--events", "--progress")) == 0
+    out = capsys.readouterr().out
+    assert all(line in out for line in NOTICES)  # tekstirivit pysyvät
+    got = _events(out)
+    (warning,) = [e for e in got if e["event"] == "warning"]
+    assert warning["code"] == "colab_update" and "new version" in warning["message"]
+    messages = [e["message"] for e in got if e["event"] == "progress"]
+    assert messages == ["b"] and not any("[colab]" in m for m in messages)
+    assert "PROGRESS 10" not in out  # ei myöskään tekstiriveillä
+
+
+def _flaky(first_code=1, line="Session 'whisper' appears to be lost", then=0, plans=None):
+    """Tekaistu ajuri: ensimmäinen ajo kaatuu kadonneeseen istuntoon."""
+    calls = {"n": 0}
+
+    def fake_run(commands, log, timeout=None, on_progress=None, trail=None, **_):
+        calls["n"] += 1
+        if plans is not None:
+            plans.append(commands)
+        if calls["n"] == 1:
+            log(line)
+            if trail is not None:
+                trail.enter("run")
+            return first_code
+        for command in commands:
+            if command[:2] == ["colab", "download"] and then == 0:
+                os.makedirs(command[5], exist_ok=True)
+                for stem in ("Olli 1", "Panu"):
+                    with open(os.path.join(command[5], f"{stem}.words.json"), "w") as f:
+                        f.write("{}")
+        if trail is not None and then == 0:
+            trail.finish()
+        return then
+
+    return fake_run, calls
+
+
+def test_a_lost_session_is_reset_and_the_run_retried_once_inside_the_tool(
+    audio, ready, monkeypatch, capsys
+):
+    plans, stopped = [], []
+    fake, calls = _flaky(plans=plans)
+    monkeypatch.setattr(cli.driver, "run", fake)
+    monkeypatch.setattr(cli.session, "is_session_alive", lambda name: True)
+    monkeypatch.setattr(cli.session, "stop_session", lambda name: stopped.append(name) or 0)
+    assert cli.main(_args(audio, "--events")) == 0
+    assert calls["n"] == 2 and stopped == ["whisper"]
+    assert plans[0][0][:2] != ["colab", "new"]      # ensimmäinen ajo käytti vanhaa istuntoa
+    assert plans[1][0][:2] == ["colab", "new"]      # toinen luo tuoreen
+    got = _events(capsys.readouterr().out)
+    sessions = [(e["state"], e.get("reason")) for e in got if e["event"] == "session"]
+    assert sessions == [("reuse", None), ("reset", "lost")]
+    assert got[-1]["event"] == "done" and "error" not in [e["event"] for e in got]
+    assert [e["code"] for e in got if e["event"] == "warning"] == ["session_lost"]
+
+
+def test_the_recovery_is_said_in_the_text_too_and_works_without_events(
+    audio, ready, monkeypatch, capsys
+):
+    fake, calls = _flaky()
+    monkeypatch.setattr(cli.driver, "run", fake)
+    monkeypatch.setattr(cli.session, "stop_session", lambda name: 0)
+    assert cli.main(_args(audio)) == 0
+    out = capsys.readouterr().out
+    assert calls["n"] == 2 and PREFIX not in out and "uudelleen" in out
+
+
+def test_a_second_loss_is_not_retried_again(audio, ready, monkeypatch, capsys):
+    calls = {"n": 0}
+
+    def always_lost(commands, log, timeout=None, **_):
+        calls["n"] += 1
+        log("Session 'whisper' appears to be lost")
+        return 1
+
+    monkeypatch.setattr(cli.driver, "run", always_lost)
+    monkeypatch.setattr(cli.session, "stop_session", lambda name: 0)
+    assert cli.main(_args(audio, "--events")) == 1
+    assert calls["n"] == 2
+    got = _events(capsys.readouterr().out)
+    assert got[-1]["event"] == "error" and got[-1]["reason"] == "failed"
+    assert [e["state"] for e in got if e["event"] == "session"].count("reset") == 1
+
+
+def test_a_cancel_or_another_failure_is_not_retried(audio, ready, monkeypatch):
+    for code, line in ((130, "Session 'whisper' appears to be lost"), (1, "jokin muu meni vikaan")):
+        fake, calls = _flaky(first_code=code, line=line)
+        monkeypatch.setattr(cli.driver, "run", fake)
+        monkeypatch.setattr(cli.session, "stop_session", lambda name: 0)
+        assert cli.main(_args(audio)) == code
+        assert calls["n"] == 1, (code, line)
+
+
+def test_error_messages_are_one_short_line_never_the_log(audio, ready, monkeypatch, capsys):
+    from colabtranscribe.onboarding import OnboardingItem, OnboardingReport
+
+    cases = []
+    monkeypatch.setattr(cli.driver, "run", _runner(code=3, enter=["upload"]))
+    cli.main(_args(audio, "--events"))
+    cases.append(_events(capsys.readouterr().out)[-1])
+    monkeypatch.setattr(cli.driver, "run", _runner(write=()))
+    cli.main(_args(audio, "--events"))
+    cases.append(_events(capsys.readouterr().out)[-1])
+    item = OnboardingItem("colab", "Colab CLI", False, "ei asennettu",
+                          "Asenna:\n  uv tool install google-colab-cli\n  colab usage")
+    monkeypatch.setattr(cli, "check_environment", lambda: OnboardingReport(items=[item]))
+    cli.main(_args(audio, "--events"))
+    cases.append(_events(capsys.readouterr().out)[-1])
+    assert [c["reason"] for c in cases] == ["failed", "missing_words", "environment"]
+    for case in cases:
+        assert case["event"] == "error"
+        assert "\n" not in case["message"] and 0 < len(case["message"]) <= 200, case
+    assert "uv tool install" not in cases[2]["message"] and "Colab CLI" in cases[2]["message"]
+
+
+def test_a_very_long_message_is_cut_to_one_line(capsys):
+    events.enable(True)
+    from colabtranscribe.__main__ import _failure
+
+    _failure("failed", "rivi yksi\nrivi kaksi   " + "x" * 500)
+    (error,) = _events(capsys.readouterr().out)
+    assert "\n" not in error["message"] and len(error["message"]) <= 200
+    assert error["message"].startswith("rivi yksi rivi kaksi")
