@@ -616,6 +616,55 @@ def describe_command(command: list[str]) -> str:
 
 
 
+def stage_of(command: list[str]) -> str | None:
+    """Mikä ``--events``-vaihe komento on, tai None (ei omaa vaihetta)."""
+    if not command:
+        return None
+    cmd0 = command[0]
+    if cmd0 in ("flac-upload", "chunked-upload", "drive"):
+        return "upload"
+    if cmd0 != "colab" or len(command) < 2:
+        return None
+    sub = command[1]
+    if sub in ("new", "drivemount"):
+        return "session"
+    if sub == "upload":
+        return "upload"
+    if sub == "download":
+        return "download"
+    if sub == "stop":
+        return "stop"
+    if sub == "exec" and len(command) > 4:
+        action = command[4]
+        if "pipeline.py" in action:
+            return "run"
+        if "tar -xf" in action:
+            return "upload"
+        if "rm -rf" in action and "mkdir" in action:
+            return "prepare"
+    return None
+
+
+_MARKER_INDEX = re.compile(r"\((\d+)/(\d+)\)")
+
+
+def stage_of_line(line: str) -> tuple[str, int | None, int | None] | None:
+    """Pilvipään rivistä ``(vaihe, indeksi, yhteensä)`` tai None.
+
+    ``colab exec`` ei erottele skriptin vaiheita muuten kuin sen omilla
+    riveillä, ja samat merkit ohjaavat jo ``on_progress``ia.
+    """
+    if "[vaihe 1/4]" in line:
+        return "install", None, None
+    found = _MARKER_INDEX.search(line)
+    index, total = (int(found.group(1)), int(found.group(2))) if found else (None, None)
+    if "[vaihe 2/4" in line or "[ääni (" in line:
+        return "transcribe", index, total
+    if "[kohdistus (" in line:
+        return "align", index, total
+    return None
+
+
 def _execute_single(
     command: list[str],
     log: Callable[[str], None],
@@ -965,6 +1014,7 @@ def run(
     timeout: float | None = None,
     on_progress: Callable[[float, str], None] | None = None,
     on_drive_failure: Callable[[], list[list[str]]] | None = None,
+    trail=None,
 ) -> int:
     """Aja suunnitelma peräkkäin ja syötä jokainen rivi lokiin.
 
@@ -977,6 +1027,10 @@ def run(
         log: Funktio joka saa jokaisen tulosterivin.
         timeout: Yksittäisen komennon aikaraja sekunteina. None = ei rajaa.
         on_progress: Valinnainen takaisinkutsu edistymiselle (prosentti, kuvaus).
+        trail: Valinnainen ``events.StageTrail`` (``--events``): saa vaiheen
+            alun jokaisesta komennosta ja pilvipään vaihemerkeistä, ja sulkeutuu
+            onnistuneen ajon lopussa. Kaatuneessa ajossa se jää auki kohtaan
+            jossa ajo päättyi.
         on_drive_failure: Jos Drive-lataus kaatuu 403:een (quota project
             puuttuu), saa tämä antaa tilalle suoran siirron loput komennot;
             ilman sitä ajo pysähtyy kuten ennen.
@@ -991,8 +1045,12 @@ def run(
             desc = describe_command(command)
             if on_progress:
                 on_progress(base_pct, f"[{i + 1}/{total}] {desc}")
+            if trail is not None and (stage := stage_of(command)):
+                trail.enter(stage)
 
             def _subline(line: str) -> None:
+                if trail is not None and (marked := stage_of_line(line)):
+                    trail.enter(*marked)
                 if not on_progress:
                     return
                 line_s = line.strip()
@@ -1164,6 +1222,8 @@ def run(
             )
             if code != 0:
                 return code
+        if trail is not None:
+            trail.finish()
         if on_progress:
             on_progress(100.0, "Ajo valmis! Kaikki vaiheet suoritettu.")
         return 0

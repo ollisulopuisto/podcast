@@ -71,6 +71,18 @@ puuttuvan uuden tilalle. Suunnitelma on `driver.plan_audio_commands`, ei
 `.nhsx`:ää, joten sen virheet näkyvät vain tiedostossa ja poistumiskoodissa.
 Pilvipään ajoa ei ole kokeiltu oikealla Colabilla tässä ympäristössä.
 
+`--events` (kuulaksen BUGS 107) on samaa sopimusta: rivit `@@kuulas <json>`
+stdoutiin tekstirivien rinnalle, `schema` 1, kentät lisätään eikä nimetä
+uudelleen (`docs/KUULAS-COLAB.md`, «Live events»). `events.py` on automixerin
+`events.py`:n kopio, koska tämä sovellus ei tunne muita työtilan jäseniä;
+etuliite ja muoto pidetään samoina käsin. Vaiheet tulevat kahdesta paikasta:
+komennon alusta (`driver.stage_of`) ja pilvipään riveistä
+(`driver.stage_of_line`, samat merkit kuin `on_progress`illa), ja
+`StageTrail` sulkee edellisen vaiheen kun seuraava alkaa. Kaatuneessa ajossa
+vaihe jää auki, ja `error`-tapahtuma kertoo sen. Tapahtumat ovat ehdotus:
+kuulas ei ole määritellyt niitä eikä lue niitä vielä, eikä pilvipään ajoa ole
+kokeiltu oikealla Colabilla.
+
 `--align` lataa Colabiin toisen yhden tiedoston, `wordalign.py`n
 (`driver.ALIGN_MODULE`), samalla tavalla kuin `silencelearn`in. Kohdistin
 ajetaan **omassa prosessissaan** ja torch omaan kansioonsa
