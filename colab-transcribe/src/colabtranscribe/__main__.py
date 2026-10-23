@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import re
 import shlex
 import signal
 import sys
 from dataclasses import replace
 from pathlib import Path
 
-from . import __version__, driver, session
+from . import __version__, driver, events, session
 from .onboarding import check_environment
 from .options import DEFAULT_PROMPT, GPUS, PRESETS, SOURCES, TRANSFERS, RunOptions
 
@@ -55,6 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--progress",
         action="store_true",
         help="--audio: kirjoita rivit 'PROGRESS <0-100> <viesti>' (prosentti ei laske)",
+    )
+    parser.add_argument(
+        "--events",
+        action="store_true",
+        help="--audio: tulosta tekstirivien lisäksi tapahtumat riveinä '@@kuulas <json>' "
+        "(session, stage, progress, warning, error, done; docs/KUULAS-COLAB.md)",
     )
 
     parser.add_argument("--session", default="whisper", help="Colab-istunnon nimi")
@@ -211,6 +218,8 @@ def _audio_problem(args: argparse.Namespace) -> str | None:
             return "--json vaatii vähintään yhden --audio-tiedoston."
         if args.align:
             return "--align kuuluu --audio-tilaan: anna myös --audio ja --json."
+        if args.events:
+            return "--events kuuluu --audio-tilaan: anna myös --audio ja --json."
         return None
     if not args.json:
         return "--audio vaatii tulostekansion: anna --json <kansio>."
@@ -237,20 +246,67 @@ def _audio_problem(args: argparse.Namespace) -> str | None:
     return None
 
 
-def _progress_printer():
-    """``PROGRESS <0-100> <viesti>``: kokonaisluku, joka ei laske eikä ylitä sataa."""
+#: Colab CLI:n oma päivitysilmoitus. Se ei kuulu edistymiseen: kuulas näytti
+#: sen tilarivinä. Tekstirivinä se kulkee kuten ennen, ``--events``illa se on
+#: yksi ``warning`` (``code: colab_update``) eikä koskaan ``progress.message``.
+_COLAB_UPDATE = re.compile(
+    r"^\[colab\] (A new version of Colab CLI|Run 'colab update'|To silence this check)"
+)
+
+
+def _progress_printer(lines: bool = True):
+    """``PROGRESS <0-100> <viesti>``: kokonaisluku, joka ei laske eikä ylitä sataa.
+
+    ``lines``: kirjoitetaanko tekstirivi (``--progress``). Sama luku menee
+    ``progress``-tapahtumaan (``--events``) lipuista riippumatta toisistaan.
+    Colab CLI:n päivitysilmoitus ei ole edistymisviesti, eikä sitä anneta
+    kummassakaan muodossa.
+    """
     shown = 0
 
     def report(percent: float, message: str) -> None:
         nonlocal shown
+        if _COLAB_UPDATE.match(message):
+            return
         shown = max(shown, min(100, int(percent)))
-        print(f"PROGRESS {shown} {message}", flush=True)
+        if lines:
+            print(f"PROGRESS {shown} {message}", flush=True)
+        events.emit("progress", percent=shown, message=message)
 
     return report
 
 
+#: Colabin CLI:n oma ilmoitus kadonneesta istunnosta. kuulas tunnistaa saman
+#: tekstistä ja yrittää uudelleen tuoreella istunnolla; ``--events`` antaa sen
+#: tunnisteella (``warning``, ``code: session_lost``), ja työkalu korjaa sen
+#: itse: ks. ``run_audio_mode``.
+_SESSION_LOST = re.compile(r"Session '[^']*' appears to be lost")
+
+#: ``error.message`` on yksi lyhyt luettava rivi, ei koskaan loki.
+MESSAGE_LIMIT = 200
+
+
+def _one_line(message: str, limit: int = MESSAGE_LIMIT) -> str:
+    flat = " ".join(str(message).split())
+    return flat if len(flat) <= limit else flat[: limit - 1].rstrip() + "…"
+
+
+def _failure(reason: str, message: str, **fields) -> None:
+    """``error``-tapahtuma: ajo päättyi epäonnistuneena (``reason`` on koneluettava)."""
+    events.emit("error", reason=reason, message=_one_line(message), **fields)
+
+
+def _environment_message(report) -> str:
+    """Mikä puuttuu, yhdellä rivillä: valmiusraportti on monirivinen ja kuuluu lokiin."""
+    missing = [item.title for item in report.items if item.required and not item.ok]
+    if not missing:
+        return "Tarvittavat apuohjelmat tai tunnistetiedot puuttuvat."
+    return f"Puuttuu: {', '.join(missing)}. Katso colab-transcribe --check."
+
+
 def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
     """Pelkkä ääni sisään, ``<nimi>.words.json`` ulos (``docs/KUULAS-COLAB.md``)."""
+    events.enable(args.events)
     env_opts = RunOptions.from_env()
     audio = [str(Path(a).resolve()) for a in args.audio]
     options = RunOptions(
@@ -267,13 +323,18 @@ def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
         align=args.align,
     )
     reuse_session = False
+    session_state = "new"
+    session_reason = None
     if session.is_session_alive(options.session):
         if options.reset_session:
+            session_state = "reset"
+            session_reason = "requested"
             if not dry_run:
                 print(f"Suljetaan olemassa oleva Colab-istunto '{options.session}'...")
                 session.stop_session(options.session)
         else:
             reuse_session = True
+            session_state = "reuse"
             if not dry_run:
                 print(f"Käytetään olemassa olevaa Colab-istuntoa '{options.session}'.")
 
@@ -287,7 +348,13 @@ def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
     if not report.is_ready:
         print("Tarvittavat apuohjelmat tai tunnistetiedot puuttuvat:\n", file=sys.stderr)
         print(report.summary(), file=sys.stderr)
+        _failure("environment", _environment_message(report))
         return 1
+    events.emit(
+        "session",
+        state=session_state,
+        **({"reason": session_reason} if session_reason else {}),
+    )
 
     out_dir = options.resolved_output_dir()
     expected = [out_dir / f"{Path(a).stem}.words.json" for a in audio]
@@ -296,31 +363,68 @@ def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
     for path in expected:
         path.unlink(missing_ok=True)
 
+    lost = {"seen": False, "update_told": False}
+
     def log(line: str) -> None:
         print(line, flush=True)
+        if _SESSION_LOST.search(line):
+            lost["seen"] = True
+            events.emit("warning", code="session_lost", message=line.strip())
+        elif _COLAB_UPDATE.match(line) and not lost["update_told"]:
+            lost["update_told"] = True
+            events.emit("warning", code="colab_update", message=line.strip())
 
-    with _sigterm_cancels():
-        code = driver.run(
-            commands,
-            log,
-            timeout=driver.COMMAND_TIMEOUT,
-            on_progress=_progress_printer() if args.progress else None,
+    printer = _progress_printer(args.progress) if (args.progress or args.events) else None
+
+    def attempt(plan, trail):
+        extra = {"trail": trail} if trail is not None else {}
+        with _sigterm_cancels():
+            return driver.run(
+                plan, log, timeout=driver.COMMAND_TIMEOUT, on_progress=printer, **extra
+            )
+
+    trail = events.StageTrail() if args.events else None
+    code = attempt(commands, trail)
+    if code not in (0, 130) and lost["seen"]:
+        # Istunto katosi (Colab otti koneen takaisin): suljetaan ja yritetään
+        # kerran tuoreella. Toinen kerta ei yritä enää: silloin vika on muualla.
+        # kuulaksen oma uudelleenyritys jää varalle. Avoimeksi jäänyt vaihe
+        # hylätään: sen päätteeksi ei tule ``done``a, vaan uusi ketju alkaa.
+        print(
+            "Colab-istunto katosi: suljetaan se ja yritetään kerran uudelleen "
+            "tuoreella istunnolla.",
+            flush=True,
         )
+        session.stop_session(options.session)
+        events.emit("session", state="reset", reason="lost")
+        lost["seen"] = False
+        trail = events.StageTrail() if args.events else None
+        retry = driver.plan_audio_commands(options, audio, reuse_session=False)
+        code = attempt(retry, trail)
     if code == 130 and not options.keep_session:
         print(f"Suljetaan Colab-istunto '{options.session}'...")
         session.stop_session(options.session)
+    stopped_in = trail.current if trail is not None else None
     if code != 0:
+        if code == 130:
+            _failure("cancelled", "Ajo keskeytettiin.", code=code, stage=stopped_in)
+        else:
+            where = f" vaiheessa {stopped_in}" if stopped_in else ""
+            _failure("failed", f"Ajo päättyi koodiin {code}{where}.", code=code, stage=stopped_in)
         return code
     missing = [p for p in expected if not p.is_file()]
     if missing:
         names = ", ".join(p.name for p in missing)
-        return _refuse(
+        message = (
             f"Ajo päättyi, mutta sanatiedostot puuttuvat: {names}. "
             "Katso lokista, löysikö Whisper puhetta."
         )
+        _failure("missing_words", message, code=1, files=[str(p) for p in missing])
+        return _refuse(message)
     print(f"\nValmiit sanatiedostot ({len(expected)}):")
     for path in expected:
         print(f"  {path}")
+    events.emit("done", files=[str(p) for p in expected])
     return 0
 
 

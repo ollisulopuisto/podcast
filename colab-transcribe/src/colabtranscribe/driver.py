@@ -25,6 +25,7 @@ from pathlib import Path
 import silencelearn
 import wordalign
 
+from . import events
 from .options import RunOptions, pipeline_args
 
 #: Ladattava ketju. Se kulkee paketin mukana, joten ajuri löytää sen myös
@@ -616,6 +617,97 @@ def describe_command(command: list[str]) -> str:
 
 
 
+def stage_of(command: list[str]) -> str | None:
+    """Mikä ``--events``-vaihe komento on, tai None (ei omaa vaihetta)."""
+    if not command:
+        return None
+    cmd0 = command[0]
+    if cmd0 in ("flac-upload", "chunked-upload", "drive"):
+        return "upload"
+    if cmd0 != "colab" or len(command) < 2:
+        return None
+    sub = command[1]
+    if sub in ("new", "drivemount"):
+        return "session"
+    if sub == "upload":
+        return "upload"
+    if sub == "download":
+        return "download"
+    if sub == "stop":
+        return "stop"
+    if sub == "exec" and len(command) > 4:
+        action = command[4]
+        if "pipeline.py" in action:
+            return "run"
+        if "tar -xf" in action:
+            return "upload"
+        if "rm -rf" in action and "mkdir" in action:
+            return "prepare"
+    return None
+
+
+_MARKER_INDEX = re.compile(r"\((\d+)/(\d+)\)")
+
+
+def _marker_name(line: str) -> str | None:
+    """Äänitiedoston nimi pilvipään rivistä, tai None.
+
+    ``[ääni (1/2)] Litteroidaan: Take 1-Mic.wav`` ja
+    ``[kohdistus (1/2)] /content/input/Take 1-Mic.wav``: nimi on rivin
+    lopussa, ja kohdistuksen rivillä se on polku.
+    """
+    if "Litteroidaan:" in line:
+        text = line.split("Litteroidaan:", 1)[1].strip()
+    elif "[kohdistus (" in line and "] " in line:
+        text = line.split("] ", 1)[1].strip()
+    else:
+        return None
+    return Path(text).name if text else None
+
+
+def stage_of_line(
+    line: str,
+) -> tuple[str, int | None, int | None, str | None] | None:
+    """Pilvipään rivistä ``(vaihe, indeksi, yhteensä, nimi)`` tai None.
+
+    ``colab exec`` ei erottele skriptin vaiheita muuten kuin sen omilla
+    riveillä, ja samat merkit ohjaavat jo ``on_progress``ia.
+    """
+    if "[vaihe 1/4]" in line:
+        return "install", None, None, None
+    found = _MARKER_INDEX.search(line)
+    index, total = (int(found.group(1)), int(found.group(2))) if found else (None, None)
+    if "[vaihe 2/4" in line or "[ääni (" in line:
+        return "transcribe", index, total, _marker_name(line)
+    if "[kohdistus (" in line:
+        return "align", index, total, _marker_name(line)
+    return None
+
+
+def upload_info(command: list[str]) -> tuple[str | None, int | None, str | None]:
+    """Siirtokomennosta ``(tiedoston nimi, tavut, tapa)``; tapa on ``direct`` tai ``drive``.
+
+    Nimi ja koko ovat paikallisen tiedoston (alkuperäisen, ei FLACiksi
+    pakatun): kuulas näyttää sen jota käyttäjä kutsuu nimellä.
+    """
+    cmd0 = command[0] if command else ""
+    local: str | None = None
+    via = "direct"
+    if cmd0 in ("flac-upload", "chunked-upload") and len(command) >= 3:
+        local = command[2]
+    elif cmd0 == "colab" and len(command) >= 6 and command[1] == "upload":
+        local = command[4]
+    elif cmd0 == "drive" or (cmd0 == "colab" and len(command) > 4 and "tar -xf" in command[4]):
+        via = "drive"
+    if local is None:
+        return None, None, via
+    try:
+        size = Path(local).stat().st_size
+    except OSError:
+        size = None
+    return Path(local).name, size, via
+
+
 def _execute_single(
     command: list[str],
     log: Callable[[str], None],
@@ -825,6 +917,7 @@ def _upload_as_flac(
     remote: str,
     log: Callable[[str], None],
     timeout: float | None = None,
+    on_bytes: Callable[[int, int], None] | None = None,
 ) -> int:
     """Pakkaa WAV FLACiksi, lähetä, ja pura Colabissa samannimiseksi WAViksi.
 
@@ -835,7 +928,7 @@ def _upload_as_flac(
 
     decoder = _flac_bitdepth(source)
     if decoder is None:
-        return _upload_in_chunks(session, source, remote, log, timeout)
+        return _upload_in_chunks(session, source, remote, log, timeout, on_bytes)
     remote_flac = f"{remote}.flac"
     with tempfile.TemporaryDirectory() as tmp:
         flac = Path(tmp) / "a.flac"
@@ -847,7 +940,15 @@ def _upload_as_flac(
                 dst.write(block)
         log(f"{source.stat().st_size / 1e6:.0f} MB -> {flac.stat().st_size / 1e6:.0f} MB")
         if flac.stat().st_size > CHUNK_ABOVE:
-            code = _upload_in_chunks(session, flac, remote_flac, log, timeout)
+            original = source.stat().st_size
+
+            def packed(done: int, total: int) -> None:
+                # Tavut ovat alkuperäisen tiedoston: ``done`` ja ``total`` eivät
+                # saa olla eri yksiköissä kuin vaiheen alun ``total``.
+                if on_bytes is not None:
+                    on_bytes(int(done / total * original), original)
+
+            code = _upload_in_chunks(session, flac, remote_flac, log, timeout, packed)
         else:
             code = _execute_single(
                 ["colab", "upload", "-s", session, str(flac), remote_flac],
@@ -877,9 +978,14 @@ def _upload_in_chunks(
     remote: str,
     log: Callable[[str], None],
     timeout: float | None = None,
+    on_bytes: Callable[[int, int], None] | None = None,
 ) -> int:
     """Lähetä iso tiedosto paloina ja liitä ne Colabissa: yhden palan virhe
-    maksaa yhden palan uudelleenlähetyksen, ei koko tiedostoa."""
+    maksaa yhden palan uudelleenlähetyksen, ei koko tiedostoa.
+
+    ``on_bytes(lähetetty, yhteensä)`` kutsutaan jokaisen palan jälkeen."""
+    total_bytes = source.stat().st_size
+    sent = 0
     with tempfile.TemporaryDirectory() as tmp, open(source, "rb") as f:
         n = 0
         while chunk := f.read(CHUNK_BYTES):
@@ -904,6 +1010,9 @@ def _upload_in_chunks(
                 return code
             part.unlink()
             n += 1
+            sent += len(chunk)
+            if on_bytes is not None:
+                on_bytes(sent, total_bytes)
     q = shlex.quote(remote)
     return _execute_single(
         [
@@ -965,6 +1074,7 @@ def run(
     timeout: float | None = None,
     on_progress: Callable[[float, str], None] | None = None,
     on_drive_failure: Callable[[], list[list[str]]] | None = None,
+    trail=None,
 ) -> int:
     """Aja suunnitelma peräkkäin ja syötä jokainen rivi lokiin.
 
@@ -977,6 +1087,10 @@ def run(
         log: Funktio joka saa jokaisen tulosterivin.
         timeout: Yksittäisen komennon aikaraja sekunteina. None = ei rajaa.
         on_progress: Valinnainen takaisinkutsu edistymiselle (prosentti, kuvaus).
+        trail: Valinnainen ``events.StageTrail`` (``--events``): saa vaiheen
+            alun jokaisesta komennosta ja pilvipään vaihemerkeistä, ja sulkeutuu
+            onnistuneen ajon lopussa. Kaatuneessa ajossa se jää auki kohtaan
+            jossa ajo päättyi.
         on_drive_failure: Jos Drive-lataus kaatuu 403:een (quota project
             puuttuu), saa tämä antaa tilalle suoran siirron loput komennot;
             ilman sitä ajo pysähtyy kuten ennen.
@@ -991,8 +1105,24 @@ def run(
             desc = describe_command(command)
             if on_progress:
                 on_progress(base_pct, f"[{i + 1}/{total}] {desc}")
+            on_bytes = None
+            if trail is not None and (stage := stage_of(command)):
+                if stage == "upload":
+                    name, size, via = upload_info(command)
+                    target = _upload_target(command)
+                    if target is None or target[1] not in cached:  # ei jo Colabissa
+                        trail.enter(stage, name=name, via=via, size=size)
+
+                        def on_bytes(done, total, name=name, via=via):
+                            events.emit(
+                                "transfer", name=name, via=via, done=done, total=total
+                            )
+                else:
+                    trail.enter(stage)
 
             def _subline(line: str) -> None:
+                if trail is not None and (marked := stage_of_line(line)):
+                    trail.enter(*marked)
                 if not on_progress:
                     return
                 line_s = line.strip()
@@ -1053,7 +1183,7 @@ def run(
 
             if command[0] == "flac-upload":
                 code = _upload_as_flac(
-                    command[1], Path(command[2]), command[3], log, timeout
+                    command[1], Path(command[2]), command[3], log, timeout, on_bytes
                 )
                 if code != 0:
                     return code
@@ -1061,7 +1191,7 @@ def run(
 
             if command[0] == "chunked-upload":
                 code = _upload_in_chunks(
-                    command[1], Path(command[2]), command[3], log, timeout
+                    command[1], Path(command[2]), command[3], log, timeout, on_bytes
                 )
                 if code != 0:
                     return code
@@ -1164,6 +1294,8 @@ def run(
             )
             if code != 0:
                 return code
+        if trail is not None:
+            trail.finish()
         if on_progress:
             on_progress(100.0, "Ajo valmis! Kaikki vaiheet suoritettu.")
         return 0

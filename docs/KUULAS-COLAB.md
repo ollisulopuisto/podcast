@@ -112,3 +112,69 @@ Run on the 10-minute clip `olli.wav` (600 s cut from the raw `Olli 1.wav`, 760 w
 - **`--align`** (branch `feat/colab-align`): worked on the first attempt: torch 2.8.0 installed into its own folder, the model loaded, 758 of 760 words aligned (rejected: `Error,` by the early-shift rule, and `20`, which has no letters). Against the 12 words hand-marked in this clip the aligned start is within 6-41 ms of the mark (median about 23 ms); Whisper's start for the same words had a median error of about 180 ms and a worst case of 2.4 s.
 - **This is not an independent test.** The same 12 words by the same speaker are what the rules were tuned on. It shows that the Colab path works and gives the same quality as the local one; it does not show that the result holds for other speakers or episodes. Word ends are still unmeasured.
 - **Still unmeasured:** wall time and cost for the whole run and per stage (install, weights, transcribe, align) - the log has no timestamps, and the number should be taken from a timed run, not from memory; a long recording (drift); a second speaker.
+
+
+## Live events: `--events` (kuulas BUGS 107, 2026-10-23)
+
+kuulas reads `PROGRESS` lines and finds the Colab CLI's own notices and "Session ... appears to be lost" in the text
+(`src/kuulas/colab_transcribe.py`). The same protocol as `automixer --events` (see `docs/PODCAST-MAGIC.md` in kuulas,
+"Live events") exists here, so one reader serves both. **Written from the code and tested against a fake Colab
+transport; not run on a real Colab.** The first version was my proposal; the second (2026-10-23, below) is kuulas's own
+list of wishes from `docs/PODCAST-MAGIC.md`, built as asked.
+
+- `--events` belongs to the plain-audio mode (`--audio`/`--json`); without `--audio` it is refused, like `--align`.
+  It is listed in `--help`, so kuulas can probe for it.
+- With it, **in addition to** every existing text line (unchanged, in the same order, same exit codes), one line per event
+  on stdout: `@@kuulas ` followed by one JSON object, flushed at once. Without the flag nothing changes. Lines that start
+  with `@@kuulas ` are not meant for a human.
+- Every object has `"schema": 1` and `"event"`. Fields may be added, never renamed. Events:
+  - `session`: `state` is `"new"` (a Colab VM is started), `"reuse"` (an existing session is used) or `"reset"` (an
+    existing one is closed and replaced). Optional `reason` on a reset: `"requested"` (`--reset-session`) or `"lost"` (see
+    "Recovery" below). Once before the first `stage`, and once more if a lost session is recovered.
+  - `stage`: `stage` and `state` (`"start"` or `"done"`). A stage starts when the driver starts it and is done when the next
+    one starts or the run ends, so the START is the point: a slow stage no longer looks like the one before it. Stages, in
+    order: `session` (starting the VM, absent when reused), `prepare` (clearing the VM's folders), `upload`, `run` (the
+    cloud script has started, nothing reported yet), `install` (dependencies), `transcribe` and `align` (one per file),
+    `download`, `stop` (absent with `--keep-session`).
+    - **`transcribe` and `align`** carry `index`, `total` (files) and **`name`**, the audio file's file name
+      (`"Take 1-Mic.wav"`), on both the start and the done event, so a toast can say the file and not only "file 1 of 2".
+    - **`upload`** is one stage per file sent (the pipeline script and the aligner module are uploads too, with their own
+      names). It carries `name` (the local file's name), **`via`** (`"direct"`, or `"drive"` for the Drive route, which the
+      plain-audio mode never takes) and `total` (**bytes** of the original file, not of the FLAC the tool may pack it into);
+      the done event also has `done`, equal to `total`: the stage ended, so everything went. A file already on the VM
+      (the upload cache) is not announced at all. Note that `total` is bytes in an `upload` stage and a file count in
+      `transcribe`/`align` (where there is an `index`).
+  - `transfer` (new): progress **inside** an upload, `name`, `via`, `done`, `total` (bytes, `done` never falls). Only the
+    chunked route reports it, once after every 64 MiB chunk, for files above 128 MiB (a smaller file goes up in one command
+    that reports nothing until it is done). The bytes are the original file's even when the tool packs it as FLAC, so
+    `done / total` is a progress bar. A separate event rather than another `state` of `stage`, so a reader that only knows
+    `start` and `done` cannot take an update for the end of the stage.
+  - `progress`: `percent` (integer 0-100, never falls, never above 100) and `message`: what `--progress` prints as
+    `PROGRESS <percent> <message>`. Emitted with `--events` whether or not `--progress` is given; the text lines still need
+    `--progress`. **The Colab CLI's own update notices ("A new version of Colab CLI ...", "Run 'colab update' ...", "To
+    silence this check ...") are never a `progress.message`**, in either form; they stay in the text lines.
+  - `warning`: `code` and `message`. Codes: `"session_lost"` (the Colab CLI says the session appears to be lost; see
+    "Recovery") and `"colab_update"` (the first of the Colab CLI's update notices, once per run; kuulas can show it once and
+    keep it out of the progress bar).
+  - `error`: `reason`, `message`, and for the run itself `code` (the exit code) and `stage` (the stage that had started and
+    not finished, or `null`). Reasons: `"environment"` (the Colab tool or its sign-in is missing; no `code`), `"failed"` (a
+    command exited non-zero), `"cancelled"` (exit 130, SIGINT or SIGTERM), `"missing_words"` (the run ended but a
+    `<name>.words.json` is absent; `files` lists them). **`message` is one short readable line, at most 200 characters,
+    never the log** (the log is in the text lines; a long message is cut with "…"). Always the last event of a failed run;
+    the exit code and the stderr text are unchanged.
+  - `done`: `files`, the paths of the `<name>.words.json` written, in the order of the `--audio` arguments. The last event
+    of a successful run. Unchanged by the 2026-10-23 list.
+
+### Recovery from a lost session (built inside the tool, with or without `--events`)
+
+When the run fails and the Colab CLI said the session appears to be lost (Colab reclaimed the VM), the tool no longer
+just exits: it prints a text line, closes the session (`colab stop`), emits `session` with `state: "reset"` and
+`reason: "lost"`, plans the run again with a **new** VM and runs it **once more**. A second loss, a cancel (130) or any
+other failure is not retried. Any stage that was open when the first attempt died is abandoned (no `done` for it) and a
+new run of stages follows the `session` event; `progress` percent still never falls, so the bar waits where it was until
+the second attempt passes it. kuulas's own retry (which looks for the text) stays as the fallback and finds nothing to do
+when the tool has already recovered; if it still sees the failure, the tool failed twice.
+
+- What this does not give: the Colab CLI's own error text beyond `message` (it is in the text lines), a time estimate (no
+  timings have been recorded; see "First real Colab runs"), the model download progress inside `run`, or bytes inside the
+  small uploads.

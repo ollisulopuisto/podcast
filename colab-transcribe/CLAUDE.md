@@ -71,6 +71,31 @@ puuttuvan uuden tilalle. Suunnitelma on `driver.plan_audio_commands`, ei
 `.nhsx`:ää, joten sen virheet näkyvät vain tiedostossa ja poistumiskoodissa.
 Pilvipään ajoa ei ole kokeiltu oikealla Colabilla tässä ympäristössä.
 
+`--events` (kuulaksen BUGS 107) on samaa sopimusta: rivit `@@kuulas <json>`
+stdoutiin tekstirivien rinnalle, `schema` 1, kentät lisätään eikä nimetä
+uudelleen (`docs/KUULAS-COLAB.md`, «Live events»). `events.py` on automixerin
+`events.py`:n kopio, koska tämä sovellus ei tunne muita työtilan jäseniä;
+etuliite ja muoto pidetään samoina käsin. Vaiheet tulevat kahdesta paikasta:
+komennon alusta (`driver.stage_of`, siirroille `driver.upload_info`: nimi,
+tavut, tapa) ja pilvipään riveistä (`driver.stage_of_line`, samat merkit kuin
+`on_progress`illa, nimi rivin lopusta), ja `StageTrail` sulkee edellisen
+vaiheen kun seuraava alkaa. Kaatuneessa ajossa vaihe jää auki, ja
+`error`-tapahtuma kertoo sen; `error.message` on aina yksi rivi (`_one_line`,
+enintään 200 merkkiä), ei loki. Siirron tavut ovat alkuperäisen tiedoston
+myös FLACina lähetettäessä, ja ne kulkevat omalla `transfer`-tapahtumallaan,
+ei uudella `stage`-tilalla: lukija joka tuntee vain `start` ja `done` ei saa
+ottaa päivitystä vaiheen päättymiseksi. Colab CLI:n päivitysilmoitukset eivät
+ole `progress.message` (`_COLAB_UPDATE`).
+
+Kadonnut istunto korjataan työkalun sisällä (`run_audio_mode`): jos ajo kaatuu
+ja Colab CLI sanoi istunnon kadonneen, istunto suljetaan, `session` kertoo
+`reset`/`lost`, ja ajo tehdään kerran uudelleen tuoreella koneella. Toista
+kertaa ei yritetä, eikä keskeytystä (130) tai muuta vikaa uusita. Tämä on
+käytöstä myös ilman `--events`ia; kuulaksen oma uudelleenyritys jää varalle.
+Kuulaksen toiveet ovat `docs/PODCAST-MAGIC.md`:ssä (kuulas-repo); kenttien
+muoto on rakennettu niiden mukaan, mutta kuulas ei lue niitä vielä eikä
+pilvipään ajoa ole kokeiltu oikealla Colabilla.
+
 `--align` lataa Colabiin toisen yhden tiedoston, `wordalign.py`n
 (`driver.ALIGN_MODULE`), samalla tavalla kuin `silencelearn`in. Kohdistin
 ajetaan **omassa prosessissaan** ja torch omaan kansioonsa

@@ -5,6 +5,14 @@ All notable changes to automixer are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.23.1] - 2026-10-23
+
+### Changed
+- **The stems mix is up to 45 % faster, with the same sound.** The audio files are identical bit for bit (SHA-256 of `mix.wav`) to those of 2026.10.21.2. Measured on synthetic voices with music on 4 cores, not on a real episode: 2 min x 2 speakers 38.0 s -> 21.1 s, 8 min x 3 speakers about 245 s -> 138 s. Three causes:
+  - The peak envelope that the limiter and the mastering ceiling are computed from is calculated on several threads (3.9x faster on 4 cores). `SPEECHMIX_ENVELOPE_THREADS=1` runs it on one thread as before.
+  - The final writing pass of the mastering no longer computes and measures the programme again: it writes with the gain curve of the last measuring pass (5.3 s -> 0.8 s on 2 min, about 18 s -> 2.6 s on 8 min). The curves are kept in memory, at most 2 GiB and a quarter of the free memory; above that the pass computes them again, as before.
+  - The next 60 s piece of the programme is prepared on a thread while the previous one is measured (mastering 57 s -> 49 s on 8 min; a short episode gains nothing). `SPEECHMIX_PREFETCH=0` turns it off.
+
 ## [2026.10.21.2] - 2026-10-21
 
 ### Added
