@@ -716,60 +716,65 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
             for job, h in zip(members, handles, strict=True)
         ]
         worst = 0.0
+
+        def prepare(position: int):
+            """Pala luettuna, nostettuna, vaimennettuna ja käyrä siitä: kaikki
+            mikä ei riipu edellisen palan mittauksesta tai kirjoituksesta."""
+            low = max(0, position - margin)
+            high = min(frames, position + chunk + margin)
+            blocks = []
+            for job, handle in zip(members, handles, strict=True):
+                handle.seek(low)
+                # Masterointitason nosto on jokaiselle sama, ja se tehdään
+                # **ennen** jaettua käyrää: silloin rajoitus osuu vain
+                # sinne missä huiput osuvat yhteen, eikä yksikään stemi
+                # maksa crestiä toisen puolesta.
+                blocks.append(
+                    handle.read(high - low)
+                    * _linear((extra or {}).get(job["key"], 0.0) + boost_db)
+                )
+            if ride_db is not None and ride_step > 0:
+                # Hidas veto näytteille: käyrä on ohjelman aikaa, ja
+                # lineaarinen interpolointi riittää, koska se on jo
+                # pehmennetty ikkunansa pituudella.
+                when = (np.arange(low, high) / rate) / ride_step
+                curve = np.interp(when, np.arange(len(ride_db)), ride_db)
+                slide = (10.0 ** (curve / 20.0)).astype(np.float32)
+                blocks = [block * slide if ridden else block
+                          for block, ridden in zip(blocks, _ridden(members),
+                                                   strict=True)]
+            heard = [
+                block * envelope_block(job, envelopes_by_speaker, low, high, rate)
+                for job, block in zip(members, blocks, strict=True)
+            ]
+            return position, low, blocks, heard, programme.shared_gain(heard, rate, ceiling_db)
+
         try:
-            position = 0
-            while position < frames:
-                low = max(0, position - margin)
-                high = min(frames, position + chunk + margin)
-                blocks = []
-                for job, handle in zip(members, handles, strict=True):
-                    handle.seek(low)
-                    # Masterointitason nosto on jokaiselle sama, ja se tehdään
-                    # **ennen** jaettua käyrää: silloin rajoitus osuu vain
-                    # sinne missä huiput osuvat yhteen, eikä yksikään stemi
-                    # maksa crestiä toisen puolesta.
-                    blocks.append(
-                        handle.read(high - low)
-                        * _linear((extra or {}).get(job["key"], 0.0) + boost_db)
-                    )
-                if ride_db is not None and ride_step > 0:
-                    # Hidas veto näytteille: käyrä on ohjelman aikaa, ja
-                    # lineaarinen interpolointi riittää, koska se on jo
-                    # pehmennetty ikkunansa pituudella.
-                    when = (np.arange(low, high) / rate) / ride_step
-                    curve = np.interp(when, np.arange(len(ride_db)), ride_db)
-                    slide = (10.0 ** (curve / 20.0)).astype(np.float32)
-                    blocks = [block * slide if ridden else block
-                              for block, ridden in zip(blocks, _ridden(members),
-                                                       strict=True)]
-                heard = [
-                    block * envelope_block(job, envelopes_by_speaker, low, high, rate)
-                    for job, block in zip(members, blocks, strict=True)
-                ]
-                gain = programme.shared_gain(heard, rate, ceiling_db)
-                worst = min(worst, programme.reduction_db(gain))
-                head = position - low
-                tail = head + min(chunk, frames - position)
-                if memo is not None and dry_run:
-                    memo.put(group, position, gain[head:tail])
-                if meter is not None:
-                    # Mitataan **vaimennettu** summa rajoituksen jälkeen, eli
-                    # juuri se ohjelma jonka isäntä soittaa. Sama ajo kirjoittaa
-                    # ja mittaa: erillinen mittauskierros olisi gigatavu lisää
-                    # luettavaa eikä yhtään desibeliä enempää tietoa.
-                    meter.add(_heard(members,
-                                     [h * _applied(job, gain)
-                                      for job, h in zip(members, heard, strict=True)],
-                                     layout, head, tail),
-                              None if spoken is None
-                              else spoken[low + head:low + tail])
-                if raw_meter is not None:
-                    raw_meter.add(_heard(members, heard, layout, head, tail))
-                if not dry_run:
-                    for out, job, block in zip(outs, members, blocks, strict=True):
-                        out.write(np.ascontiguousarray(
-                            (block * _applied(job, gain))[:, head:tail]))
-                position += chunk
+            # Seuraava pala valmistuu säikeessä kun tätä mitataan ja kirjoitetaan.
+            with contextlib.closing(_ahead(prepare, range(0, frames, chunk))) as pieces:
+                for position, low, blocks, heard, gain in pieces:
+                    worst = min(worst, programme.reduction_db(gain))
+                    head = position - low
+                    tail = head + min(chunk, frames - position)
+                    if memo is not None and dry_run:
+                        memo.put(group, position, gain[head:tail])
+                    if meter is not None:
+                        # Mitataan **vaimennettu** summa rajoituksen jälkeen, eli
+                        # juuri se ohjelma jonka isäntä soittaa. Sama ajo kirjoittaa
+                        # ja mittaa: erillinen mittauskierros olisi gigatavu lisää
+                        # luettavaa eikä yhtään desibeliä enempää tietoa.
+                        meter.add(_heard(members,
+                                         [h * _applied(job, gain)
+                                          for job, h in zip(members, heard, strict=True)],
+                                         layout, head, tail),
+                                  None if spoken is None
+                                  else spoken[low + head:low + tail])
+                    if raw_meter is not None:
+                        raw_meter.add(_heard(members, heard, layout, head, tail))
+                    if not dry_run:
+                        for out, job, block in zip(outs, members, blocks, strict=True):
+                            out.write(np.ascontiguousarray(
+                                (block * _applied(job, gain))[:, head:tail]))
         finally:
             for out in outs:
                 out.close()
@@ -783,6 +788,32 @@ def _ceiling_pass(members: list[dict], frames: int, AudioFile,
         return worst
     _commit_written(members, frames)
     return worst
+
+
+def _ahead(prepare, items):
+    """``prepare(item)`` kullekin alkiolle järjestyksessä; seuraava valmistuu
+    säikeessä kun kutsuja käsittelee tätä.
+
+    Valmistelu (luku, nosto, käyrä) on numpyä ja scipyä, jotka päästävät GIL:n
+    irti, eikä riipu edellisen palan mittauksesta tai kirjoituksesta, joten
+    tulokset ovat samat kuin peräkkäin ja kutsuja näkee ne samassa
+    järjestyksessä. Yksi pala edellä: muistissa on kerrallaan kaksi palaa.
+    ``SPEECHMIX_PREFETCH=0`` ajaa kaiken kutsujan säikeessä kuten ennen.
+    """
+    items = list(items)
+    if len(items) < 2 or os.environ.get("SPEECHMIX_PREFETCH", "").strip() == "0":
+        for item in items:
+            yield prepare(item)
+        return
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(prepare, items[0])
+        for following in items[1:]:
+            ready = future.result()
+            future = pool.submit(prepare, following)
+            yield ready
+        yield future.result()
 
 
 def _commit_written(members: list[dict], frames: int) -> None:
