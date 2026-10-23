@@ -97,3 +97,62 @@ def test_anything_but_zero_means_on(tmp_path, caplog, monkeypatch, value):
     seen = _watch(monkeypatch)
     _deliver(tmp_path, caplog)
     assert seen["curve"].isdisjoint(seen["meter"])
+
+
+def test_two_pieces_are_prepared_at_the_same_time(tmp_path, caplog, monkeypatch):
+    """The piece being measured needs far less than the next one needs to be
+    prepared (8 min x 3 speakers: 17 s against 42 s), so one piece ahead leaves
+    the other cores idle. The barrier only opens if two preparations are inside
+    the curve computation together."""
+    monkeypatch.delenv("SPEECHMIX_PREFETCH", raising=False)
+    meeting = threading.Barrier(2, timeout=10)
+    real = programme.shared_gain
+    lock, calls = threading.Lock(), {"n": 0}
+
+    def gain(blocks, rate, ceiling_db=-1.0):
+        with lock:
+            calls["n"] += 1
+            first_two = calls["n"] <= 2   # one meeting is enough: the rest run free
+        if first_two:
+            meeting.wait()
+        return real(blocks, rate, ceiling_db)
+
+    monkeypatch.setattr(programme, "shared_gain", gain)
+    result, *_ = _deliver(tmp_path, caplog)
+    assert result.program_lufs != 0.0 and not meeting.broken
+
+
+def test_prefetch_one_keeps_to_one_piece_ahead(tmp_path, caplog, monkeypatch):
+    monkeypatch.setenv("SPEECHMIX_PREFETCH", "1")
+    live, most = {"now": 0}, {"n": 0}
+    lock = threading.Lock()
+    real = programme.shared_gain
+
+    def gain(blocks, rate, ceiling_db=-1.0):
+        with lock:
+            live["now"] += 1
+            most["n"] = max(most["n"], live["now"])
+        try:
+            return real(blocks, rate, ceiling_db)
+        finally:
+            with lock:
+                live["now"] -= 1
+
+    monkeypatch.setattr(programme, "shared_gain", gain)
+    _deliver(tmp_path, caplog)
+    assert most["n"] == 1
+
+
+@pytest.mark.parametrize("depth", ["1", "2", "3"])
+def test_the_depth_changes_nothing_in_the_result(tmp_path, caplog, monkeypatch, depth):
+    runs = {}
+    for mode in (depth, "0"):
+        with monkeypatch.context() as patch:
+            patch.setenv("SPEECHMIX_PREFETCH", mode)
+            where = tmp_path / mode
+            where.mkdir()
+            runs[mode] = _deliver(where, caplog)
+        caplog.clear()
+    for key in runs[depth][1]:
+        assert np.array_equal(runs[depth][1][key], runs["0"][1][key]), key
+    assert runs[depth][0].program_lufs == runs["0"][0].program_lufs
