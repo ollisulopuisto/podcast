@@ -112,3 +112,42 @@ Run on the 10-minute clip `olli.wav` (600 s cut from the raw `Olli 1.wav`, 760 w
 - **`--align`** (branch `feat/colab-align`): worked on the first attempt: torch 2.8.0 installed into its own folder, the model loaded, 758 of 760 words aligned (rejected: `Error,` by the early-shift rule, and `20`, which has no letters). Against the 12 words hand-marked in this clip the aligned start is within 6-41 ms of the mark (median about 23 ms); Whisper's start for the same words had a median error of about 180 ms and a worst case of 2.4 s.
 - **This is not an independent test.** The same 12 words by the same speaker are what the rules were tuned on. It shows that the Colab path works and gives the same quality as the local one; it does not show that the result holds for other speakers or episodes. Word ends are still unmeasured.
 - **Still unmeasured:** wall time and cost for the whole run and per stage (install, weights, transcribe, align) - the log has no timestamps, and the number should be taken from a timed run, not from memory; a long recording (drift); a second speaker.
+
+
+## Live events: `--events` (kuulas BUGS 107, 2026-10-23)
+
+kuulas reads `PROGRESS` lines and finds the Colab CLI's own notices and "Session ... appears to be lost" in the text
+(`src/kuulas/colab_transcribe.py`). The same protocol as `automixer --events` (see `docs/PODCAST-MAGIC.md` in kuulas,
+"Live events") now exists here, so one reader serves both. **Written from the code and tested against a fake Colab
+transport; not run on a real Colab, and kuulas does not read it yet.** The events are my proposal: kuulas has not specified
+them, so say which fields it wants and they change.
+
+- `--events` belongs to the plain-audio mode (`--audio`/`--json`); without `--audio` it is refused, like `--align`.
+  It is listed in `--help`, so kuulas can probe for it.
+- With it, **in addition to** every existing text line (unchanged, in the same order, same exit codes), one line per event
+  on stdout: `@@kuulas ` followed by one JSON object, flushed at once. Without the flag nothing changes. Lines that start
+  with `@@kuulas ` are not meant for a human.
+- Every object has `"schema": 1` and `"event"`. Fields may be added, never renamed. Events:
+  - `session`: `state` is `"new"` (a Colab VM is started), `"reuse"` (an existing session is used) or `"reset"` (an
+    existing one is closed and replaced by `--reset-session`). Once, before the first `stage`.
+  - `stage`: `stage` and `state` (`"start"` or `"done"`). A stage starts when the driver starts it and is done when the next
+    one starts or the run ends, so the START is the point: a slow stage no longer looks like the one before it. Stages, in
+    order: `session` (starting the VM, absent when reused), `prepare` (clearing the VM's folders), `upload` (the script, the
+    audio files, the aligner), `run` (the cloud script has started, nothing reported yet), `install` (dependencies),
+    `transcribe` and `align` (one start per file, with `index` and `total`), `download`, `stop` (absent with
+    `--keep-session`). `transcribe` and `align` happen per file, so a progress bar can count files.
+  - `progress`: `percent` (integer 0-100, never falls, never above 100) and `message`: what `--progress` prints as
+    `PROGRESS <percent> <message>`. Emitted with `--events` whether or not `--progress` is given; the text lines still need
+    `--progress`.
+  - `warning`: `code` and `message`. Today one code: `"session_lost"`, when the Colab CLI says the session appears to be
+    lost (the text line is printed as before; kuulas's retry with a fresh session can key on the code instead of the text).
+  - `error`: `reason`, `message`, and for the run itself `code` (the exit code) and `stage` (the stage that had started and
+    not finished, or `null`). Reasons: `"environment"` (the Colab tool or its sign-in is missing; no `code`), `"failed"` (a
+    command exited non-zero), `"cancelled"` (exit 130, SIGINT or SIGTERM), `"missing_words"` (the run ended but a
+    `<name>.words.json` is absent; `files` lists them). Always the last event of a failed run; the exit code and the stderr
+    text are unchanged.
+  - `done`: `files`, the paths of the `<name>.words.json` written, in the order of the `--audio` arguments. The last event
+    of a successful run.
+- What this does not give: the Colab CLI's own error text beyond `message` (it is in the text lines), a time estimate (no
+  timings have been recorded; see "First real Colab runs"), or the model download progress inside `run`.
+

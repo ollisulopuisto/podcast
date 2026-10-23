@@ -40,6 +40,10 @@ Interfaces other programs depend on (change them only with a note in the PR):
   and `mastered:` log lines, the `<output> flags.txt` file and, with
   `--events`, the `@@kuulas <json>` lines (`schema` 1; fields are added, never
   renamed).
+- `colab-transcribe --audio F --json DIR [--progress] [--align]`: the
+  `<name>.words.json` files, the `PROGRESS` lines, the exit codes, SIGTERM
+  and, with `--events`, the `@@kuulas <json>` lines (`schema` 1; fields are
+  added, never renamed; `docs/KUULAS-COLAB.md`).
 - `tracks.json` version 1 (48 kHz, `start_frame` 0, "dry") read by
   `speechmix.stems`.
 - `<stem>.words.json` and its `timing` field, produced by `colab-transcribe`
