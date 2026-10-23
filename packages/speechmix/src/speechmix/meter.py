@@ -107,12 +107,13 @@ def _weighted_power(x, b1, a1, b2, a2, state) -> np.ndarray:
                     out[i] += y * y
                     # Silence: left alone the states decay into denormal
                     # numbers and stay there (a limit cycle at 1e-323), where
-                    # every operation costs ~25x. Each stage's pair is cleared
-                    # once it is below TINY, which is still 10^58 times above
-                    # the denormals. That changes no output: ``y * y`` is
-                    # exactly 0 for any |y| < 2.2e-162, and where |y| is
-                    # larger the cleared amount (< 1e-248) is far below half a
-                    # unit in the last place of y and was absorbed anyway.
+                    # every operation costs ~25x on the x86 server this was
+                    # measured on (not on every CPU). Each stage's pair is
+                    # cleared once it is below TINY, which is still 10^58
+                    # times above the denormals. That changes no output:
+                    # ``y * y`` is exactly 0 for any |y| < 2.2e-162, and where
+                    # |y| is larger the cleared amount (< 1e-248) is far below
+                    # half a unit in the last place of y and was absorbed anyway.
                     # A pair, never one state of it: clearing one alone feeds
                     # the other back and the pair hovers at TINY for ever.
                     # Looked at every 64th sample: the states fall by at most

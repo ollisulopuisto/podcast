@@ -262,9 +262,10 @@ def test_the_filter_state_is_exactly_zero_after_long_silence():
 
 
 def test_digital_silence_does_not_make_the_filter_slower():
-    """Denormal numbers cost about 25x per sample on the CPUs measured (x86 and
-    ARM alike): a stem of a speaker who is not talking is mostly exact zeros, and
-    the loudness of every stem is measured several times per mix."""
+    """Denormal numbers cost about 25x per sample on the x86 server this was
+    measured on (not on every CPU): a stem of a speaker who is not talking is
+    mostly exact zeros, and the loudness of every stem is measured several times
+    per mix. Only the kernel's own time is asserted, since that holds anywhere."""
     import time
 
     from speechmix import meter as m

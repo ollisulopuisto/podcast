@@ -1,8 +1,9 @@
 """IIR filtering that does not stall on digital silence.
 
 scipy's ``sosfilt`` leaves its state in denormal numbers when the input goes
-silent after sound, and every operation on them costs ~25x for the rest of the
-silence. A stem of a speaker who is not talking is mostly exact zeros (kuulas
+silent after sound, and on CPUs that handle denormals slowly (the x86 server this
+was measured on: ~25x) every operation on them costs that for the rest of the
+silence. Not all CPUs do (GitHub's Linux runner showed none). A stem of a speaker who is not talking is mostly exact zeros (kuulas
 mutes what is not wanted), so the band split, the de-esser and the click
 detector paid that on most of their samples. ``speechmix.iir`` is the same
 filter in blocks that clears a stage's state once it is far below anything that
@@ -109,8 +110,11 @@ def test_digital_silence_does_not_make_the_filter_slower():
             runs.append(time.perf_counter() - started)
         return min(runs)
 
-    # scipy itself on the same input: the reason for the module.
-    assert best(sig.sosfilt, silent) > 4 * best(sig.sosfilt, noise)
+    # Not asserted: that scipy's own filter is slow on this input. It is on the
+    # x86 server this was measured on (6 s: 24 ms on noise, 160-560 ms on zeros),
+    # but not on GitHub's Linux runner (2.7 ms against 2.0 ms) or, as far as the
+    # tests there showed, on Apple's cores: whether denormals cost anything is a
+    # property of the CPU. What holds everywhere is that ours does not.
     assert best(iir.sosfilt, silent) < 3 * best(iir.sosfilt, noise)
 
 
