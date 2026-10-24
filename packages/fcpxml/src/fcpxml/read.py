@@ -38,6 +38,7 @@ from .model import (
     MediaItem,
     MulticamRef,
     Placement,
+    SpineItem,
     Timeline,
     Track,
     Transition,
@@ -60,6 +61,8 @@ CONTAINER_TAGS = {
 UNSUPPORTED_TAGS = ("timeMap", "conform-rate")
 # Left out, and counted in ``Timeline.skipped``.
 SKIPPED_TAGS = {"title", "caption"}
+# What can stand on the spine itself.
+SPINE_TAGS = LEAF_TAGS | CONTAINER_TAGS | {"audition", "title"}
 
 DEFAULT_FRAME_DURATION = Fraction(1, 25)
 
@@ -217,6 +220,7 @@ class _State:
     muted: frozenset[str] = frozenset()
     unsupported: tuple[str, ...] = ()
     enabled: bool = True
+    container: int | None = None
 
 
 _NO_STATE = _State()
@@ -252,6 +256,8 @@ class _Ctx:
     markers: list[Marker] = field(default_factory=list)
     transitions: list[Transition] = field(default_factory=list)
     skipped: dict[str, int] = field(default_factory=dict)
+    root: ET.Element | None = None  # the project's spine, when there is one
+    spine: list[SpineItem] = field(default_factory=list)
 
 
 def _intersect(outer: Bounds, inner: Bounds) -> Bounds:
@@ -363,6 +369,27 @@ def _markers_of(elem, abs_offset: Fraction, local_start: Fraction) -> list[Marke
     return sorted(found, key=lambda m: m.time)
 
 
+def _register_spine_item(
+    ctx: _Ctx, child, abs_offset: Fraction, local_start: Fraction
+) -> int:
+    """Records a top-level spine item and returns its id."""
+    ref = child.get("ref", "")
+    duration = parse_time(child.get("duration"), ZERO)
+    if duration <= 0 and child.tag in LEAF_TAGS and ref in ctx.assets:
+        duration = ctx.assets[ref].duration
+    item = SpineItem(
+        id=len(ctx.spine),
+        kind=child.tag,
+        name=child.get("name", ""),
+        offset=abs_offset + (parse_time(child.get("offset"), ZERO) - local_start),
+        start=parse_time(child.get("start"), ZERO),
+        duration=duration,
+        ref=ref,
+    )
+    ctx.spine.append(item)
+    return item.id
+
+
 def _walk(
     elem,
     abs_offset: Fraction,
@@ -387,6 +414,10 @@ def _walk(
         return
     for child in elem:
         tag = child.tag
+        item_state = state
+        if elem is ctx.root and tag in SPINE_TAGS:
+            item_state = replace(state, container=_register_spine_item(
+                ctx, child, abs_offset, local_start))
 
         if tag in ("marker", "chapter-marker"):
             # A leaf's own markers go on its placement, below.
@@ -420,9 +451,9 @@ def _walk(
         child_abs = abs_offset + (child_offset - local_start)
         lane = _int_attr(child, "lane", 0)
         child_state = replace(
-            state,
-            enabled=state.enabled and child.get("enabled") != "0",
-            unsupported=state.unsupported + _unsupported(child),
+            item_state,
+            enabled=item_state.enabled and child.get("enabled") != "0",
+            unsupported=item_state.unsupported + _unsupported(child),
         )
 
         if tag == "audition":
@@ -430,7 +461,7 @@ def _walk(
             first = next(iter(child), None)
             if first is not None:
                 _walk(child, abs_offset, local_start, ctx, depth + 1, bounds, angle_id,
-                      state)
+                      item_state)
             continue
 
         if tag == "gap":
@@ -449,7 +480,7 @@ def _walk(
                 child_dur = ctx.assets[ref].duration
             # Muted audio is skipped: Final Cut has marked the role off in
             # the sync-source.
-            muted = _is_muted(child, state.muted)
+            muted = _is_muted(child, item_state.muted)
             if muted and not ctx.include_muted:
                 continue
             placement = _clip(child_abs, child_start, child_dur, lane, bounds)
@@ -458,6 +489,7 @@ def _walk(
                 placement.muted = muted
                 placement.enabled = child_state.enabled
                 placement.unsupported = child_state.unsupported
+                placement.container = item_state.container
                 placement.markers = [
                     m
                     for m in _markers_of(child, child_abs, child_start)
@@ -509,7 +541,7 @@ def _walk(
         # clip / sync-clip and unknown references.
         # A sync-clip can mute audio roles: collect them for the children.
         if tag == "sync-clip":
-            child_state = replace(child_state, muted=state.muted | _muted_roles(child))
+            child_state = replace(child_state, muted=item_state.muted | _muted_roles(child))
         _walk(child, child_abs, child_start, ctx, depth + 1, bounds, angle_id,
               child_state)
 
@@ -958,6 +990,7 @@ def _read(
     if kind == "project":
         spine = container.find("spine")
         tc_start = parse_time(container.get("tcStart"), ZERO)
+        ctx.root = spine
         _walk(spine, -tc_start, ZERO, ctx)
     else:
         tc_start = ZERO
@@ -1084,6 +1117,7 @@ def _read(
         ),
         markers=sorted(ctx.markers, key=lambda m: m.time),
         transitions=sorted(ctx.transitions, key=lambda t: t.offset),
+        spine=ctx.spine,
         skipped=dict(sorted(ctx.skipped.items())),
     )
 

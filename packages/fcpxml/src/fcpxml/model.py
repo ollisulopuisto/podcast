@@ -43,6 +43,29 @@ class Transition:
 
 
 @dataclass
+class SpineItem:
+    """One item on the project's spine itself: what a writer cuts.
+
+    ``id`` is its index among the spine's items, gaps and titles included, in
+    document order. ``offset`` is zero-based like every timeline position;
+    ``start`` is the item's own time at that point. A clip attached to it, and
+    every media inside it, belongs to it (``Placement.container``).
+    """
+
+    id: int
+    kind: str  # the element: "asset-clip", "clip", "sync-clip", "mc-clip", "gap", …
+    name: str
+    offset: Fraction
+    start: Fraction
+    duration: Fraction
+    ref: str = ""  # the resource it refers to, if any
+
+    @property
+    def end(self) -> Fraction:
+        return self.offset + self.duration
+
+
+@dataclass
 class Placement:
     """One occurrence of a media on the timeline.
 
@@ -68,6 +91,9 @@ class Placement:
     enabled: bool = True
     unsupported: tuple[str, ...] = ()
     markers: list[Marker] = field(default_factory=list)
+    # The ``SpineItem.id`` this occurrence is in or attached to; None when the
+    # timeline has no spine (a sync clip).
+    container: int | None = None
 
     @property
     def end(self) -> Fraction:
@@ -222,6 +248,8 @@ class Timeline:
     # multicam clip. A clip's own markers are on its ``Placement``.
     markers: list[Marker] = field(default_factory=list)
     transitions: list[Transition] = field(default_factory=list)
+    # The project's spine items in order; empty for a sync clip.
+    spine: list[SpineItem] = field(default_factory=list)
     # What the reader met and left out: titles, captions, generators and video
     # effects, counted by kind. For a report; nothing more is read of them.
     skipped: dict[str, int] = field(default_factory=dict)

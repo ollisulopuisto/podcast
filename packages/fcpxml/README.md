@@ -87,8 +87,53 @@ declaration. The package has no ffprobe; the caller brings one.
 Final Cut: the fixtures are XML only. `test_stdlib_only.py` fails if the library
 ever imports anything but the standard library.
 
-## Not here yet
+## Writing: `conform`
 
-Writing. `conform(source, pieces) -> bytes` (a new project spine made of pieces
-of the original containers) is the next task for this package; autoraffkat's
-writer is tied to its own decision layer and has not been extracted.
+```python
+from fractions import Fraction as F
+from fcpxml import ConformError, conform, snap_pieces
+
+pieces = [(F(2), F(5)), (F(12), F(15))]      # kept ranges of the source timeline
+data = conform("episode.fcpxml", pieces, name="Cut one")   # bytes: a new .fcpxml
+```
+
+`conform(source, pieces)` lays the kept ranges of a project back to back: a
+ripple edit, nothing else. `source` is a path or a `Timeline` from the reader;
+`pieces` are `(source_start, source_end)` in `Fraction` seconds on the source
+timeline (zero-based, as the reader shows it), in order and not overlapping.
+No gaps, no reordering, no range used twice.
+
+* A piece of a spine item is the same element with its `start` and `duration`
+  narrowed and its `offset` moved. What is attached to it (connected clips,
+  titles, keywords, markers) is narrowed to the same range in the host's local
+  time, as Final Cut's own ripple delete does; `mc-source` angle choices and
+  roles are kept. A transition is kept only if all of it lies inside one piece.
+* Every boundary is snapped to the sequence's frame grid (the boundary, not the
+  duration, so nothing drifts over many cuts). The grid is the sequence's
+  declared rate, not a probed one. `snap_pieces(pieces, frame_duration)` is the
+  same function, so a caller can know the lengths, and so the new timeline
+  positions, before it writes. Audio cuts are frame-accurate; sub-frame audio
+  edits are not used, because it is not known that Final Cut accepts them.
+* The document has the source's resources as they are (so Final Cut finds the
+  same media), the source's FCPXML version and start timecode, one new event
+  `"<name> (kuulas)"` and in it one new project with a fresh `uid` (`name` and
+  `uid` can be given).
+* What it cannot cut correctly it **refuses** with a `ConformError.code`:
+  `no_pieces`, `empty_piece`, `unordered`, `overlap`, `outside_timeline` (the
+  pieces), `not_a_project` (a sync clip has no spine), `unsupported` (a
+  `timeMap` or `conform-rate` in what is kept), `nested_spine` (a secondary
+  storyline), `keyframes_cross_cut`, `no_duration`. A keyframe animation that a
+  cut would change is refused; `keyframes="clip"` accepts the cost instead (the
+  keyframes outside the piece are dropped, and the value at its edge is the
+  first keyframe's, not an interpolated one).
+
+`Timeline.spine` lists the items on the project's spine (`SpineItem`: `id`,
+`kind`, `name`, `offset`, `start`, `duration`, `ref`), and `Placement.container`
+is the `id` of the one a placement is in or attached to.
+
+The tests check what matters most, **sync**: a moment of the new timeline must
+play the same moment of every media that the same moment of the source played
+(`file_time_at` before and after, through a multicam and through a project with
+attached clips). They cannot say whether Final Cut accepts the result. Nothing
+here has been imported into Final Cut, and the DTD check (`xmllint --dtdvalid`
+against the DTDs inside the app) has to be run by hand on a Mac that has it.

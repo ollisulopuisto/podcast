@@ -11,26 +11,32 @@ from .model import (
     MediaItem,
     MulticamRef,
     Placement,
+    SpineItem,
     Timeline,
     Track,
     Transition,
 )
 from .read import BUNDLE_INNER, ReadError, read_fcpxml
 from .timeline import ZERO, format_time, parse_time
+from .write import ConformError, conform, snap_pieces
 
 __all__ = [
     "BUNDLE_INNER",
     "ZERO",
+    "ConformError",
     "Format",
     "Marker",
     "MediaItem",
     "MulticamRef",
     "Placement",
     "ReadError",
+    "SpineItem",
     "Timeline",
     "Track",
     "Transition",
+    "conform",
     "format_time",
     "parse_time",
     "read_fcpxml",
+    "snap_pieces",
 ]
