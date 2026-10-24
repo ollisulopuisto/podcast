@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from urllib.request import pathname2url
 
 if TYPE_CHECKING:
-    from .fcpxml.read import Timeline
+    from .finalcut.read import Timeline
     from .model import MediaItem
 
 # Mediatiedostojen tyypilliset päätteet
@@ -361,7 +361,7 @@ def relink_timeline(
         # Löytynyt media voi kertoa ruutunopeuden, jonka puuttuvat tiedostot
         # jättivät arvaamaksi — sama media-sääntö kuin lukijassa, muuten
         # vienti jäisi 1/25-oletukseen tai formaatin ilmoitukseen.
-        from .fcpxml.read import probed_frame_duration
+        from .finalcut.read import probed_frame_duration
 
         probed = probed_frame_duration(timeline.media)
         if probed is not None:

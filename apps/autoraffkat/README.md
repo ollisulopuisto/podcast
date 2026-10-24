@@ -389,10 +389,10 @@ not measurement, and live in `autolayout.py`. The name carries `autolayout`.
 
 ```
 src/autoraffkat/
-  timeline.py        rational time from FCPXML (Fraction)
+  timeline.py        rational time from FCPXML (Fraction): the fcpxml package's
   model.py           media, roles, settings, segments
-  fcpxml/read.py     sync-clip, spine and multicam in
-  fcpxml/write.py    new project out, flat or multicam
+  finalcut/read.py   the reader (package fcpxml) plus ffprobe, relink, texts
+  finalcut/write.py  new project out, flat or multicam
   audio/envelope.py  ffmpeg + RMS, disk cache                SLOW
   audio/chain.py     channel strip: pedalboard + plug-ins
   audio/mix.py       which files, where, and the sync guard  SLOW

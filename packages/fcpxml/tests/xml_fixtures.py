@@ -1,0 +1,617 @@
+"""FCPXML fixtures: the same synthetic episode as autoraffkat's, as XML only.
+
+Carried over from autoraffkat's ``tests/make_fixture.py`` (the comments are in
+Finnish there and here). The reader needs no media, so every file the XML
+names is an empty placeholder; what matters is where the XML puts it.
+
+A sync clip, a project with attached clips, a two-part multicam, and a
+multicam whose angles are synced camera-and-mic clips.
+"""
+
+from __future__ import annotations
+
+import os
+from urllib.request import pathname2url
+from xml.sax.saxutils import quoteattr
+
+FPS = 25
+FRAME = "1/25s"
+DURATION = 36.0
+
+
+def file_url(path: str) -> str:
+    url = pathname2url(path)
+    return "file:" + url if url.startswith("//") else "file://" + url
+
+
+def _touch(path: str) -> None:
+    if not os.path.exists(path):
+        open(path, "wb").close()
+
+
+def build(target_dir: str) -> dict:
+    """Writes the three XMLs with placeholder media; returns their paths."""
+    os.makedirs(target_dir, exist_ok=True)
+    media = {
+        "wide": os.path.join(target_dir, "WIDE.mp4"),
+        "close_a": os.path.join(target_dir, "CLOSE_A.mp4"),
+        "close_b": os.path.join(target_dir, "CLOSE_B.mp4"),
+        "mic_a": os.path.join(target_dir, "MIC_A.wav"),
+        "mic_b": os.path.join(target_dir, "MIC_B.wav"),
+    }
+    for path in media.values():
+        _touch(path)
+    sync_xml = os.path.join(target_dir, "sync.fcpxml")
+    project_xml = os.path.join(target_dir, "project.fcpxml")
+    multicam_xml = os.path.join(target_dir, "multicam.fcpxml")
+    write_sync_clip_xml(sync_xml, media)
+    write_project_xml(project_xml, media)
+    write_multicam_xml(multicam_xml, make_parts(target_dir, media))
+    return {"media": media, "sync": sync_xml, "project": project_xml, "multicam": multicam_xml}
+
+
+def _asset(rid: str, path: str, has_video: bool, has_audio: bool) -> str:
+    attrs = [
+        f'id="{rid}"',
+        f"name={quoteattr(os.path.basename(path))}",
+        'start="0s"',
+        f'duration="{int(DURATION * FPS)}/25s"',
+    ]
+    if has_audio:
+        attrs += [
+            'hasAudio="1"',
+            'audioSources="1"',
+            'audioChannels="1"',
+            'audioRate="48000"',
+        ]
+    if has_video:
+        attrs += ['hasVideo="1"', 'videoSources="1"', 'format="r1"']
+    return (
+        f"    <asset {' '.join(attrs)}>\n"
+        f'      <media-rep kind="original-media" src={quoteattr(file_url(path))}/>\n'
+        f"    </asset>"
+    )
+
+
+def write_sync_clip_xml(path: str, media: dict) -> None:
+    """Synkkaklippi: kamerat ja mikit laneilla."""
+    body = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        "<!DOCTYPE fcpxml>",
+        '<fcpxml version="1.10">',
+        "  <resources>",
+        f'    <format id="r1" name="FFVideoFormat1080p25" frameDuration="{FRAME}" '
+        'width="1920" height="1080"/>',
+        _asset("r2", media["wide"], True, False),
+        _asset("r3", media["close_a"], True, False),
+        _asset("r4", media["close_b"], True, False),
+        _asset("r5", media["mic_a"], False, True),
+        _asset("r6", media["mic_b"], False, True),
+        "  </resources>",
+        "  <library>",
+        '    <event name="Testi">',
+        f'      <sync-clip name="Synkka" format="r1" offset="0s" start="0s" '
+        f'duration="{int(DURATION * FPS)}/25s" tcFormat="NDF">',
+        f'        <asset-clip ref="r2" offset="0s" name="WIDE" start="0s" '
+        f'duration="{int(DURATION * FPS)}/25s"/>',
+        f'        <asset-clip ref="r3" lane="1" offset="0s" name="CLOSE_A" start="0s" '
+        f'duration="{int(DURATION * FPS)}/25s"/>',
+        f'        <asset-clip ref="r4" lane="2" offset="0s" name="CLOSE_B" start="0s" '
+        f'duration="{int(DURATION * FPS)}/25s"/>',
+        f'        <asset-clip ref="r5" lane="-1" offset="0s" name="MIC_A" start="0s" '
+        f'duration="{int(DURATION * FPS)}/25s" audioRole="dialogue.A"/>',
+        f'        <asset-clip ref="r6" lane="-2" offset="0s" name="MIC_B" start="0s" '
+        f'duration="{int(DURATION * FPS)}/25s" audioRole="dialogue.B"/>',
+        "      </sync-clip>",
+        "    </event>",
+        "  </library>",
+        "</fcpxml>",
+    ]
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(body) + "\n")
+
+
+def write_project_xml(path: str, media: dict) -> None:
+    """Projekti: samat mediat spinellä ja liitettyinä, mikit siirrettyinä."""
+    frames = int(DURATION * FPS)
+    body = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        "<!DOCTYPE fcpxml>",
+        '<fcpxml version="1.10">',
+        "  <resources>",
+        f'    <format id="r1" name="FFVideoFormat1080p25" frameDuration="{FRAME}" '
+        'width="1920" height="1080"/>',
+        _asset("r2", media["wide"], True, False),
+        _asset("r3", media["close_a"], True, False),
+        _asset("r4", media["close_b"], True, False),
+        _asset("r5", media["mic_a"], False, True),
+        _asset("r6", media["mic_b"], False, True),
+        "  </resources>",
+        "  <library>",
+        '    <event name="Testi">',
+        '      <project name="Kasin synkattu">',
+        f'        <sequence format="r1" duration="{frames}/25s" tcStart="0s" '
+        'tcFormat="NDF" audioLayout="stereo" audioRate="48k">',
+        "          <spine>",
+        f'            <asset-clip ref="r2" offset="0s" name="WIDE" start="25/25s" '
+        f'duration="{frames - 25}/25s" format="r1" tcFormat="NDF">',
+        f'              <asset-clip ref="r3" lane="1" offset="25/25s" name="CLOSE_A" '
+        f'start="25/25s" duration="{frames - 25}/25s" format="r1"/>',
+        f'              <asset-clip ref="r4" lane="2" offset="25/25s" name="CLOSE_B" '
+        f'start="25/25s" duration="{frames - 25}/25s" format="r1"/>',
+        f'              <asset-clip ref="r5" lane="-1" offset="25/25s" name="MIC_A" '
+        f'start="25/25s" duration="{frames - 25}/25s" audioRole="dialogue.A"/>',
+        f'              <asset-clip ref="r6" lane="-2" offset="25/25s" name="MIC_B" '
+        f'start="25/25s" duration="{frames - 25}/25s" audioRole="dialogue.B"/>',
+        "            </asset-clip>",
+        "          </spine>",
+        "        </sequence>",
+        "      </project>",
+        "    </event>",
+        "  </library>",
+        "</fcpxml>",
+    ]
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(body) + "\n")
+
+
+# Monikamerafixture: sama aineisto kahtena osana, kuten oikeassa projektissa.
+# Osat ovat kopioita, ei uusia enkoodauksia — ryhmittely katsoo tiedostonimeä
+# eikä sisältöä, ja purku on jo kerran testattu.
+PART_FILES = {
+    "wide": ("WIDE 01.mp4", "WIDE 02.mp4"),
+    "close_a": ("CLOSE_A 01.mp4", "CLOSE_A 02.mp4"),
+    "close_b": ("CLOSE_B 01.mp4", "CLOSE_B 02.mp4"),
+    "mic_a": ("host a Track1.wav", "host b Track1.wav"),
+    "mic_b": ("guest a Track2.wav", "guest b Track2.wav"),
+}
+# Kulmien nimet osittain: kamerat numeroina, mikit puhujan mukaan.
+ANGLE_NAMES = (
+    ("wide", "1", "1"),
+    ("close_a", "2", "2"),
+    ("close_b", "3", "3"),
+    ("mic_a", "host a Track1", "host b Track1"),
+    ("mic_b", "guest a Track2", "guest b Track2"),
+)
+SPLIT = DURATION / 2
+
+
+def make_parts(target_dir: str, media: dict) -> dict:
+    """Kopioi jokaisen median kahdeksi osaksi. Palauttaa polut."""
+    import shutil
+
+    parts: dict[str, tuple[str, str]] = {}
+    for role, names in PART_FILES.items():
+        made = []
+        for name in names:
+            path = os.path.join(target_dir, name)
+            if not os.path.exists(path):
+                # Ilman ffmpegiä lähdettä ei ole; lukija ei tarvitse sisältöä.
+                if os.path.exists(media[role]):
+                    shutil.copy(media[role], path)
+                else:
+                    open(path, "wb").close()
+            made.append(path)
+        parts[role] = (made[0], made[1])
+    return parts
+
+
+def _angle(name: str, angle_id: str, ref: str, gap: float = 0.0) -> list[str]:
+    """Yksi ``<mc-angle>``. ``gap`` siirtää sisältöä multicamin aikapohjassa."""
+    frames = int(DURATION * FPS)
+    lines = [f'        <mc-angle name={quoteattr(name)} angleID="{angle_id}">']
+    if gap:
+        g = int(gap * FPS)
+        lines.append(
+            f'          <gap name="Gap" offset="0s" start="3600s" duration="{g}/25s"/>'
+        )
+        lines.append(
+            f'          <asset-clip ref="{ref}" offset="{g}/25s" '
+            f'name={quoteattr(name)} start="{g}/25s" '
+            f'duration="{frames - g}/25s"/>'
+        )
+    else:
+        lines.append(
+            f'          <asset-clip ref="{ref}" offset="0s" '
+            f'name={quoteattr(name)} start="0s" duration="{frames}/25s"/>'
+        )
+    lines.append("        </mc-angle>")
+    return lines
+
+
+def write_multicam_xml(path: str, parts: dict, missing_in_b: tuple = ()) -> None:
+    """Projekti, jonka spinellä on kaksi monikameraklippiä peräkkäin.
+
+    Osa A on aikajanan alkupuolisko, osa B loppupuolisko, ja molemmat käyttävät
+    lähdettä samasta kohdasta kuin aikajana etenee — aikajanan hetki vastaa
+    siis tiedoston hetkeä, kuten synkkaklippifixturessa.
+
+    ``missing_in_b`` jättää osasta B pois nimetyt kulmat (roolin nimellä):
+    jakso jonka toisessa osassa yksi mikki puuttuu.
+    """
+    frames = int(DURATION * FPS)
+    half = int(SPLIT * FPS)
+    resources = [
+        f'    <format id="r1" name="FFVideoFormat1080p25" frameDuration="{FRAME}" '
+        'width="1920" height="1080"/>',
+    ]
+    rid = 100
+    for index, letter in enumerate("AB"):
+        angles: list[str] = []
+        for role, name_a, name_b in ANGLE_NAMES:
+            if letter == "B" and role in missing_in_b:
+                continue
+            rid += 1
+            file_path = parts[role][index]
+            resources.append(
+                _asset(
+                    f"r{rid}",
+                    file_path,
+                    file_path.endswith(".mp4"),
+                    file_path.endswith(".wav"),
+                )
+            )
+            # Osassa B yhdellä kulmalla on aukko alussa, jotta kulman sisäinen
+            # aikapohja tulee testattua eikä vain triviaali nollatapaus.
+            gap = 1.0 if (letter == "B" and role == "wide") else 0.0
+            angles += _angle(
+                name_a if letter == "A" else name_b,
+                f"{letter}{index}{role}",
+                f"r{rid}",
+                gap,
+            )
+        resources.append(
+            f'    <media id="m{letter}" name={quoteattr(letter + "-osa")}>\n'
+            f'      <multicam format="r1" tcStart="0s" tcFormat="NDF">\n'
+            + "\n".join(angles)
+            + "\n"
+            "      </multicam>\n"
+            "    </media>"
+        )
+
+    def mc_sources(letter: str) -> str:
+        out = []
+        for role, _name_a, _name_b in ANGLE_NAMES:
+            index = 0 if letter == "A" else 1
+            aid = f"{letter}{index}{role}"
+            enable = "video" if role == "wide" else "audio"
+            if role in ("close_a", "close_b"):
+                continue
+            if letter == "B" and role in missing_in_b:
+                continue
+            out.append(
+                f'              <mc-source angleID="{aid}" srcEnable="{enable}">\n'
+                f'                <audio-role-source role="dialogue.dialogue-1"/>\n'
+                "              </mc-source>"
+            )
+        return "\n".join(out)
+
+    body = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        "<!DOCTYPE fcpxml>",
+        '<fcpxml version="1.10">',
+        "  <resources>",
+        *resources,
+        "  </resources>",
+        "  <library>",
+        '    <event name="Testi">',
+        '      <project name="Monikamera">',
+        f'        <sequence format="r1" duration="{frames}/25s" tcStart="0s" '
+        'tcFormat="NDF" audioLayout="stereo" audioRate="48k">',
+        "          <spine>",
+        f'            <mc-clip ref="mA" offset="0s" name="A-osa" start="0s" '
+        f'duration="{half}/25s">',
+        mc_sources("A"),
+        "            </mc-clip>",
+        f'            <mc-clip ref="mB" offset="{half}/25s" name="B-osa" '
+        f'start="{half}/25s" duration="{frames - half}/25s">',
+        mc_sources("B"),
+        "            </mc-clip>",
+        "          </spine>",
+        "        </sequence>",
+        "      </project>",
+        "    </event>",
+        "  </library>",
+        "</fcpxml>",
+    ]
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(body) + "\n")
+
+
+# Kolmannen puhujan puhe: osuu keskimmäiseen osaan (12–24 s), limittäin
+# vieraan kanssa, jotta hänen mikkinsä on oikeasti äänessä siellä missä se on.
+SPEECH_C = [(15.0, 18.0), (21.0, 23.0)]
+
+# Rooli -> (tiedoston pohja, kulman nimi osalle, onko kuva). ``{l}`` on
+# osan kirjain, ``{n}`` sen numero.
+_PART_ROLES = {
+    "wide": ("WIDE 0{n}.mp4", "1", True),
+    "close_a": ("CLOSE_A 0{n}.mp4", "2", True),
+    "close_b": ("CLOSE_B 0{n}.mp4", "3", True),
+    "mic_a": ("host {l} Track1.wav", "host {l} Track1", False),
+    "mic_b": ("guest {l} Track2.wav", "guest {l} Track2", False),
+    "mic_c": ("third {l} Track3.wav", "third {l} Track3", False),
+}
+
+
+def write_parts_xml(path: str, target_dir: str, layout: list) -> None:
+    """Monikamera jossa osia on ``len(layout)`` ja kullakin omat kulmansa.
+
+    ``layout`` on lista rooliluetteloita, yksi per osa: esimerkiksi osa
+    jossa on kolme kameraa ja kaksi mikkiä, sitten kolme ja kolme. Osat
+    jakavat keston tasan, ja kuten ``write_multicam_xml``:ssä aikajanan
+    hetki on tiedoston hetki. Vaatii ``build``in tekemät lähteet.
+    """
+    import shutil
+
+    sources = {
+        "wide": "WIDE.mp4", "close_a": "CLOSE_A.mp4", "close_b": "CLOSE_B.mp4",
+        "mic_a": "MIC_A.wav", "mic_b": "MIC_B.wav", "mic_c": "MIC_C.wav",
+    }
+    mic_c = os.path.join(target_dir, sources["mic_c"])
+    if not os.path.exists(mic_c):
+        _touch(mic_c)
+
+    frames = int(DURATION * FPS)
+    length = frames // len(layout)
+    resources = [
+        f'    <format id="r1" name="FFVideoFormat1080p25" frameDuration="{FRAME}" '
+        'width="1920" height="1080"/>',
+    ]
+    clips = []
+    rid = 100
+    for index, roles in enumerate(layout):
+        letter, number = "abcdefgh"[index], index + 1
+        angles: list[str] = []
+        sources_xml: list[str] = []
+        for role in roles:
+            file_name, angle_name, is_video = _PART_ROLES[role]
+            file_path = os.path.join(target_dir, file_name.format(l=letter, n=number))
+            if not os.path.exists(file_path):
+                shutil.copy(os.path.join(target_dir, sources[role]), file_path)
+            rid += 1
+            resources.append(_asset(f"r{rid}", file_path, is_video, not is_video))
+            aid = f"P{number}{role}"
+            angles += _angle(angle_name.format(l=letter, n=number), aid, f"r{rid}")
+            if role == "wide" or not is_video:
+                sources_xml.append(
+                    f'              <mc-source angleID="{aid}" '
+                    f'srcEnable="{"video" if is_video else "audio"}">\n'
+                    '                <audio-role-source role="dialogue.dialogue-1"/>\n'
+                    "              </mc-source>")
+        resources.append(
+            f'    <media id="m{number}" name="Osa {number}">\n'
+            f'      <multicam format="r1" tcStart="0s" tcFormat="NDF">\n'
+            + "\n".join(angles) + "\n"
+            "      </multicam>\n"
+            "    </media>")
+        start = index * length
+        duration = frames - start if index == len(layout) - 1 else length
+        clips += [
+            f'            <mc-clip ref="m{number}" offset="{start}/25s" '
+            f'name="Osa {number}" start="{start}/25s" duration="{duration}/25s">',
+            *sources_xml,
+            "            </mc-clip>",
+        ]
+
+    body = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        "<!DOCTYPE fcpxml>",
+        '<fcpxml version="1.10">',
+        "  <resources>",
+        *resources,
+        "  </resources>",
+        "  <library>",
+        '    <event name="Testi">',
+        '      <project name="Osat">',
+        f'        <sequence format="r1" duration="{frames}/25s" tcStart="0s" '
+        'tcFormat="NDF" audioLayout="stereo" audioRate="48k">',
+        "          <spine>",
+        *clips,
+        "          </spine>",
+        "        </sequence>",
+        "      </project>",
+        "    </event>",
+        "  </library>",
+        "</fcpxml>",
+    ]
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(body) + "\n")
+
+
+# Tahdistettu monikamera: jokainen kulma on synkkaklippi yhdestä kamerasta
+# ja yhdestä mikistä, kuten Final Cutissa kun ensin tahdistetaan kamera ja
+# mikki pareittain ja tehdään pareista monikamera. Osa 2:ssa vierasta ei
+# ole, joten kulma 2 saa saman mikin kuin kulma 3. Rakenne on luettu
+# oikeasta projektista (hmh hannes, 2026-09-24).
+#
+# (kulman nimi, kamera, (mikki osassa 1, mikki osassa 2), kameran ääni pois)
+SYNCED_ANGLES = (
+    ("1", "close_a", ("Tomi", "Tomi"), "volume"),
+    ("2", "wide", ("Vieras", "Mikko"), "role"),
+    ("3", "close_b", ("Mikko", "Mikko"), "volume"),
+)
+_SYNCED_SOURCES = {
+    "wide": "WIDE.mp4", "close_a": "CLOSE_A.mp4", "close_b": "CLOSE_B.mp4",
+    "Tomi": "MIC_A.wav", "Mikko": "MIC_B.wav", "Vieras": "MIC_C.wav",
+}
+_SYNCED_CAMERA = {"close_a": "FOCUS CAM 1", "wide": "FOCUS CAM 2", "close_b": "FOCUS CAM 3"}
+
+
+def write_synced_multicam_xml(path: str, target_dir: str,
+                              layout=SYNCED_ANGLES, names: dict | None = None) -> None:
+    """Kaksi osaa, kulmat synkkaklippeinä (kamera + mikki). Ks. ``SYNCED_ANGLES``.
+
+    ``layout`` korvaa kulmat; osan mikki voi olla myös monikko, jolloin
+    kulmaan tahdistetaan useampi mikki (kamera ja moniraitatallennin).
+    ``names`` antaa mikin tiedostonimen osalle: ``(puhuja, osa) -> nimi``
+    ilman päätettä, oletuksena ``Tomi_001``.
+
+    Tiedostot kopioidaan lähteistä osakohtaisiksi (``FOCUS CAM 1 01.mp4``,
+    ``Tomi_001.wav``) — ilman lähdettä tyhjinä, sillä lukija ei tarvitse
+    sisältöä.
+    """
+    import shutil
+
+    mic_c = os.path.join(target_dir, "MIC_C.wav")
+    mic_a = os.path.join(target_dir, "MIC_A.wav")
+    if not os.path.exists(mic_c) and os.path.exists(mic_a):
+        _touch(mic_c)
+
+    frames = int(DURATION * FPS)
+    half = int(SPLIT * FPS)
+    resources = [
+        f'    <format id="r1" name="FFVideoFormat1080p25" frameDuration="{FRAME}" '
+        'width="1920" height="1080"/>',
+    ]
+    ids: dict[str, str] = {}
+
+    def asset(file_name: str, source: str, is_video: bool) -> str:
+        if file_name in ids:
+            return ids[file_name]
+        file_path = os.path.join(target_dir, file_name)
+        if not os.path.exists(file_path):
+            origin = os.path.join(target_dir, _SYNCED_SOURCES[source])
+            if os.path.exists(origin):
+                shutil.copy(origin, file_path)
+            else:
+                open(file_path, "wb").close()
+        rid = f"r{len(ids) + 10}"
+        ids[file_name] = rid
+        line = _asset(rid, file_path, is_video, True)
+        if is_video:
+            line = line.replace('audioChannels="1"', 'audioChannels="2"')
+        resources.append(line)
+        return rid
+
+    def file_name(speaker: str, part: int) -> str:
+        return (names or {}).get((speaker, part), f"{speaker}_00{part}")
+
+    for part in (1, 2):
+        angles = []
+        for name, camera, mics, mute in layout:
+            cam = asset(f"{_SYNCED_CAMERA[camera]} 0{part}.mp4", camera, True)
+            speakers = mics[part - 1]
+            speakers = (speakers,) if isinstance(speakers, str) else tuple(speakers)
+            attached = []
+            for index, speaker in enumerate(speakers):
+                mic = asset(f"{file_name(speaker, part)}.wav", speaker, False)
+                attached.append(
+                    f'              <asset-clip ref="{mic}" lane="-{index + 1}" '
+                    f'offset="0s" name="{file_name(speaker, part)}" start="0s" '
+                    f'duration="{frames}/25s" audioRole="dialogue"/>')
+            angles += [
+                f'        <mc-angle name="{name}" angleID="P{part}A{name}">',
+                f'          <sync-clip offset="0s" name="{speakers[0].lower()} {part}" '
+                f'duration="{frames}/25s" tcFormat="NDF">',
+                f'            <asset-clip ref="{cam}" offset="0s" '
+                f'name="{_SYNCED_CAMERA[camera]} 0{part}" start="0s" '
+                f'duration="{frames}/25s" audioRole="dialogue">',
+                *(['              <adjust-volume amount="-96dB"/>']
+                  if mute == "volume" else []),
+                *attached,
+                "            </asset-clip>",
+                *(['            <sync-source sourceID="storyline">',
+                   '              <audio-role-source role="dialogue.dialogue-1" '
+                   'active="0"/>',
+                   "            </sync-source>"] if mute == "role" else []),
+                "          </sync-clip>",
+                "        </mc-angle>",
+            ]
+        resources.append(
+            f'    <media id="m{part}" name="osa {part}">\n'
+            '      <multicam format="r1" tcStart="0s" tcFormat="NDF">\n'
+            + "\n".join(angles) + "\n"
+            "      </multicam>\n"
+            "    </media>")
+
+    body = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        "<!DOCTYPE fcpxml>",
+        '<fcpxml version="1.10">',
+        "  <resources>",
+        *resources,
+        "  </resources>",
+        "  <library>",
+        '    <event name="Testi">',
+        '      <project name="Tahdistettu">',
+        f'        <sequence format="r1" duration="{frames}/25s" tcStart="0s" '
+        'tcFormat="NDF" audioLayout="stereo" audioRate="48k">',
+        "          <spine>",
+        f'            <mc-clip ref="m1" offset="0s" name="osa 1" duration="{half}/25s">',
+        '              <mc-source angleID="P1A1" srcEnable="all"/>',
+        "            </mc-clip>",
+        f'            <mc-clip ref="m2" offset="{half}/25s" name="osa 2" '
+        f'start="{half}/25s" duration="{frames - half}/25s">',
+        '              <mc-source angleID="P2A1" srcEnable="all"/>',
+        "            </mc-clip>",
+        "          </spine>",
+        "        </sequence>",
+        "      </project>",
+        "    </event>",
+        "  </library>",
+        "</fcpxml>",
+    ]
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(body) + "\n")
+
+
+# A project whose storyline has a sync clip whose camera audio is switched off
+# (``<sync-source><audio-role-source … active="0"/>``): the pp54 case.
+SYNC_MUTED = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<fcpxml version="1.14">
+  <resources>
+    <format id="r1" name="FFVideoFormat1080p25" frameDuration="100/2500s"
+            width="1920" height="1080"/>
+    <media id="r2" name="Clip" uid="clip01">
+      <sequence format="r1" duration="100s" tcStart="0s" tcFormat="NDF"
+                audioLayout="stereo" audioRate="48k">
+        <spine>
+          <clip offset="0s" name="CAM 2" start="0s" duration="100s">
+            <video ref="r3" offset="0s" start="0s" duration="100s"/>
+            <sync-clip lane="-1" offset="0s" name="CAM 3 - Sync"
+                       start="0s" duration="100s">
+              <clip offset="0s" name="CAM 3" start="0s" duration="100s">
+                <gap name="Gap" offset="0s" start="0s" duration="100s">
+                  <audio ref="r4" lane="-1" offset="0s" start="0s"
+                         duration="100s" role="dialogue.dialogue-1"
+                         srcCh="1, 2"/>
+                </gap>
+                <asset-clip ref="r5" lane="-1" offset="0s"
+                            name="mic guest" duration="100s"
+                            format="r6" audioRole="dialogue"/>
+              </clip>
+              <sync-source sourceID="storyline">
+                <audio-role-source role="dialogue.dialogue-1" active="0"/>
+              </sync-source>
+            </sync-clip>
+          </clip>
+        </spine>
+      </sequence>
+    </media>
+    <asset id="r3" name="CAM 2" start="0s" duration="100s"
+           hasVideo="1" format="r1" hasAudio="1"
+           videoSources="1" audioSources="1" audioChannels="2"
+           audioRate="48000"/>
+    <asset id="r4" name="CAM 3" start="0s" duration="100s"
+           hasVideo="1" format="r1" hasAudio="1"
+           videoSources="1" audioSources="1" audioChannels="2"
+           audioRate="48000"/>
+    <asset id="r5" name="mic guest" start="0s" duration="100s"
+           hasAudio="1" audioSources="1" audioChannels="1"
+           audioRate="48000"/>
+    <format id="r6" name="FFVideoFormatRateUndefined"/>
+  </resources>
+  <library>
+    <event name="Episode" uid="EVT-1">
+      <project name="Episode" uid="PRJ-1">
+        <sequence format="r1" duration="100s" tcStart="0s">
+          <spine>
+            <ref-clip ref="r2" offset="0s" name="Clip" duration="100s"/>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>"""

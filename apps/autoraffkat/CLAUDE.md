@@ -34,8 +34,20 @@ the timeline.
 FCPXML time semantics: a clip's `offset` is in the host's local time base,
 whose zero is the host's `start`. A child's absolute position is therefore
 `host_absolute + (child_offset - host_start)`. This applies to attached clips
-and to sync-clip contents alike, and it is the entire idea behind
-`fcpxml/read.py`'s `_walk`.
+and to sync-clip contents alike, and it is the entire idea behind `_walk` in
+the shared reader, `packages/fcpxml/src/fcpxml/read.py`.
+
+## The reader is a shared package, and this app's folder is not called fcpxml
+
+The reader and the rational time live in the `fcpxml` package, so that kuulas
+reads an export with the same code. `finalcut/read.py` adds only what the
+package cannot know: the translated error text, the frame rate from ffprobe,
+`relink`, and the default name. `timeline.py` is the old import path to the
+package's time. The app's own subpackage is `finalcut/`, not `fcpxml/`, on
+purpose: with that name `python .../autoraffkat/__main__.py` (which is how
+PyInstaller runs it) puts this folder first on the import path, and the
+subpackage would hide the real `fcpxml` package. `test_main_direct_script_
+execution` is what notices.
 
 In a multicam, additionally: the angle's content must be clipped to the
 `mc-clip`'s duration (`_walk`'s `bounds`), because an angle spans the whole

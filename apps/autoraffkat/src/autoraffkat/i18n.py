@@ -46,6 +46,18 @@ CATALOG: dict[str, dict[str, str]] = {
         "fi": "Aikajanalta ei löytynyt yhtään mediaa.",
         "en": "No media found on the timeline.",
     },
+    "read.unreadable": {
+        "fi": "Tiedostoa ei voi avata: {error}",
+        "en": "The file cannot be opened: {error}",
+    },
+    "read.bundle_without_info": {
+        "fi": "Paketissa {path} ei ole Info.fcpxml-tiedostoa.",
+        "en": "The bundle {path} has no Info.fcpxml.",
+    },
+    "read.bad_time": {
+        "fi": "XML:ssä on aika, jota ei voi lukea: {error}",
+        "en": "The XML has a time that cannot be read: {error}",
+    },
     "roles.mic_without_speaker": {
         "fi": "Mikille «{name}» ei ole puhujaa.",
         "en": "Microphone “{name}” has no speaker.",
