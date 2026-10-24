@@ -5,6 +5,11 @@ All notable changes to automixer are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.23.2] - 2026-10-23
+
+### Changed
+- **The mastering of a stems mix prepares two programme pieces ahead instead of one.** The audio files are identical bit for bit (SHA-256 of `mix.wav`) to those of 2026.10.23.1 at every depth. Measured on synthetic voices with music on 4 cores, 8 min x 3 speakers, not on a real episode: mastering 46.3 s -> 36.3 s, the whole mix 134 s -> 123 s, peak memory 1.71 GB -> 1.73 GB. Three pieces ahead gained only 2 s more and cost 2.0 GB. The gain needs spare cores; on a 2-core machine it will be smaller. `SPEECHMIX_PREFETCH=N` sets the depth (default 2, `1` is the previous behaviour, `0` turns it off). Measured on one machine only; not on a Mac.
+
 ## [2026.10.23.1] - 2026-10-23
 
 ### Changed
