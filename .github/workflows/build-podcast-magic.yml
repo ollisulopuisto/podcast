@@ -45,7 +45,7 @@ jobs:
         # samasta askeleesta on kaksi versiota joista toinen vanhenee.
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Testien ffmpeg tulee järjestelmästä: kehityksessä binääri haetaan
       # PATHista, ja vasta pakattu ohjelma käyttää niputettua.
@@ -59,11 +59,11 @@ jobs:
         if: matrix.platform == 'windows'
         run: choco install ffmpeg -y --no-progress
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
@@ -95,7 +95,7 @@ jobs:
       # palvelimelta. Välimuisti pitää käännöksen pystyssä silloinkin kun se
       # palvelin on nurin.
       - name: Cache bundled ffmpeg
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/podcast-magic/bin
           key: ffmpeg-${{ matrix.platform }}-${{ runner.arch }}-${{ hashFiles('apps/podcast-magic/scripts/fetch_binaries.py') }}
@@ -150,7 +150,7 @@ jobs:
           esac
           ls -la dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: podcast-magic-${{ matrix.platform }}
           path: |
@@ -170,7 +170,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: apps/podcast-magic/dist
           merge-multiple: true

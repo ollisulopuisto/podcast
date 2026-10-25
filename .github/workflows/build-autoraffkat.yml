@@ -25,16 +25,16 @@ jobs:
       run:
         working-directory: apps/autoraffkat
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install ffmpeg
         run: brew install ffmpeg
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
@@ -54,7 +54,7 @@ jobs:
       # palvelimelta. Välimuisti pitää käännöksen pystyssä silloinkin kun se
       # palvelin on nurin.
       - name: Cache bundled ffmpeg
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/autoraffkat/bin
           key: ffmpeg-${{ runner.arch }}-${{ hashFiles('apps/autoraffkat/scripts/fetch_binaries.py') }}
@@ -90,7 +90,7 @@ jobs:
       - name: Name the image by architecture
         run: mv dist/autoraffkat.dmg "dist/autoraffkat-${{ steps.inside.outputs.arch }}.dmg"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: autoraffkat-${{ steps.inside.outputs.arch }}
           path: apps/autoraffkat/dist/autoraffkat-*.dmg
@@ -102,13 +102,13 @@ jobs:
       run:
         working-directory: apps/autoraffkat
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
@@ -120,7 +120,7 @@ jobs:
         run: uv sync --all-packages --all-extras --directory ../..
 
       - name: Cache bundled ffmpeg
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/autoraffkat/bin
           key: ffmpeg-windows-${{ runner.arch }}-${{ hashFiles('scripts/fetch_binaries.py') }}
@@ -155,7 +155,7 @@ jobs:
         run: |
           Compress-Archive -Path dist/autoraffkat -DestinationPath dist/autoraffkat-windows-x64.zip
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: autoraffkat-windows-x64
           path: apps/autoraffkat/dist/autoraffkat-windows-x64.zip
@@ -172,7 +172,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: apps/autoraffkat/dist
           merge-multiple: true
