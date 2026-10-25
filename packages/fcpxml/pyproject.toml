@@ -6,7 +6,7 @@
 
 [project]
 name = "fcpxml"
-version = "2026.10.24.1"
+version = "2026.10.25.1"
 description = "Final Cut Pro XML reader: exact rational times, neutral types (stdlib only)"
 readme = "README.md"
 requires-python = ">=3.13"

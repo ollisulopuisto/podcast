@@ -7,6 +7,8 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.10.25.1] - 2026-10-25
+
 ### Added
 - **`conform(source, pieces)`: a new project spine made of kept ranges of the source's.** A ripple edit for kuulas's export: `pieces` are `(source_start, source_end)` in Fraction seconds on the source timeline, in order, not overlapping, laid back to back. Spine items are narrowed (`start`, `duration`, `offset`) and everything attached to them follows in the host's local time (connected clips, titles, keywords, markers, an audition's alternatives); angle choices and roles are kept; resources, FCPXML version and start timecode are as they were; one new event `"<name> (kuulas)"` and one new project with a fresh `uid`. Every boundary is snapped to the sequence's own frame grid (`snap_pieces` is the same function). A transition inside one piece is kept, one at a cut is dropped.
 - **`ConformError.code`** for everything it will not do rather than do wrongly: `no_pieces`, `empty_piece`, `unordered`, `overlap`, `outside_timeline`, `not_a_project`, `unsupported` (`timeMap`, `conform-rate`), `nested_spine`, `keyframes_cross_cut`, `no_duration`. `keyframes="clip"` lets a caller accept an animation being cut.
