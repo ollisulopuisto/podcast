@@ -19,12 +19,16 @@ from .model import (
     OVERLAP_WIDE,
     RHYTHM_CUSTOM,
     RHYTHM_PRESETS,
+    ROLE_CLOSE,
+    ROLE_GROUP,
+    ROLE_SHOT,
+    ROLE_WIDE,
     AudioSettings,
     Globals,
     TrackConfig,
 )
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 # Viennin nimen tunnus. Sama vakio molemmissa suunnissa, jotta valmiit
 # leikkaukset eivät päädy tarjolle uudeksi lähteeksi.
@@ -235,6 +239,25 @@ class ProjectSettings:
             for k, v in (data.get("tracks") or {}).items()
             if isinstance(v, dict)
         }
+        # Vanhojen asetusten laaja kattaa koko tallennetun puhujajoukon.
+        names = list(dict.fromkeys(
+            name for cfg in tracks.values()
+            if cfg.role in ("mic", ROLE_CLOSE, ROLE_GROUP, ROLE_SHOT)
+            for name in ([cfg.speaker.strip()] if cfg.role in ("mic", ROLE_CLOSE)
+                         else cfg.covers)
+            if name
+        ))
+        for cfg in tracks.values():
+            if cfg.role == ROLE_CLOSE:
+                cfg.covers = [cfg.speaker.strip()] if cfg.speaker.strip() else []
+                cfg.role = ROLE_SHOT
+                cfg.speaker = ""
+            elif cfg.role == ROLE_GROUP:
+                cfg.role = ROLE_SHOT
+                cfg.speaker = ""
+            elif cfg.role == ROLE_WIDE:
+                cfg.role, cfg.covers, cfg.context = ROLE_SHOT, list(names), True
+                cfg.speaker = ""
         return cls(
             tracks=tracks,
             globals=Globals.from_json(data.get("globals") or {}),

@@ -9,11 +9,11 @@ Automaattinen monikameraleikkaus. Final Cutista viety FCPXML sisään, uusi
 FCPXML ulos, jossa kuva vaihtuu sen mukaan kuka puhuu. Ei renderöintiä
 missään vaiheessa.
 
-![Raitalista kytkentätauluna: kolme kameraa vasemmalla, kaksi mikkiä oikealla, puhujan nimi kerran niiden välissä, ja alla esikatselupalkki ja leikkauslista.](screenshot.png)
+![Aiempi käyttöliittymänäkymä: vanha raitojen asettelutapa, esikatselupalkki ja leikkauslista.](screenshot.png)
 
-*Yksi rivi per puhuja: kamera, nimi ja mikki. Palkki alla on koko jakso
-yhdellä silmäyksellä, ja sen alla oleva lista on jokainen leikkaus jonka
-vienti tekee. Kuvassa leikataan historiaohjelma
+*Kuvassa on aiempi raitojen asetustapa. Nykyisessä näkymässä puhujat
+yhdistetään videoraitoihin; esikatselupalkki näyttää koko jakson yhdellä
+silmäyksellä ja alla oleva lista jokaisen viennin leikkauksen. Kuvassa leikataan historiaohjelma
 [Peter & Peterin](https://www.youtube.com/@peterpeterhistoria) jaksoa 53.*
 
 ![Leikattu lopputulos Final Cut Prossa: monikameraleikkaus vaihtaa kuvakulmia puheen mukaan ja mikrofoniraidat ovat omilla laneillaan.](screenshot-fcpx.png)
@@ -587,43 +587,24 @@ käyttäjälle.
 
 ## Raitalista
 
-Raitalista on kytkentätaulu. Yksi rivi on yksi puhuja: kamera vasemmalla, mikki
-oikealla ja nimi kerran niiden välissä. Kun molemmat päät ovat paikallaan,
-väliin piirtyy piuha; jos toinen puuttuu, väliin jää aukko.
+Merkitse jokaiselle videoraidalle kaikki puhujat, jotka näkyvät siinä kuvassa.
+Sama puhuja voi olla valittuna usealla raidalla, ja yhdellä raidalla voi näkyä
+monta puhujaa. Leikkaus valitsee näiden tietojen avulla kuvan, jossa äänessä
+olevat näkyvät. Voit myös merkitä raidan ensisijaiseksi ympäristökuvaksi
+aloituksiin, paluisiin ja muihin tilaa esitteleviin hetkiin.
 
-Roolitus tehdään kortteja siirtämällä, ei valikoista valitsemalla. Vedä kortti
-paikkaansa — tai klikkaa ensin korttia ja sitten paikkaa, mikä tekee saman ja
-toimii myös näppäimistöltä. Paikka kertoo mikä kortista tulee: kamera puhujan
-paikassa on hänen lähikuvansa ja äänitiedosto hänen mikkinsä. Ylin rivi on
-niille raidoille jotka kuuluvat kaikille, eli laajalle kuvalle ja tilaäänelle.
-Sijoittamattomat raidat odottavat taulun alla **Käyttämättömissä**, ja kortin
-vetäminen sinne ottaa sen pois leikkauksesta.
+Mikrofonit ovat omassa osiossaan. Kirjoita puhujan nimi jokaiseen mikrofoniin;
+nimi tulee videokorttien näkyvyysvalintoihin. Ilman mikrofonia olevan puhujan
+voi lisätä videokortilla. Hänen puhettaan voidaan mitata yhden puhujan kuvasta.
+Viimeisen saman puhujan mikrofonin nimeäminen uudelleen päivittää myös
+videoraitojen puhujavalinnat.
 
-Nimi kirjoitetaan kerran riville, joten lähikuva ja mikki eivät voi erkaantua
-kirjoitusvirheen takia. Pudota kortti kohtaan **+ uusi puhuja**, niin uusi rivi
-syntyy nimettynä ja valmiina nimettäväksi uudelleen.
+Raitakortissa näkyy ruutu tiedoston puolivälistä. Monikamerassa kulmat voivat
+olla pelkkiä numeroita (`1`, `2`, `3`), joten kuva helpottaa puhujien valintaa.
+Ruutu puretaan pyydettäessä ja tallennetaan välimuistiin.
 
-Kamera joka näyttää osan puhujista muttei kaikkia — kahden vieraan kuva,
-kun juontajalla on oma kameransa — pudotetaan kohtaan **+ ryhmäkuva**, ja se
-saa oman rivinsä. Rivin äänipuolelle pudotetaan kuvassa näkyvien mikit:
-kaksi, kolme, mitä kuvassa on. Nimi on kunkin mikin kortissa, koska rivillä
-on useampi ihminen. Puhuja jolla on myös oma lähikuva pysyy omalla
-rivillään, ja hänet lisätään kuvaan kamerakortin **Myös kuvassa** -napeista. Puhuja jolla ei ole omaa lähikuvaa
-näytetään silloin tiukimmassa ryhmäkuvassa jossa hän on, ja päällekkäispuhe
-menee tiukimpaan kuvaan jossa kaikki äänessä olevat näkyvät, viimeisenä
-laajaan. Vuoronvaihto kahden saman ryhmäkuvan puhujan välillä ei ole
-leikkaus. Puhujan nimen vaihto seuraa ryhmäkuviin. Reaktiokuvat ja
-panorointi tulevat yhä vain lähikuvista, koska kahden kuvassa ei ole yhtä
-mitattavaa kasvoa.
-
-Kuvakortit näyttävät ruudun tiedoston puolivälistä. Monikamerassa kulmat ovat
-`1`, `2` ja `3` eikä tiedostonimikään kerro kumpaa puhujaa kamera kuvaa, joten
-ilman kuvaa roolitus on arvailua. Ruutu puretaan vasta kun sitä pyydetään ja
-jää välimuistiin.
-
-Kortissa lukee mitä tiedosto on: mitat, ruutunopeus, koodekki ja bittinopeus
-kuvalle, kanavat, näytetaajuus ja bittisyvyys äänelle, sekä yhteiskesto ja
--koko kaikista osista. Mikkikortissa ovat sen omat herkkyys ja vahvistus.
+Äänikorteilla ovat yhä mikrofonin herkkyys ja vahvistus. Tilaääniraita valitaan
+äänen säätimistä alempaa.
 
 ## Säätimet ja oletukset
 

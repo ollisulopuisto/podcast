@@ -164,6 +164,32 @@ def test_a_group_shot_is_never_cropped_to_one_face():
     assert Reframer(tables).from_item(close, 0.0, 9.0) is not None
 
 
+def test_every_non_context_singleton_shot_contributes_reframe_tables():
+    from types import SimpleNamespace
+
+    from autoraffkat.reframe import close_up_tables
+
+    first, second, context, group = (
+        _item("A1"), _item("A2"), _item("AC"), _item("AB"))
+    items = {"A1": [first], "A2": [second], "AC": [context], "AB": [group]}
+    timeline = SimpleNamespace(track_media=lambda key: items.get(key, []))
+    roles = SimpleNamespace(
+        closes={"Host": "A1"},
+        shots=[
+            SimpleNamespace(key="A1", covers=["Host"], context=False),
+            SimpleNamespace(key="A2", covers=["Host"], context=False),
+            SimpleNamespace(key="AC", covers=["Host"], context=True),
+            SimpleNamespace(key="AB", covers=["Host", "Guest"], context=False),
+        ],
+    )
+    tables = close_up_tables(
+        {item.key: _table() for item in (first, second, context, group)},
+        timeline, roles)
+    assert set(tables) == {first.key, second.key}
+    look = reframe.look(tables, timeline, roles)
+    assert set(look.zooms) == {first.key, second.key}
+
+
 # ------------------------------------------- täyttö ja kasvojen koko (2026-09-25)
 
 

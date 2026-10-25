@@ -27,7 +27,14 @@ from speechmix import chain, editor
 from speechmix.chain import ChainError
 
 from .. import i18n, pick, probe, project, reactions, reframe, staging, thumbs
-from ..analysis import Analysis, AnalysisError, analyze, build_grid, resolve_roles
+from ..analysis import (
+    Analysis,
+    AnalysisError,
+    analyze,
+    build_grid,
+    resolve_roles,
+    singleton_shots,
+)
 from ..audio import mix
 from ..decide import WIDE_LABEL, decide
 from ..finalcut.read import ReadError, Timeline, read_fcpxml
@@ -45,8 +52,12 @@ from ..model import (
     LOUDNESS_TARGETS,
     OVERLAP_RULES,
     RHYTHM_PRESETS,
+    ROLE_CLOSE,
+    ROLE_GROUP,
     ROLE_MIC,
+    ROLE_SHOT,
     ROLE_UNUSED,
+    ROLE_WIDE,
     ROLES,
     AudioSettings,
     Globals,
@@ -320,7 +331,9 @@ class AppState:
         roles = self._roles()
         missing = []
         for name in roles.visual_speakers:
-            items = self.timeline.track_media(roles.closes[name])
+            keys = [key for speaker, key in singleton_shots(roles)
+                    if speaker == name]
+            items = [item for key in keys for item in self.timeline.track_media(key)]
             if any(i.key + visual_speech.SUFFIX not in self.analysis.envelopes
                    for i in items):
                 missing.append(name)
@@ -355,7 +368,9 @@ class AppState:
             work = [
                 (name, item)
                 for name in roles.visual_speakers
-                for item in self.timeline.track_media(roles.closes[name])
+                for key in (key for speaker, key in singleton_shots(roles)
+                            if speaker == name)
+                for item in self.timeline.track_media(key)
                 if item.key + visual_speech.SUFFIX not in self.analysis.envelopes
             ]
             for done, (name, item) in enumerate(work):
@@ -592,10 +607,15 @@ class AppState:
         names = [lane.name for lane in grid.speakers]
         index = {name: i for i, name in enumerate(names)}
         covered: dict[str, list[int]] = {}
-        if roles.wide_key:
-            covered[roles.wide_key] = list(range(len(names)))
-        for key, people in roles.groups.items():
-            covered[key] = [index[n] for n in people if n in index]
+        if getattr(roles, "shots", None) is not None:
+            for shot in roles.shots:
+                if shot.context or len(shot.covers) > 1 or shot.key == roles.wide_key:
+                    covered[shot.key] = [index[n] for n in shot.covers if n in index]
+        else:
+            if roles.wide_key:
+                covered[roles.wide_key] = list(range(len(names)))
+            for key, people in roles.groups.items():
+                covered[key] = [index[n] for n in people if n in index]
         found: dict = {}
         if not self.crowd_tables or self.timeline is None:
             return found, covered
@@ -823,17 +843,71 @@ class AppState:
             except (TypeError, ValueError, IndexError):
                 self.preview_window = None
         tracks = payload.get("tracks") or {}
+        speakers = []
+
+        def add_speaker(name: str) -> None:
+            name = name.strip()[:60]
+            if name and name not in speakers:
+                speakers.append(name)
+
+        for cfg in self.settings.tracks.values():
+            if cfg.role == ROLE_MIC:
+                add_speaker(cfg.speaker)
+        for cfg in self.settings.tracks.values():
+            if cfg.role == ROLE_CLOSE and cfg.speaker.strip():
+                add_speaker(cfg.speaker)
+            elif cfg.role in (ROLE_SHOT, ROLE_GROUP):
+                for name in cfg.covers:
+                    add_speaker(name)
+        for values in tracks.values():
+            if not isinstance(values, dict):
+                continue
+            role = values.get("role")
+            if role in (ROLE_MIC, ROLE_CLOSE) and str(values.get("speaker", "")).strip():
+                add_speaker(str(values["speaker"]))
+            elif role in (ROLE_SHOT, ROLE_GROUP):
+                for name in values.get("covers", []):
+                    add_speaker(str(name))
         for key, values in tracks.items():
+            if not isinstance(values, dict):
+                continue
             cfg = self.settings.config_for(key)
             role = values.get("role")
             if role in ROLES:
                 cfg.role = role
-            if "speaker" in values:
+            legacy_close = role == ROLE_CLOSE
+            legacy_group = role == ROLE_GROUP
+            legacy_wide = role == ROLE_WIDE
+            if role in (ROLE_CLOSE, ROLE_GROUP, ROLE_WIDE):
+                cfg.role = ROLE_SHOT
+            if "speaker" in values and role not in (ROLE_CLOSE, ROLE_GROUP, ROLE_WIDE,
+                                                      ROLE_SHOT):
                 cfg.speaker = str(values["speaker"])[:60]
+            if legacy_close:
+                speaker = str(values.get("speaker", "")).strip()[:60]
+                cfg.covers = [speaker] if speaker else []
+                cfg.speaker = ""
+                cfg.context = False
+            elif legacy_wide:
+                cfg.covers = list(speakers)
+                cfg.speaker = ""
+                cfg.context = True
+            elif legacy_group or role == ROLE_SHOT:
+                cfg.speaker = ""
+                if legacy_group:
+                    cfg.context = False
             for name in ("covers", "seats"):
+                if name == "covers" and legacy_close:
+                    continue
+                if name == "covers" and legacy_wide:
+                    continue
                 if isinstance(values.get(name), list):
                     setattr(cfg, name, [str(n)[:60] for n in values[name]
                                         if str(n).strip()])
+            if "context" in values and not legacy_wide:
+                cfg.context = bool(values["context"])
+            if legacy_wide:
+                cfg.context = True
             if "sensitivity_db" in values:
                 cfg.sensitivity_db = float(values["sensitivity_db"])
             if "gain_db" in values:

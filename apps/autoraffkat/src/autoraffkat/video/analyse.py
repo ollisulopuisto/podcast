@@ -40,19 +40,22 @@ class VideoError(Exception):
 
 
 def close_up_files(grid, roles, timeline) -> list[tuple[str, str, str]]:
-    """(puhuja, media-avain, polku) niistä lähikuvista jotka kannattaa mitata."""
+    """(puhuja, media-avain, polku) mitattavista yhden puhujan kuvista."""
+    from ..analysis import singleton_shots
     from ..reactions import listening
 
     out: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
     for lane in grid.speakers:
-        key = roles.closes.get(lane.name)
-        if not key:
-            continue
         if not listening(grid, lane.name).any():
             continue
-        for item in timeline.track_media(key):
-            if item.path and item.has_video:
-                out.append((lane.name, item.key, item.path))
+        for speaker, key in singleton_shots(roles):
+            if speaker != lane.name:
+                continue
+            for item in timeline.track_media(key):
+                if item.key not in seen and item.path and item.has_video:
+                    out.append((lane.name, item.key, item.path))
+                    seen.add(item.key)
     return out
 
 
@@ -139,12 +142,19 @@ def tables(grid, roles, timeline, settings, progress=None) -> tuple[dict, dict]:
 
 
 def crowd_files(roles, timeline) -> list[tuple[str, str]]:
-    """(media-avain, polku) laajan ja ryhmäkuvien tiedostoista.
+    """(media-avain, polku) monihenkilö- ja kontekstikuvien tiedostoista.
 
     Pystyvienti rajaa ne puhujaan, ja siihen tarvitaan jokainen kasvo.
     Lähikuvia ei mitata tässä: niiden taulukko on jo reaktiokerroksen.
     """
-    keys = ([roles.wide_key] if roles.wide_key else []) + list(roles.groups)
+    shots = getattr(roles, "shots", None)
+    if shots is None:
+        keys = ([roles.wide_key] if roles.wide_key else []) + list(roles.groups)
+    else:
+        wide_key = getattr(roles, "wide_key", "")
+        keys = [shot.key for shot in shots
+                if shot.context or len(shot.covers) > 1 or shot.key == wide_key]
+    keys = list(dict.fromkeys(keys))
     out = []
     for key in keys:
         for item in timeline.track_media(key):
@@ -154,7 +164,7 @@ def crowd_files(roles, timeline) -> list[tuple[str, str]]:
 
 
 def crowd_tables(roles, timeline, settings, progress=None) -> tuple[dict, dict]:
-    """Joukkotaulukot (kaikki kasvot) laajalle ja ryhmäkuville."""
+    """Joukkotaulukot (kaikki kasvot) monihenkilö- ja kontekstikuville."""
     files = crowd_files(roles, timeline)
     if not files:
         return {}, {}

@@ -239,6 +239,43 @@ def test_a_speaker_who_never_listens_is_never_decoded():
     assert [key for _, key, _ in picked] == ["b"]
 
 
+def test_every_non_context_singleton_shot_is_measured_for_reactions():
+    from types import SimpleNamespace
+
+    grid = _Grid(_Lane("A", [1, 0, 1]), _Lane("B", [0, 1, 0]))
+    media = {key: [_Item(key, f"/x/{key}.mp4")] for key in
+             ("a1", "a2", "a-context", "a-b", "b1")}
+    timeline = _Timeline(media)
+    roles = SimpleNamespace(shots=[
+        SimpleNamespace(key="a1", covers=["A"], context=False),
+        SimpleNamespace(key="a2", covers=["A"], context=False),
+        SimpleNamespace(key="a-context", covers=["A"], context=True),
+        SimpleNamespace(key="a-b", covers=["A", "B"], context=False),
+        SimpleNamespace(key="b1", covers=["B"], context=False),
+    ], closes={"A": "a1", "B": "b1"})
+    picked = analyse.close_up_files(grid, roles, timeline)
+    assert [(speaker, key) for speaker, key, _path in picked] == [
+        ("A", "a1"), ("A", "a2"), ("B", "b1"),
+    ]
+
+
+def test_crowd_measurement_includes_every_multi_person_and_context_shot():
+    from types import SimpleNamespace
+
+    keys = ("a1", "context", "two", "context-two", "b1")
+    timeline = _Timeline({key: [_Item(key, f"/x/{key}.mp4")] for key in keys})
+    roles = SimpleNamespace(shots=[
+        SimpleNamespace(key="a1", covers=["A"], context=False),
+        SimpleNamespace(key="context", covers=["A"], context=True),
+        SimpleNamespace(key="two", covers=["A", "B"], context=False),
+        SimpleNamespace(key="context-two", covers=["A", "B"], context=True),
+        SimpleNamespace(key="b1", covers=["B"], context=False),
+    ], wide_key="")
+    assert [key for key, _path in analyse.crowd_files(roles, timeline)] == [
+        "context", "two", "context-two",
+    ]
+
+
 def test_files_are_measured_in_parallel(monkeypatch):
     """Purku on koko työn hinta ja se rinnakkaistuu — mitattuna neljä
     tiedostoa yhtä aikaa on kolminkertainen läpimeno.

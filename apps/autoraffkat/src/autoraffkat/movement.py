@@ -206,7 +206,15 @@ def punch_segments(segments: list, grid) -> list:
     (pp 57, 51:30). Koon vaihtuminen kuuluu vain oikeaan kuvanvaihtoon.
 
     Vain lähikuvat: laajan ja ryhmäkuvan pystyrajaus on jo puhujan mukaan.    """
-    by_camera = {lane.close_key: lane for lane in grid.speakers if lane.close_key}
+    shots = getattr(grid, "shots", ())
+    if shots:
+        by_camera = {
+            shot.key: shot for shot in shots
+            if len(shot.covers) == 1 and not shot.context
+            and shot.key != getattr(grid, "context_key", "")
+        }
+    else:
+        by_camera = {lane.close_key: lane for lane in grid.speakers if lane.close_key}
     last: dict[str, bool] = {}
     out = []
     for seg in segments:

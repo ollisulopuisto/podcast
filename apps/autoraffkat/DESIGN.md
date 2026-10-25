@@ -120,12 +120,15 @@ The order:
 2. **1/f Dynamic Tempo Modulation.** `_compute_tempo` computes turn-taking rate
    across a rolling 45s window, scaling effective minimum dwell times $\tau$
    during fast banter vs slow passages.
-3. **One person talking** → their close-up.
+3. **One person talking** → an available shot that covers them and as few
+   extra people as possible. Keep the current shot when it remains eligible;
+   otherwise use timeline order for a deterministic tie.
 4. **Several talking.** If the overlap is shorter than `min_overlap` it is
    backchannelling rather than overlapping speech: pick the louder one and
-   don't trigger the rule. Otherwise apply the chosen rule.
-5. **A speaker with no close-up** → wide. **A close-up that isn't on the
-   timeline here** → hold current.
+   don't trigger the rule. Otherwise choose a shot that covers everyone talking,
+   preferring fewer extra people.
+5. **No eligible shot** → use the preferred context shot if available; if the
+   required footage is missing from the timeline, hold current.
 6. **Duration constraints & Split Edits (J-cut / L-cut)** in the run loop:
    `lead` (J-cut) moves the camera cut before speech onset to capture breaths and
    reactions; `hang` (L-cut) holds the outgoing speaker across pauses.
@@ -147,32 +150,34 @@ gap — so most handovers are L-cuts and only real pauses get the anticipation.
 The floor applies only when the outgoing speaker has actually stopped. During
 overlapping speech they are still talking, the cut is not caused by them
 finishing, and there is no tail to give: the overlap rule cuts on time. The same
-goes for the first cut of the programme, where the outgoing shot is the wide and
-there is no face to linger on.
+goes for the first cut of the programme, where the outgoing shot is the
+context shot and there is no face to linger on.
 
 A reply shorter than the hang gets no cut at all — the floor pushes the cut past
 the end of that speaker's run, so the picture stays where it is. That is the
 same mechanism as the confirm time, from the other end.
 
-### The programme opens and closes on the wide
+### The programme opens and closes on the context shot
 
-Always, and it is not a setting. The first shot establishes the room and who
-is in it; a programme opening on a close-up drops the viewer into a face
-without the space, and one ending on a close-up leaves them hanging.
+Always, and it is not a setting. The preferred context shot establishes the
+room and who is in it; a programme opening on one face drops the viewer into
+a close view without the space, and one ending there leaves them hanging.
 
 The length is the programme's own `min_shot`, not a constant of its own —
 otherwise it would drift against the rhythm presets, where 1.4 s and 4.5 s
 mean different shots. A shot too short to split into two legal ones becomes
-wide whole; a programme with no room for three shots is honestly all wide.
+the context shot whole; a programme with no room for three shots stays
+on that establishing view.
 
 Why not an option: removing it in Final Cut is one cut. Flipping a default
 costs one drag, once. An option costs every user a decision, and this tool's
 first screen is ordered rather than exhaustive for exactly that reason. Same
 reasoning as panning having no amount slider.
 
-`_bookend_wide` runs after `_force_wide`, and it does not override
-`wide_every = 0` — that switch is about breaking a *long take*, which is a
-different rule.
+`_bookend_wide` is the legacy policy name. It runs after `_force_wide`, and
+does not override `wide_every = 0` — that switch is about breaking a *long
+take*, which is a different rule. Both policies use the configured context
+shot.
 
 ### Long turn and Reaction Shots
 
@@ -183,22 +188,22 @@ seconds, the picture cuts at the nearest natural breath or pause.
 
 There are three ways to continue, because they are editorially different things
 and neither is always right:
-* **Return to speaker** lets the wide last `wide_hold` and returns to the same
-  shot; the rhythm stays with the speaker, which suits a conversation where
+* **Return to speaker** lets the context shot last `wide_hold` and returns
+  to the same shot; the rhythm stays with the speaker, which suits a conversation where
   monologue is the exception.
-* **Stay wide** holds the wide until the next turn; a long monologue reads as a
+* **Stay wide** holds the context shot until the next turn; a long monologue reads as a
   situation rather than a face, and there are markedly fewer cuts.
 * **Reaction shot** cuts to a silent co-host's close-up for `wide_hold`, then returns
-  to the active speaker. (Falls back to wide if no second close-up exists).
+  to the active speaker. (Falls back to the context shot if no second single-person shot exists).
 
 The choice is taste, so it is a control rather than a constant.
 
-This runs on the finished cut list, not on the `want` array. It is a rhythm
+These context-shot policies run on the finished cut list, not on the `want` array. It is a rhythm
 rule rather than an observation about who is talking, and it must not get
 mixed into the thresholds: `want` still says whose turn it is, and
 `_force_wide` decides separately whether to show it.
 
-The wide duration is always raised to at least the shortest shot. Otherwise the
+The context-shot duration is always raised to at least the shortest shot. Otherwise the
 control would produce flashes that no other rule would allow — and the minimum
 duration is the strictest promise the decision makes.
 

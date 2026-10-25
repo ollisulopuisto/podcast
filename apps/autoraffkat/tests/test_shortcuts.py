@@ -12,7 +12,6 @@ testinsä.
 """
 
 import json
-import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -63,17 +62,15 @@ def test_the_harness_ran_without_errors(run):
 def test_the_registry_holds_every_shortcut_that_exists(run):
     """Luettelo on olemassa ja siinä on ainakin ne näppäimet jotka olivat jo.
 
-    ⌘E vie, ⌘O avaa, Enter ja välilyönti nostavat kortin, ? avaa ohjeen ja
-    Esc sulkee sen. Esikatselun rulla, veto ja tuplaklikkaus ovat hiiren
+    ⌘E vie, ⌘O avaa, ? avaa ohjeen ja Esc sulkee sen. Esikatselun rulla,
+    veto ja tuplaklikkaus ovat hiiren
     eleitä, mutta yhtä piilossa, joten ne ovat samassa luettelossa.
     """
     ids = {s["id"] for s in run["registry"]}
-    assert {"open", "export", "pick", "help", "close"} <= ids, ids
+    assert {"open", "export", "help", "close"} <= ids, ids
     combos = {s["id"]: s["combos"] for s in run["registry"]}
     assert {"key": "e", "mod": True} in combos["export"]
     assert {"key": "o", "mod": True} in combos["open"]
-    assert {"key": "Enter", "mod": False} in combos["pick"]
-    assert {"key": " ", "mod": False} in combos["pick"]
     assert {"key": "?", "mod": False} in combos["help"]
     assert {"key": "Escape", "mod": False} in combos["close"]
 
@@ -122,13 +119,13 @@ def test_the_handler_reacts_only_to_registered_keys(run):
     """(ii) Näppäinkäsittelijä ei voi kasvattaa dokumentoimatonta näppäintä.
 
     Mittari painaa jokaista tulostettavaa merkkiä ja nimettyä näppäintä
-    kahdeksalla muuntimien yhdistelmällä — sivulla, tekstikentässä, avoimessa
-    ikkunassa ja raitakortilla — ja kirjaa jokaisen johon jokin reagoi.
+    kahdeksalla muuntimien yhdistelmällä — sivulla, tekstikentässä ja avoimessa
+    ikkunassa — ja kirjaa jokaisen johon jokin reagoi.
     Jokaisen on löydyttävä luettelosta samassa tilassa. Ainoa poikkeus on
     Tab avoimessa ikkunassa: se on kohdistuksen loukku, ei pikanäppäin.
     """
     battery = run["battery"]
-    for where in ("page", "field", "sheet", "card"):
+    for where in ("page", "field", "sheet"):
         rows = battery[where]
         stray = [
             r
@@ -139,24 +136,18 @@ def test_the_handler_reacts_only_to_registered_keys(run):
     keys = {(r["key"], tuple(r["mods"])) for r in battery["page"]}
     assert ("e", ("metaKey",)) in keys and ("o", ("ctrlKey",)) in keys
     assert ("?", ()) in keys and ("?", ("shiftKey",)) in keys
-    assert {r["key"] for r in battery["card"] if r["matched"] == "card"} == {"Enter", " "}
 
 
 @needs_node
 def test_every_keydown_listener_goes_through_the_registry():
-    """(ii) Uusi `keydown`-kuuntelija ohi luettelon kaatuu tähän.
+    """Sivun pikanäppäimet käyttävät yhteistä rekisterikäsittelijää.
 
-    Mittari painaa vain ikkunan ja raitakortin käsittelijöitä. Kolmas
-    kuuntelija jossain muualla jäisi siltä näkemättä, joten jokaisen
-    kuuntelijan on kysyttävä luettelolta.
+    Henkilön lisäyskentän Enter on paikallinen lomaketoiminto, ei pikanäppäin.
     """
     app = (STATIC / "app.js").read_text(encoding="utf-8")
-    listeners = re.findall(r"addEventListener\('keydown',\s*([^\n]*)", app)
-    assert listeners, "app.js:ssä ei ole yhtään keydown-kuuntelijaa"
-    for start in listeners:
-        assert re.match(r"\(e\) => (onShortcutKey\(e\)|shortcutKey\(e, 'card'\))", start), (
-            f"keydown-kuuntelija ohi SHORTCUTS-luettelon: {start}"
-        )
+    assert "window.addEventListener('keydown', (e) => onShortcutKey(e));" in app
+    assert "card.addEventListener('keydown'" not in app
+    assert "if (event.key === 'Enter') add();" in app
 
 
 @needs_node
@@ -167,10 +158,6 @@ def test_a_single_key_does_nothing_while_typing(run):
     """
     for r in run["battery"]["field"]:
         assert {"metaKey", "ctrlKey"} & set(r["mods"]), r
-    # Kortin sisällä on tekstikenttä (ryhmärivin mikin nimi). Välilyönti
-    # siinä nosti kortin ja söi välilyönnin, joten nimeen ei saanut
-    # kahta sanaa.
-    assert run["spaceInCardField"] == {"picked": None, "prevented": False}
     for name, typed in run["scenarios"]["typed"].items():
         assert not typed["opened"], name
         assert not typed["prevented"], name
@@ -262,14 +249,9 @@ def test_the_modifier_is_cmd_on_a_mac_and_ctrl_elsewhere(mac, other):
 
 @needs_node
 def test_the_old_shortcuts_still_work(run):
-    """⌘E ja Ctrl+O tekevät saman kuin ennen, myös tekstikentästä; kortti
-    nousee Enterillä ja välilyönnillä ja laskeutuu uudella painalluksella."""
+    """⌘E ja Ctrl+O tekevät saman kuin ennen, myös tekstikentästä."""
     sc = run["scenarios"]
     assert sc["cmdE"] == {"exports": 1, "prevented": True}
     assert sc["ctrlShiftE"] == 2, "vaihto+Ctrl+E vei ennenkin"
     assert sc["ctrlOFromField"] == {"opens": 1, "prevented": True}
     assert sc["cmdEFromSheet"] == {"exports": 1, "closed": True}
-    assert run["cardEnter"] == "K1"
-    assert run["cardEnterAgain"] is None
-    assert run["cardSpace"] == "K1"
-    assert run["cardAria"] == "Enter Space"

@@ -382,37 +382,6 @@ const sheetOpen = () => !!sheet().open || sheet().attributes.open !== undefined;
   };
   closeAll();
 
-  /* Raitakortti: oma käsittelijänsä, sama rekisteri. */
-  const media = { key: 'K1', kind: 'audio', name: 'mic', path: '/x/mic.wav',
-    config: { role: 'unused', speaker: '' }, parts: [] };
-  context.__media = media;
-  ev('state = { tracks: [__media], globals: {}, audio: {}, languages: ["fi", "en"], language: "fi" }; picked = null;');
-  const card = guard('trackCard', () => context.trackCard(media, null));
-  if (card) {
-    doc.body.append(card);
-    out.cardAria = card.getAttribute('aria-keyshortcuts');
-    out.battery.card = battery('kortti', () => { card.focus(); }, () => card, ['card', 'page'],
-      () => { ev('picked = null;'); });
-    /* Kortin nosto Enterillä ja välilyönnillä toimii kuten ennen. */
-    card.focus();
-    press(card, { key: 'Enter' });
-    out.cardEnter = ev('picked');
-    press(card, { key: 'Enter' });
-    out.cardEnterAgain = ev('picked');
-    press(card, { key: ' ' });
-    out.cardSpace = ev('picked');
-    ev('picked = null;');
-    /* Tekstikenttä kortin sisällä: välilyönti on kirjain, ei nosto. */
-    const inner = makeElement('input');
-    inner.setAttribute('type', 'text');
-    inner.type = 'text';
-    card.append(inner);
-    inner.focus();
-    const typed = press(inner, { key: ' ' });
-    out.spaceInCardField = { picked: ev('picked'), prevented: typed.defaultPrevented };
-    ev('picked = null;');
-  }
-
   /* -------------------------------------------------- tilanteet */
   const sc = {};
   closeAll();

@@ -207,7 +207,32 @@ main {
    tarvitse mitata eikä piirtää uudestaan, ja ristiin menevä piuha on
    mahdottomuus eikä vältettävä tilanne. */
 
-.patch { display: flex; flex-direction: column; gap: 6px; }
+.patch { display: flex; flex-direction: column; gap: 10px; }
+
+.coverage-track, .coverage-audio {
+  display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, 1.3fr);
+  align-items: center; gap: 14px; padding: 9px;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.coverage-track .card, .coverage-audio .card { cursor: default; }
+.coverage-track .card:active, .coverage-audio .card:active { cursor: default; }
+.coverage-track .shot-coverage { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.coverage-title { flex-basis: 100%; margin: 0; font-size: 11px; color: var(--muted); }
+.coverage-person, .coverage-context {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+  cursor: pointer;
+}
+.coverage-person input, .coverage-context input { accent-color: var(--accent); }
+.coverage-add-person-row {
+  display: flex; flex-basis: 100%; align-items: center; gap: 8px;
+}
+.coverage-add-person { flex: 1; min-width: 0; }
+.coverage-add-button { flex: none; }
+.coverage-context { flex-basis: 100%; padding-top: 7px; border-top: 1px solid var(--line); }
+.coverage-summary { flex-basis: 100%; margin: 0; }
+.coverage-audio-title { margin-bottom: 0; }
+.mic-owner { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+.coverage-hint { margin: -6px 0 0; }
 
 .slot {
   --tint: var(--line);
@@ -373,6 +398,7 @@ main {
 /* Kapealla ruudulla sarakkeet eivät mahdu vierekkäin. Silloin paikka on
    pinossa: nimi ensin ja sen alla kuva ja ääni — sama ryhmittely, eri suunta. */
 @media (max-width: 900px) {
+  .coverage-track, .coverage-audio { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .slot { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .patch-head { display: none; }
   .strip { order: -1; justify-content: flex-start; padding: 6px 0 2px; }
