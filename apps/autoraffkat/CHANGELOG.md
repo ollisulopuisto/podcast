@@ -7,6 +7,8 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.10.25.1] - 2026-10-25
+
 ### Added
 - **Keyboard shortcuts are listed in the app.** A **Shortcuts** button in the header, or `?`, opens a cheat sheet grouped by task (project, preview, help) in the interface language. It is a modal window: focus moves into it, Tab stays inside, `Esc`, `?`, the close button or a click outside close it, and focus returns to where it was. The sheet also lists the preview's mouse gestures (wheel zooms, drag pans, double-click shows the whole programme), which were explained only after you had already zoomed in. `?` does nothing while you type in a field.
 - **The key is shown on the control it triggers**: a `<kbd>` hint on Open XML, Export XML and Shortcuts, the same in the button's tooltip, and `aria-keyshortcuts` for screen readers.
