@@ -25,7 +25,7 @@ jobs:
     # Apple Silicon -ajuri: laajennus on Swiftiä ja kääntyy ajurin arkkitehtuurille.
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -188,7 +188,7 @@ jobs:
           hdiutil create -volname "NHSX Viewer" -srcfolder staging \
             -ov -format UDZO "dist/NHSX-Viewer.dmg"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: viewer-app
           path: viewer/dist/*.dmg
@@ -200,8 +200,8 @@ jobs:
       run:
         working-directory: apps/podcast-magic
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
@@ -265,7 +265,7 @@ jobs:
         run: |
           cd dist && tar czf "nhsx-render-macos-$(uname -m).tar.gz" nhsx-render
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: nhsx-render-cli
           path: apps/podcast-magic/dist/*.tar.gz
@@ -278,7 +278,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
