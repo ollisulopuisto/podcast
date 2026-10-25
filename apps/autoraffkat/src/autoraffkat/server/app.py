@@ -1750,10 +1750,23 @@ def create_app(state: AppState) -> FastAPI:
     def open_xml(payload: dict):
         """Avaa toisen XML-tiedoston tai paketin."""
         path = str((payload or {}).get("path") or "").strip()
-        if not path or "\0" in path or not os.path.exists(path):
+        if not path or "\0" in path:
             raise HTTPException(
                 400, t("read.file_missing", path=path or "(polku puuttuu)")
             )
+        resolved_path = os.path.realpath(path)
+        if not os.path.exists(resolved_path):
+            raise HTTPException(
+                400, t("read.file_missing", path=path or "(polku puuttuu)")
+            )
+        is_fcpxml_file = os.path.isfile(resolved_path) and resolved_path.lower().endswith(
+            ".fcpxml"
+        )
+        is_fcpxmld_package = os.path.isdir(
+            resolved_path
+        ) and resolved_path.lower().endswith(".fcpxmld")
+        if not (is_fcpxml_file or is_fcpxmld_package):
+            raise HTTPException(400, t("read.file_missing", path=path))
         # Lukko on load():n sisällä, eikä threading.Lock ole rekursiivinen:
         # sen ottaminen tässä jumitti avauksen ikuisesti. Pyyntö ei palannut,
         # ja koska load() nollaa edistymisen ennen lukkoa, käyttöliittymä jäi
@@ -1761,7 +1774,7 @@ def create_app(state: AppState) -> FastAPI:
         # Paketti on hakemisto, ja juuri sen polun sekä pywebview'n dialogi
         # että Finder palauttavat: .fcpxmld on Finderille tiedosto. Ilman
         # tätä avaus kaatui «[Errno 21] Is a directory».
-        state.xml_path = pick.resolve(path)
+        state.xml_path = pick.resolve(resolved_path)
         state.load()
         return _state_json(state)
 
