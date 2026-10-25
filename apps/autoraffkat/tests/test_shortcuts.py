@@ -31,6 +31,8 @@ def _measure(platform):
         ["node", str(HARNESS), str(STATIC), platform],
         capture_output=True,
         text=True,
+        # Node writes UTF-8; Windows' default locale may decode ⌘ incorrectly.
+        encoding="utf-8",
         timeout=120,
     )
     assert done.returncode == 0, done.stderr or done.stdout
