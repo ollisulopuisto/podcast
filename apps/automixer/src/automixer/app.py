@@ -42,6 +42,7 @@ from automixer.cli_mix import (
     parse_plugin_params,
     parse_track_params,
 )
+from automixer.keys import KEYS_BINDINGS, KeysHelp
 from speechmix import chain, editor
 
 #: Liitännäisen oma tila (dxReviven malli) jakson kansiossa, jotta seuraava
@@ -85,7 +86,7 @@ class LogScreen(ModalScreen):
     ]
 
 
-class AutomixerApp(App):
+class AutomixerApp(KeysHelp, App):
     """
     The main Automixer Textual application.
 
@@ -117,6 +118,9 @@ class AutomixerApp(App):
     """
 
     BINDINGS: ClassVar[list[Binding]] = [
+        # Ensimmäisenä: 80 sarakkeen päätteessä alarivi loppuu kesken
+        # («space Play»), ja ? on se merkintä joka johtaa kaikkiin muihin.
+        *KEYS_BINDINGS,
         Binding("q", "quit", "Quit"),
         Binding("ctrl+s", "save", "Save Config"),
         Binding("r", "refresh", "Refresh Files"),

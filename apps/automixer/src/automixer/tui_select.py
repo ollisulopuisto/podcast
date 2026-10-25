@@ -14,8 +14,10 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import Footer, Header, Label, ListItem, ListView
 
+from automixer.keys import KEYS_BINDINGS, KeysHelp
 
-class SpotSelectionApp(App):
+
+class SpotSelectionApp(KeysHelp, App):
     """
     A Textual application for selecting an ad insertion spot.
 
@@ -39,7 +41,10 @@ class SpotSelectionApp(App):
 
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("q", "quit", "Quit"),
-        Binding("enter", "select", "Select Spot"),
+        # Etusijalla: lista on kohdistettuna ja ottaa Enterin itselleen, jolloin
+        # tämä ei koskaan ajanut ja alarivin «Select Spot» ei tehnyt mitään.
+        Binding("enter", "select", "Select Spot", priority=True),
+        *KEYS_BINDINGS,
     ]
 
     def __init__(self, spots_file, config_file):
