@@ -5,6 +5,14 @@ All notable changes to automixer are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [Unreleased]
+
+### Added
+- **`?` shows every key in the terminal interface.** Both the mixer and the ad-spot picker open Textual's keys panel with `?` and close it with `?` or `Esc`. The panel lists every binding with what it does; before, it opened only from the command palette (Ctrl+P, "Keys"), which you had to know about first. `?` typed into a text field is still a `?`, and `Esc` is only taken while the panel is open. In the mixer `? Keys` comes first on the bottom row, because at 80 columns the row runs out at "space Play" and an entry after it was never seen.
+
+### Fixed
+- **Enter selects a spot in the ad-spot picker.** The bottom row promised "⏎ Select Spot", but the focused list took Enter for itself, so nothing was chosen and the config was never written. The binding now takes precedence over the list.
+
 ## [2026.10.23.2] - 2026-10-23
 
 ### Changed
