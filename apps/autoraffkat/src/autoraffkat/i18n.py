@@ -34,6 +34,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "en": "No project or synchronised clip found in the XML. "
         "Export either a sync clip or a project from Final Cut.",
     },
+    "read.file_missing": {
+        "fi": "Tiedostoa ei löydy: {path}",
+        "en": "The file was not found: {path}",
+    },
     "read.bad_xml": {
         "fi": "XML ei jäsenny: {error}",
         "en": "The XML does not parse: {error}",
@@ -159,6 +163,10 @@ CATALOG: dict[str, dict[str, str]] = {
     "export.file_missing": {
         "fi": "Tiedostoa ei ole.",
         "en": "The file does not exist.",
+    },
+    "export.not_written": {
+        "fi": "Vain tämän sovelluksen kirjoittama tiedosto voidaan avata täältä.",
+        "en": "Only a file this app wrote can be opened from here.",
     },
     "export.duck_none": {
         "fi": "Vaimennus on päällä, mutta yksikään mikki ei osunut maskiin: "

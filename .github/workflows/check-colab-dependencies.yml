@@ -6,6 +6,11 @@ on:
     - cron: '0 6 1 */3 *'
   workflow_dispatch:
 
+# Skripti lukee PyPI:tä ja kirjoittaa raportin ajon omaan työkansioon; arkistoon
+# se ei kirjoita mitään.
+permissions:
+  contents: read
+
 jobs:
   check-dependencies:
     runs-on: ubuntu-latest

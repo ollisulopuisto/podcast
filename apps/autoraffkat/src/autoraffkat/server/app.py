@@ -101,6 +101,23 @@ def _log_mix(message: str) -> None:
     print(f"[ääni] {message}", flush=True)
 
 
+def _written_path(state: "AppState", given: object) -> str:
+    """Polku jonka palvelin itse kirjoitti ja joka on yhä levyllä, tai HTTP-virhe.
+
+    Järjestys on tarkoituksellinen: tyhjä ja NUL-polku ovat «ei tiedostoa»
+    (404), olemassa oleva vieras polku on kielletty (403) eikä sen olemassaoloa
+    kerrota, ja kirjattu mutta poistettu tiedosto on 404.
+    """
+    path = str(given or "").strip()
+    if not path or "\0" in path:
+        raise HTTPException(404, t("export.file_missing"))
+    if not state.wrote(path):
+        raise HTTPException(403, t("export.not_written"))
+    if not os.path.exists(path):
+        raise HTTPException(404, t("export.file_missing"))
+    return path
+
+
 @dataclass
 class AppState:
     """Palvelimen tila. Yksi XML kerrallaan.
@@ -169,6 +186,22 @@ class AppState:
     speech_fraction: float = 0.0
     speech_errors: dict = field(default_factory=dict)
     lock: threading.RLock = field(default_factory=threading.RLock)
+    # Tiedostot jotka palvelin itse kirjoitti (vienti ja sen MP4). Vain niitä
+    # voi näyttää Finderissa tai avata Final Cutissa: käyttöliittymä tarjoaa
+    # nappia vain viennin polulle, ja muu polku on vieras pyyntö.
+    written: set = field(default_factory=set)
+
+    def remember(self, path: str) -> None:
+        """Kirjaa palvelimen kirjoittaman tiedoston. Symbolinen linkki puretaan."""
+        if path and "\0" not in path:
+            with self.lock:
+                self.written.add(os.path.realpath(path))
+
+    def wrote(self, path: str) -> bool:
+        if not path or "\0" in path:
+            return False
+        with self.lock:
+            return os.path.realpath(path) in self.written
 
     # ---------------------------------------------------------- lataus
 
@@ -2028,12 +2061,14 @@ def create_app(state: AppState) -> FastAPI:
                         shots=shot_list,
                     )
                 write_fcpxml(out_path, xml)
+                state.remember(out_path)
             except (WriteError, OSError) as exc:
                 raise HTTPException(400, str(exc)) from exc
             project.save(state.xml_path, state.settings)
             rendering = None
             if want_render:
                 movie = os.path.splitext(out_path)[0] + ".mp4"
+                state.remember(movie)
                 job = state.render_job(shot_list, mic_tracks, replacements, room,
                                        ducks, program_start, program_end, movie,
                                        passthrough=passthrough)
@@ -2101,9 +2136,7 @@ def create_app(state: AppState) -> FastAPI:
         antaa Final Cutille tuonti-ikkunan, ei siis riko mitään jos painallus
         oli vahinko.
         """
-        path = str((payload or {}).get("path", "")).strip()
-        if not path or not os.path.exists(path):
-            raise HTTPException(404, t("export.file_missing"))
+        path = _written_path(state, (payload or {}).get("path", ""))
         if sys.platform != "darwin":
             raise HTTPException(400, t("export.only_macos"))
         done = subprocess.run(["open", "-a", "Final Cut Pro", path],
@@ -2117,9 +2150,7 @@ def create_app(state: AppState) -> FastAPI:
     @app.post("/api/reveal")
     def reveal(payload: dict):
         """Näytä tiedosto Finderissa/tiedostonhallinnassa."""
-        path = str(payload.get("path", "")).strip()
-        if not path or not os.path.exists(path):
-            raise HTTPException(404, t("export.file_missing"))
+        path = _written_path(state, (payload or {}).get("path", ""))
         if sys.platform == "darwin":
             subprocess.run(["open", "-R", path], check=False)
         elif sys.platform == "win32":
