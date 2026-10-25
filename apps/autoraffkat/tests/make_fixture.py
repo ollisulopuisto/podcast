@@ -13,7 +13,7 @@ import subprocess
 import sys
 from xml.sax.saxutils import quoteattr
 
-from autoraffkat.fcpxml.write import file_url
+from autoraffkat.finalcut.write import file_url
 
 FPS = 25
 FRAME = "1/25s"

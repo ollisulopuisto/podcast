@@ -1,7 +1,7 @@
 from fractions import Fraction
 from pathlib import Path
 
-from autoraffkat.fcpxml.read import Timeline
+from autoraffkat.finalcut.read import Timeline
 from autoraffkat.model import MediaItem
 from autoraffkat.relink import find_search_roots, relink_file, relink_timeline
 

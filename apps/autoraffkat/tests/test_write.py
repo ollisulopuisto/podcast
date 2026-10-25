@@ -6,8 +6,8 @@ from xml.etree import ElementTree as ET
 import pytest
 
 from autoraffkat.decide import WIDE_LABEL
-from autoraffkat.fcpxml.read import read_fcpxml
-from autoraffkat.fcpxml.write import (
+from autoraffkat.finalcut.read import read_fcpxml
+from autoraffkat.finalcut.write import (
     WriteError,
     build_fcpxml,
     build_multicam_fcpxml,
@@ -369,7 +369,7 @@ def test_replacement_redirects_and_drops_the_bookmark():
     Ilman poistoa Final Cut avaisi alkuperäisen käsittelemättömän tiedoston
     eikä kertoisi siitä mitään.
     """
-    from autoraffkat.fcpxml.write import _redirect_asset
+    from autoraffkat.finalcut.write import _redirect_asset
 
     asset = ET.fromstring(
         '<asset id="r3"><media-rep kind="original-media" src="file:///a/vanha.wav">'

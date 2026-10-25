@@ -16,6 +16,7 @@ members = [
     "autoraffkat",
     "colab-transcribe",
     "fcp-subs-whisper",
+    "fcpxml",
     "framescore",
     "nhsx",
     "podcast-magic",
@@ -249,6 +250,7 @@ version = "2026.10.16.4"
 source = { editable = "apps/autoraffkat" }
 dependencies = [
     { name = "fastapi" },
+    { name = "fcpxml" },
     { name = "numpy" },
     { name = "pedalboard" },
     { name = "pyloudnorm" },
@@ -268,6 +270,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "fcpxml", editable = "packages/fcpxml" },
     { name = "numpy", specifier = ">=2.4.2" },
     { name = "pedalboard", specifier = ">=0.9.26" },
     { name = "pyloudnorm", specifier = ">=0.2.0" },
@@ -903,6 +906,11 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.3" },
     { name = "wyoming", specifier = ">=1.8.0" },
 ]
+
+[[package]]
+name = "fcpxml"
+version = "2026.10.24.1"
+source = { editable = "packages/fcpxml" }
 
 [[package]]
 name = "filelock"

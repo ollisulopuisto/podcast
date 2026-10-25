@@ -21,7 +21,7 @@ from speechmix.rms import FLOOR_DB, envelope_for
 
 from .audio import cache_dir
 from .decide import Grid, GroupShot, SpeakerLanes
-from .fcpxml.read import Timeline
+from .finalcut.read import Timeline
 from .i18n import t
 from .model import (
     HOP,

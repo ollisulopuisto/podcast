@@ -66,7 +66,7 @@ def root() -> dict:
     return toml(ROOT / "pyproject.toml")
 
 
-def test_the_members_are_the_ten_we_think_they_are():
+def test_the_members_are_the_eleven_we_think_they_are():
     """Sattumalta tyhjä luettelo tekisi jokaisesta alla olevasta testin joka ei testaa mitään.
 
     colab-transcribe on jäsen vaikka ei ole `apps/`issa — se on juuressa
@@ -87,12 +87,17 @@ def test_the_members_are_the_ten_we_think_they_are():
     framescore on kuvien pisteytys ja järjestys kasvojen valinnalle: pureaa Pythonia
     ilman alustakoodia, jonka pycapslap ja youthumber molemmat tuovat. Lisätty
     kymmenenneksi samassa commitissa kuin tämä testi muuttui.
+
+    fcpxml on Final Cut -viennin lukija: pelkkä standardikirjasto, jonka
+    autoraffkat ja kuulas tuovat molemmat. Irrotettu autoraffkatin sisältä
+    yhdenneksitoista, jotta kuulas ei kopioi lukijaa eikä tuo koko sovellusta.
     """
     assert [name(m) for m in MEMBERS] == [
         "automixer",
         "autoraffkat",
         "colab-transcribe",
         "fcp-subs-whisper",
+        "fcpxml",
         "framescore",
         "nhsx",
         "podcast-magic",

@@ -99,6 +99,13 @@ jobs:
         if: ${{ !cancelled() }}
         run: uv run --directory packages/framescore pytest -q
 
+      # Final Cut -viennin lukija: pelkkä standardikirjasto ja XML-fikstuurit,
+      # joten sama sviitti ajaa joka alustalla. Autoraffkat ja kuulas lukevat
+      # viennin sen kautta.
+      - name: fcpxml
+        if: ${{ !cancelled() }}
+        run: uv run --directory packages/fcpxml pytest -q
+
       - name: autoraffkat
         if: ${{ !cancelled() }}
         run: uv run --directory apps/autoraffkat pytest -q

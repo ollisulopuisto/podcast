@@ -121,7 +121,7 @@ def test_a_speaking_face_goes_over_the_lane_threshold_and_a_still_one_does_not(t
 from fractions import Fraction  # noqa: E402
 
 from autoraffkat.analysis import Analysis, build_grid, resolve_roles  # noqa: E402
-from autoraffkat.fcpxml.read import Timeline, Track  # noqa: E402
+from autoraffkat.finalcut.read import Timeline, Track  # noqa: E402
 from autoraffkat.model import (  # noqa: E402
     ROLE_CLOSE,
     ROLE_MIC,

@@ -17,6 +17,7 @@ classifiers = [
 ]
 dependencies = [
     "speechmix",
+    "fcpxml",
     "numpy>=2.4.2",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
@@ -52,6 +53,8 @@ dev = [
 
 # Jaettu ketju tulee työtilasta, ei julkaisusta: se muuttuu vielä
 # viikoittain, ja versioitu paketti tarkoittaisi julkaisua jokaisesta
-# mittauksen korjaamasta viasta.
+# mittauksen korjaamasta viasta. Sama koskee FCPXML-lukijaa: kuulas lukee
+# viennin samalla paketilla, joten kaksi lukijaa ei pääse eriytymään.
 [tool.uv.sources]
 speechmix = { workspace = true }
+fcpxml = { workspace = true }

@@ -5,7 +5,7 @@ from fractions import Fraction
 import numpy as np
 
 from autoraffkat.analysis import Analysis, build_grid
-from autoraffkat.fcpxml.read import MulticamRef, Timeline, Track
+from autoraffkat.finalcut.read import MulticamRef, Timeline, Track
 from autoraffkat.model import (
     HOP,
     ROLE_CLOSE,

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [Unreleased]
+
+### Changed
+- **The FCPXML reader and the rational time moved to the shared `fcpxml` package** (`packages/fcpxml`), so that kuulas reads a Final Cut export with the same code. What is read is unchanged; the reader's own tests moved with it. autoraffkat keeps what the package cannot know: the translated error text, the frame rate from ffprobe, relinking of missing files and the default name. The app's own subpackage `fcpxml/` is now `finalcut/` (a script run of `__main__.py`, which is how PyInstaller starts the app, would otherwise have put it ahead of the real package on the import path).
+
+### Fixed
+- **A file that cannot be opened, a `.fcpxmld` bundle with no `Info.fcpxml` and a time the XML cannot be read as** are now translated read errors instead of a raw `OSError` or `ValueError`. Not run against a real Final Cut export or a packaged build: the PyInstaller spec is unchanged, and `fcpxml` is found through the import graph.
+
 ## [2026.10.16.4] - 2026-10-16
 
 ### Fixed
