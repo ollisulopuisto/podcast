@@ -28,7 +28,7 @@ dependencies = [
     "numpy>=2.4.2",
     "lxml>=5.0",
     "fastapi>=0.115",
-    "uvicorn[standard]>=0.30",
+    "uvicorn[standard]>=0.54.0",
     "pywebview>=6.0",  # FileDialog; OPEN_DIALOG on vanhentunut
 ]
 

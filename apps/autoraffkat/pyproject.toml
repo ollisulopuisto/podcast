@@ -20,7 +20,7 @@ dependencies = [
     "fcpxml",
     "numpy>=2.4.2",
     "fastapi>=0.115",
-    "uvicorn[standard]>=0.30",
+    "uvicorn[standard]>=0.54.0",
     "pedalboard>=0.9.26",
     "pyloudnorm>=0.2.0",
     "pywebview>=6.0",  # FileDialog; OPEN_DIALOG on vanhentunut
