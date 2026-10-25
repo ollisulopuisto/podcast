@@ -8,13 +8,13 @@ and this project adheres to Calendar Versioning (CalVer).
 ## [Unreleased]
 
 ### Added
-- **Keyboard shortcuts are listed in the app.** A **Shortcuts** button in the header, or `?`, opens a cheat sheet grouped by task (project, tracks, preview, help) in the interface language. It is a modal window: focus moves into it, Tab stays inside, `Esc`, `?`, the close button or a click outside close it, and focus returns to where it was. The sheet also lists the preview's mouse gestures (wheel zooms, drag pans, double-click shows the whole programme), which were explained only after you had already zoomed in. `?` does nothing while you type in a field.
-- **The key is shown on the control it triggers**: a `<kbd>` hint on Open XML, Export XML and Shortcuts, the same in the button's tooltip, and `aria-keyshortcuts` for screen readers. Track cards announce Enter and Space.
+- **Keyboard shortcuts are listed in the app.** A **Shortcuts** button in the header, or `?`, opens a cheat sheet grouped by task (project, preview, help) in the interface language. It is a modal window: focus moves into it, Tab stays inside, `Esc`, `?`, the close button or a click outside close it, and focus returns to where it was. The sheet also lists the preview's mouse gestures (wheel zooms, drag pans, double-click shows the whole programme), which were explained only after you had already zoomed in. `?` does nothing while you type in a field.
+- **The key is shown on the control it triggers**: a `<kbd>` hint on Open XML, Export XML and Shortcuts, the same in the button's tooltip, and `aria-keyshortcuts` for screen readers.
 - All of it comes from one list in `app.js` (`SHORTCUTS`): the key handler, the hints, the tooltips and the sheet are generated from it, and `tests/test_shortcuts.py` presses every key with every modifier and fails if anything reacts to a key that is not on the list.
 
 ### Fixed
 - **The shortcut hint says Ctrl outside macOS.** `⌘E` and `⌘O` were written into the buttons for everyone; on Windows the key is `Ctrl+E`. macOS still shows `⌘`. Both keys work on both, as before.
-- **A space can be typed into a microphone's name on a group-shot row.** The name field sits inside the track card, and the card took Space as "pick up this card" and swallowed it, so a two-word name could not be typed there.
+- **A space can be typed into a microphone's name.** The earlier card-level Space handler swallowed it when the name field was inside the card; shortcut handling now stays out of text fields.
 - **The header wraps in a narrow window** instead of pushing Render video and Export XML off the right edge (seen at 420 px).
 - **After an export the Export XML button keeps its key hint as a hint**; it was put back as plain text (found by reading `setBusy`, not seen on screen).
 
