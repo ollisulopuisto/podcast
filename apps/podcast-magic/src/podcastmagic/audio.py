@@ -60,7 +60,12 @@ def decode_pcm(path: str | Path, sample_rate: int = SAMPLE_RATE) -> np.ndarray:
         get_binary_path("ffmpeg"),
         "-nostdin",
         "-threads", "0",
-        "-protocol_whitelist", "pipe",
+        # ``-i -`` avautuu ffmpegissä ``fd``-protokollana, ei ``pipe``nä
+        # (``Protocol 'fd' not on whitelist 'pipe'!``, ffmpeg 6.1.1): pelkkä
+        # ``pipe`` hylkäsi jokaisen syötteen. Nämä kaksi ovat vain jo avattu
+        # stdin; ``file``, ``http`` ja muut jäävät pois, joten tiedoston sisältä
+        # viitattu toinen tiedosto tai osoite ei purkaudu mukaan.
+        "-protocol_whitelist", "pipe,fd",
         "-i", "-",
         "-f", "s16le",
         "-ac", "1",
