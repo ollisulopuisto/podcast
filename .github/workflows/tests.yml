@@ -110,6 +110,19 @@ jobs:
         if: ${{ !cancelled() }}
         run: uv run --directory apps/autoraffkat pytest -q
 
+      # Käyttöliittymän savutesti ja pikanäppäinten mittari ajavat noden, ja
+      # ilman sitä ne ohittuvat vihreinä. Ohittunut testi on vihreä testi.
+      - name: autoraffkat — interface tests ran
+        if: ${{ !cancelled() }}
+        run: |
+          uv run --directory apps/autoraffkat \
+            pytest tests/test_ui.py tests/test_shortcuts.py -q --no-header -rs | tee /tmp/araf-ui.log
+          if grep -q "skipped" /tmp/araf-ui.log; then
+            echo "An autoraffkat interface test was skipped: node is missing on the runner."
+            exit 1
+          fi
+          grep -q " passed" /tmp/araf-ui.log
+
       - name: automixer
         if: ${{ !cancelled() }}
         run: uv run --directory apps/automixer pytest -q

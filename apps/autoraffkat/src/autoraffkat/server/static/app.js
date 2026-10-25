@@ -629,11 +629,10 @@ function trackCard(media, dest) {
     }
     pickUp(media);
   });
-  card.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    if (e.preventDefault) e.preventDefault();
-    pickUp(media);
-  });
+  /* Enter ja välilyönti nostavat kortin. Näppäimet ovat SHORTCUTS-luettelossa
+     (`pick`), josta ohjeikkuna ne kertoo. */
+  card.setAttribute('aria-keyshortcuts', ariaKeys(SHORTCUTS.find((s) => s.id === 'pick')));
+  card.addEventListener('keydown', (e) => shortcutKey(e, 'card') && pickUp(media));
   return card;
 }
 
@@ -2884,6 +2883,9 @@ function setBusy(button, on, label) {
       button.textContent = button.dataset.idleLabel;
       delete button.dataset.idleLabel;
     }
+    /* Pikanäppäimen painike saa vihjeensä takaisin <kbd>:nä eikä
+       tasaisena tekstinä. */
+    if (SHORTCUTS.some((s) => s.control && s.control === button.id)) paintShortcutControls();
   }
 }
 
@@ -3151,13 +3153,288 @@ function renderStatic() {
   document.querySelectorAll('[data-t]').forEach((el) => {
     el.textContent = T(el.dataset.t);
   });
-  $('open').innerHTML = `${T('app.open')} <kbd>⌘O</kbd>`;
   $('reload').textContent = T('app.reload');
   const relinkBtn = $('relink');
   if (relinkBtn) relinkBtn.textContent = T('app.relink');
-  $('export').innerHTML = `${T('app.export')} <kbd>⌘E</kbd>`;
   $('render').textContent = T('app.render');
   $('render-stop').textContent = T('app.stop');
+  paintShortcutControls();
+  renderShortcutSheet();
+}
+
+/* ------------------------------------------------------------ pikanäppäimet */
+
+/* Kaikki näppäimet yhdessä luettelossa. Tästä syntyvät näppäinkäsittelijä
+   (`shortcutKey`), painikkeiden <kbd>-vihjeet ja työkaluvihjeet
+   (`paintShortcutControls`) sekä ohjeikkuna (`renderShortcutSheet`), joten
+   näppäin jota ei ole tässä ei tee mitään, eikä tässä oleva voi jäädä
+   kertomatta. test_shortcuts.py painaa jokaista näppäintä ja kaatuu, jos
+   jokin reagoi ilman riviä täällä.
+
+   Kentät:
+   * `combos`: näppäinyhdistelmät. `mod` on ⌘ Macissa ja Ctrl muualla —
+     käsittelijä hyväksyy kumman tahansa kummassakin, kuten ennenkin.
+   * `scope`: missä yhdistelmä toimii. `page` = sivu ilman avointa ohjetta,
+     `sheet` = ohjeikkuna auki, `card` = kohdistettu raitakortti.
+   * `control`: painike jonka kylkeen näppäin piirretään, ja `text` sen nimi.
+   * `pointer`: hiiren ele näppäimen sijaan. Ne eivät ole näppäimiä, mutta
+     esikatselun rulla ja veto kerrottiin vasta lähennetyn tilan rivillä,
+     eli vasta kun ne oli jo löydetty. */
+const SHORTCUTS = [
+  { id: 'open', group: 'file', label: 'keys.open', combos: [{ mod: true, key: 'o' }],
+    scope: ['page', 'sheet'], control: 'open', text: 'app.open', run: () => openXml() },
+  { id: 'export', group: 'file', label: 'keys.export', combos: [{ mod: true, key: 'e' }],
+    scope: ['page', 'sheet'], control: 'export', text: 'app.export', run: () => exportXml() },
+  { id: 'pick', group: 'tracks', label: 'keys.pick',
+    combos: [{ key: 'Enter' }, { key: ' ' }], scope: ['card'] },
+  { id: 'zoom', group: 'preview', label: 'keys.zoom', pointer: 'keys.wheel', scope: [] },
+  { id: 'pan', group: 'preview', label: 'keys.pan', pointer: 'keys.drag', scope: [] },
+  { id: 'whole', group: 'preview', label: 'keys.whole', pointer: 'keys.dblclick', scope: [] },
+  { id: 'help', group: 'help', label: 'keys.help', combos: [{ key: '?' }],
+    scope: ['page', 'sheet'], control: 'shortcuts', text: 'keys.button',
+    run: () => toggleShortcuts() },
+  { id: 'close', group: 'help', label: 'keys.close', combos: [{ key: 'Escape' }],
+    scope: ['sheet'], run: () => closeShortcuts() },
+];
+
+/* Ryhmät tehtävän mukaan ja tässä järjestyksessä ohjeikkunaan. */
+const SHORTCUT_GROUPS = ['file', 'tracks', 'preview', 'help'];
+
+let shortcutReturn = null;      // kohdistus ennen ohjeikkunan avausta
+
+/* Mac vai ei. Näkymä vain: käsittelijä hyväksyy ⌘:n ja Ctrl:n kummassakin.
+   iPad on Mac, koska sen näppäimistössä on ⌘. */
+function isMacLike(nav) {
+  if (!nav) return false;
+  const data = nav.userAgentData && nav.userAgentData.platform;
+  const said = data || nav.platform || nav.userAgent || '';
+  return /mac|iphone|ipad|ipod/i.test(said);
+}
+
+function onMac() {
+  return isMacLike(typeof navigator !== 'undefined' ? navigator : null);
+}
+
+/* Yksi yhdistelmä näytettävänä: «⌘E» Macissa, «Ctrl+E» muualla. */
+function comboText(combo, mac) {
+  let key = combo.key;
+  if (key === ' ') key = T('keys.space');
+  else if (key === 'Escape') key = 'Esc';
+  else if (key.length === 1) key = key.toUpperCase();
+  if (!combo.mod) return key;
+  return mac ? `⌘${key}` : `Ctrl+${key}`;
+}
+
+/* aria-keyshortcuts: molemmat muuntimet, koska molemmat toimivat. */
+function ariaKeys(entry) {
+  return (entry.combos || []).map((c) => {
+    const key = c.key === ' ' ? 'Space' : (c.key.length === 1 ? c.key.toUpperCase() : c.key);
+    return c.mod ? `Meta+${key} Control+${key}` : key;
+  }).join(' ');
+}
+
+/* Täsmääkö painallus yhdistelmään. Vaihto ei ratkaise: ? vaatii sen
+   useimmilla näppäimistöillä, ja vaihto+⌘E vei ennenkin. Ilman muunninta
+   olevaan yhdistelmään ei kelpaa ⌘, Ctrl eikä Alt — ne ovat selaimen. */
+function matchesCombo(combo, e) {
+  const mod = !!(e.metaKey || e.ctrlKey);
+  if (!!combo.mod !== mod) return false;
+  if (!combo.mod && e.altKey) return false;
+  return String(e.key || '').toLowerCase() === combo.key.toLowerCase();
+}
+
+/* Kirjoitetaanko kohteeseen. Siellä yksinäinen näppäin on tekstiä, ei
+   komento — ? kysymykseen ei saa avata ohjetta. Valintaruutu ja liukusäädin
+   eivät ota merkkejä. */
+function isTypingTarget(el) {
+  if (!el || !el.tagName) return false;
+  if (el.isContentEditable) return true;
+  const tag = el.tagName.toUpperCase();
+  if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (tag !== 'INPUT') return false;
+  const type = String(el.type || (el.getAttribute && el.getAttribute('type')) || 'text')
+    .toLowerCase();
+  return !['checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'color', 'file']
+    .includes(type);
+}
+
+/* Rekisterin rivi tälle painallukselle tässä tilassa, tai null. */
+function findShortcut(e, scope) {
+  const typing = isTypingTarget(e.target);
+  return SHORTCUTS.find((s) => (s.scope || []).includes(scope)
+    && (s.combos || []).some((c) => matchesCombo(c, e) && (c.mod || !typing))) || null;
+}
+
+/* Kaikki näppäinkäsittely kulkee tästä. Palauttaa osuman, jotta kortin oma
+   käsittelijä voi tehdä oman toimintonsa samalla tarkistuksella. */
+function shortcutKey(e, scope) {
+  const hit = findShortcut(e, scope);
+  if (!hit) return null;
+  if (e.preventDefault) e.preventDefault();
+  if (hit.run) {
+    /* Ohjeesta suoraan toimintoon: ⌘E ohjeen ollessa auki sulkee sen ja vie,
+       eikä jätä modaalia sen päälle. */
+    if (scope === 'sheet' && hit.id !== 'help' && hit.id !== 'close') closeShortcuts();
+    hit.run();
+  }
+  return hit;
+}
+
+/* Ikkunan käsittelijä: sivu tai avoin ohje. Avoimessa ohjeessa Tab kiertää
+   ikkunan sisällä — se on kohdistuksen loukku, ei pikanäppäin. */
+function onShortcutKey(e) {
+  if (shortcutsOpen()) {
+    if (e.key === 'Tab') { trapFocus(e); return; }
+    shortcutKey(e, 'sheet');
+    return;
+  }
+  shortcutKey(e, 'page');
+}
+
+function shortcutsOpen() {
+  const sheet = $('shortcut-sheet');
+  return !!sheet && (sheet.open === true || sheet.getAttribute('open') !== null
+    && sheet.getAttribute('open') !== undefined);
+}
+
+function openShortcuts() {
+  const sheet = $('shortcut-sheet');
+  if (!sheet || shortcutsOpen()) return;
+  shortcutReturn = document.activeElement || null;
+  renderShortcutSheet();
+  if (typeof sheet.showModal === 'function') sheet.showModal();
+  else sheet.setAttribute('open', '');
+  const first = sheetFocusables(sheet)[0];
+  if (first && first.focus) first.focus();
+}
+
+/* Sulkeminen palauttaa kohdistuksen sinne mistä ohje avattiin. Selaimen oma
+   Esc sulkee <dialog>-ikkunan ohi tämän; close-tapahtuma tuo sen tänne. */
+function closeShortcuts() {
+  const sheet = $('shortcut-sheet');
+  if (!sheet || !shortcutsOpen()) return;
+  if (typeof sheet.close === 'function') sheet.close();
+  else sheet.removeAttribute('open');
+  restoreShortcutFocus();
+}
+
+function restoreShortcutFocus() {
+  const back = shortcutReturn;
+  shortcutReturn = null;
+  if (back && back.focus) back.focus();
+}
+
+function toggleShortcuts() {
+  if (shortcutsOpen()) closeShortcuts(); else openShortcuts();
+}
+
+function sheetFocusables(sheet) {
+  return Array.from(sheet.querySelectorAll(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+    .filter((el) => !el.disabled);
+}
+
+/* Tab ja vaihto+Tab kiertävät ikkunan sisällä, ja ulos karannut kohdistus
+   palaa ensimmäiseen. */
+function trapFocus(e) {
+  const sheet = $('shortcut-sheet');
+  const items = sheetFocusables(sheet);
+  if (e.preventDefault) e.preventDefault();
+  if (!items.length) { if (sheet.focus) sheet.focus(); return; }
+  const at = items.indexOf(document.activeElement);
+  let next;
+  if (at < 0) next = e.shiftKey ? items.length - 1 : 0;
+  else next = (at + (e.shiftKey ? -1 : 1) + items.length) % items.length;
+  items[next].focus();
+}
+
+/* Näppäin näkyviin: <kbd>-vihje sen painikkeen kylkeen jonka se laukaisee,
+   työkaluvihje («Vie XML (⌘E)») ja ruudunlukijalle aria-keyshortcuts. */
+function paintShortcutControls() {
+  const mac = onMac();
+  SHORTCUTS.filter((s) => s.control).forEach((s) => {
+    const el = $(s.control);
+    if (!el) return;
+    const keys = s.combos.map((c) => comboText(c, mac)).join(` ${T('keys.or')} `);
+    /* Työn alla olevan painikkeen teksti on «Viedään…», eikä vihjettä
+       piirretä sen päälle; setBusy kutsuu tätä kun työ on ohi. */
+    if (!(el.classList && el.classList.contains('busy'))) {
+      el.textContent = T(s.text);
+      const kbd = document.createElement('kbd');
+      kbd.textContent = keys;
+      el.append(' ', kbd);
+    }
+    el.setAttribute('title', `${T(s.label)} (${keys})`);
+    el.setAttribute('aria-keyshortcuts', ariaKeys(s));
+  });
+}
+
+/* Ohjeikkuna luettelosta, nykyisellä kielellä ja alustan muuntimella.
+   Piirretään joka kerta uudestaan: kielen vaihto kutsuu renderStaticia. */
+function renderShortcutSheet() {
+  const sheet = $('shortcut-sheet');
+  if (!sheet) return;
+  const mac = onMac();
+  const refocus = shortcutsOpen() && sheet.contains(document.activeElement);
+  sheet.textContent = '';
+  sheet.setAttribute('aria-labelledby', 'shortcut-title');
+
+  const head = document.createElement('div');
+  head.className = 'sheet-head';
+  const title = document.createElement('h2');
+  title.id = 'shortcut-title';
+  title.textContent = T('keys.title');
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'ghost sheet-close';
+  close.setAttribute('aria-label', T('keys.close.button'));
+  const esc = document.createElement('kbd');
+  esc.textContent = 'Esc';
+  close.append(esc);
+  close.addEventListener('click', () => closeShortcuts());
+  head.append(title, close);
+  sheet.append(head);
+
+  const body = document.createElement('div');
+  body.className = 'sheet-body';
+  SHORTCUT_GROUPS.forEach((group) => {
+    const rows = SHORTCUTS.filter((s) => s.group === group);
+    if (!rows.length) return;
+    const section = document.createElement('section');
+    section.className = 'sheet-group';
+    const h3 = document.createElement('h3');
+    h3.id = `shortcut-group-${group}`;
+    h3.textContent = T(`keys.group.${group}`);
+    section.setAttribute('aria-labelledby', h3.id);
+    const list = document.createElement('dl');
+    rows.forEach((s) => {
+      const row = document.createElement('div');
+      row.className = 'sheet-row';
+      row.dataset.shortcut = s.id;
+      const keys = document.createElement('dt');
+      if (s.pointer) {
+        const gesture = document.createElement('span');
+        gesture.className = 'gesture';
+        gesture.textContent = T(s.pointer);
+        keys.append(gesture);
+      } else {
+        s.combos.forEach((c, i) => {
+          if (i) keys.append(` ${T('keys.or')} `);
+          const kbd = document.createElement('kbd');
+          kbd.textContent = comboText(c, mac);
+          keys.append(kbd);
+        });
+      }
+      const what = document.createElement('dd');
+      what.textContent = T(s.label);
+      row.append(keys, what);
+      list.append(row);
+    });
+    section.append(h3, list);
+    body.append(section);
+  });
+  sheet.append(body);
+  if (refocus) close.focus();
 }
 
 /* Tiedoston avaus. Valitsin on kahdessa paikassa, koska selaimessa ei ole
@@ -3316,14 +3593,14 @@ $('reload').addEventListener('click', async () => {
   if (state.progress && state.progress.ready) setBusy(button, false);
 });
 window.addEventListener('resize', () => { drawBar(); renderRuler(); });
-window.addEventListener('keydown', (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {
-    e.preventDefault();
-    exportXml();
-  } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'o') {
-    e.preventDefault();
-    openXml();
-  }
+window.addEventListener('keydown', (e) => onShortcutKey(e));
+$('shortcuts').addEventListener('click', () => openShortcuts());
+$('shortcut-sheet').addEventListener('close', () => {
+  if (shortcutReturn) restoreShortcutFocus();
+});
+/* Klikkaus taustaan sulkee: modaalin <dialog>in tausta on ikkuna itse. */
+$('shortcut-sheet').addEventListener('click', (e) => {
+  if (e.target === $('shortcut-sheet')) closeShortcuts();
 });
 window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('dragenter', (e) => e.preventDefault());

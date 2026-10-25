@@ -55,8 +55,11 @@ The loop:
 
 1. Sync picture and sound in Final Cut, export the XML.
 2. Open the XML here, name the tracks, move the sliders.
-3. Export the XML (`⌘E`), import into Final Cut, watch.
+3. Export the XML (`⌘E`, `Ctrl+E` on Windows), import into Final Cut, watch.
 4. If it isn't right, back to step 2.
+
+Every keyboard shortcut is listed in the app: press `?` or the **Shortcuts**
+button in the header.
 
 Steps 2 and 3 are milliseconds apart: moving a slider runs only the decision
 layer, and the preview bar shows the result without a round trip through XML.

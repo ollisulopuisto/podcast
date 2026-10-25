@@ -19,13 +19,14 @@
   <div class="actions">
     <span id="status" class="muted"></span>
     <span id="language" class="langs"></span>
+    <button id="shortcuts" type="button" class="ghost keys-open" aria-haspopup="dialog">Pikanäppäimet <kbd>?</kbd></button>
     <button id="open" class="ghost">Avaa XML…</button>
     <button id="reload" class="ghost">Lue uudestaan</button>
     <button id="relink" class="ghost hidden">Etsi tiedostot…</button>
     <span id="mix-host"></span>
     <button id="render" class="ghost">Renderöi video</button>
     <button id="render-stop" class="ghost hidden">Pysäytä</button>
-    <button id="export" class="primary">Vie XML <kbd>⌘E</kbd></button>
+    <button id="export" class="primary">Vie XML</button>
   </div>
 </header>
 
@@ -92,6 +93,9 @@
     </table>
   </div>
 </section>
+
+<!-- Pikanäppäimet: app.js piirtää sisällön SHORTCUTS-luettelosta. -->
+<dialog id="shortcut-sheet" class="sheet" aria-labelledby="shortcut-title"></dialog>
 
 <script src="/static/i18n.js"></script>
 <script src="/static/app.js"></script>

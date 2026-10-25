@@ -55,8 +55,11 @@ Silmukka:
 
 1. Synkkaa kuvat ja äänet Final Cutissa, vie XML.
 2. Avaa XML sovelluksessa, nimeä raidat, säädä liukusäätimiä.
-3. Vie XML (`⌘E`), tuo Final Cutiin, katso.
+3. Vie XML (`⌘E`, Windowsissa `Ctrl+E`), tuo Final Cutiin, katso.
 4. Jos ei kelpaa, takaisin kohtaan 2.
+
+Kaikki pikanäppäimet ovat sovelluksessa: paina `?` tai otsikon
+**Pikanäppäimet**-painiketta.
 
 Kohdan 2 ja 3 välissä kuluu millisekunteja: liukusäätimen liike ajaa vain
 päätöskerroksen, ja esikatselupalkki näyttää lopputuloksen ilman XML-kierrosta.

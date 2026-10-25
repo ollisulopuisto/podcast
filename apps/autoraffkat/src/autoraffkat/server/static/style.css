@@ -36,6 +36,7 @@ header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
   padding: 14px 0 12px;
   background: linear-gradient(var(--bg) 80%, transparent);
@@ -52,7 +53,10 @@ p { margin: 0; }
 .small { font-size: 12px; }
 .hidden { display: none !important; }
 
-.actions { display: flex; align-items: center; gap: 10px; }
+/* Kapeassa ikkunassa painikkeet rivittyvät eivätkä valu ruudun ohi: vienti
+   ja pikanäppäinten painike jäivät 420 px:n ikkunassa näkymättömiin. */
+.actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+           justify-content: flex-end; }
 
 button {
   font: inherit;
@@ -597,3 +601,76 @@ tr.reaction td:nth-child(2) { padding-left: 22px; }
 
 /* Reaktiorivit joita ei viedä: sama tieto, mutta ei lupausta. */
 tr.reaction.off td { opacity: .45; font-style: italic; }
+
+/* ------------------------------------------------------------ pikanäppäimet */
+
+/* Otsikon painike on apuväline kuten kielivalitsin, ei työn vaihe: sama pieni
+   koko, jotta se ei kilpaile viennin kanssa, mutta nimi kirjoitettuna —
+   pelkkä «?» ei kerro mitä sen takana on. */
+button.keys-open { font-size: 12px; padding: 5px 9px; }
+
+/* Ohjeikkuna. Modaali <dialog>: selain tekee taustasta passiivisen, ja
+   ::backdrop himmentää sen. Värit samoista muuttujista kuin paneelit. */
+dialog.sheet {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .55);
+}
+dialog.sheet::backdrop { background: rgba(8, 9, 11, .62); }
+.sheet-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.sheet-head h2 { margin: 0; }
+.sheet-close { font-size: 12px; padding: 4px 9px; }
+.sheet-close kbd { margin-left: 0; }
+.sheet-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sheet-body { padding: 4px 16px 16px; }
+.sheet-group h3 { margin: 16px 0 6px; }
+.sheet-group dl { margin: 0; }
+.sheet-row {
+  display: grid;
+  grid-template-columns: minmax(110px, auto) 1fr;
+  gap: 14px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+.sheet-row:first-child { border-top: 0; }
+.sheet-row dt { white-space: nowrap; color: var(--muted); }
+.sheet-row dd { margin: 0; }
+/* Ohjeessa näppäin on asia itse eikä vihje, joten se on täysin näkyvä ja
+   näppäimen muotoinen; painikkeiden kyljessä se pysyy himmeänä. */
+.sheet-row kbd {
+  display: inline-block;
+  min-width: 1.9em;
+  margin: 0;
+  padding: 1px 7px;
+  /* Käyttöliittymän fontti, ei tasalevyinen: tasalevyisen varafontin ⌘ oli
+     Linuxin Chromiumissa puolet kirjaimen korkeudesta, otsikon painikkeissa
+     sama merkki on täysikokoinen. */
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+  color: var(--text);
+  opacity: 1;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+}
+.sheet-row .gesture { color: var(--text); }
