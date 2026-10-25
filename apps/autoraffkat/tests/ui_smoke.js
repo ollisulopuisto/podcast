@@ -83,6 +83,12 @@ function makeElement(tag) {
     releasePointerCapture() {},
     setAttribute(name, value) { this.attributes[name] = value; },
     getAttribute(name) { return this.attributes[name]; },
+    removeAttribute(name) { delete this.attributes[name]; },
+    /* Ohjeikkuna kysyy onko kohdistus sen sisällä. */
+    contains(node) {
+      for (let n = node; n; n = n._parent) if (n === this) return true;
+      return false;
+    },
     addEventListener(type, fn) {
       (this._handlers[type] = this._handlers[type] || []).push(fn);
     },
@@ -217,9 +223,16 @@ const routes = {
   '/api/reload': () => state,
 };
 
+/* Ikkunan kuuntelijat talteen: pikanäppäinten käsittelijä on ikkunassa, ja
+   ilman tätä se jäisi kokonaan ajamatta. */
+const windowHandlers = {};
+
 const context = {
   document,
-  window: { addEventListener() {}, devicePixelRatio: 2 },
+  window: {
+    addEventListener(type, fn) { (windowHandlers[type] = windowHandlers[type] || []).push(fn); },
+    devicePixelRatio: 2,
+  },
   getComputedStyle: () => ({ getPropertyValue: () => '#123456' }),
   fetch: async (url) => {
     const key = Object.keys(routes).find((r) => String(url).startsWith(r));
@@ -580,6 +593,25 @@ async function asyncPaths() {
   step('banner', () => { context.banner('viesti'); context.banner('virhe', true);
                          context.banner(''); });
   step('redrawAll', () => context.redrawAll());
+  /* Pikanäppäimet ikkunan käsittelijän kautta: ? avaa ohjeen, Tab kiertää
+     sen sisällä, ? sulkee, ja Esc sulkee uudestaan avatun. Toiminnot itse
+     mittaa test_shortcuts.py; tämä varmistaa että polku ajetaan. */
+  step('pikanäppäimet', () => {
+    const press = (init) => (windowHandlers.keydown || []).forEach((fn) => fn(Object.assign({
+      target: context.document.getElementById('bar'), preventDefault() {},
+      metaKey: false, ctrlKey: false, altKey: false, shiftKey: false,
+    }, init)));
+    if (!(windowHandlers.keydown || []).length) throw new Error('ikkunalla ei ole näppäinkäsittelijää');
+    press({ key: '?' });
+    if (!context.shortcutsOpen()) throw new Error('? ei avannut ohjetta');
+    press({ key: 'Tab' });
+    press({ key: 'Tab', shiftKey: true });
+    press({ key: '?' });
+    if (context.shortcutsOpen()) throw new Error('? ei sulkenut ohjetta');
+    press({ key: '?' });
+    press({ key: 'Escape' });
+    if (context.shortcutsOpen()) throw new Error('Esc ei sulkenut ohjetta');
+  });
   step('watchMix', () => context.watchMix());
   /* watchProgress haarautuu sen mukaan onko laskenta valmis. */
   for (const ready of [true, false]) {

@@ -63,3 +63,22 @@ under the cursor mid-drag.
 modification time as a query parameter. Without it the browser serves an old
 stylesheet with a new script, and the layout breaks in a way nobody connects to
 caching. This happened once already.
+
+## A shortcut is a row in `SHORTCUTS`, or it does not exist
+
+Every key the interface reacts to is one entry in `SHORTCUTS` in `app.js`:
+its combinations, where it works (`page`, `sheet`, `card`), the control it
+belongs to and its translated label. The window's key handler, the `<kbd>`
+hints and tooltips on the buttons, `aria-keyshortcuts` and the `?` cheat
+sheet are all generated from that list, so a key cannot ship undocumented and
+a documented key cannot quietly stop working. `test_shortcuts.py` presses
+every printable key and named key with eight modifier combinations — on the
+page, in a text field, in the open sheet and on a track card — and fails on
+anything that reacts without a row; it also fails on a `keydown` listener
+that does not go through `shortcutKey`. Adding a shortcut is adding a row and
+two translations.
+
+`mod` is ⌘ on a Mac and Ctrl elsewhere, for display only: the handler accepts
+either on every platform, as it always did. A key without a modifier never
+fires while the user types in a text field, a select or an editable element
+(`isTypingTarget`) — `?` in a speaker's name is a letter.
