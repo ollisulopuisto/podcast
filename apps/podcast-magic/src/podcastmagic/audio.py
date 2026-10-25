@@ -12,6 +12,7 @@ ole mitään — binääri on paketin sisällä.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -41,11 +42,26 @@ def decode_pcm(path: str | Path, sample_rate: int = SAMPLE_RATE) -> np.ndarray:
     on useita. Whisper haluaa liukuluvut, joten ``decode`` muuntaa — mutta
     tasoa mittaava välimuisti pitää raa'an muodon.
     """
+    path_str = str(path)
+    if not path_str or "\0" in path_str:
+        raise DecodeError(f"epäkelpo tiedostopolku: {path!r}")
+
+    real_path = os.path.realpath(os.path.abspath(path_str))
+    root = os.path.splitdrive(real_path)[0] + os.sep if os.name == "nt" else "/"
+    if not real_path.startswith(root):
+        raise DecodeError(f"epäkelpo tiedostopolku: {path!r}")
+
+    if not os.path.isfile(real_path):
+        raise DecodeError(f"tiedostoa ei löydy: {path!r}")
+    if not is_audio(real_path):
+        raise DecodeError(f"ei tuettu äänitiedosto: {path!r}")
+
     cmd = [
         get_binary_path("ffmpeg"),
         "-nostdin",
         "-threads", "0",
-        "-i", str(path),
+        "-protocol_whitelist", "pipe",
+        "-i", "-",
         "-f", "s16le",
         "-ac", "1",
         "-acodec", "pcm_s16le",
@@ -53,10 +69,16 @@ def decode_pcm(path: str | Path, sample_rate: int = SAMPLE_RATE) -> np.ndarray:
         "-",
     ]
     try:
-        out = subprocess.run(cmd, capture_output=True, check=True).stdout
-    except subprocess.CalledProcessError as exc:
-        tail = exc.stderr.decode("utf-8", "replace").strip().splitlines()[-3:]
-        raise DecodeError(f"{Path(path).name}: {' '.join(tail)}") from exc
+        with open(real_path, "rb") as source:
+            try:
+                out = subprocess.run(
+                    cmd, stdin=source, capture_output=True, check=True
+                ).stdout
+            except subprocess.CalledProcessError as exc:
+                tail = exc.stderr.decode("utf-8", "replace").strip().splitlines()[-3:]
+                raise DecodeError(f"{Path(real_path).name}: {' '.join(tail)}") from exc
+    except OSError as exc:
+        raise DecodeError(f"{Path(real_path).name}: {exc}") from exc
     return np.frombuffer(out, np.int16)
 
 
