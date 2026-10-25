@@ -134,7 +134,8 @@ def test_settings_left_inside_a_bundle_are_still_read(tmp_path):
         bundle / "Info.autoraffkat.json", {"CAM 1": {"role": "wide"}}, min_shot=7.0
     )
     loaded = project.load(xml)
-    assert loaded.tracks["CAM 1"].role == "wide"
+    assert loaded.tracks["CAM 1"].role == "shot"
+    assert loaded.tracks["CAM 1"].context
     assert loaded.globals.min_shot == 7.0
 
     written = project.save(xml, loaded)

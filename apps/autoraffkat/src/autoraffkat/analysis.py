@@ -20,7 +20,7 @@ from speechmix.errors import EnvelopeError
 from speechmix.rms import FLOOR_DB, envelope_for
 
 from .audio import cache_dir
-from .decide import Grid, GroupShot, SpeakerLanes
+from .decide import Grid, GroupShot, ShotLanes, SpeakerLanes
 from .fcpxml.read import Timeline
 from .i18n import t
 from .model import (
@@ -28,6 +28,7 @@ from .model import (
     ROLE_CLOSE,
     ROLE_GROUP,
     ROLE_MIC,
+    ROLE_SHOT,
     ROLE_WIDE,
     MediaItem,
     TrackConfig,
@@ -199,6 +200,15 @@ def analyze(
 
 
 @dataclass
+class ShotConfig:
+    """Kuva ja siinä näkyvät puhujat raitajärjestyksessä."""
+
+    key: str
+    covers: list[str]
+    context: bool = False
+
+
+@dataclass
 class Roles:
     """Roolituksesta johdettu rakenne.
 
@@ -216,6 +226,7 @@ class Roles:
     # (``video/speech.py``), jos se on sallittu.
     visual_speakers: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
+    shots: list[ShotConfig] = field(default_factory=list)
 
 
 def resolve_roles(
@@ -228,45 +239,56 @@ def resolve_roles(
     edellinen tulos katoaa.
     """
     roles = Roles()
+    pending = []
+    legacy_groups = set()
     for track in timeline.tracks:
         cfg = tracks.get(track.key)
         if cfg is None:
             continue
-        if cfg.role == ROLE_WIDE and not roles.wide_key:
-            roles.wide_key = track.key
-        elif cfg.role == ROLE_MIC:
-            name = cfg.speaker.strip()
+        name = cfg.speaker.strip()
+        if cfg.role == ROLE_MIC:
             if not name:
                 roles.problems.append(t("roles.mic_without_speaker", name=track.name))
                 continue
             if name not in roles.speakers:
                 roles.speakers.append(name)
             roles.mics.setdefault(name, []).append(track.key)
-        elif cfg.role == ROLE_CLOSE:
-            name = cfg.speaker.strip()
-            if not name:
-                roles.problems.append(t("roles.close_without_speaker", name=track.name))
-                continue
-            if name not in roles.speakers:
-                roles.speakers.append(name)
-            roles.closes[name] = track.key
-        elif cfg.role == ROLE_GROUP:
-            names = list(dict.fromkeys(n.strip() for n in cfg.covers if n.strip()))
-            if not names:
-                roles.problems.append(
-                    t("roles.group_without_speakers", name=track.name))
-                continue
-            roles.groups[track.key] = names
+            continue
+        if cfg.role not in (ROLE_SHOT, ROLE_CLOSE, ROLE_GROUP, ROLE_WIDE):
+            continue
+        names = ([name] if name else []) if cfg.role == ROLE_CLOSE else list(
+            dict.fromkeys(n.strip() for n in cfg.covers if n.strip()))
+        if not names and cfg.role != ROLE_WIDE and not cfg.context:
+            key = "roles.close_without_speaker" if cfg.role == ROLE_CLOSE else "roles.group_without_speakers"
+            roles.problems.append(t(key, name=track.name))
+            continue
+        if cfg.role == ROLE_GROUP:
+            legacy_groups.add(track.key)
+        if cfg.role in (ROLE_CLOSE, ROLE_SHOT):
+            for person in names:
+                if person not in roles.speakers:
+                    roles.speakers.append(person)
+        pending.append((track.key, cfg, names))
 
-    # Ryhmäkuva ei luo puhujaa: puhuja on se jolla on mikki. Nimi jota
-    # yksikään mikki ei kanna on kirjoitusvirhe tai vanhentunut nimi, ja
-    # hiljaa ohitettuna kuva jäisi käyttämättä sanomatta miksi.
+    for key, cfg, names in pending:
+        if cfg.role == ROLE_WIDE:
+            names = list(roles.speakers)
+        roles.shots.append(ShotConfig(key, names, cfg.context or cfg.role == ROLE_WIDE))
+    roles.wide_key = next((shot.key for shot in roles.shots if shot.context), "")
+    if not roles.wide_key and len(roles.speakers) >= 2:
+        roles.wide_key = next((shot.key for shot in roles.shots
+                               if set(roles.speakers) <= set(shot.covers)), "")
     track_names = {track.key: track.name for track in timeline.tracks}
-    for key, names in roles.groups.items():
-        for name in names:
-            if name not in roles.mics:
-                roles.problems.append(t("roles.group_unknown_speaker",
-                                        name=track_names[key], speaker=name))
+    for shot in roles.shots:
+        if len(shot.covers) == 1:
+            roles.closes.setdefault(shot.covers[0], shot.key)
+        elif shot.key != roles.wide_key:
+            roles.groups[shot.key] = list(shot.covers)
+        if shot.key in legacy_groups:
+            for name in shot.covers:
+                if name not in roles.mics:
+                    roles.problems.append(t("roles.group_unknown_speaker",
+                                            name=track_names[shot.key], speaker=name))
 
     for name in roles.speakers:
         if name not in roles.mics:
@@ -279,7 +301,9 @@ def resolve_roles(
     # Ilman yhtäkään lähikuvaa päätös on kelvollinen mutta hyödytön: koko
     # ohjelma olisi yhtä laajaa kuvaa (tai ilman kuvaa lainkaan). Se on roolituksen puute eikä tulos,
     # joten se sanotaan ääneen eikä viedä XML:ksi.
-    if (roles.mics or roles.visual_speakers) and not roles.closes and not roles.groups:
+    only_legacy_wide = bool(roles.shots) and all(
+        tracks[shot.key].role == ROLE_WIDE for shot in roles.shots)
+    if (roles.mics or roles.visual_speakers) and (not roles.shots or only_legacy_wide):
         roles.problems.append(t("roles.no_closeups"))
     return roles
 
@@ -404,9 +428,20 @@ def build_grid(
             available=availability(items, program_start, n) if items else None,
         ))
 
+    shots = []
+    for shot in roles.shots:
+        items = timeline.track_media(shot.key)
+        names = [name for name in shot.covers if name in index_of]
+        shots.append(ShotLanes(
+            key=shot.key, label=" & ".join(shot.covers),
+            covers=tuple(index_of[name] for name in names),
+            context=shot.key == roles.wide_key,
+            available=availability(items, program_start, n) if items else None,
+        ))
+
     grid = Grid(
         n=n, program_start=float(program_start), speakers=lanes,
-        wide_key=roles.wide_key, groups=groups,
+        wide_key=roles.wide_key, groups=groups, shots=shots,
         edits=_source_edits(timeline, program_start, program_end),
     )
     return grid, program_start, program_end

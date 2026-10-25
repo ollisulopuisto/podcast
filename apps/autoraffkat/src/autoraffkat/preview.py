@@ -80,6 +80,12 @@ def build(grid: Grid, decision: Decision, columns: int = 1400,
 
     chosen = decision.chosen[mids] if n else np.zeros(0, dtype=np.int32)
     return {
+        "shots": [
+            {"key": shot.key, "label": shot.label, "index": index,
+             "covers": [grid.speakers[i].name for i in shot.covers],
+             "context": shot.key == grid.context_key}
+            for index, shot in enumerate(grid.shots)
+        ],
         "columns": columns,
         "reactions": lane,
         "duration": grid.duration,

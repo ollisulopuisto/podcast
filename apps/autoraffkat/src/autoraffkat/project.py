@@ -19,6 +19,10 @@ from .model import (
     OVERLAP_WIDE,
     RHYTHM_CUSTOM,
     RHYTHM_PRESETS,
+    ROLE_CLOSE,
+    ROLE_GROUP,
+    ROLE_SHOT,
+    ROLE_WIDE,
     AudioSettings,
     Globals,
     TrackConfig,
@@ -235,6 +239,22 @@ class ProjectSettings:
             for k, v in (data.get("tracks") or {}).items()
             if isinstance(v, dict)
         }
+        # Vanhojen asetusten laaja kattaa koko tallennetun puhujajoukon.
+        names = list(dict.fromkeys(
+            name for cfg in tracks.values()
+            if cfg.role in ("mic", ROLE_CLOSE, ROLE_GROUP, ROLE_SHOT)
+            for name in ([cfg.speaker.strip()] if cfg.role in ("mic", ROLE_CLOSE)
+                         else cfg.covers)
+            if name
+        ))
+        for cfg in tracks.values():
+            if cfg.role == ROLE_CLOSE:
+                cfg.covers = [cfg.speaker.strip()] if cfg.speaker.strip() else []
+                cfg.role = ROLE_SHOT
+            elif cfg.role == ROLE_GROUP:
+                cfg.role = ROLE_SHOT
+            elif cfg.role == ROLE_WIDE:
+                cfg.role, cfg.covers, cfg.context = ROLE_SHOT, list(names), True
         return cls(
             tracks=tracks,
             globals=Globals.from_json(data.get("globals") or {}),
