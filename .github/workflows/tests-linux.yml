@@ -90,6 +90,13 @@ jobs:
         if: ${{ !cancelled() }}
         run: uv run --directory packages/wordalign pytest -q
 
+      # The FCPXML reader: standard library and XML fixtures, no media, so it
+      # is the same suite on every platform. kuulas reads Final Cut exports
+      # through it on whatever machine it runs on.
+      - name: fcpxml
+        if: ${{ !cancelled() }}
+        run: uv run --directory packages/fcpxml pytest -q
+
       # The point of this job. Modules that need mlx are not collected without
       # it (conftest.py says which in the report header); the tests marked mlx
       # are deselected here and run on macOS.

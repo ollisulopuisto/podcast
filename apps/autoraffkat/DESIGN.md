@@ -22,7 +22,7 @@ adjusting. Every other structural decision follows from that.
 ## Layers
 
 ```
-   FCPXML  ──►  fcpxml/read.py  ──►  Timeline (MediaItem + Placement)
+   FCPXML  ──►  fcpxml package  ──►  Timeline (MediaItem + Placement)
                                           │
                     ┌─────────────────────┴──────────────────────┐
                     │                                            │
@@ -42,7 +42,7 @@ adjusting. Every other structural decision follows from that.
                                           │
                           ┌───────────────┴───────────────┐
                           ▼                               ▼
-                    preview.py                     fcpxml/write.py
+                    preview.py                     finalcut/write.py
                     bar for the browser            new project
 ```
 

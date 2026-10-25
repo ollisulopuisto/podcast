@@ -386,10 +386,10 @@ ne ovat `autolayout.py`:ssä. Nimessä on `autolayout`.
 
 ```
 src/autoraffkat/
-  timeline.py        FCPXML:n rationaaliaika (Fraction)
+  timeline.py        FCPXML:n rationaaliaika (Fraction): fcpxml-paketin
   model.py           mediat, roolit, asetukset, leikkaukset
-  fcpxml/read.py     sync-clip, spine ja monikamera sisään
-  fcpxml/write.py    uusi projekti ulos, littana tai monikamerana
+  finalcut/read.py   lukija (paketti fcpxml) sekä ffprobe, relink, tekstit
+  finalcut/write.py  uusi projekti ulos, littana tai monikamerana
   audio/envelope.py  ffmpeg + RMS, levyvälimuisti          HIDAS
   audio/chain.py     kanavanauha: pedalboard + liitännäiset
   audio/mix.py       mitkä tiedostot, minne, synkan vahti     HIDAS

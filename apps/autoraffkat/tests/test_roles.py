@@ -4,7 +4,7 @@ from fractions import Fraction
 
 from autoraffkat import project
 from autoraffkat.analysis import resolve_roles
-from autoraffkat.fcpxml.read import Timeline, Track
+from autoraffkat.finalcut.read import Timeline, Track
 from autoraffkat.model import (
     ROLE_CLOSE,
     ROLE_GROUP,

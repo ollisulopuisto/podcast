@@ -10,7 +10,7 @@
 
 As described in [`DESIGN.md`](DESIGN.md):
 ```
-   [Input File]  ──►  Reader (e.g. fcpxml/read.py)  ──►  Timeline (MediaItem + Placement)
+   [Input File]  ──►  Reader (e.g. the fcpxml package)  ──►  Timeline (MediaItem + Placement)
                                                                    │
                                                 ┌──────────────────┴──────────────────┐
                                                 │                                     │
@@ -26,7 +26,7 @@ As described in [`DESIGN.md`](DESIGN.md):
                                                                        │
                                                        ┌───────────────┴───────────────┐
                                                        ▼                               ▼
-                                                 preview.py                     Writer (e.g. fcpxml/write.py)
+                                                 preview.py                     Writer (e.g. finalcut/write.py)
                                                  web browser bar                New project / timeline
 ```
 

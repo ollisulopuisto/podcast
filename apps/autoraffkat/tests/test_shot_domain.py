@@ -65,7 +65,7 @@ def test_roles_preserve_every_camera_in_track_order():
     from fractions import Fraction
 
     from autoraffkat.analysis import resolve_roles
-    from autoraffkat.fcpxml.read import Timeline, Track
+    from autoraffkat.finalcut.read import Timeline, Track
     from autoraffkat.model import TrackConfig
 
     timeline = Timeline([], Fraction(1, 25), 'project', 't', tracks=[
@@ -89,7 +89,7 @@ def test_single_person_context_remains_a_closeup_for_visual_speech():
     from fractions import Fraction
 
     from autoraffkat.analysis import resolve_roles
-    from autoraffkat.fcpxml.read import Timeline, Track
+    from autoraffkat.finalcut.read import Timeline, Track
     from autoraffkat.model import TrackConfig
 
     timeline = Timeline([], Fraction(1, 25), 'project', 't', tracks=[Track('a', 'A')])

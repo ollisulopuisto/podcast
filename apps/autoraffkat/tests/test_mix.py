@@ -38,7 +38,7 @@ def test_adopt_takes_the_processed_files_already_on_disk(
     valmis ``[mix]`` on lähteen vieressä.
     """
     from autoraffkat.analysis import resolve_roles
-    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.finalcut.read import read_fcpxml
     from autoraffkat.model import ROLE_MIC, TrackConfig
 
     tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
@@ -115,7 +115,7 @@ def test_progress_reports_stages_and_a_rising_fraction(fixture_dir, monkeypatch)
     mitään, joten vaihe on se tarkkuus joka edistymisestä on saatavissa.
     """
     from autoraffkat.analysis import resolve_roles
-    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.finalcut.read import read_fcpxml
     from autoraffkat.model import ROLE_MIC, TrackConfig
 
     tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
@@ -350,7 +350,7 @@ def test_freshness_counts_what_matches_the_settings(fixture_dir, monkeypatch, tm
     ääni», eikä minuuttien ajoa voinut välttää katsomalla.
     """
     from autoraffkat.analysis import resolve_roles
-    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.finalcut.read import read_fcpxml
     from autoraffkat.model import ROLE_MIC, TrackConfig
 
     monkeypatch.setattr(mix, "stamp_dir", lambda: tmp_path)
@@ -392,7 +392,7 @@ def test_debleed_without_a_grid_is_an_error_not_a_silence(fixture_dir, monkeypat
     tiedosto valmistuu silti ja kuulostaa siltä että vähennys tehtiin.
     """
     from autoraffkat.analysis import resolve_roles
-    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.finalcut.read import read_fcpxml
     from autoraffkat.model import ROLE_MIC, TrackConfig
 
     monkeypatch.setattr(mix.chain, "load_pool", lambda *a, **k: None)
@@ -426,7 +426,7 @@ def test_rider_without_a_grid_is_an_error_not_a_silence(fixture_dir, monkeypatch
     vähennystä ole sammutettu käsin, sanomatta mitään.
     """
     from autoraffkat.analysis import resolve_roles
-    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.finalcut.read import read_fcpxml
     from autoraffkat.model import ROLE_MIC, TrackConfig
 
     monkeypatch.setattr(mix.chain, "load_pool", lambda *a, **k: None)
@@ -453,7 +453,7 @@ def test_rider_without_a_grid_is_an_error_not_a_silence(fixture_dir, monkeypatch
 def test_force_processes_what_is_already_current(fixture_dir, monkeypatch, tmp_path):
     """Uudelleenkäsittely on käyttäjän tahallinen valinta, ei oletus."""
     from autoraffkat.analysis import resolve_roles
-    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.finalcut.read import read_fcpxml
     from autoraffkat.model import ROLE_MIC, TrackConfig
 
     monkeypatch.setattr(mix, "stamp_dir", lambda: tmp_path)
@@ -500,7 +500,7 @@ def test_ducking_that_matches_nothing_is_reported(fixture_dir, monkeypatch, tmp_
     kuului kampasuodatuksena vasta kun molempia raitoja kuunteli yhdessä.
     """
     from autoraffkat.analysis import resolve_roles
-    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.finalcut.read import read_fcpxml
     from autoraffkat.model import ROLE_MIC, TrackConfig
 
     monkeypatch.setattr(mix, "stamp_dir", lambda: tmp_path)
@@ -529,7 +529,7 @@ def test_readable_formats_pass_through(tmp_path):
 
 def test_disabled_does_nothing(fixture_dir):
     from autoraffkat.analysis import resolve_roles
-    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.finalcut.read import read_fcpxml
 
     timeline = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
     result = mix.process(
@@ -553,7 +553,7 @@ def test_missing_plugin_is_reported_not_raised(fixture_dir):
     nouse käyttäjän silmille.
     """
     from autoraffkat.analysis import resolve_roles
-    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.finalcut.read import read_fcpxml
     from autoraffkat.model import ROLE_MIC, TrackConfig
 
     timeline = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
@@ -705,7 +705,7 @@ def test_closed_ranges_map_timeline_to_file_time(fixture_dir):
     """Ruudukko on aikajanan aikaa, vaimennus tiedoston aikaa."""
     import numpy as np
 
-    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.finalcut.read import read_fcpxml
     from autoraffkat.model import HOP
 
     timeline = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
@@ -724,7 +724,7 @@ def test_closed_ranges_stay_inside_the_clip(fixture_dir):
     """Esiintymän ulkopuolta ei vaimenneta: siitä ei ole tietoa."""
     import numpy as np
 
-    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.finalcut.read import read_fcpxml
     from autoraffkat.model import HOP
 
     timeline = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
@@ -1070,7 +1070,7 @@ def test_a_missing_plugin_does_not_stop_the_run(fixture_dir, monkeypatch):
     mittainen ja käsittelemätön siltä osin kuin liitännäinen olisi tehnyt.
     """
     from autoraffkat.analysis import resolve_roles
-    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.finalcut.read import read_fcpxml
     from autoraffkat.model import ROLE_MIC, TrackConfig
 
     tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
@@ -1107,7 +1107,7 @@ def test_the_stamp_says_the_plugin_did_not_run(fixture_dir):
     lajia jota ei huomaa: tiedosto on olemassa, leima täsmää, ääni on väärä.
     """
     from autoraffkat.analysis import resolve_roles
-    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.finalcut.read import read_fcpxml
     from autoraffkat.model import ROLE_MIC, TrackConfig
 
     tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
@@ -1155,7 +1155,7 @@ def test_the_delivery_target_still_works_when_nothing_is_stale(fixture_dir):
     pysyy samana — tämän projektin tavallisin vikaluokka.
     """
     from autoraffkat.analysis import build_grid, resolve_roles
-    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.finalcut.read import read_fcpxml
     from autoraffkat.model import ROLE_MIC, TrackConfig
 
     tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
@@ -1189,7 +1189,7 @@ def test_the_delivery_target_still_works_when_nothing_is_stale(fixture_dir):
 def test_preview_audio_computes_trim_and_debleed_preview(fixture_dir):
     """preview_audio arvioi ohjelmatrimmin ja debleedin taustalle ilman VST:tä."""
     from autoraffkat.analysis import analyze, build_grid, resolve_roles
-    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.finalcut.read import read_fcpxml
     from autoraffkat.model import ROLE_MIC, TrackConfig
 
     tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
@@ -1234,7 +1234,7 @@ def test_files_are_processed_two_at_a_time_and_progress_still_rises(
     import threading
 
     from autoraffkat.analysis import resolve_roles
-    from autoraffkat.fcpxml.read import read_fcpxml
+    from autoraffkat.finalcut.read import read_fcpxml
     from autoraffkat.model import ROLE_MIC, TrackConfig
 
     tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))

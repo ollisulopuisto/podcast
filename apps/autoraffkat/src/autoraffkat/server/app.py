@@ -37,8 +37,8 @@ from ..analysis import (
 )
 from ..audio import mix
 from ..decide import WIDE_LABEL, decide
-from ..fcpxml.read import ReadError, Timeline, read_fcpxml
-from ..fcpxml.write import (
+from ..finalcut.read import ReadError, Timeline, read_fcpxml
+from ..finalcut.write import (
     WriteError,
     build_fcpxml,
     build_multicam_fcpxml,

@@ -14,7 +14,7 @@ from make_fixture import SPEECH_A, SPEECH_B
 
 from autoraffkat.analysis import analyze, build_grid, resolve_roles
 from autoraffkat.decide import decide
-from autoraffkat.fcpxml.read import read_fcpxml
+from autoraffkat.finalcut.read import read_fcpxml
 from autoraffkat.model import ROLE_CLOSE, ROLE_MIC, ROLE_WIDE, Globals, TrackConfig
 from autoraffkat.server.app import AppState, create_app
 
@@ -728,8 +728,10 @@ def test_a_synced_multicam_is_cut_processed_and_exported(fixture_dir, tmp_path, 
                  if r.get("active") != "0"]
         assert sorted(heard) == sorted(mics[part]), (part, heard)
     # Käsitelty ääni on vientiin ohjattu mikin assettiin, ei kameraan.
-    srcs = [rep.get("src", "") for rep in root.iter("media-rep")]
-    assert sum("%5Bmix%5D" in s for s in srcs) == 5, srcs
+    from urllib.parse import unquote
+
+    srcs = [unquote(rep.get("src", "")) for rep in root.iter("media-rep")]
+    assert sum("[mix]" in s for s in srcs) == 5, srcs
 
 
 @needs_ffmpeg

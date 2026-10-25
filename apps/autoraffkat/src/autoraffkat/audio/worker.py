@@ -25,7 +25,7 @@ import traceback
 def main() -> int:
     """Lukee tehtävän stdinistä, kirjoittaa edistymisen ja tuloksen stdoutiin."""
     from ..analysis import build_grid, resolve_roles
-    from ..fcpxml.read import read_fcpxml
+    from ..finalcut.read import read_fcpxml
     from ..project import ProjectSettings
     from . import mix
 

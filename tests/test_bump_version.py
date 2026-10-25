@@ -108,6 +108,7 @@ def test_the_script_only_offers_real_members(capsys):
         "autoraffkat",
         "colab-transcribe",
         "fcp-subs-whisper",
+        "fcpxml",
         "framescore",
         "nhsx",
         "podcast-magic",

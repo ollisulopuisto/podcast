@@ -25,7 +25,7 @@ muu rakenne.
 ## Kerrokset
 
 ```
-   FCPXML  ──►  fcpxml/read.py  ──►  Timeline (MediaItem + Placement)
+   FCPXML  ──►  fcpxml-paketti  ──►  Timeline (MediaItem + Placement)
                                           │
                     ┌─────────────────────┴──────────────────────┐
                     │                                            │
@@ -45,7 +45,7 @@ muu rakenne.
                                           │
                           ┌───────────────┴───────────────┐
                           ▼                               ▼
-                    preview.py                     fcpxml/write.py
+                    preview.py                     finalcut/write.py
                     palkki selaimeen               uusi projekti
 ```
 

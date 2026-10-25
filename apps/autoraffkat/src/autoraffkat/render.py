@@ -46,7 +46,7 @@ class Shot:
     lane: int = 0
     # Vaakasuora rajaus prosentteina lähteen leveydestä, molemmilta puolilta.
     # Vara-neliöpino (lähteen koko tuntematon): 21.875 % per puoli, jolloin jäljelle jää 1080×1080 natiivi-
-    # skaalassa. Sama luku kuin ``fcpxml/write.py:SQUARE_CROP``.
+    # skaalassa. Sama luku kuin ``finalcut/write.py:SQUARE_CROP``.
     crop: float = 0.0
     # Pinon toinen puolikas samalla ajalla. ``flatten`` asettaa sen kun
     # neliöreaktio (lane 1) tulee neliöpohjan päälle: kumpikin on ruudulla,
