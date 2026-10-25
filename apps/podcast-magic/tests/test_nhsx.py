@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from lxml import etree
 
 from nhsx.read import NhsxError, locate, time_to_seconds
 from nhsx.read import read as read_session
@@ -146,3 +147,21 @@ def test_existing_output_is_never_overwritten(tmp_path):
     assert second.name == "jakso litteroitu v2.nhsx"
     second.write_text("x")
     assert next_free_path(first).name == "jakso litteroitu v3.nhsx"
+
+
+def test_write_refuses_a_nul_or_empty_path_instead_of_truncating_it(tmp_path, monkeypatch):
+    """lxml katkaisee polun NUL-merkkiin: ``polku\\0x.nhsx`` kirjoittuisi tiedostoksi ``polku``.
+
+    Tulos on kelvollinen tiedosto väärässä paikassa eikä mikään kaadu.
+    """
+    from nhsx.read import NhsxError
+    from podcastmagic.nhsx.write import next_free_path, write
+
+    monkeypatch.chdir(tmp_path)
+    tree = etree.ElementTree(etree.Element("Session"))
+    for bad in ("polku\0x.nhsx", ""):
+        with pytest.raises(NhsxError):
+            write(tree, bad)
+        with pytest.raises(NhsxError):
+            next_free_path(bad)
+    assert list(tmp_path.iterdir()) == []

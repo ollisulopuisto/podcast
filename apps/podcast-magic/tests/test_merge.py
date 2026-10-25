@@ -241,3 +241,14 @@ def test_the_api_states_what_is_missing(tmp_path):
     client = TestClient(create_app(start_dir=str(tmp_path)))
     response = client.post("/api/merge/run", json={"session": str(target)})
     assert response.status_code == 400
+
+
+def test_merge_refuses_a_nul_path_as_a_stated_error(tmp_path):
+    from nhsx.read import NhsxError
+
+    source = source_session(tmp_path)
+    for bad in ("a\0b.nhsx", ""):
+        with pytest.raises(NhsxError):
+            core.merge(source, bad)
+        with pytest.raises(NhsxError):
+            core.merge(bad, source)

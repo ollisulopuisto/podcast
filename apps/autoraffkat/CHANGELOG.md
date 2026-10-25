@@ -7,6 +7,10 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+### Fixed
+- **"Open in Final Cut" and "Show in Finder" only act on files the app wrote.** The server remembers the export (and the MP4 beside it) it wrote and refuses any other path with a message (403). They used to open any existing path a local request named. Opening a source XML is not restricted to a folder, since it can be anywhere.
+- **Opening a missing file shows a message, not a key.** The error for a missing XML read `read.file_missing` because the text was never added to the catalogue; it now exists in Finnish and English, and a test fails if code asks for a key the catalogue lacks.
+
 ## [2026.10.25.1] - 2026-10-25
 
 ### Added

@@ -61,6 +61,9 @@ def merge(
     yli, koska leikkaus on käsin tehty eikä sitä voi rakentaa uudestaan.
     ``save=False`` laskee raportin kirjoittamatta mitään.
     """
+    for given in (source, target):
+        if not str(given) or "\0" in str(given):
+            raise NhsxError("Istunnon polku ei kelpaa.")
     source, target = Path(source), Path(target)
     if source.resolve() == target.resolve():
         raise NhsxError(

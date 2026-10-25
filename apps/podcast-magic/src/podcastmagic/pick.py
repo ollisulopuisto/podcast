@@ -53,12 +53,19 @@ def resolve(argument: str) -> str:
     return path
 
 
+# Sivu näyttää virheen sellaisenaan, joten teksti on oma eikä käyttöjärjestelmän
+# (jossa on polku).
+UNREADABLE = "Kansiota ei voitu lukea."
+
+
 def browse(directory: str | Path) -> dict:
     """Kansion sisältö selaimen valitsinta varten.
 
     Vain kansiot ja istuntotiedostot. Äänitiedostojen listaaminen tekisi
     listasta satarivisen eikä auttaisi: äänet luetaan istunnon poolista.
     """
+    if "\0" in str(directory):
+        return {"dir": "", "parent": "", "dirs": [], "files": [], "error": UNREADABLE}
     base = Path(os.path.abspath(os.path.expanduser(str(directory) or "~")))
     if not base.is_dir():
         base = base.parent if base.parent.is_dir() else Path.home()
@@ -78,8 +85,8 @@ def browse(directory: str | Path) -> dict:
                         "derived": is_derived(entry),
                     }
                 )
-    except OSError as exc:
-        return {"dir": str(base), "parent": str(base.parent), "dirs": [], "files": [], "error": str(exc)}
+    except OSError:
+        return {"dir": str(base), "parent": str(base.parent), "dirs": [], "files": [], "error": UNREADABLE}
     files.sort(key=lambda f: f["mtime"], reverse=True)
     return {
         "dir": str(base),

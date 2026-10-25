@@ -2,7 +2,9 @@
 
 import sys
 
-from autoraffkat import paths
+import pytest
+
+from autoraffkat import i18n, paths
 
 
 def test_get_resource_path_dev_mode():
@@ -96,7 +98,9 @@ def test_the_export_can_be_opened_in_final_cut(tmp_path, monkeypatch):
     source.write_text("<x/>", encoding="utf-8")
     out = tmp_path / "a-cut.fcpxml"
     out.write_text("<x/>", encoding="utf-8")
-    client = TestClient(create_app(AppState(xml_path=str(source))))
+    state = AppState(xml_path=str(source))
+    state.remember(str(out))  # sovelluksen oma vienti: vain sellainen avataan
+    client = TestClient(create_app(state))
 
     calls = []
 
@@ -111,7 +115,9 @@ def test_the_export_can_be_opened_in_final_cut(tmp_path, monkeypatch):
     assert calls == [["open", "-a", "Final Cut Pro", str(out)]]
 
     # Puuttuva tiedosto ei ole onnistuminen.
-    missing = client.post("/api/final-cut", json={"path": str(tmp_path / "ei.xml")})
+    gone = tmp_path / "ei.xml"
+    state.remember(str(gone))
+    missing = client.post("/api/final-cut", json={"path": str(gone)})
     assert missing.status_code == 404
 
     class Failed:
@@ -122,6 +128,139 @@ def test_the_export_can_be_opened_in_final_cut(tmp_path, monkeypatch):
     broken = client.post("/api/final-cut", json={"path": str(out)})
     assert broken.status_code == 400
     assert "Unable to find" in broken.json()["detail"]
+
+
+@pytest.mark.parametrize("url", ["/api/final-cut", "/api/reveal"])
+def test_only_files_the_app_wrote_can_be_opened_or_revealed(url, tmp_path, monkeypatch):
+    """Nappi avaa viennin, ei mitä tahansa levyn tiedostoa.
+
+    Palvelin kuuntelee paikallista porttia, ja mikä tahansa sille kirjoittava
+    sivu voisi pyytää ``open``ia millä polulla tahansa. Luotettu joukko on
+    «polut jotka palvelin itse kirjoitti», ei hakemisto: lähde-XML ja sen
+    media voivat olla missä tahansa, mutta ne eivät ole viennin tulos.
+    """
+    import sys
+
+    from fastapi.testclient import TestClient
+
+    from autoraffkat.server import app as server_app
+    from autoraffkat.server.app import AppState, create_app
+
+    source = tmp_path / "a.fcpxml"
+    source.write_text("<x/>", encoding="utf-8")
+    state = AppState(xml_path=str(source))
+    client = TestClient(create_app(state))
+
+    calls = []
+
+    class Done:
+        returncode = 0
+        stderr = ""
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(server_app.subprocess, "run",
+                        lambda cmd, **kw: calls.append(cmd) or Done())
+
+    # Olemassa oleva mutta kirjoittamaton tiedosto, myös se jonka sovellus on lukenut.
+    stranger = tmp_path / "vieras.txt"
+    stranger.write_text("x", encoding="utf-8")
+    for path in (str(stranger), str(source)):
+        refused = client.post(url, json={"path": path})
+        assert refused.status_code == 403, path
+        assert refused.json()["detail"] == i18n.t("export.not_written")
+    assert calls == []
+
+    # Polku joka kiertää rekisterin symbolisella linkillä ei ole sama kuin kirjattu.
+    out = tmp_path / "a-cut.fcpxml"
+    out.write_text("<x/>", encoding="utf-8")
+    state.remember(str(out))
+    link = tmp_path / "linkki.fcpxml"
+    link.symlink_to(stranger)
+    assert client.post(url, json={"path": str(link)}).status_code == 403
+    assert client.post(url, json={"path": str(out)}).status_code == 200
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("url", ["/api/final-cut", "/api/reveal"])
+def test_an_empty_or_nul_path_is_a_missing_file(url, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from autoraffkat.server.app import AppState, create_app
+
+    client = TestClient(create_app(AppState(xml_path=str(tmp_path / "a.fcpxml"))))
+    for bad in ("", "  ", "a\0b.fcpxml"):
+        response = client.post(url, json={"path": bad})
+        assert response.status_code == 404, repr(bad)
+        assert response.json()["detail"] == i18n.t("export.file_missing")
+
+
+def test_open_takes_a_nul_path_as_a_translated_error(tmp_path):
+    """Virheteksti on käännetty: ``read.file_missing`` puuttui katalogista.
+
+    Käyttäjä luki avaimen sellaisenaan, eikä mikään testi huomannut sitä.
+    """
+    from fastapi.testclient import TestClient
+
+    from autoraffkat.server.app import AppState, create_app
+
+    client = TestClient(create_app(AppState(xml_path=str(tmp_path / "a.fcpxml"))))
+    for bad in ("", "a\0b.fcpxml", str(tmp_path / "ei-ole.fcpxml")):
+        response = client.post("/api/open", json={"path": bad})
+        assert response.status_code == 400, repr(bad)
+        assert "read.file_missing" not in response.json()["detail"], repr(bad)
+
+
+def test_open_is_not_limited_to_the_working_directory(tmp_path, monkeypatch):
+    """Lähde-XML voi olla missä tahansa: Finderin valinta ei ole nykyisessä hakemistossa.
+
+    Hakemistorajaus rikkoisi juuri tavallisen käytön eikä suojaisi mitään,
+    koska avaus lukee vain XML:ää eikä aja polkua.
+    """
+    from fastapi.testclient import TestClient
+
+    from autoraffkat.server.app import AppState, create_app
+
+    elsewhere = tmp_path / "toinen"
+    elsewhere.mkdir()
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    xml = elsewhere / "jakso.fcpxml"
+    xml.write_text("<x/>", encoding="utf-8")
+    state = AppState(xml_path=str(tmp_path / "a.fcpxml"))
+    client = TestClient(create_app(state))
+    assert client.post("/api/open", json={"path": str(xml)}).status_code == 200
+    assert state.xml_path == str(xml)
+
+
+def test_the_lookup_is_exact_and_answers_with_the_servers_own_string(tmp_path):
+    """Pyynnön polkua ei käytetä polkuna: vain täsmälleen kirjattu merkkijono kelpaa.
+
+    Käyttöliittymä lähettää takaisin sen merkkijonon jonka palvelin antoi, joten
+    normalisointi (``realpath``) ei ole tarpeen. Se oli juuri se kohta jossa
+    pyynnön arvo kosketti tiedostojärjestelmää, ja vastauksena on kirjattu
+    merkkijono eikä pyynnön oma.
+    """
+    from autoraffkat.server.app import AppState
+
+    real = tmp_path / "oikea"
+    real.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(real, target_is_directory=True)
+    (real / "a-cut.fcpxml").write_text("<x/>", encoding="utf-8")
+    given = str(real / "a-cut.fcpxml")
+
+    state = AppState(xml_path=str(tmp_path / "a.fcpxml"))
+    state.remember(given)
+    assert state.written_path(given) == given
+    assert state.written_path(str(alias / "a-cut.fcpxml")) == ""
+    assert state.written_path(str(real / ".." / "oikea" / "a-cut.fcpxml")) == ""
+    assert state.written_path(str(real / "toinen.fcpxml")) == ""
+    assert state.written_path("") == ""
+    assert state.written_path("a\0b") == ""
+    state.remember("a\0b")
+    state.remember("")
+    assert state.written == {given}
 
 
 def test_the_pan_amount_is_not_a_setting():

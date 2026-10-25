@@ -116,7 +116,7 @@ def test_envelope_cache_makes_the_second_pass_free(fixture_dir, monkeypatch):
 
 
 @needs_ffmpeg
-def test_server_round_trip(scratch_xml):
+def test_server_round_trip(scratch_xml, monkeypatch):
     """Sama silmukka kuin käyttöliittymässä: säädä, katso, vie."""
     source = scratch_xml()
     state = AppState(xml_path=str(source))
@@ -154,6 +154,27 @@ def test_server_round_trip(scratch_xml):
     assert shown.startswith("sync · Testi")
     assert shown != "Testi", "vientiä ei voi erottaa muista Final Cutissa"
     assert len(written.find(".//spine")) == exported["cuts"]
+
+    # Viennin polku on sovelluksen oma, joten sen voi näyttää ja avata; samaan
+    # hakemistoon jäänyt vieras tiedosto ei ole.
+    from autoraffkat.server import app as server_app
+
+    opened = []
+
+    class Done:
+        returncode = 0
+        stderr = ""
+
+    monkeypatch.setattr(server_app.sys, "platform", "darwin")
+    monkeypatch.setattr(server_app.subprocess, "run",
+                        lambda cmd, **kw: opened.append(cmd) or Done())
+    assert client.post("/api/reveal", json={"path": exported["path"]}).json() == {"ok": True}
+    assert client.post("/api/final-cut", json={"path": exported["path"]}).json() == {"ok": True}
+    assert len(opened) == 2
+    stranger = pathlib.Path(exported["path"]).with_name("vieras.fcpxml")
+    stranger.write_text("<x/>", encoding="utf-8")
+    assert client.post("/api/reveal", json={"path": str(stranger)}).status_code == 403
+    assert len(opened) == 2
 
     # Asetukset jäivät XML:n viereen seuraavaa jaksoa varten.
     assert source.with_suffix(".autoraffkat.json").exists()

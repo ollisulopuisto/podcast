@@ -21,6 +21,9 @@ on:
 # Python-puolen muutoksesta kuin Swift-puolen, ja kumpikaan ei kaadu
 # itsestään — esikatselu vain alkaa näyttää eri jaksoa kuin renderöinti.
 
+permissions:
+  contents: read
+
 jobs:
   agree:
     runs-on: macos-latest

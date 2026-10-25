@@ -124,6 +124,9 @@ class Runner:
         self._current: Job | None = None
         self._thread: threading.Thread | None = None
         self._counter = 0
+        # Työn kirjoittamat tiedostot (``result["written"]``). Käyttöliittymä
+        # näyttää vain niitä Finderissa, joten vain ne kelpaavat näytettäviksi.
+        self._written: set[str] = set()
 
     @property
     def busy(self) -> bool:
@@ -151,6 +154,7 @@ class Runner:
                 with job.lock:
                     job.result = result or {}
                     job.ok = True
+                self._remember((result or {}).get("written"))
             except Cancelled:
                 with job.lock:
                     job.cancelled = True
@@ -172,6 +176,24 @@ class Runner:
         self._thread = thread
         thread.start()
         return job
+
+    def _remember(self, path: object) -> None:
+        if not isinstance(path, str) or not path or "\0" in path:
+            return
+        with self._lock:
+            self._written.add(path)
+
+    def written_path(self, path: str) -> str:
+        """Työn kirjoittama polku joka on täsmälleen ``path``, tai ``""``.
+
+        Palauttaa kirjatun merkkijonon eikä pyynnön: pyynnön arvoa ei käytetä
+        polkuna, ja käyttöliittymä palauttaa sen merkkijonon jonka sai.
+        """
+        with self._lock:
+            for known in self._written:
+                if known == path:
+                    return known
+        return ""
 
     def cancel(self) -> bool:
         with self._lock:

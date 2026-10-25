@@ -119,3 +119,96 @@ def test_transcribe_info_says_whether_the_aligner_can_run(client, monkeypatch):
         "install": "uv sync --extra align",
     }
     assert info["options"]["align"] is False
+
+
+def _run_job(written: str):
+    """Ajaa työn joka kirjoitti ``written``in, ja odottaa sen loppuun."""
+    import time
+
+    from podcastmagic.jobs import RUNNER
+
+    job = RUNNER.start("t", "nimi", lambda progress: {"written": written})
+    deadline = time.time() + 5
+    while job.running and time.time() < deadline:
+        time.sleep(0.01)
+    assert job.snapshot()["ok"]
+
+
+def test_reveal_shows_only_what_a_job_wrote(client, tmp_path, monkeypatch):
+    """Näyttäminen ei ole yleinen tiedostonavain: vain työn kirjoittama polku kelpaa.
+
+    Käyttöliittymä näyttää aina ``job.result.written``in. Mikä tahansa muu
+    olemassa oleva polku on pyyntö jota sovellus ei ole itse tehnyt.
+    """
+    import subprocess
+
+    calls = []
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+
+    stranger = tmp_path / "vieras.txt"
+    stranger.write_text("x", encoding="utf-8")
+    refused = client.post("/api/reveal", json={"path": str(stranger)})
+    assert refused.status_code == 403
+    assert refused.json()["detail"]
+    assert calls == []
+
+    mine = tmp_path / "jakso v2.nhsx"
+    mine.write_text("x", encoding="utf-8")
+    _run_job(str(mine))
+    assert client.post("/api/reveal", json={"path": str(mine)}).json() == {"ok": True}
+    assert len(calls) == 1
+
+
+def test_reveal_of_a_written_file_that_is_gone_is_not_found(client, tmp_path):
+    gone = tmp_path / "poissa.nhsx"
+    _run_job(str(gone))
+    assert client.post("/api/reveal", json={"path": str(gone)}).status_code == 404
+
+
+def test_reveal_and_exists_take_a_nul_path_as_nothing(client):
+    """NUL ei ole polku. Se ei saa kaataa palvelinta eikä päästä mitään läpi."""
+    assert client.post("/api/reveal", json={"path": "a\0b"}).status_code == 404
+    assert client.post("/api/reveal", json={"path": ""}).status_code == 404
+    found = client.get("/api/exists", params={"path": "a\0b"}).json()
+    assert found["file"] is False and found["dir"] is False
+
+
+def test_browse_does_not_pass_the_oserror_text_to_the_page(client, tmp_path, monkeypatch):
+    """Käyttöliittymä näyttää virheen sellaisenaan, joten teksti on sovelluksen oma."""
+    from pathlib import Path
+
+    def deny(self):
+        raise PermissionError(13, "Permission denied", str(self))
+
+    monkeypatch.setattr(Path, "iterdir", deny)
+    listing = client.get("/api/browse", params={"dir": str(tmp_path)}).json()
+    assert listing["error"]
+    assert "Permission denied" not in listing["error"]
+    assert str(tmp_path) not in listing["error"]
+
+
+def test_browse_takes_a_nul_path_as_unreadable(client):
+    listing = client.get("/api/browse", params={"dir": "a\0b"}).json()
+    assert listing["dirs"] == [] and listing["files"] == []
+
+
+def test_a_job_path_is_matched_exactly_not_normalised(tmp_path):
+    """Pyynnön polkua ei kosketa tiedostojärjestelmään; vastaus on kirjattu merkkijono."""
+    from podcastmagic.jobs import Runner
+
+    real = tmp_path / "oikea"
+    real.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(real, target_is_directory=True)
+    given = str(real / "jakso v2.nhsx")
+
+    runner = Runner()
+    runner._remember(given)
+    runner._remember("a\0b")
+    runner._remember("")
+    assert runner.written_path(given) == given
+    assert runner.written_path(str(alias / "jakso v2.nhsx")) == ""
+    assert runner.written_path(str(real / "toinen.nhsx")) == ""
+    assert runner.written_path("") == ""
+    assert runner.written_path("a\0b") == ""
+    assert runner._written == {given}

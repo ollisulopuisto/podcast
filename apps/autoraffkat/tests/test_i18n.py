@@ -76,3 +76,21 @@ def test_every_catalogue_entry_has_both_languages():
         if set(i18n.LANGUAGES) - set(entry)
     }
     assert not missing, missing
+
+
+def test_every_message_key_the_code_asks_for_is_in_the_catalogue():
+    """``t`` palauttaa tuntemattoman avaimen sellaisenaan, joten puuttuva avain ei kaadu.
+
+    Käyttäjä näkee silloin ``read.file_missing`` virheilmoituksen paikalla.
+    Haetaan kaikki kirjaimellisesti kirjoitetut ``t("avain")``-kutsut.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(i18n.__file__).parent
+    missing = {}
+    for path in root.rglob("*.py"):
+        for found in re.finditer(r'\bt\(\s*"([a-z_]+\.[a-z_0-9.]+)"', path.read_text(encoding="utf-8")):
+            if found.group(1) not in i18n.CATALOG:
+                missing.setdefault(found.group(1), []).append(path.name)
+    assert not missing, missing
