@@ -11,6 +11,7 @@ ajettuina, ja kaksi vaimennusajoa voisi kirjoittaa samaa tiedostoa.
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 import traceback
@@ -124,6 +125,9 @@ class Runner:
         self._current: Job | None = None
         self._thread: threading.Thread | None = None
         self._counter = 0
+        # Työn kirjoittamat tiedostot (``result["written"]``). Käyttöliittymä
+        # näyttää vain niitä Finderissa, joten vain ne kelpaavat näytettäviksi.
+        self._written: set[str] = set()
 
     @property
     def busy(self) -> bool:
@@ -151,6 +155,7 @@ class Runner:
                 with job.lock:
                     job.result = result or {}
                     job.ok = True
+                self._remember((result or {}).get("written"))
             except Cancelled:
                 with job.lock:
                     job.cancelled = True
@@ -172,6 +177,19 @@ class Runner:
         self._thread = thread
         thread.start()
         return job
+
+    def _remember(self, path: object) -> None:
+        if not isinstance(path, str) or not path or "\0" in path:
+            return
+        with self._lock:
+            self._written.add(os.path.realpath(path))
+
+    def wrote(self, path: str) -> bool:
+        """Onko tämä polku jonkin työn kirjoittama. Tyhjä ja NUL-polku eivät ole."""
+        if not path or "\0" in path:
+            return False
+        with self._lock:
+            return os.path.realpath(path) in self._written
 
     def cancel(self) -> bool:
         with self._lock:

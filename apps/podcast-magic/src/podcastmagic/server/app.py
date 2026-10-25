@@ -74,6 +74,12 @@ def create_app(start_dir: str = "", session: str = "") -> FastAPI:
         import sys
 
         path = str(body.get("path") or "")
+        if not path or "\0" in path:
+            raise HTTPException(404, "Tiedostoa ei löydy.")
+        # Käyttöliittymä näyttää vain työn tuloksen. Muu polku ei ole sovelluksen
+        # oma pyyntö, vaan mitä tahansa paikalliselle portille kirjoitettua.
+        if not RUNNER.wrote(path):
+            raise HTTPException(403, "Polku ei ole sallittu.")
         if not os.path.exists(path):
             raise HTTPException(404, "Tiedostoa ei löydy.")
         if sys.platform == "darwin":
