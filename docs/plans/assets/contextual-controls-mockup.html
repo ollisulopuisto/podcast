@@ -1,0 +1,344 @@
+<!doctype html>
+<!--
+  MOCKUP. Nothing here is wired: no server, no app.js, no registry.
+  It loads autoraffkat's real stylesheet by relative path, so the tokens and
+  every existing component (header, panel, slot, cell, card, chip, arow) are
+  the shipping ones. Only the three new pieces (.ctx-menu, .carry, .palette)
+  are styled below, from the same tokens.
+
+  Open with ?lang=en|fi&state=menu|carry|palette. Runs offline.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>autoraffkat: contextual controls mockup</title>
+<link rel="stylesheet" href="../../../apps/autoraffkat/src/autoraffkat/server/static/style.css">
+<style>
+  /* --- What the mockup needs that app.js would draw ---------------------- */
+  .thumb { display: block; background: linear-gradient(135deg, #2a2f38, #14161a); }
+  .cell { position: relative; }
+
+  /* --- 1. Context menu: the card's commands from the registry ------------- */
+  .card-more {
+    margin-left: auto; flex: none;
+    width: 26px; height: 26px; padding: 0;
+    display: grid; place-items: center;
+    border: 1px solid transparent; border-radius: 6px;
+    background: transparent; color: var(--muted); font-size: 15px; line-height: 1;
+  }
+  .card-more:hover, .card-more[aria-expanded="true"] {
+    border-color: var(--line); color: var(--text); background: var(--panel);
+  }
+  .ctx-menu {
+    position: absolute; z-index: 20;
+    min-width: 248px; max-width: min(340px, calc(100vw - 32px));
+    padding: 5px;
+    background: var(--panel);
+    border: 1px solid #3d4450;
+    border-radius: 9px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+  }
+  .ctx-caption {
+    padding: 6px 9px 4px;
+    font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ctx-sep { height: 1px; margin: 5px 4px; background: var(--line); }
+  .ctx-item {
+    display: grid; grid-template-columns: 16px minmax(0, 1fr) auto;
+    align-items: center; gap: 8px;
+    width: 100%; margin: 0; padding: 6px 9px;
+    border: 0; border-radius: 6px; background: transparent;
+    color: var(--text); font-size: 13px; text-align: left;
+  }
+  .ctx-item .tick { color: var(--accent); font-size: 12px; }
+  .ctx-item .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+                      margin-right: 7px; vertical-align: 0; }
+  .ctx-item .sub { color: var(--muted); font-size: 12px; }
+  .ctx-item.is-active { background: color-mix(in srgb, var(--accent) 20%, transparent);
+                        outline: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+  .keyhint {
+    font: 12.5px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--muted);
+    border: 1px solid var(--line); border-radius: 4px;
+    padding: 3px 5px; min-width: 20px; text-align: center;
+    white-space: nowrap;
+  }
+
+  /* --- 2. Carry bar: the lifted card, in the panel's own heading row ----- */
+  .tracks-head { display: flex; align-items: baseline; justify-content: space-between;
+                 gap: 12px; margin-bottom: 12px; min-height: 22px; }
+  .tracks-head h2 { margin: 0; }
+  /* While a card is carried the bar must stay in view: at 960×600 the tray is
+     below the fold, and the page scrolls to the card that was lifted there. */
+  .tracks-head.carrying {
+    position: sticky; top: var(--header-h, 70px); z-index: 4;
+    margin: -6px -8px 6px; padding: 6px 8px;
+    background: var(--panel); border-radius: 6px;
+    box-shadow: 0 6px 10px -6px rgba(0, 0, 0, .6);
+  }
+  .carry {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end;
+    gap: 6px 10px; font-size: 12px; color: var(--muted);
+  }
+  .carry b { color: var(--text); font-weight: 500; }
+  .carry .what { color: var(--accent); }
+  .carry span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .slot-badge {
+    position: absolute; z-index: 2; top: -7px; left: -7px;
+    min-width: 21px; height: 21px; padding: 0 5px;
+    display: grid; place-items: center;
+    border-radius: 6px;
+    background: var(--accent); color: #0d1420;
+    font: 600 12px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    box-shadow: 0 0 0 2px var(--panel);
+  }
+  .tray-box { position: relative; }
+
+  /* --- 3. Command palette ------------------------------------------------- */
+  .scrim { position: fixed; inset: 0; z-index: 30; background: rgba(8, 9, 11, .55); }
+  .palette {
+    position: fixed; z-index: 31; left: 50%; top: 12vh; transform: translateX(-50%);
+    width: min(580px, calc(100vw - 32px));
+    background: var(--panel); border: 1px solid #3d4450; border-radius: 12px;
+    box-shadow: 0 20px 48px rgba(0, 0, 0, .55); overflow: hidden;
+  }
+  .palette input[type="text"] {
+    border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
+    background: transparent; padding: 14px 16px; font-size: 15px;
+  }
+  .palette input[type="text"]:focus { outline: none; }
+  .pal-group { padding: 10px 16px 4px; font-size: 11px; letter-spacing: .08em;
+               text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .pal-item {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center;
+    gap: 12px; padding: 7px 16px; font-size: 13px;
+  }
+  .pal-item .where { color: var(--muted); font-size: 12px; white-space: nowrap;
+                     overflow: hidden; text-overflow: ellipsis; }
+  .pal-item .value { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .pal-item.is-active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .pal-item mark { background: none; color: var(--accent); }
+  .pal-foot { display: flex; gap: 14px; flex-wrap: wrap; padding: 9px 16px;
+              border-top: 1px solid var(--line); font-size: 11.5px; color: var(--muted); }
+  .pal-foot span { display: inline-flex; gap: 5px; align-items: center; }
+
+  .mock-tag {
+    position: fixed; right: 10px; bottom: 8px; z-index: 40;
+    font-size: 11px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase;
+    border: 1px dashed var(--line); border-radius: 6px; padding: 3px 8px; background: var(--bg);
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<span class="mock-tag" id="tag"></span>
+<script>
+'use strict';
+/* Mockup: strings in two languages, three states. Nothing is wired. */
+const q = new URLSearchParams(location.search);
+const lang = q.get('lang') === 'fi' ? 'fi' : 'en';
+const view = ['menu', 'carry', 'palette'].includes(q.get('state')) ? q.get('state') : 'menu';
+document.documentElement.lang = lang;
+
+const S = {
+  en: {
+    open: 'Open XML…', reload: 'Reload', run: 'Process audio', render: 'Render video',
+    export: 'Export XML', tracks: 'Tracks', picture: 'Picture', sound: 'Sound',
+    shared: 'Shared', room: 'Room tone', newSpeaker: '+ new speaker',
+    newGroup: '+ group shot (a camera showing several speakers)', tray: 'Unassigned',
+    hint: 'Drag a card into a slot — or click a card, then a slot',
+    sens: 'Sensitivity', gain: 'Gain', over: '12.0 dB over the floor',
+    globals: 'Global controls', rhythm: 'Rhythm and profile', audio: 'Audio',
+    duckRow: 'Ducking', duckHint: "Quiet a microphone under the other person's speech.",
+    levelRow: 'Level rider', levelHint: 'Evens out a speaker’s own level, slowly.',
+    preset: ['Broadcast', 'Mellow', 'Hectic', 'Custom'],
+    presetHint: ['2.5 s shortest shot, J and L cuts', '4.5 s, calmer', '1.4 s, quick exchanges', 'your own numbers'],
+    moveTo: 'Move STATUS CAM 1 to', wide: 'Wide', closeUp: 'Close-up',
+    replaces: 'replaces STATUS CAM 2', unassigned: 'Unassigned',
+    newSpeakerItem: 'New speaker', newGroupItem: 'New group shot',
+    pickUp: 'Pick up and place with the keyboard',
+    moving: 'Moving', place: 'slot', newS: 'new speaker', grp: 'group shot',
+    unas: 'unassigned', cancel: 'cancel',
+    palPh: 'Type a command or a setting', palQuery: 'duck',
+    settings: 'Settings', commands: 'Commands',
+    pal: [
+      ['<mark>Duck</mark>ing', 'Audio › Ducking', 'on · −9 dB'],
+      ['Depth', 'Audio › <mark>Duck</mark>ing', '−9 dB'],
+      ['Gap to the loudest', 'Audio › <mark>Duck</mark>ing', '6 dB'],
+    ],
+    palCmd: [['Process audio', 'applies <mark>duck</mark>ing', '⇧⌘M'],
+             ['Reset audio settings', '', '']],
+    foot: [['↑↓', 'move'], ['↵', 'run or open'], ['esc', 'close'], ['?', 'all keys']],
+    tag: 'Mockup · nothing is wired',
+  },
+  fi: {
+    open: 'Avaa XML…', reload: 'Lue uudestaan', run: 'Käsittele ääni', render: 'Renderöi video',
+    export: 'Vie XML', tracks: 'Raidat', picture: 'Kuva', sound: 'Ääni',
+    shared: 'Yhteiset', room: 'Tilaääni', newSpeaker: '+ uusi puhuja',
+    newGroup: '+ ryhmäkuva (kamera, jossa useampi puhuja)', tray: 'Kohdistamattomat',
+    hint: 'Vedä kortti paikalleen — tai klikkaa kortti ja sitten paikka',
+    sens: 'Herkkyys', gain: 'Vahvistus', over: '12,0 dB pohjan yli',
+    globals: 'Globaalit säätimet', rhythm: 'Rytmi ja profiili', audio: 'Ääni',
+    duckRow: 'Vaimennus', duckHint: 'Hiljennä mikki toisen puheen alla.',
+    levelRow: 'Tasonsäätö', levelHint: 'Tasoittaa puhujan omaa tasoa, hitaasti.',
+    preset: ['Lähetys', 'Rauhallinen', 'Kiivas', 'Oma'],
+    presetHint: ['lyhin kuva 2,5 s, J- ja L-leikkaukset', '4,5 s, rauhallisempi', '1,4 s, nopea vaihto', 'omat luvut'],
+    moveTo: 'Siirrä STATUS CAM 1', wide: 'Laaja', closeUp: 'Lähikuva',
+    replaces: 'korvaa STATUS CAM 2:n', unassigned: 'Kohdistamattomat',
+    newSpeakerItem: 'Uusi puhuja', newGroupItem: 'Uusi ryhmäkuva',
+    pickUp: 'Nosta ja sijoita näppäimistöllä',
+    moving: 'Siirretään', place: 'paikka', newS: 'uusi puhuja', grp: 'ryhmäkuva',
+    unas: 'kohdistamattomat', cancel: 'peru',
+    palPh: 'Kirjoita komento tai asetus', palQuery: 'vaimen',
+    settings: 'Asetukset', commands: 'Komennot',
+    pal: [
+      ['<mark>Vaimen</mark>nus', 'Ääni › Vaimennus', 'päällä · −9 dB'],
+      ['<mark>Vaimen</mark>nus (syvyys)', 'Ääni › Vaimennus', '−9 dB'],
+      ['Lyhin <mark>vaimen</mark>nus', 'Ääni › Vaimennus', '0,6 s'],
+    ],
+    palCmd: [['Käsittele ääni', '<mark>vaimen</mark>nus tehdään käsittelyssä', '⇧⌘M'],
+             ['Palauta ääniasetukset', '', '']],
+    foot: [['↑↓', 'liiku'], ['↵', 'suorita tai avaa'], ['esc', 'sulje'], ['?', 'kaikki näppäimet']],
+    tag: 'Pilapiirros · mitään ei ole kytketty',
+  },
+}[lang];
+
+const kbd = (text) => `<span class="keyhint">${text}</span>`;
+const thumb = '<span class="thumb"></span>';
+const mic = '<span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span>';
+const facts = '1920×1080 · 25 fps · h264 · 47 Mb/s · audio aac';
+const audioFacts = 'pcm_s24le · 1 ch · 48 kHz · 24 bit · 1 h 24 min';
+
+function card(name, kind, opts = {}) {
+  const more = opts.more !== undefined
+    ? `<button class="card-more" aria-haspopup="menu" aria-expanded="${opts.more}" tabindex="-1" title="⋯">⋯</button>` : '';
+  const knobs = kind === 'audio' ? `<div class="knobs">
+      <div class="knob"><label>${S.sens}</label><input type="range" value="40"><output>${S.over}</output></div>
+      <div class="knob"><label>${S.gain}</label><input type="range" value="50"><output>0.0 dB</output></div></div>` : '';
+  return `<div class="card card-${kind}${opts.picked ? ' is-picked' : ''}" tabindex="0"
+      ${opts.focus ? 'style="outline: 2px solid var(--accent); outline-offset: 2px"' : ''}>
+    <div class="card-head">${kind === 'video' ? thumb : mic}
+      <div class="meta"><div class="name">${name}</div><div class="tags">${kind === 'video' ? facts : audioFacts}</div></div>${more}</div>
+    ${knobs}</div>`;
+}
+
+const badge = (n) => (view === 'carry' && n ? `<span class="slot-badge">${n}</span>` : '');
+
+function row(tint, video, strip, audio, cls = '') {
+  return `<div class="slot is-tinted ${cls}" style="--tint: var(${tint})">${video}${strip}${audio}</div>`;
+}
+
+const menuOn = view === 'menu';
+const carryOn = view === 'carry';
+
+const patch = `
+  <div class="slot patch-head"><div class="col-head">${S.picture}</div><div></div><div class="col-head">${S.sound}</div></div>
+  ${row('--wide',
+    `<div class="cell cell-video${carryOn ? ' is-target' : ''}">${badge('1')}${card('STATUS CAM 2', 'video', { more: false })}</div>`,
+    `<div class="strip"><span class="strip-label">${S.shared}</span></div>`,
+    `<div class="cell cell-audio empty"><span class="placeholder">${S.room}</span></div>`)}
+  ${row('--sp0',
+    `<div class="cell cell-video${carryOn ? ' is-target' : ''}">${badge('2')}${card('STATUS CAM 1', 'video', { more: menuOn, focus: menuOn })}</div>`,
+    `<div class="strip linked"><input type="text" class="speaker" value="Nyman"></div>`,
+    `<div class="cell cell-audio">${card('nyman Track2-Combo 2', 'audio', { more: false })}</div>`)}
+  ${row('--sp1',
+    `<div class="cell cell-video${carryOn ? ' is-target' : ''}">${badge('3')}${card('STATUS CAM 3', 'video', { more: false })}</div>`,
+    `<div class="strip linked"><input type="text" class="speaker" value="Wancke"></div>`,
+    `<div class="cell cell-audio">${card('wancke Track1-Combo 1', 'audio', { more: false })}</div>`)}
+  <div class="slot slot-new"><div class="cell cell-video empty${carryOn ? ' is-target' : ''}" ${carryOn ? 'style="opacity:1"' : ''}>${badge('N')}<span class="placeholder">${S.newSpeaker}</span></div><div class="strip"></div><div class="cell cell-audio empty"><span class="placeholder">${S.newSpeaker}</span></div></div>
+  <div class="slot slot-new"><div class="cell cell-video empty${carryOn ? ' is-target' : ''}" ${carryOn ? 'style="opacity:1"' : ''}>${badge('G')}<span class="placeholder">${S.newGroup}</span></div><div class="strip"></div><div class="cell cell-none"></div></div>`;
+
+const tray = `<div id="tray"><div class="tray-head"><h3 class="group">${S.tray}</h3><span class="muted small">${S.hint}</span></div>
+  <div class="tray-box${carryOn ? ' is-target' : ''}">${badge('0')}${card('STATUS CAM 4', 'video', { picked: carryOn, focus: carryOn, more: false })}</div></div>`;
+
+const carryBar = carryOn ? `<div class="carry" role="status">
+    <span>${S.moving} <b class="what">STATUS CAM 4</b></span>
+    <span>${kbd('1–3')} ${S.place}</span><span>${kbd('N')} ${S.newS}</span>
+    <span>${kbd('G')} ${S.grp}</span><span>${kbd('0')} ${S.unas}</span>
+    <span>${kbd('Esc')} ${S.cancel}</span></div>` : '';
+
+const rail = `<div class="rail">
+  <section class="panel globals"><h2>${S.globals}</h2><h3>${S.rhythm}</h3>
+    <div class="rules">${S.preset.map((p, i) => `<label><input type="radio" name="p" ${i === 0 ? 'checked' : ''}> ${p} <span class="hint">${S.presetHint[i]}</span></label>`).join('')}</div></section>
+  <section class="panel audio"><h2>${S.audio}</h2>
+    ${[[S.duckRow, S.duckHint, '−9 dB'], [S.levelRow, S.levelHint, '']].map(([n, h, v]) => `<div class="arow"><div class="arow-head">
+      <button class="arow-open"><span class="arow-name"><b>${n}</b><small>${h}</small></span><span class="arow-value">${v}</span><span class="arow-chev">▶</span></button>
+      <input type="checkbox" class="arow-toggle" checked></div></div>`).join('')}
+  </section></div>`;
+
+document.getElementById('root').innerHTML = `
+<header>
+  <div class="titles"><h1>pp 53 multicam</h1><p class="muted">multicam · 25 fps · 6 ${lang === 'fi' ? 'raitaa' : 'tracks'} · 2 ${lang === 'fi' ? 'osaa' : 'parts'}</p></div>
+  <div class="actions">
+    <span class="langs"><button class="ghost lang" ${lang === 'fi' ? 'disabled' : ''}>FI</button><button class="ghost lang" ${lang === 'en' ? 'disabled' : ''}>EN</button></span>
+    <button class="ghost">${S.open} <kbd>⌘O</kbd></button>
+    <button class="ghost">${S.reload}</button>
+    <button class="ghost">${S.render}</button>
+    <button class="primary">${S.export} <kbd>⌘E</kbd></button>
+  </div>
+</header>
+<main>
+  <section class="panel tracks"><div class="tracks-head${carryOn ? ' carrying' : ''}"><h2>${S.tracks}</h2>${carryBar}</div>
+    <div class="patch">${patch}</div>${tray}</section>
+  ${rail}
+</main>`;
+
+/* The menu opens beside the card's ⋯ and stays on screen: to the right if it
+   fits, else to the left. Vertically it slides up only as far as it must and
+   never flips above the card: flipped, it covered the header and the
+   speaker's name in the 960×600 window, i.e. the very row it is about. */
+if (menuOn) {
+  const items = [
+    ['1', `<span class="swatch" style="background:var(--wide)"></span>${S.wide}`, `<span class="sub">${S.replaces}</span>`],
+    ['2', `<span class="swatch" style="background:var(--sp0)"></span>${S.closeUp} · Nyman`, '', true],
+    ['3', `<span class="swatch" style="background:var(--sp1)"></span>${S.closeUp} · Wancke`, ''],
+    ['N', S.newSpeakerItem, ''],
+    ['G', S.newGroupItem, ''],
+    ['0', S.unassigned, ''],
+  ];
+  const menu = document.createElement('div');
+  menu.className = 'ctx-menu';
+  menu.setAttribute('role', 'menu');
+  menu.innerHTML = `<div class="ctx-caption" role="presentation">${S.moveTo}</div>`
+    + items.map(([k, label, sub, checked], i) => `<button class="ctx-item${i === 2 ? ' is-active' : ''}"
+        role="menuitemradio" aria-checked="${!!checked}" tabindex="-1">
+        <span class="tick">${checked ? '✓' : ''}</span><span>${label}${sub ? ' ' + sub : ''}</span>${kbd(k)}</button>`).join('')
+    + `<div class="ctx-sep" role="separator"></div>
+       <button class="ctx-item" role="menuitem" tabindex="-1"><span class="tick"></span><span>${S.pickUp}</span>${kbd('↵')}</button>`;
+  document.body.append(menu);
+  const anchor = document.querySelector('.card-more[aria-expanded="true"]').getBoundingClientRect();
+  const box = menu.getBoundingClientRect();
+  let x = anchor.right + 6;
+  if (x + box.width > innerWidth - 16) x = Math.max(16, anchor.right - box.width);
+  const y = Math.max(16, Math.min(anchor.bottom + 4, innerHeight - box.height - 16));
+  menu.style.left = `${x + scrollX}px`;
+  menu.style.top = `${y + scrollY}px`;
+}
+
+if (view === 'palette') {
+  const scrim = document.createElement('div');
+  scrim.className = 'scrim';
+  const pal = document.createElement('div');
+  pal.className = 'palette';
+  pal.setAttribute('role', 'dialog');
+  pal.innerHTML = `<input type="text" role="combobox" aria-expanded="true" value="${S.palQuery}" placeholder="${S.palPh}">
+    <div role="listbox">
+      <div class="pal-group">${S.settings}</div>
+      ${S.pal.map(([n, w, v], i) => `<div class="pal-item${i === 0 ? ' is-active' : ''}" role="option"><span>${n}</span><span class="where">${w}</span><span class="value">${v}</span></div>`).join('')}
+      <div class="pal-group">${S.commands}</div>
+      ${S.palCmd.filter(([, w]) => w).map(([n, w, k]) => `<div class="pal-item" role="option"><span>${n} <span class="where">· ${w}</span></span><span></span>${kbd(k)}</div>`).join('')}
+    </div>
+    <div class="pal-foot">${S.foot.map(([k, t]) => `<span>${kbd(k)} ${t}</span>`).join('')}</div>`;
+  document.body.append(scrim, pal);
+}
+
+document.getElementById('tag').textContent = S.tag;
+document.documentElement.style.setProperty('--header-h',
+  `${document.querySelector('header').offsetHeight}px`);
+if (carryOn) document.querySelector('.card.is-picked').scrollIntoView({ block: 'nearest' });
+</script>
+</body>
+</html>
