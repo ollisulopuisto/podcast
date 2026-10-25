@@ -30,6 +30,13 @@ TRANSFERS = ("drive", "direct")
 #: sitä kerrota skriptille.
 SOURCES = ("tracks", "downmix", "audio")
 
+#: Tuetut litterointitaustat. "colab" ajaa ketjun Google Colabissa (oletus),
+#: "parakeet" ajaa litteroinnin paikallisesti Apple Siliconilla (parakeet-mlx).
+BACKENDS = ("colab", "parakeet")
+
+#: Parakeet-oletusmalli paikalliseen ajoon.
+DEFAULT_PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
+
 #: Täytesanat Whispereille. Oletus on sama kuin skriptissa itsessään; jos
 #: se muuttuu sinne, se muuttuu tänne samaan hengessä.
 DEFAULT_PROMPT = "öö, tota, niinku, mhm, joo, silleen, vähän, niinkun, ööh, ömm."
@@ -69,8 +76,22 @@ class RunOptions:
     # Vain ``source="audio"``: sanojen alut kohdistetaan ääneen Colabissa
     # (``wordalign``), ja tiedoston ``timing`` on silloin ``ctc-v1``.
     align: bool = False
+    # Litterointitausta: "colab" (Colab GPU, oletus) tai "parakeet" (paikallinen Apple Silicon).
+    backend: str = "colab"
+    parakeet_model: str = DEFAULT_PARAKEET_MODEL
 
     def __post_init__(self):
+        if self.backend not in BACKENDS:
+            raise ValueError(
+                f"Tuntematon backend: {self.backend} (sallitut: {', '.join(BACKENDS)})"
+            )
+        if self.backend == "parakeet" and self.source != "audio":
+            raise ValueError(
+                "Backend 'parakeet' tukee toistaiseksi vain pelkän äänen tilaa (--audio / --json). "
+                "Käytä .nhsx-istuntojen paikalliseen ajoon podcast-magicia."
+            )
+        if not self.parakeet_model.strip():
+            raise ValueError("parakeet_model ei saa olla tyhjä")
         if self.gpu not in GPUS:
             raise ValueError(f"Tuntematon GPU: {self.gpu} (sallitut: {', '.join(GPUS)})")
         if self.preset not in PRESETS:
@@ -121,7 +142,9 @@ class RunOptions:
         source = os.environ.get("COLAB_SOURCE", "tracks")
         rms = os.environ.get("COLAB_RMS", "").lower() in ("1", "true", "yes")
         transcribe_only = os.environ.get("COLAB_TRANSCRIBE_ONLY", "").lower() in (
-            "1", "true", "yes"
+            "1",
+            "true",
+            "yes",
         )
         thr = int(os.environ.get("COLAB_THR", "-35"))
         tail = float(os.environ.get("COLAB_TAIL", "1.0"))
@@ -137,6 +160,8 @@ class RunOptions:
             "true",
             "yes",
         )
+        backend = os.environ.get("COLAB_BACKEND", "colab")
+        parakeet_model = os.environ.get("COLAB_PARAKEET_MODEL", DEFAULT_PARAKEET_MODEL)
 
         return cls(
             session=session,
@@ -154,6 +179,8 @@ class RunOptions:
             prompt=prompt,
             reset_session=reset_session,
             keep_session=keep_session,
+            backend=backend,
+            parakeet_model=parakeet_model,
         )
 
 
