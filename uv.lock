@@ -2851,7 +2851,7 @@ requires-dist = [
     { name = "lxml", specifier = ">=6.1.3" },
     { name = "mlx-whisper", marker = "extra == 'mlx'", specifier = ">=0.4.0" },
     { name = "nhsx", editable = "packages/nhsx" },
-    { name = "numpy", specifier = ">=2.4.2" },
+    { name = "numpy", specifier = ">=2.5.4" },
     { name = "pywebview", specifier = ">=6.0" },
     { name = "silencelearn", editable = "packages/silencelearn" },
     { name = "speechmix", editable = "packages/speechmix" },
