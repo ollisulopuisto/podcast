@@ -11,7 +11,6 @@ ajettuina, ja kaksi vaimennusajoa voisi kirjoittaa samaa tiedostoa.
 
 from __future__ import annotations
 
-import os
 import threading
 import time
 import traceback
@@ -182,14 +181,19 @@ class Runner:
         if not isinstance(path, str) or not path or "\0" in path:
             return
         with self._lock:
-            self._written.add(os.path.realpath(path))
+            self._written.add(path)
 
-    def wrote(self, path: str) -> bool:
-        """Onko tämä polku jonkin työn kirjoittama. Tyhjä ja NUL-polku eivät ole."""
-        if not path or "\0" in path:
-            return False
+    def written_path(self, path: str) -> str:
+        """Työn kirjoittama polku joka on täsmälleen ``path``, tai ``""``.
+
+        Palauttaa kirjatun merkkijonon eikä pyynnön: pyynnön arvoa ei käytetä
+        polkuna, ja käyttöliittymä palauttaa sen merkkijonon jonka sai.
+        """
         with self._lock:
-            return os.path.realpath(path) in self._written
+            for known in self._written:
+                if known == path:
+                    return known
+        return ""
 
     def cancel(self) -> bool:
         with self._lock:

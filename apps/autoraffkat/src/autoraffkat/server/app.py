@@ -111,11 +111,12 @@ def _written_path(state: "AppState", given: object) -> str:
     path = str(given or "").strip()
     if not path or "\0" in path:
         raise HTTPException(404, t("export.file_missing"))
-    if not state.wrote(path):
+    known = state.written_path(path)
+    if not known:
         raise HTTPException(403, t("export.not_written"))
-    if not os.path.exists(path):
+    if not os.path.exists(known):
         raise HTTPException(404, t("export.file_missing"))
-    return path
+    return known
 
 
 @dataclass
@@ -192,16 +193,24 @@ class AppState:
     written: set = field(default_factory=set)
 
     def remember(self, path: str) -> None:
-        """Kirjaa palvelimen kirjoittaman tiedoston. Symbolinen linkki puretaan."""
+        """Kirjaa palvelimen kirjoittaman tiedoston sellaisenaan, kuten se käyttäjälle annettiin."""
         if path and "\0" not in path:
             with self.lock:
-                self.written.add(os.path.realpath(path))
+                self.written.add(path)
 
-    def wrote(self, path: str) -> bool:
-        if not path or "\0" in path:
-            return False
+    def written_path(self, path: str) -> str:
+        """Kirjattu polku joka on täsmälleen ``path``, tai ``""``.
+
+        Palauttaa palvelimen oman merkkijonon, ei pyynnön: pyynnön arvoa ei
+        käytetä polkuna missään. Käyttöliittymä palauttaa sen merkkijonon jonka
+        sai, joten normalisointi (symbolisten linkkien purku) ei ole tarpeen,
+        eikä se saa koskea tiedostojärjestelmään pyynnön arvolla.
+        """
         with self.lock:
-            return os.path.realpath(path) in self.written
+            for known in self.written:
+                if known == path:
+                    return known
+        return ""
 
     # ---------------------------------------------------------- lataus
 

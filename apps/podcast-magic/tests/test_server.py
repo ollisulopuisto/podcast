@@ -190,3 +190,25 @@ def test_browse_does_not_pass_the_oserror_text_to_the_page(client, tmp_path, mon
 def test_browse_takes_a_nul_path_as_unreadable(client):
     listing = client.get("/api/browse", params={"dir": "a\0b"}).json()
     assert listing["dirs"] == [] and listing["files"] == []
+
+
+def test_a_job_path_is_matched_exactly_not_normalised(tmp_path):
+    """Pyynnön polkua ei kosketa tiedostojärjestelmään; vastaus on kirjattu merkkijono."""
+    from podcastmagic.jobs import Runner
+
+    real = tmp_path / "oikea"
+    real.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(real, target_is_directory=True)
+    given = str(real / "jakso v2.nhsx")
+
+    runner = Runner()
+    runner._remember(given)
+    runner._remember("a\0b")
+    runner._remember("")
+    assert runner.written_path(given) == given
+    assert runner.written_path(str(alias / "jakso v2.nhsx")) == ""
+    assert runner.written_path(str(real / "toinen.nhsx")) == ""
+    assert runner.written_path("") == ""
+    assert runner.written_path("a\0b") == ""
+    assert runner._written == {given}

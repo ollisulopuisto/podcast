@@ -233,8 +233,14 @@ def test_open_is_not_limited_to_the_working_directory(tmp_path, monkeypatch):
     assert state.xml_path == str(xml)
 
 
-def test_the_same_file_under_another_spelling_is_still_the_exported_one(tmp_path):
-    """macOS:llä ``/tmp`` on ``/private/tmp``: vienti ja pyyntö voivat kirjoittaa polun eri tavoin."""
+def test_the_lookup_is_exact_and_answers_with_the_servers_own_string(tmp_path):
+    """Pyynnön polkua ei käytetä polkuna: vain täsmälleen kirjattu merkkijono kelpaa.
+
+    Käyttöliittymä lähettää takaisin sen merkkijonon jonka palvelin antoi, joten
+    normalisointi (``realpath``) ei ole tarpeen. Se oli juuri se kohta jossa
+    pyynnön arvo kosketti tiedostojärjestelmää, ja vastauksena on kirjattu
+    merkkijono eikä pyynnön oma.
+    """
     from autoraffkat.server.app import AppState
 
     real = tmp_path / "oikea"
@@ -242,14 +248,19 @@ def test_the_same_file_under_another_spelling_is_still_the_exported_one(tmp_path
     alias = tmp_path / "alias"
     alias.symlink_to(real, target_is_directory=True)
     (real / "a-cut.fcpxml").write_text("<x/>", encoding="utf-8")
+    given = str(real / "a-cut.fcpxml")
 
     state = AppState(xml_path=str(tmp_path / "a.fcpxml"))
-    state.remember(str(alias / "a-cut.fcpxml"))
-    assert state.wrote(str(real / "a-cut.fcpxml"))
-    other = AppState(xml_path=str(tmp_path / "a.fcpxml"))
-    other.remember(str(real / "a-cut.fcpxml"))
-    assert other.wrote(str(alias / "a-cut.fcpxml"))
-    assert not other.wrote(str(real / "toinen.fcpxml"))
+    state.remember(given)
+    assert state.written_path(given) == given
+    assert state.written_path(str(alias / "a-cut.fcpxml")) == ""
+    assert state.written_path(str(real / ".." / "oikea" / "a-cut.fcpxml")) == ""
+    assert state.written_path(str(real / "toinen.fcpxml")) == ""
+    assert state.written_path("") == ""
+    assert state.written_path("a\0b") == ""
+    state.remember("a\0b")
+    state.remember("")
+    assert state.written == {given}
 
 
 def test_the_pan_amount_is_not_a_setting():
