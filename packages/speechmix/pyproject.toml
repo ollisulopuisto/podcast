@@ -4,7 +4,7 @@ version = "2026.10.9.1"
 description = "Speech-mixing pipeline: samples in, samples out, no session format"
 requires-python = ">=3.13"
 dependencies = [
-    "numpy>=2.4.2",
+    "numpy>=2.5.4",
     "scipy>=1.17.1",
     "pedalboard>=0.9.26",
     "pyloudnorm>=0.2.0",
