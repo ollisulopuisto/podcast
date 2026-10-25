@@ -83,7 +83,7 @@ def build(grid: Grid, decision: Decision, columns: int = 1400,
         "shots": [
             {"key": shot.key, "label": shot.label, "index": index,
              "covers": [grid.speakers[i].name for i in shot.covers],
-             "context": shot.key == grid.context_key}
+             "context": shot.context or shot.key == grid.context_key}
             for index, shot in enumerate(grid.shots)
         ],
         "columns": columns,

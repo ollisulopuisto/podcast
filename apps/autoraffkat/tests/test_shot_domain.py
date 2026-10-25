@@ -115,3 +115,20 @@ def test_unused_tracks_do_not_expand_legacy_wide_coverage():
         'old': {'role': 'unused', 'covers': ['Former guest']},
     }})
     assert settings.tracks['room'].covers == ['A']
+
+
+def test_ordinary_selection_prefers_group_over_equal_coverage_context():
+    grid = shot_grid()
+    grid.shots = [grid.shots[0], ShotLanes('pair', 'A & B', (0, 1))]
+    grid.speakers[1].on[500:700] = True
+    result = decide(grid, Globals(min_shot=1, lead=0, hang=0, wide_every=0))
+    assert [s.angle for s in result.segments] == ['room', 'pair', 'room']
+    assert result.chosen[600] == 1
+
+
+def test_every_explicit_context_is_a_fallback():
+    grid = shot_grid()
+    grid.shots = [grid.shots[0], ShotLanes('other_room', 'Room 2', (0, 1), context=True),
+                  ShotLanes('pair', 'A & B', (0, 1))]
+    result = decide(grid, Globals(min_shot=1, wide_every=0))
+    assert result.chosen[500] == 2

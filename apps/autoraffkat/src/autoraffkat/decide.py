@@ -315,16 +315,21 @@ def _coverage_want(grid: Grid, g: Globals, active, levels) -> np.ndarray:
         eligible &= ~overlap | (ordered[-1] - ordered[-2] >= g.dominance_db)
     # Ehdokasmatriisi lasketaan vektoreina; ajallinen silmukka käy vain
     # kelvollisuusjaksojen rajat eikä yksittäisiä ruutuja.
-    scores = np.full((len(grid.shots), grid.n), len(grid.speakers) + 1, dtype=int)
+    missing = 2 * len(grid.speakers) + 2
+    scores = np.full((len(grid.shots), grid.n), missing, dtype=int)
     for index, shot in enumerate(grid.shots):
         outside = [i for i in range(len(grid.speakers)) if i not in shot.covers]
         ok = eligible & (~required[outside].any(axis=0) if outside else True)
         if shot.available is not None:
             ok &= shot.available
-        scores[index, ok] = len(shot.covers)
+        # Ympäristökuva on tavallisen valinnan varakuva. Näin kahden kuva
+        # voittaa koko huoneen kuvan myös kahden puhujan ohjelmassa.
+        context_cost = (len(grid.speakers) + 1
+                        if shot.context or shot.key == grid.context_key else 0)
+        scores[index, ok] = len(shot.covers) + context_cost
     best = scores.min(axis=0)
     candidates = scores == best
-    candidates[:, best > len(grid.speakers)] = False
+    candidates[:, best == missing] = False
     changes = np.flatnonzero(np.any(candidates[:, 1:] != candidates[:, :-1], axis=0)) + 1
     bounds = np.concatenate(([0], changes, [grid.n]))
     want = np.full(grid.n, HOLD, dtype=np.int32)
