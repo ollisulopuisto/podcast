@@ -1755,6 +1755,9 @@ def create_app(state: AppState) -> FastAPI:
                 400, t("read.file_missing", path=path or "(polku puuttuu)")
             )
         resolved_path = os.path.realpath(path)
+        safe_root = os.path.realpath(os.getcwd())
+        if os.path.commonpath([safe_root, resolved_path]) != safe_root:
+            raise HTTPException(400, t("read.file_missing", path=path))
         if not os.path.exists(resolved_path):
             raise HTTPException(
                 400, t("read.file_missing", path=path or "(polku puuttuu)")
