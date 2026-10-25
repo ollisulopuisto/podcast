@@ -23,6 +23,28 @@ def test_round_trip(tmp_path):
     assert again.tracks["MIC_A.wav"].sensitivity_db == 9.5
     assert again.globals.min_shot == 4.0
     assert again.globals.overlap_rule == "louder"
+    assert again.to_json()["version"] == 2
+
+
+def test_legacy_shot_migration_preserves_other_settings():
+    legacy = ProjectSettings.from_json({
+        "version": 1,
+        "language": "en",
+        "globals": {"min_shot": 6.0},
+        "audio": {"enabled": True, "target_lufs": -17.0},
+        "tracks": {
+            "close": {"role": "close", "speaker": "Host", "gain_db": 2.0},
+            "mic": {"role": "mic", "speaker": "Host"},
+        },
+    })
+    saved = legacy.to_json()
+    assert saved["version"] == 2
+    assert saved["language"] == "en"
+    assert saved["globals"]["min_shot"] == 6.0
+    assert saved["audio"]["enabled"] is True
+    assert saved["audio"]["target_lufs"] == -17.0
+    assert saved["tracks"]["close"]["role"] == "shot"
+    assert saved["tracks"]["close"]["covers"] == ["Host"]
 
 
 def test_settings_live_next_to_xml(tmp_path):

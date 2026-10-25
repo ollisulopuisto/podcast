@@ -28,7 +28,7 @@ from .model import (
     TrackConfig,
 )
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 # Viennin nimen tunnus. Sama vakio molemmissa suunnissa, jotta valmiit
 # leikkaukset eivät päädy tarjolle uudeksi lähteeksi.
@@ -251,10 +251,13 @@ class ProjectSettings:
             if cfg.role == ROLE_CLOSE:
                 cfg.covers = [cfg.speaker.strip()] if cfg.speaker.strip() else []
                 cfg.role = ROLE_SHOT
+                cfg.speaker = ""
             elif cfg.role == ROLE_GROUP:
                 cfg.role = ROLE_SHOT
+                cfg.speaker = ""
             elif cfg.role == ROLE_WIDE:
                 cfg.role, cfg.covers, cfg.context = ROLE_SHOT, list(names), True
+                cfg.speaker = ""
         return cls(
             tracks=tracks,
             globals=Globals.from_json(data.get("globals") or {}),

@@ -319,37 +319,43 @@ def _gather(grid, roles, timeline, tables: dict, settings, program_start: float
         "size": settings.reaction_size,
     }
     found: list[Reaction] = []
+    from .analysis import singleton_shots
+
+    shots_by_speaker: dict[str, list[str]] = {}
+    for name, key in singleton_shots(roles):
+        shots_by_speaker.setdefault(name, []).append(key)
     for speaker in [lane.name for lane in grid.speakers]:
-        key = roles.closes.get(speaker)
-        if not key:
+        keys = shots_by_speaker.get(speaker, [])
+        if not keys:
             continue
         quiet = listening(grid, speaker)
         if not quiet.any():
             continue
-        for item in timeline.track_media(key):
-            table = tables.get(item.key)
-            if table is None:
-                continue
-            points = scores(table, weights)
-            stamps = to_timeline(item, np.asarray(table["times"], dtype=np.float64))
-            for index in np.argsort(points)[::-1]:
-                value = points[index]
-                if not np.isfinite(value) or value < settings.reaction_threshold:
-                    break
-                at = stamps[index]
-                if not np.isfinite(at):
+        for key in keys:
+            for item in timeline.track_media(key):
+                table = tables.get(item.key)
+                if table is None:
                     continue
-                cell = int((at - program_start) / HOP)
-                if cell < 0 or cell >= len(quiet) or not quiet[cell]:
-                    continue
-                # Ennakko: avainruutu kertoo sekunnin, ei hetkeä. Ilman
-                # tätä kuva vaihtuu vasta kun reaktio on jo käynnissä.
-                lead = float(getattr(settings, "reaction_lead", LEAD))
-                begin = max(program_start,
-                            _snap(grid, at - lead, program_start))
-                found.append(Reaction(speaker, begin,
-                                      begin + settings.reaction_length,
-                                      float(value)))
+                points = scores(table, weights)
+                stamps = to_timeline(item, np.asarray(table["times"], dtype=np.float64))
+                for index in np.argsort(points)[::-1]:
+                    value = points[index]
+                    if not np.isfinite(value) or value < settings.reaction_threshold:
+                        break
+                    at = stamps[index]
+                    if not np.isfinite(at):
+                        continue
+                    cell = int((at - program_start) / HOP)
+                    if cell < 0 or cell >= len(quiet) or not quiet[cell]:
+                        continue
+                    # Ennakko: avainruutu kertoo sekunnin, ei hetkeä. Ilman
+                    # tätä kuva vaihtuu vasta kun reaktio on jo käynnissä.
+                    lead = float(getattr(settings, "reaction_lead", LEAD))
+                    begin = max(program_start,
+                                _snap(grid, at - lead, program_start))
+                    found.append(Reaction(speaker, begin,
+                                          begin + settings.reaction_length,
+                                          float(value), shot=key))
     return found
 
 

@@ -173,6 +173,35 @@ def test_nothing_is_proposed_below_the_threshold():
                           settings, 0.0) == []
 
 
+def test_reaction_gather_uses_all_non_context_singleton_shots(monkeypatch):
+    from types import SimpleNamespace
+
+    grid = _grid("B" * 400)
+    def item(key):
+        return SimpleNamespace(
+            key=key, asset_start=0,
+            placements=[SimpleNamespace(start=0, offset=0, end=40)])
+    media = {key: item(key) for key in ("a1", "a2", "context", "group")}
+    timeline = SimpleNamespace(track_media=lambda key: [media[key]])
+    roles = SimpleNamespace(
+        closes={"A": "a1"},
+        shots=[
+            SimpleNamespace(key="a1", covers=["A"], context=False),
+            SimpleNamespace(key="a2", covers=["A"], context=False),
+            SimpleNamespace(key="context", covers=["A"], context=True),
+            SimpleNamespace(key="group", covers=["A", "B"], context=False),
+        ],
+    )
+    monkeypatch.setattr(reactions, "scores", lambda _table, _weights: np.r_[2.0, np.full(39, -np.inf)])
+    monkeypatch.setattr(reactions, "_snap", lambda _grid, at, _start: at)
+    settings = Globals(reactions=True, reaction_threshold=0.1,
+                       reaction_lead=0.0, reaction_length=1.0)
+    found = reactions._gather(grid, roles, timeline,
+                              {key: table() for key in media}, settings, 0.0)
+    assert [reaction.speaker for reaction in found] == ["A", "A"]
+    assert [reaction.shot for reaction in found] == ["a1", "a2"]
+
+
 def test_reactions_off_means_nothing_is_computed():
     """Asetus pois päältä ei saa tuottaa mitään — eikä kaatua puuttuvaan
     taulukkoon."""

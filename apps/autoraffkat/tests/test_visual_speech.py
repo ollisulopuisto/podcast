@@ -125,6 +125,7 @@ from autoraffkat.fcpxml.read import Timeline, Track  # noqa: E402
 from autoraffkat.model import (  # noqa: E402
     ROLE_CLOSE,
     ROLE_MIC,
+    ROLE_SHOT,
     ROLE_WIDE,
     MediaItem,
     Placement,
@@ -189,6 +190,29 @@ def test_the_grid_gets_a_lane_from_the_visual_envelope():
     assert lanes["B"].on[int(10 / HOP)] and not lanes["B"].on[int(27 / HOP)]
     assert lanes["A"].on[int(27 / HOP)] and not lanes["A"].on[int(10 / HOP)]
     assert lanes["B"].close_key == "CAM B"
+
+
+def test_visual_speech_uses_all_singleton_shots_for_a_speaker():
+    timeline, tracks = _scene()
+    alternate = _item("CAM B ALT")
+    timeline.media.append(alternate)
+    timeline.tracks.append(Track(key=alternate.key, name=alternate.key,
+                                 media_keys=[alternate.key]))
+    tracks[alternate.key] = TrackConfig(role=ROLE_SHOT, covers=["B"])
+    n = int(40 / HOP) + 1
+    audio = np.full(n, -80.0, dtype=np.float32)
+    audio[int(22 / HOP):int(32 / HOP)] = -20.0
+    silent = np.full(n, -30.0, dtype=np.float32)
+    alternate_voice = silent.copy()
+    alternate_voice[int(6 / HOP):int(16 / HOP)] = 0.0
+    analysis = Analysis(timeline=timeline, envelopes={
+        "MIC A": audio,
+        "CAM B" + speech.SUFFIX: silent,
+        "CAM B ALT" + speech.SUFFIX: alternate_voice,
+    })
+    grid, _, _ = build_grid(analysis, tracks)
+    lane = next(lane for lane in grid.speakers if lane.name == "B")
+    assert lane.on[int(10 / HOP)]
 
 
 def test_without_a_visual_envelope_the_speaker_has_no_lane_yet():

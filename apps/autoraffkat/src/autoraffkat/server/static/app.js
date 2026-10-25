@@ -2038,7 +2038,21 @@ function colorFor(index) {
    ilman tätä ryhmäkuva saisi jonkun puhujan värin — väärä ihminen palkissa
    eikä mitään virhettä. */
 function shotColor(value, preview) {
-  const groups = ((preview || (latest && latest.preview) || {}).groups) || [];
+  const data = preview || (latest && latest.preview) || {};
+  const shots = data.shots || [];
+  const shot = shots.find((item) => item.index === value);
+  if (shot) {
+    if (shot.context) return colorFor(-1);
+    if ((shot.covers || []).length > 1) {
+      const groups = shots.filter((item) => !item.context
+        && (item.covers || []).length > 1);
+      const groupIndex = groups.findIndex((item) => item.index === value);
+      return css(GROUP_COLORS[groupIndex % GROUP_COLORS.length]);
+    }
+    return shot.covers && shot.covers.length
+      ? colorFor(speakerIndex(shot.covers[0])) : colorFor(value);
+  }
+  const groups = data.groups || [];
   const at = groups.findIndex((g) => g.index === value);
   return at >= 0 ? css(GROUP_COLORS[at % GROUP_COLORS.length]) : colorFor(value);
 }
@@ -2046,6 +2060,9 @@ function shotColor(value, preview) {
 /* Leikkauslistan nimestä palkin arvo: laaja, ryhmäkuva tai puhuja. */
 function labelIndex(label) {
   if (latest && label === latest.wide_label) return -1;
+  const shots = (latest && latest.preview && latest.preview.shots) || [];
+  const shot = shots.find((item) => item.label === label);
+  if (shot) return shot.index;
   const groups = (latest && latest.preview && latest.preview.groups) || [];
   const group = groups.find((g) => g.label === label);
   return group ? group.index : speakerIndex(label);
@@ -2283,9 +2300,19 @@ function renderLegend() {
   if (!latest || !latest.preview) return;
   const entries = latest.preview.speakers.map((s) => [colorFor(s.index),
     s.has_close ? s.name : T('legend.noClose', { name: s.name })]);
-  (latest.preview.groups || []).forEach((g) => {
-    entries.push([shotColor(g.index), g.label]);
-  });
+  const videoShots = latest.preview.shots || [];
+  if (videoShots.length) {
+    videoShots.forEach((shot) => {
+      if (shot.context) return;
+      const covers = shot.covers || [];
+      if (covers.length === 1 && shot.label === covers[0]) return;
+      entries.push([shotColor(shot.index, latest.preview), shot.label]);
+    });
+  } else {
+    (latest.preview.groups || []).forEach((g) => {
+      entries.push([shotColor(g.index), g.label]);
+    });
+  }
   entries.push([colorFor(-1), T('legend.wide')]);
   /* Reaktiorivi selitteeseen vain kun se on palkissakin: selite jota
      vastaavaa riviä ei ole kertoo väärää. */

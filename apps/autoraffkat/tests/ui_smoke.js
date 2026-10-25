@@ -312,6 +312,30 @@ for (const lang of ['fi', 'en']) {
     run(`${tag} renderAudio`, () => context.renderAudio());
     run(`${tag} renderLegend`, () => context.renderLegend());
     run(`${tag} renderCuts`, () => context.renderCuts());
+    run(`${tag} canonical preview shot mapping`, () => {
+      const preview = {
+        speakers: [{ name: 'Alice', index: 0 }, { name: 'Bob', index: 1 }],
+        shots: [
+          { key: 'A1', label: 'Alice alt', index: 0, covers: ['Alice'], context: false },
+          { key: 'B1', label: 'Bob alt', index: 1, covers: ['Bob'], context: false },
+          { key: 'AB', label: 'Two shot', index: 2, covers: ['Alice', 'Bob'], context: false },
+          { key: 'ROOM', label: 'Room', index: 3, covers: ['Alice', 'Bob'], context: true },
+        ],
+        groups: [],
+      };
+      context.__canonicalPreview = preview;
+      vm.runInContext('latest.preview = __canonicalPreview;', context);
+      context.getComputedStyle = () => ({ getPropertyValue: (name) => name });
+      if (context.shotColor(2, preview) !== '--grp0') {
+        throw new Error('multi-person shot index did not use its shot color');
+      }
+      if (context.shotColor(3, preview) !== '--wide') {
+        throw new Error('context shot index did not use the context color');
+      }
+      if (context.labelIndex('Alice alt') !== 0 || context.labelIndex('Two shot') !== 2) {
+        throw new Error('shot labels did not resolve to canonical shot indices');
+      }
+    });
     run(`${tag} renderRuler`, () => context.renderRuler());
     run(`${tag} drawBar`, () => context.drawBar());
     run(`${tag} payload`, () => {

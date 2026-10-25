@@ -229,6 +229,25 @@ class Roles:
     shots: list[ShotConfig] = field(default_factory=list)
 
 
+def singleton_shots(roles: Roles) -> list[tuple[str, str]]:
+    """(puhuja, raidan avain) ei-kontekstikuville joissa näkyy yksi ihminen.
+
+    ``closes`` jää ensimmäisen kuvan yhteensopivuusnäkymäksi. Mittauksen ja
+    rajauksen on kuitenkin nähtävä kaikki valitut lähikuvat, myös vaihtoehdot.
+    """
+    shots = getattr(roles, "shots", None)
+    if shots is None:
+        return [(name, key) for name, key in getattr(roles, "closes", {}).items()]
+    wide_key = getattr(roles, "wide_key", "")
+    return [
+        (shot.covers[0], shot.key)
+        for shot in shots
+        if len(shot.covers) == 1
+        and not shot.context
+        and shot.key != wide_key
+    ]
+
+
 def resolve_roles(
     timeline: Timeline, tracks: dict[str, TrackConfig], visual: bool = True
 ) -> Roles:
@@ -301,9 +320,8 @@ def resolve_roles(
     # Ilman yhtäkään lähikuvaa päätös on kelvollinen mutta hyödytön: koko
     # ohjelma olisi yhtä laajaa kuvaa (tai ilman kuvaa lainkaan). Se on roolituksen puute eikä tulos,
     # joten se sanotaan ääneen eikä viedä XML:ksi.
-    only_legacy_wide = bool(roles.shots) and all(
-        tracks[shot.key].role == ROLE_WIDE for shot in roles.shots)
-    if (roles.mics or roles.visual_speakers) and (not roles.shots or only_legacy_wide):
+    only_context = bool(roles.shots) and all(shot.context for shot in roles.shots)
+    if (roles.mics or roles.visual_speakers) and (not roles.shots or only_context):
         roles.problems.append(t("roles.no_closeups"))
     return roles
 
@@ -323,7 +341,8 @@ def program_range(timeline: Timeline, roles: Roles) -> tuple[Fraction, Fraction]
     spans = [timeline.track_span(roles.wide_key)] if roles.wide_key else []
     # Kuvasta puhuvan «mikki» on hänen lähikuvansa.
     mic_keys = [k for keys in roles.mics.values() for k in keys]
-    mic_keys += [roles.closes[name] for name in roles.visual_speakers]
+    mic_keys += [key for name, key in singleton_shots(roles)
+                 if name in roles.visual_speakers]
     mics = [timeline.track_span(k) for k in mic_keys]
     mics = [s for s in mics if s is not None]
     if mics:
@@ -375,16 +394,18 @@ def build_grid(
             # kynnys on kuvalle mitattu (``VISUAL_MARGIN_DB``) ja siirtyy
             # lähikuvan herkkyysasetuksen mukana. Ennen mittausta ei ole
             # käyrää, eikä kaistaa tehdä: mittaamaton ei ole hiljaisuutta.
-            close = roles.closes[name]
-            cfg = tracks.get(close, TrackConfig())
-            margin = max(3.0, visual_speech.VISUAL_MARGIN_DB
-                         + (cfg.sensitivity_db - grid_lib.FLOOR_MARGIN_DB))
-            for item in timeline.track_media(close):
-                twin = dataclasses.replace(item, key=item.key + visual_speech.SUFFIX)
-                if twin.key not in analysis.envelopes:
+            for speaker, close in singleton_shots(roles):
+                if speaker != name:
                     continue
-                db, valid, floor = analysis.aligned(twin, program_start, n)
-                parts.append((db, valid, floor, margin, 0.0))
+                cfg = tracks.get(close, TrackConfig())
+                margin = max(3.0, visual_speech.VISUAL_MARGIN_DB
+                             + (cfg.sensitivity_db - grid_lib.FLOOR_MARGIN_DB))
+                for item in timeline.track_media(close):
+                    twin = dataclasses.replace(item, key=item.key + visual_speech.SUFFIX)
+                    if twin.key not in analysis.envelopes:
+                        continue
+                    db, valid, floor = analysis.aligned(twin, program_start, n)
+                    parts.append((db, valid, floor, margin, 0.0))
             if not parts:
                 continue
         elif not mic_keys:
@@ -403,10 +424,14 @@ def build_grid(
 
         close_key = roles.closes.get(name)
         avail = None
-        if close_key:
-            items = timeline.track_media(close_key)
-            if items:
-                avail = availability(items, program_start, n)
+        close_keys = [key for speaker, key in singleton_shots(roles)
+                      if speaker == name]
+        for key in close_keys:
+            items = timeline.track_media(key)
+            if not items:
+                continue
+            available = availability(items, program_start, n)
+            avail = available if avail is None else avail | available
         lanes.append(
             SpeakerLanes(
                 name=name, level=heard.level, on=heard.on,

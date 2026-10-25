@@ -113,7 +113,9 @@ def look(tables: dict, timeline, roles) -> Look:
     """
     heights: dict[str, float] = {}
     lines: dict[str, float] = {}
-    for key in roles.closes.values():
+    from .analysis import singleton_shots
+
+    for _speaker, key in singleton_shots(roles):
         for item in timeline.track_media(key):
             table = tables.get(item.key)
             if table is None or "h" not in table:
@@ -568,7 +570,9 @@ def close_up_tables(tables: dict, timeline, roles) -> dict:
     joskus lähikuva — ja silloin rajaus leikkaisi toisen puhujan pois. Ilman
     taulukkoa kuva jää täytön keskelle, kuten laaja.
     """
-    keep = {item.key for key in roles.closes.values()
+    from .analysis import singleton_shots
+
+    keep = {item.key for _speaker, key in singleton_shots(roles)
             for item in timeline.track_media(key)}
     return {key: table for key, table in tables.items() if key in keep}
 
