@@ -47,3 +47,9 @@ def write(tmp_path: Path, xml: str, name: str = "t.fcpxml") -> str:
     path = tmp_path / name
     path.write_text(xml, encoding="utf-8")
     return str(path)
+
+
+def write_bytes(tmp_path: Path, data: bytes, name: str) -> str:
+    path = tmp_path / name
+    path.write_bytes(data)
+    return str(path)

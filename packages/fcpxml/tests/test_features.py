@@ -348,3 +348,55 @@ def test_a_two_hour_timeline_is_exact_to_the_last_frame(tmp_path):
     assert tl.end > 7200  # two hours and a bit
     # Neighbours meet exactly: no gap and no overlap from rounding.
     assert all(a.end == b.offset for a, b in pairwise(placements))
+
+
+# --------------------------------------------------------------- the spine
+
+
+def test_the_spine_lists_the_top_level_items_and_placements_name_theirs(fixture_dir):
+    """A cut container is a top-level spine item; a placement says which one it is in.
+
+    ``Timeline.spine`` is what a writer cuts: the items on the spine itself, not
+    the clips attached to them or the media inside them. Everything attached to
+    or inside a spine item belongs to it.
+    """
+    tl = read_fcpxml(str(fixture_dir / "project.fcpxml"))
+    assert [(i.id, i.kind, i.name, i.offset, i.start, i.duration) for i in tl.spine] == [
+        (0, "asset-clip", "WIDE", 0, 1, 35),
+    ]
+    # The camera, both closes and both mics hang off that one spine clip.
+    assert {p.container for m in tl.media for p in m.placements} == {0}
+
+
+def test_a_multicam_project_has_one_spine_item_per_part(fixture_dir):
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    assert [(i.id, i.kind, i.offset, i.duration) for i in tl.spine] == [
+        (0, "mc-clip", 0, 18),
+        (1, "mc-clip", 18, 18),
+    ]
+    by_part = {}
+    for m in tl.media:
+        for p in m.placements:
+            by_part.setdefault(p.container, set()).add(p.offset)
+    assert by_part == {0: {0}, 1: {18}}
+
+
+def test_spine_items_are_zero_based_and_include_gaps_and_titles(tmp_path):
+    spine = """
+      <gap name="Black" offset="3600s" start="3600s" duration="2s"/>
+      <asset-clip ref="a1" name="Voice" offset="3602s" start="10s" duration="5s"/>
+      <title ref="fx1" name="Credits" offset="3607s" duration="3s"/>
+    """
+    tl = _read(tmp_path, spine, tc_start="3600s")
+    assert [(i.id, i.kind, i.name, i.offset) for i in tl.spine] == [
+        (0, "gap", "Black", 0),
+        (1, "asset-clip", "Voice", 2),
+        (2, "title", "Credits", 7),
+    ]
+    assert tl.media[0].placements[0].container == 1
+
+
+def test_a_sync_clip_has_no_spine_and_no_container(fixture_dir):
+    tl = read_fcpxml(str(fixture_dir / "sync.fcpxml"))
+    assert tl.spine == []
+    assert {p.container for m in tl.media for p in m.placements} == {None}
