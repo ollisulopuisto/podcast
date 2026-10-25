@@ -76,9 +76,16 @@ def create_app(start_dir: str = "", session: str = "") -> FastAPI:
         import sys
 
         path = str((body or {}).get("path") or "").strip()
-        if not path or "\0" in path or not os.path.exists(path):
+        if not path or "\0" in path:
             raise HTTPException(404, "Tiedostoa ei löydy.")
+
+        safe_root = os.path.realpath(os.path.abspath(os.path.expanduser(start_dir or os.getcwd())))
         real_path = os.path.realpath(os.path.abspath(os.path.expanduser(path)))
+        if os.path.commonpath([safe_root, real_path]) != safe_root:
+            raise HTTPException(403, "Polku ei ole sallittu.")
+        if not os.path.exists(real_path):
+            raise HTTPException(404, "Tiedostoa ei löydy.")
+
         if sys.platform == "darwin":
             subprocess.run(["open", "-R", real_path], check=False)
         elif sys.platform.startswith("win"):
