@@ -1,6 +1,6 @@
 [project]
 name = "colab-transcribe"
-version = "2026.10.23.1"
+version = "2026.10.25.1"
 description = "Litterointi ja Auto-Silence Colabin näytönohjaimella: paikallinen ajuri ja TUI, ketju pilvessä"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -34,6 +34,10 @@ dependencies = [
     # ffmpegiä ei tarvita paikallisesti. Sama määrittely kuin automixerissa.
     "soundfile>=0.13.1",
 ]
+
+[project.optional-dependencies]
+# Apple Silicon: nopea paikallinen Parakeet MLX -litterointi
+parakeet = ["parakeet-mlx>=0.3.0"]
 
 [tool.uv.sources]
 silencelearn = { workspace = true }

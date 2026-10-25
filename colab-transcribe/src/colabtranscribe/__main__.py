@@ -16,9 +16,18 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from . import __version__, driver, events, session
+from . import __version__, driver, events, parakeet, session
 from .onboarding import check_environment
-from .options import DEFAULT_PROMPT, GPUS, PRESETS, SOURCES, TRANSFERS, RunOptions
+from .options import (
+    BACKENDS,
+    DEFAULT_PARAKEET_MODEL,
+    DEFAULT_PROMPT,
+    GPUS,
+    PRESETS,
+    SOURCES,
+    TRANSFERS,
+    RunOptions,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,10 +50,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="pelkkä äänitiedosto, toistettavissa; sanat tulevat --json-kansioon "
         "<nimi>.words.json (ei .nhsx:ää, aina suora siirto)",
     )
+    parser.add_argument("--json", metavar="KANSIO", help="--audio-tilan tulostekansio")
     parser.add_argument(
-        "--json", metavar="KANSIO", help="--audio-tilan tulostekansio"
+        "--backend",
+        choices=BACKENDS,
+        default=None,
+        help="litterointitausta: colab (Google Colab GPU, oletus) tai parakeet (paikallinen Apple Silicon)",
     )
-    parser.add_argument("--model", default=None, help="Whisper-malli (--audio, oletus: turbo)")
+    parser.add_argument(
+        "--parakeet-model",
+        default=DEFAULT_PARAKEET_MODEL,
+        help=f"Parakeet-mallin tunniste paikallisessa ajossa (oletus: {DEFAULT_PARAKEET_MODEL})",
+    )
+    parser.add_argument(
+        "--model", default=None, help="Whisper-malli (--audio, oletus: turbo)"
+    )
     parser.add_argument("--language", default=None, help="kieli (--audio, oletus: fi)")
     parser.add_argument(
         "--align",
@@ -189,6 +209,8 @@ def options_from_args(args: argparse.Namespace) -> RunOptions:
         prompt=args.prompt if args.prompt != DEFAULT_PROMPT else env_opts.prompt,
         reset_session=args.reset_session or env_opts.reset_session,
         keep_session=args.keep_session or env_opts.keep_session,
+        backend=args.backend if args.backend is not None else env_opts.backend,
+        parakeet_model=args.parakeet_model or env_opts.parakeet_model,
     )
 
 
@@ -321,7 +343,22 @@ def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
         model=args.model or "turbo",
         language=args.language or "fi",
         align=args.align,
+        backend=args.backend if args.backend is not None else env_opts.backend,
+        parakeet_model=args.parakeet_model or env_opts.parakeet_model,
     )
+
+    if options.backend == "parakeet":
+        printer = (
+            _progress_printer(args.progress) if (args.progress or args.events) else None
+        )
+        return parakeet.run_audio_mode_parakeet(
+            options=options,
+            audio=audio,
+            dry_run=dry_run,
+            log=print,
+            on_progress=printer,
+            events_enabled=args.events,
+        )
     reuse_session = False
     session_state = "new"
     session_reason = None
@@ -410,7 +447,12 @@ def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
             _failure("cancelled", "Ajo keskeytettiin.", code=code, stage=stopped_in)
         else:
             where = f" vaiheessa {stopped_in}" if stopped_in else ""
-            _failure("failed", f"Ajo päättyi koodiin {code}{where}.", code=code, stage=stopped_in)
+            _failure(
+                "failed",
+                f"Ajo päättyi koodiin {code}{where}.",
+                code=code,
+                stage=stopped_in,
+            )
         return code
     missing = [p for p in expected if not p.is_file()]
     if missing:
@@ -457,7 +499,9 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
         print(driver.skipped_note(input_path, skipped))
     files, aliases = driver.dedupe_inputs(input_path, files)
     if aliases:
-        print(f"{len(aliases)} tiedostoa on kopioita toisista: ladataan ja litteroidaan kerran.")
+        print(
+            f"{len(aliases)} tiedostoa on kopioita toisista: ladataan ja litteroidaan kerran."
+        )
 
     reuse_session = False
     if session.is_session_alive(options.session):

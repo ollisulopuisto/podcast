@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.25.1] - 2026-10-25
+
+### Added
+- **`--backend {colab,parakeet}`: Local Parakeet MLX backend for plain-audio mode.** Allows running transcription 100% locally on Apple Silicon Macs at 65x–85x real-time via `parakeet-mlx`, completely bypassing Colab VM provisioning, authentication, and network uploads.
+- **`--parakeet-model`:** Selects the Parakeet model identifier (default: `mlx-community/parakeet-tdt-0.6b-v3`).
+- **SentencePiece subword token reconstruction:** Automatically reconstructs BPE subwords and punctuation into clean word timestamps (`timing: "parakeet"`), fully satisfying the Kuulas plain-audio contract (`<name>.words.json`) and emitting `--progress` and `--events` (`@@kuulas`) events.
+
 ## [2026.10.23.1] - 2026-10-23
 
 ### Added
