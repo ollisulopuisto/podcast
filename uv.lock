@@ -909,7 +909,7 @@ requires-dist = [
 
 [[package]]
 name = "fcpxml"
-version = "2026.10.24.1"
+version = "2026.10.25.1"
 source = { editable = "packages/fcpxml" }
 
 [[package]]
