@@ -2130,8 +2130,19 @@ def create_app(state: AppState) -> FastAPI:
     @app.post("/api/reveal")
     def reveal(payload: dict):
         """Näytä tiedosto Finderissa/tiedostonhallinnassa."""
-        path = str(payload.get("path", "")).strip()
-        if not path or "\0" in path or not os.path.exists(path):
+        raw_path = str(payload.get("path", "")).strip()
+        if not raw_path or "\0" in raw_path:
+            raise HTTPException(404, t("export.file_missing"))
+
+        path = os.path.realpath(raw_path)
+        allowed_root = os.path.realpath(state.project_dir)
+        try:
+            if os.path.commonpath([allowed_root, path]) != allowed_root:
+                raise HTTPException(404, t("export.file_missing"))
+        except ValueError:
+            raise HTTPException(404, t("export.file_missing"))
+
+        if not os.path.exists(path):
             raise HTTPException(404, t("export.file_missing"))
         if sys.platform == "darwin":
             subprocess.run(["open", "-R", path], check=False)
