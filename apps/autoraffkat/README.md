@@ -8,11 +8,11 @@ timeline you can keep editing by hand.
 
 *[Suomenkielinen README](README.fi.md) · [Design notes](DESIGN.md) · [Roadmap](ROADMAP.md)*
 
-![The track list drawn as a patch bay: three cameras on the left, two microphones on the right, each speaker's name once in the strip between them, with the preview bar and the cut list below.](screenshot.png)
+![Earlier interface screenshot showing the previous track setup layout, with the preview bar and cut list below.](screenshot.png)
 
-*One row per speaker: their camera, their name, their microphone. The bar below
-is the whole episode at a glance; the list under it is every cut the export
-will make. Pictured: editing episode 53 of
+*The screenshot shows an earlier setup layout. The current track list assigns
+people to video tracks; the preview bar shows the whole episode at a glance,
+and the list under it is every cut the export will make. Pictured: editing episode 53 of
 [Peter & Peter](https://www.youtube.com/@peterpeterhistoria), a Finnish show
 about history.*
 
@@ -462,47 +462,24 @@ not for users.
 
 ## Track list
 
-The track list is a patch bay. Each row is one speaker: their camera on the
-left, their microphone on the right, their name typed once in between. A short
-cable is drawn across when both ends are in place, and a gap where one is
-missing.
+For each video track, check every person who appears in that shot. The same
+person can be checked on several tracks, and one track can show several people.
+The editor uses those assignments to choose a shot that covers the people
+speaking. You can also mark a track as the preferred context shot for openings,
+returns and other establishing moments.
 
-Roling is done by moving cards, not by choosing from menus. Drag a card into a
-slot — or click the card and then the slot, which does the same thing and works
-from the keyboard. Where the card lands is what it becomes: a camera in a
-speaker's slot is that speaker's close-up, a sound file is their microphone.
-The top row is for the tracks that belong to everyone, the wide shot and the
-room tone. Anything you haven't placed waits in **Unassigned** below the bay, and
-dragging a card back there takes it out of the edit.
+Microphones are listed separately. Enter the speaker's name on each microphone;
+the video cards use those names in their visibility checkboxes. To add someone
+who has no microphone, enter their name on a video card and add them to that
+shot. Their visible speech can be measured from a single-person shot. Renaming
+the last microphone for a speaker updates their video assignments too.
 
-The name is typed once per speaker, on the row, so a close-up and a microphone
-cannot drift apart over a typo. Drop a card on **+ new speaker** and a new row
-appears, named and ready to rename.
+Each track card shows a frame from the middle of its media. In a multicam the
+angle names may only be `1`, `2` and `3`, so seeing the picture makes it easier
+to assign the people correctly. The frame is extracted on request and cached.
 
-A camera that shows some of the speakers but not all — a two-shot of two
-guests while the host has their own camera — goes on **+ group shot** at the
-bottom and gets a row of its own. Drop the microphones of the people in the
-shot on that row's audio side: two, three, whatever the shot shows. Each
-microphone card carries its speaker's name, since the row holds several
-people. Someone who also has their own close-up stays on their own row and
-is added to the shot with the **Also in the shot** buttons on the camera
-card. A speaker with
-no close-up of their own is then shown in the tightest group shot they are
-in, and overlapping speech goes to the tightest shot that shows everyone
-talking, falling back to the wide. Turn-taking between two people in the
-same group shot is not a cut. Renaming a speaker carries over to the group
-shots that name them. Reaction shots and panning still come only from
-close-ups, since a two-shot has no single face to measure.
-
-Picture cards show a frame from the middle of the file. In a multicam the
-angles are called `1`, `2` and `3`, and the filename doesn't say which speaker
-a camera is pointed at either, so without a picture the roling is guesswork.
-The frame is extracted on request and cached.
-
-Each card states what the file actually is: dimensions, frame rate, codec and
-bit rate for picture; channels, sample rate and bit depth for sound; plus the
-combined duration and size of every part. A microphone card carries its own
-sensitivity and gain.
+Audio cards still carry microphone sensitivity and gain. Select the room-tone
+track in the audio controls below.
 
 ## Controls and defaults
 

@@ -1,56 +1,27 @@
 The browser interface. Moved from `apps/autoraffkat/CLAUDE.md`; the smoke-test rule stays there.
 
-## The pair is a row, not a drawing
+## Visibility is assigned per shot
 
-A close-up and its microphone are one thing, and the interface has to say so
-without being read. It is a patch bay: one **slot** per row — video cell on the
-left, audio cell on the right, the speaker's name once in the strip between
-them. The pair is adjacency, so the cable is a horizontal line in a fixed-width
-strip. It is CSS, not geometry: nothing is measured, nothing is redrawn on
-hover or resize, and a crossing cable is not possible to express. The whole
-`drawCables` / `chipEls` / `getBoundingClientRect` machinery that the two-list
-layout needed is gone, and it should not come back.
+The setup asks which speakers are visible on each video track. A video card
+shows the track and one checkbox per known speaker; the `covers` list on that
+track is the single source for all of those selections. A speaker may appear
+on several tracks, and one track may cover several speakers. Do not turn shots
+into speaker slots or require a special wide/group/close role.
 
-The top row is for the tracks that belong to nobody: the wide shot and the room
-tone. They are shared by the whole episode the way the other rows belong to one
-person. Unassigned tracks live in a tray below the bay, not as rows — a track
-with no slot has no pair and therefore no row.
+A separate context checkbox marks the preferred establishing shot. It writes
+`config.context`; an enabled video track writes `role: "shot"` and its
+`config.covers`, while a track with neither coverage nor context writes
+`role: "unused"`. Audio tracks are independent: a named microphone writes
+`role: "mic"` and `config.speaker`, otherwise it is unused. Microphone names
+form the editable speaker roster, and renaming the last microphone for a
+speaker updates all video `covers` references atomically.
 
-**A slot sets the role.** `assign()` is the only place that writes
-`config.role` and `config.speaker`, and it derives both from where the card
-landed: video into a speaker slot is `close`, audio is `mic`, video into the
-shared slot is `wide`, audio into it is `audio.room_track`, and the tray is
-`unused`. There is no role menu any more. Add a new role and it needs a place
-to sit, not a new option in a list.
-
-The group shot is that rule applied once. A camera showing some speakers but
-not all gets a row of its own (`+ group shot`), and the microphones of the
-people in it are dropped on that row's audio side — a camera with two mics
-is a two-shot, which is how people describe it. The name then lives on each
-mic card, since the row holds several people. A mic sits on the group row
-only when its speaker has no close-up of their own; someone who has one
-stays on their row and joins the shot through the card's **Also in the
-shot** buttons. Moving a mic away from the row takes the person out of the
-shot (`pruneCovers`), so a shot never names someone nobody carries. The name is a reference, so renaming a slot or a mic card
-rewrites it in every group shot (`renameCovers`); a name no microphone
-carries is a roling problem, never silently dropped, because the symptom
-would be a camera that is simply never used.
-
-**The name is written once.** It lives on the slot, so a pair cannot break by a
-typo on the second track — which is what the old per-track text field made easy
-and invisible. Renaming a slot writes to every member track.
-
-**Drag and click are one path.** `picked` holds the lifted track key; both
-`dragstart` and a click on a card set it, and every drop target reads it.
-`dataTransfer` carries the key too, but only as the native affordance — a
-browser will not let `dragover` read it, and the keyboard has no `dataTransfer`
-at all. `dropTarget()` wires all four events in one place so the mouse and the
-keyboard cannot end up disagreeing about what is allowed.
-
-Below 900 px the two columns cannot sit side by side. Then the slot stacks —
-name first, then its video and audio cards — which is the same grouping in a
-different direction, and the connector is hidden because adjacency already says
-it.
+The server persists settings format 2 and migrates saved close/group/wide roles
+before returning state to the browser. Keep the browser payload on the same
+`tracks[key].role/covers/context` shape; do not create a second client-side
+coverage model. Track keys are stable shot identities. Coverage labels can
+repeat, so preview coloring and cut rows must resolve a shot by its track key
+rather than by label.
 
 ## The first screen ranks controls; it does not hide them
 

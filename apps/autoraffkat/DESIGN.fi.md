@@ -121,12 +121,15 @@ Järjestys:
 2. **1/f-tempo-ohjaus.** `_compute_tempo` laskee vuorottelunopeuden liukuvassa
    45 s ikkunassa ja säätää efektiivistä vähimmäiskestoa $\tau$ nopean dialogin
    ja rauhallisen puheen välillä.
-3. **Yksi äänessä** → hänen lähikuvansa.
+3. **Yksi äänessä** → saatavilla oleva kuva, jossa hän näkyy ja ylimääräisiä
+   puhujia on mahdollisimman vähän. Nykyinen kuva säilyy jos se käy; muuten
+   tasatilanteen ratkaisee aikajärjestys.
 4. **Useampi äänessä.** Jos päällekkäisyys on lyhyempi kuin `min_overlap`, se
    ei ole päällekkäispuhetta vaan myötäilyä: valitaan kovempi eikä laukaista
-   sääntöä. Muuten sovelletaan valittua sääntöä.
-5. **Puhuja ilman lähikuvaa** → laaja. **Lähikuva jota ei ole aikajanalla
-   tässä kohtaa** → pidä nykyinen.
+   sääntöä. Muuten valitaan kaikki äänessä olevat kattava kuva, jossa on
+   mahdollisimman vähän ylimääräisiä puhujia.
+5. **Sopivaa kuvaa ei ole** → käytä ensisijaista ympäristökuvaa jos se on
+   saatavilla; jos tarvittavaa kuvaa puuttuu aikajanalta, pidä nykyinen.
 6. **Kestorajoitukset ja leikkausrytmi (J-cut / L-cut)** jaksosilmukassa:
    `lead` (J-cut) siirtää leikkausta ennen puheen alkua (hengähdykset ja ilmeet),
    `hang` (L-cut) pitää edellisen puhujan taukojen yli. Lyhin kuvan kesto estää
@@ -148,24 +151,23 @@ vain todelliset tauot saavat ennakon.
 
 Lattia pätee vain kun väistyvä puhuja on todella vaiennut. Päällekkäispuheessa
 hän on yhä äänessä, leikkaus ei johdu siitä että hän lopetti, eikä hännälle ole
-paikkaa: päällekkäispuheen sääntö leikkaa ajallaan. Sama koskee ohjelman
-ensimmäistä leikkausta, jossa väistyvä kuva on laaja eikä siinä ole kasvoja
-joihin viivähtää.
+paikkaa: päällekkäispuheen sääntö leikkaa ajallaan. Sama koskee ohjelman ensimmäistä leikkausta, jossa väistyvä kuva on
+ympäristökuva eikä siinä ole kasvoja joihin viivähtää.
 
 Häntää lyhyempi vastaus ei saa kuvaa lainkaan — lattia työntää leikkauksen sen
 puhujan jakson yli, ja kuva jää siihen missä on. Se on sama mekanismi kuin
 vahvistusaika, toisesta päästä.
 
-### Ohjelma alkaa ja päättyy laajaan
+### Ohjelma alkaa ja päättyy ympäristökuvaan
 
-Aina, eikä se ole säädin. Ensimmäinen kuva kertoo huoneen ja ketä siellä on;
-lähikuvasta alkava ohjelma pudottaa katsojan keskelle kasvoja tietämättä
-tilaa, ja lähikuvaan päättyvä jää roikkumaan.
+Aina, eikä se ole säädin. Ensisijainen ympäristökuva kertoo tilan ja ketä
+siellä on; yhdestä kasvoista alkava ohjelma jättää tilan näyttämättä, ja
+sellaisella päättyvä jää roikkumaan.
 
 Kesto on ohjelman oma `min_shot` eikä oma vakionsa — muuten se ajautuisi
 rytmiprofiilien kanssa eri suuntaan, sillä 1,4 s ja 4,5 s tarkoittavat eri
-kuvaa. Kuva jota ei saa jaettua kahteen kelvolliseen on kokonaan laaja;
-ohjelma johon ei mahdu kolmea kuvaa on rehellisesti pelkkää laajaa.
+kuvaa. Kuva jota ei saa jaettua kahteen kelvolliseen on kokonaan
+ympäristökuva; ohjelma johon ei mahdu kolmea kuvaa jää rehellisesti siihen.
 
 Miksi ei valintana: sen poistaminen on Final Cutissa yksi leikkaus.
 Oletuksen kääntäminen maksaa yhden vedon kerran. Valinta maksaa jokaiselle
@@ -173,9 +175,10 @@ käyttäjälle yhden päätöksen, ja juuri siksi ensimmäisellä ruudulla on
 järjestys eikä luettelo. Sama peruste kuin panoroinnin määrällä, joka ei ole
 liuku.
 
-`_bookend_wide` ajetaan `_force_wide`:n jälkeen, eikä se kumoa asetusta
-`wide_every = 0` — se kytkin koskee **pitkän puheenvuoron** katkaisua, joka
-on eri sääntö.
+`_bookend_wide` on vanha käytäntönimi. Se ajetaan `_force_wide`:n jälkeen
+eikä se kumoa asetusta `wide_every = 0` — kytkin koskee **pitkän
+puheenvuoron** katkaisua, joka on eri sääntö. Molemmat käytännöt käyttävät
+valittua ympäristökuvaa.
 
 ### Pitkä puheenvuoro ja reaktiokuvat
 
@@ -186,23 +189,24 @@ katkeaa luontevaan taukoon tai hengähdykseen.
 
 Jatkoja on kolme, koska ne ovat eri asia leikkauksellisesti eikä mikään ole
 aina oikein:
-* **Palaa puhujaan** antaa laajan kestää `wide_hold` ja palaa samaan
-  kuvaan; rytmi pysyy puhujassa, ja se sopii keskustelulle jossa monologi on
+* **Palaa puhujaan** antaa ympäristökuvan kestää `wide_hold` ja palaa
+  samaan kuvaan; rytmi pysyy puhujassa, ja se sopii keskustelulle jossa monologi on
   poikkeus.
-* **Jää laajaan** pitää laajan seuraavaan puheenvuoroon asti; pitkä
+* **Jää laajaan** pitää ympäristökuvan seuraavaan puheenvuoroon asti; pitkä
   yksinpuhelu näyttää tilanteelta eikä kasvokuvalta, ja leikkauksia tulee
   selvästi vähemmän.
 * **Reaktiokuva** leikkaa toisen puhujan lähikuvaan `wide_hold`-ajaksi, sitten
-  takaisin. (Palaa laajaan, jos toista lähikuvaa ei ole).
+  takaisin. (Palaa ympäristökuvaan, jos toista yhden puhujan kuvaa ei ole).
 
 Valinta on makua, joten se on säädin eikä vakio.
 
-Tämä ajetaan vasta valmiille leikkauslistalle eikä `want`-taulukkoon. Se on
+Nämä ympäristökuvakäytännöt ajetaan vasta valmiille leikkauslistalle eikä
+`want`-taulukkoon. Se on
 rytmisääntö eikä havainto siitä kuka puhuu, eikä se saa sekaantua kynnyksiin:
 `want` kertoo edelleen kenen vuoro on, ja `_force_wide` päättää erikseen
 näytetäänkö se.
 
-Laajan kesto nostetaan aina vähintään lyhimpään kuvan kestoon. Muuten säädin
+Ympäristökuvan kesto nostetaan aina vähintään lyhimpään kuvan kestoon. Muuten säädin
 tuottaisi välähdyksiä, joita mikään muu sääntö ei päästäisi läpi — ja
 vähimmäiskesto on koko päätöksen tiukin lupaus.
 

@@ -639,23 +639,34 @@ background thread while the interface is asking for state.
 
 `server/CLAUDE.md` holds the sections that were here (loaded when working in that directory).
 
-## Every shot covers a set of speakers
+## Shots have coverage; speakers have activity
 
-The decision layer does not know "close-up" and "wide" as kinds, only who a
-shot shows: a close-up covers one speaker, a group shot (`GroupShot`) some,
-the wide everyone. A speaker without a close-up of their own goes to the
-tightest group shot they are in, then the wide; overlapping speech under the
-wide rule goes to the tightest group shot that shows *everyone talking*,
-then the wide. Group shots are numbered after the speakers in `want` and in
-`Decision.chosen` (`len(speakers) + g`), and `_shot_active` gives each one
-an activity row — any of its speakers talking — so the L-cut hang works on
-them unchanged. The preview names them (`preview.groups`), or the browser
-would paint a group shot in some speaker's colour.
+Every video track is an independently selectable shot. Its `TrackConfig.covers`
+lists the speakers visible in it; `TrackConfig.context` marks a preferred
+establishing/context shot. A speaker may be visible in any number of shots, and
+several shots may cover the same people. Microphone ownership remains on audio
+tracks and determines who is speaking.
 
-Group shots are never reframed and never measured for reactions:
-`reframe.close_up_tables` drops their tables even when a cached measurement
-exists from when the same camera was a close-up, because the median face of
-a two-shot is one of the two people, and cropping to it cuts the other out.
+`Roles.shots` and `Grid.shots` are the canonical shot inventory. Speaker lanes
+describe activity, while `Decision.chosen` indexes shots, independently of
+speaker indexes. Ordinary selection chooses an available shot covering the
+active speakers, prefers fewer extra people, keeps the current shot when it is
+still eligible, then uses timeline order. Context shots are reserved for
+context policies such as bookends and are a fallback for ordinary selection.
+An overlap shot must cover everyone speaking. The preview's `shots` legend maps
+each chosen index back to its stable track key, label and coverage.
+
+`Roles.closes`, `Roles.groups` and `Roles.wide_key` are derived compatibility
+views for face analysis and export; they are not persisted roles. Project
+settings format 2 migrates old close shots to singleton coverage, group shots
+to their existing coverage, and wide shots to full-roster coverage with the
+context preference. Do not add new behavior that reads the legacy role as a
+second source of truth.
+
+Only non-context singleton shots are eligible for face-close-up measurement,
+reactions and reframing. A one-face median would crop the other person out of a
+multi-person shot. Multi-person shots and context shots use crowd measurements
+for vertical seating and framing instead.
 
 ## The interface has a smoke test, and it is not optional
 
