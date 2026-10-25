@@ -1750,7 +1750,7 @@ def create_app(state: AppState) -> FastAPI:
     def open_xml(payload: dict):
         """Avaa toisen XML-tiedoston tai paketin."""
         path = str((payload or {}).get("path") or "").strip()
-        if not path or not os.path.exists(path):
+        if not path or "\0" in path or not os.path.exists(path):
             raise HTTPException(
                 400, t("read.file_missing", path=path or "(polku puuttuu)")
             )
@@ -2102,7 +2102,7 @@ def create_app(state: AppState) -> FastAPI:
         oli vahinko.
         """
         path = str((payload or {}).get("path", "")).strip()
-        if not path or not os.path.exists(path):
+        if not path or "\0" in path or not os.path.exists(path):
             raise HTTPException(404, t("export.file_missing"))
         if sys.platform != "darwin":
             raise HTTPException(400, t("export.only_macos"))
@@ -2118,7 +2118,7 @@ def create_app(state: AppState) -> FastAPI:
     def reveal(payload: dict):
         """Näytä tiedosto Finderissa/tiedostonhallinnassa."""
         path = str(payload.get("path", "")).strip()
-        if not path or not os.path.exists(path):
+        if not path or "\0" in path or not os.path.exists(path):
             raise HTTPException(404, t("export.file_missing"))
         if sys.platform == "darwin":
             subprocess.run(["open", "-R", path], check=False)

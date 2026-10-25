@@ -157,7 +157,10 @@ def find_search_roots(
     def add(p: str | Path | None) -> None:
         if not p:
             return
-        path = Path(p).resolve()
+        p_str = str(p)
+        if "\0" in p_str:
+            return
+        path = Path(p_str).resolve()
         # Käytetään casefoldia deduplikointiin macOS:llä
         s = str(path).casefold()
         if s not in seen and path.exists():

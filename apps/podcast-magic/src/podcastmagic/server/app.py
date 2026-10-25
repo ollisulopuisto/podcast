@@ -60,6 +60,8 @@ def create_app(start_dir: str = "", session: str = "") -> FastAPI:
     @app.get("/api/exists")
     def exists(path: str = ""):
         """Onko polku olemassa. Käytetään kun polku kirjoitetaan käsin."""
+        if not path or "\0" in path:
+            return {"path": "", "file": False, "dir": False, "error": "Epäkelpo polku."}
         target = os.path.abspath(os.path.expanduser(path))
         return {"path": target, "file": os.path.isfile(target), "dir": os.path.isdir(target)}
 
@@ -73,15 +75,16 @@ def create_app(start_dir: str = "", session: str = "") -> FastAPI:
         import subprocess
         import sys
 
-        path = str(body.get("path") or "")
-        if not os.path.exists(path):
+        path = str((body or {}).get("path") or "").strip()
+        if not path or "\0" in path or not os.path.exists(path):
             raise HTTPException(404, "Tiedostoa ei löydy.")
+        real_path = os.path.realpath(os.path.abspath(os.path.expanduser(path)))
         if sys.platform == "darwin":
-            subprocess.run(["open", "-R", path], check=False)
+            subprocess.run(["open", "-R", real_path], check=False)
         elif sys.platform.startswith("win"):
-            subprocess.run(["explorer", "/select,", path], check=False)
+            subprocess.run(["explorer", f"/select,{real_path}"], check=False)
         else:
-            subprocess.run(["xdg-open", os.path.dirname(path)], check=False)
+            subprocess.run(["xdg-open", os.path.dirname(real_path) or "."], check=False)
         return {"ok": True}
 
     for module in MODULES:

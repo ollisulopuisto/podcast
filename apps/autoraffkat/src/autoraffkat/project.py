@@ -197,6 +197,8 @@ def next_output_path(xml_path: str, tag: str = "") -> str:
     Numero juoksee tiivisteen sisällä: eri säätimillä tehty leikkaus on eri
     tiedosto eikä saman tiedoston seuraava versio.
     """
+    if not xml_path or "\0" in xml_path:
+        raise ValueError(f"epäkelpo tiedostopolku: {xml_path!r}")
     base = _output_base(xml_path, tag)
     if not os.path.exists(f"{base}.fcpxml"):
         return f"{base}.fcpxml"

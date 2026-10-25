@@ -209,9 +209,21 @@ class Session:
         return sum(len(f.words()) for f in self.files)
 
 
+def _valid_path(path: str | Path) -> str:
+    """Varmistaa että käyttäjän antama polku on hyvin muodostettu.
+
+    Tyhjä polku tai nollatavu ei ole kelvollinen tiedostopolku, ja molemmat
+    hylätään ennen kuin polkua käytetään levykutsuihin.
+    """
+    path_str = str(path)
+    if not path_str or "\0" in path_str:
+        raise NhsxError(f"epäkelpo tiedostopolku: {path!r}")
+    return path_str
+
+
 def read(path: str | Path) -> Session:
     """Lukee istunnon. Nostaa ``NhsxError``in jos tiedosto ei kelpaa."""
-    path = str(path)
+    path = _valid_path(path)
     parser = etree.XMLParser(
         remove_blank_text=False,
         recover=False,
@@ -290,6 +302,8 @@ def locate(session: Session, file_info, extra_dir: str = "") -> str:
     """
     raw = file_info.path or file_info.name
     name = os.path.basename(raw) or file_info.name
+    if extra_dir and ("\0" in str(extra_dir) or not str(extra_dir).strip()):
+        return ""
     roots = [d for d in (extra_dir, session.audio_dir, str(Path(session.path).parent)) if d]
 
     if os.path.isabs(raw) and os.path.isfile(raw):

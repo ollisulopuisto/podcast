@@ -61,6 +61,10 @@ def merge(
     yli, koska leikkaus on käsin tehty eikä sitä voi rakentaa uudestaan.
     ``save=False`` laskee raportin kirjoittamatta mitään.
     """
+    for p in (source, target):
+        s = str(p)
+        if not s or "\0" in s:
+            raise NhsxError(f"epäkelpo tiedostopolku: {p!r}")
     source, target = Path(source), Path(target)
     if source.resolve() == target.resolve():
         raise NhsxError(

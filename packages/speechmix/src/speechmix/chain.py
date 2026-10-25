@@ -319,7 +319,7 @@ def load_plugin(path: str, params: dict | None = None, state: str | None = None)
     """
     import pedalboard
 
-    if not path:
+    if not path or "\0" in path:
         return None
     if not os.path.exists(path):
         raise ChainError(t("audio.plugin_missing", path=path))

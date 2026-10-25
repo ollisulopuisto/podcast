@@ -7,7 +7,7 @@ from pathlib import Path
 
 from lxml import etree
 
-from nhsx.read import Word, localname, seconds_to_time
+from nhsx.read import NhsxError, Word, localname, seconds_to_time
 
 # Puhujatunnus sanaelementissä. Hindenburg odottaa kentän olevan olemassa;
 # «UU» on sen oma merkintä tuntemattomalle puhujalle. Diarisaatiota ei tehdä,
@@ -134,7 +134,10 @@ def set_transcription(
 
 def write(tree, path: str | Path) -> None:
     """Kirjoittaa puun levylle XML-esittelyn kera."""
-    tree.write(str(path), encoding="UTF-8", xml_declaration=True)
+    s = str(path)
+    if not s or "\0" in s:
+        raise NhsxError(f"epäkelpo tiedostopolku: {path!r}")
+    tree.write(s, encoding="UTF-8", xml_declaration=True)
 
 
 def next_free_path(path: str | Path) -> Path:
@@ -143,7 +146,10 @@ def next_free_path(path: str | Path) -> Path:
     Vanhaa vientiä ei ylikirjoiteta. Hindenburgin selaimessa nimi on ainoa
     ero kahden version välillä, ja edellinen ajo on usein se joka kelpasi.
     """
-    path = Path(path)
+    s = str(path)
+    if not s or "\0" in s:
+        raise NhsxError(f"epäkelpo tiedostopolku: {path!r}")
+    path = Path(s)
     if not path.exists():
         return path
     stem, suffix = path.stem, path.suffix

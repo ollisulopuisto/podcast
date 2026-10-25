@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from nhsx import NhsxError
 from podcastmagic.merge import core
 from podcastmagic.server.app import create_app
 
@@ -241,3 +242,14 @@ def test_the_api_states_what_is_missing(tmp_path):
     client = TestClient(create_app(start_dir=str(tmp_path)))
     response = client.post("/api/merge/run", json={"session": str(target)})
     assert response.status_code == 400
+
+
+def test_merge_rejects_null_byte_paths(tmp_path):
+    """Nollatavu lähde- tai kohdepolussa hylätään ennen levykäyttöä."""
+    source = source_session(tmp_path)
+    target = target_session(tmp_path)
+    with pytest.raises(NhsxError, match="epäkelpo"):
+        core.merge(source, "kohde\0.nhsx")
+    with pytest.raises(NhsxError, match="epäkelpo"):
+        core.merge("lähde\0.nhsx", target)
+

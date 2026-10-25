@@ -35,6 +35,8 @@ def resolve(path: str) -> str:
     ``.fcpxmld``-paketti on hakemisto, joten sen sisältä otetaan XML. Näin
     työkalulle voi antaa sen mitä Finderissa näkyy.
     """
+    if not path or "\0" in path:
+        raise ValueError(f"epäkelpo tiedostopolku: {path!r}")
     path = os.path.expanduser(path)
     if not re.match(r"^[a-zA-Z]:[\\/]", path):
         path = os.path.abspath(path)

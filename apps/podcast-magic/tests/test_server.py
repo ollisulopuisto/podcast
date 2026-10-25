@@ -51,6 +51,18 @@ def test_browse_lists_only_sessions(client, session_file, tmp_path):
     assert [f["name"] for f in listing["files"]] == ["jakso.nhsx"]
 
 
+def test_browse_handles_os_error_without_leaking_exception(client, tmp_path, monkeypatch):
+    from pathlib import Path
+
+    def broken_iterdir(_self):
+        raise OSError("Permission denied /secret/system/path")
+
+    monkeypatch.setattr(Path, "iterdir", broken_iterdir)
+    listing = client.get("/api/browse", params={"dir": str(tmp_path)}).json()
+    assert listing["error"] == "Kansiota ei voitu lukea."
+    assert "secret" not in listing["error"]
+
+
 def test_running_without_a_session_is_a_stated_error(client):
     for module in MODULES:
         response = client.post(f"/api/{module.key}/run", json={})

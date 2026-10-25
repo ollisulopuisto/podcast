@@ -59,7 +59,16 @@ def browse(directory: str | Path) -> dict:
     Vain kansiot ja istuntotiedostot. Äänitiedostojen listaaminen tekisi
     listasta satarivisen eikä auttaisi: äänet luetaan istunnon poolista.
     """
-    base = Path(os.path.abspath(os.path.expanduser(str(directory) or "~")))
+    dir_str = str(directory)
+    if "\0" in dir_str:
+        return {
+            "dir": "",
+            "parent": "",
+            "dirs": [],
+            "files": [],
+            "error": "Epäkelpo polku.",
+        }
+    base = Path(os.path.abspath(os.path.expanduser(dir_str or "~")))
     if not base.is_dir():
         base = base.parent if base.parent.is_dir() else Path.home()
     dirs, files = [], []
@@ -78,8 +87,14 @@ def browse(directory: str | Path) -> dict:
                         "derived": is_derived(entry),
                     }
                 )
-    except OSError as exc:
-        return {"dir": str(base), "parent": str(base.parent), "dirs": [], "files": [], "error": str(exc)}
+    except OSError:
+        return {
+            "dir": str(base),
+            "parent": str(base.parent),
+            "dirs": [],
+            "files": [],
+            "error": "Kansiota ei voitu lukea.",
+        }
     files.sort(key=lambda f: f["mtime"], reverse=True)
     return {
         "dir": str(base),

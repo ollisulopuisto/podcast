@@ -271,5 +271,11 @@ def test_read_does_not_resolve_external_entities(tmp_path):
     assert not leaked
 
 
+def test_read_rejects_null_byte_path():
+    """Nollatavu polussa hylätään ennen kuin tiedostoa avataan levyltä."""
+    with pytest.raises(NhsxError, match="epäkelpo"):
+        read("polku\0tiedosto.nhsx")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
