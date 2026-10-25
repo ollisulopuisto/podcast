@@ -11,7 +11,7 @@ dependencies = [
     # Apple Silicon only: the TUI and the in-memory mixer use mlx. The stems
     # route (`automixer <stems-folder>`) does not, so Linux installs without it.
     "mlx>=0.30.6; sys_platform == 'darwin'",
-    "numpy>=2.4.2",
+    "numpy>=2.5.4",
     "pedalboard>=0.9.26",
     "psutil>=7.2.2",
     "pyloudnorm>=0.2.0",

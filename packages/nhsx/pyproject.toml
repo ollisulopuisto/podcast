@@ -14,7 +14,7 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio",
 ]
 dependencies = [
-    "lxml>=5.0",
+    "lxml>=6.1.3",
     "speechmix",
 ]
 
