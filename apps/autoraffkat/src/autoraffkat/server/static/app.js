@@ -431,6 +431,35 @@ function shotCoverage(media, speakers) {
     label.append(input, document.createTextNode(speaker));
     box.append(label);
   });
+  const addRow = document.createElement('div');
+  addRow.className = 'coverage-add-person-row';
+  const addPerson = document.createElement('input');
+  addPerson.type = 'text';
+  addPerson.className = 'coverage-add-person';
+  addPerson.dataset.track = media.key;
+  addPerson.placeholder = T('coverage.newPerson');
+  addPerson.setAttribute('aria-label', `${media.name}: ${T('coverage.newPerson')}`);
+  const addButton = document.createElement('button');
+  addButton.type = 'button';
+  addButton.className = 'ghost small coverage-add-button';
+  addButton.dataset.track = media.key;
+  addButton.textContent = T('coverage.addPerson');
+  const add = () => {
+    const name = (addPerson.value || '').trim();
+    if (!name) return;
+    const next = new Set(media.config.covers || []);
+    next.add(name);
+    media.config.covers = [...next];
+    media.config.role = 'shot';
+    schedule(0);
+    renderTracks();
+  };
+  addButton.addEventListener('click', add);
+  addPerson.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') add();
+  });
+  addRow.append(addPerson, addButton);
+  box.append(addRow);
   const contextLabel = document.createElement('label');
   contextLabel.className = 'coverage-context';
   const context = document.createElement('input');
@@ -489,9 +518,13 @@ function renderTracks() {
   const host = $('patch');
   host.textContent = '';
   const tracks = state.tracks || [];
-  const speakers = [...new Set(tracks.filter((track) => track.kind === 'audio'
+  const speakers = [...new Set([
+    ...tracks.filter((track) => track.kind === 'audio'
     && track.config.role === 'mic').map((track) => (track.config.speaker || '').trim())
-    .filter(Boolean))].sort((a, b) => speakerIndex(a) - speakerIndex(b));
+      .filter(Boolean),
+    ...tracks.filter((track) => track.kind === 'video')
+      .flatMap((track) => track.config.covers || []),
+  ].filter(Boolean))].sort((a, b) => speakerIndex(a) - speakerIndex(b));
   host.append(Object.assign(document.createElement('h3'), {
     className: 'group', textContent: T('coverage.title'),
   }));
@@ -2058,10 +2091,11 @@ function shotColor(value, preview) {
 }
 
 /* Leikkauslistan nimestä palkin arvo: laaja, ryhmäkuva tai puhuja. */
-function labelIndex(label) {
+function labelIndex(label, key) {
   if (latest && label === latest.wide_label) return -1;
   const shots = (latest && latest.preview && latest.preview.shots) || [];
-  const shot = shots.find((item) => item.label === label);
+  const shot = (key && shots.find((item) => item.key === key))
+    || shots.find((item) => item.label === label);
   if (shot) return shot.index;
   const groups = (latest && latest.preview && latest.preview.groups) || [];
   const group = groups.find((g) => g.label === label);
@@ -2382,7 +2416,7 @@ function renderCuts() {
     /* Laaja ei ole puhuja, joten sitä ei löydy puhujalistasta: ilman tätä
        speakerIndex putoaisi nollaan ja laaja saisi ensimmäisen puhujan
        värin — eri värin kuin sama laaja selitteessä ja palkissa. */
-    const index = labelIndex(seg.label);
+    const index = labelIndex(seg.label, seg.angle);
     tr.innerHTML =
       `<td>${i + 1}</td>` +
       `<td>${fmtTime(seg.start - start)}</td>` +

@@ -219,6 +219,11 @@ main {
   cursor: pointer;
 }
 .coverage-person input, .coverage-context input { accent-color: var(--accent); }
+.coverage-add-person-row {
+  display: flex; flex-basis: 100%; align-items: center; gap: 8px;
+}
+.coverage-add-person { flex: 1; min-width: 0; }
+.coverage-add-button { flex: none; }
 .coverage-context { flex-basis: 100%; padding-top: 7px; border-top: 1px solid var(--line); }
 .coverage-summary { flex-basis: 100%; margin: 0; }
 .coverage-audio-title { margin-bottom: 0; }
