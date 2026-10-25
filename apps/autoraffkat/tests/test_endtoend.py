@@ -172,6 +172,51 @@ def test_defaults_are_guessed_but_speakers_are_asked(scratch_xml):
     assert any("puhujaa" in p or "speaker" in p.lower() for p in result["problems"])
 
 
+def test_settings_api_accepts_shots_context_and_legacy_roles():
+    """API tallentaa canonical-kuvat ja kääntää vanhat roolit kattavuudeksi."""
+    state = AppState(xml_path="/tmp/settings.fcpxml")
+    state.apply({"tracks": {
+        "mic": {"role": "mic", "speaker": "Host"},
+        "close": {"role": "close", "speaker": "Guest"},
+        "group": {"role": "group", "covers": ["Host", "Guest"]},
+        "wide": {"role": "wide"},
+        "canonical": {"role": "shot", "covers": ["Host"], "context": True},
+    }})
+    tracks = state.settings.to_json()["tracks"]
+    assert tracks["close"]["role"] == "shot"
+    assert tracks["close"]["covers"] == ["Guest"]
+    assert tracks["group"]["role"] == "shot"
+    assert tracks["group"]["covers"] == ["Host", "Guest"]
+    assert tracks["wide"]["role"] == "shot"
+    assert set(tracks["wide"]["covers"]) == {"Host", "Guest"}
+    assert tracks["wide"]["context"] is True
+    assert tracks["canonical"]["role"] == "shot"
+    assert tracks["canonical"]["covers"] == ["Host"]
+    assert tracks["canonical"]["context"] is True
+    assert tracks["mic"]["role"] == "mic"
+    assert tracks["mic"]["speaker"] == "Host"
+
+
+def test_crowd_seating_coverage_includes_all_context_and_multispeaker_shots():
+    from types import SimpleNamespace
+
+    from autoraffkat.analysis import Roles, ShotConfig
+
+    state = AppState(xml_path="/tmp/seats.fcpxml")
+    grid = SimpleNamespace(speakers=[SimpleNamespace(name="Host"),
+                                     SimpleNamespace(name="Guest")])
+    roles = Roles(shots=[
+        ShotConfig("close", ["Host"]),
+        ShotConfig("context", ["Host"], context=True),
+        ShotConfig("two-shot", ["Host", "Guest"]),
+        ShotConfig("wide", ["Host", "Guest"], context=True),
+    ], wide_key="wide")
+    _found, covered = state.crowd_seats(grid, roles)
+    assert covered == {
+        "context": [0], "two-shot": [0, 1], "wide": [0, 1],
+    }
+
+
 def test_new_tracks_are_guessed_even_when_the_episode_has_settings(scratch_xml):
     """Raita jota asetuksissa ei ole saa arvauksen, vaikka asetuksia on.
 
@@ -683,8 +728,10 @@ def test_a_synced_multicam_is_cut_processed_and_exported(fixture_dir, tmp_path, 
                  if r.get("active") != "0"]
         assert sorted(heard) == sorted(mics[part]), (part, heard)
     # Käsitelty ääni on vientiin ohjattu mikin assettiin, ei kameraan.
-    srcs = [rep.get("src", "") for rep in root.iter("media-rep")]
-    assert sum("%5Bmix%5D" in s for s in srcs) == 5, srcs
+    from urllib.parse import unquote
+
+    srcs = [unquote(rep.get("src", "")) for rep in root.iter("media-rep")]
+    assert sum("[mix]" in s for s in srcs) == 5, srcs
 
 
 @needs_ffmpeg
@@ -842,9 +889,11 @@ def test_roles_are_inherited_from_the_previous_episode(fixture_dir, tmp_path):
 
     state = AppState(xml_path=str(current / "Info.fcpxml"))
     state.load()
-    assert state.settings.tracks["CLOSE_A"].role == "close"
-    assert state.settings.tracks["CLOSE_A"].speaker == "Host"
-    assert state.settings.tracks["WIDE"].role == "wide"
+    assert state.settings.tracks["CLOSE_A"].role == "shot"
+    assert state.settings.tracks["CLOSE_A"].covers == ["Host"]
+    assert state.settings.tracks["WIDE"].role == "shot"
+    assert state.settings.tracks["WIDE"].covers == ["Host", "Guest"]
+    assert state.settings.tracks["WIDE"].context is True
     assert state.settings.globals.min_shot == 4.0
     assert state.inherited_from.endswith("jakso53.autoraffkat.json")
 
@@ -897,13 +946,16 @@ def test_own_settings_beat_the_previous_episode(fixture_dir, tmp_path):
     current.mkdir()
     xml = current / "Info.fcpxml"
     shutil.copy(fixture_dir / "multicam.fcpxml", xml)
-    project.save(
-        str(xml), project.ProjectSettings(tracks={"WIDE": TrackConfig(role=ROLE_WIDE)})
-    )
+    project.save(str(xml), project.ProjectSettings(tracks={
+        "WIDE": TrackConfig(role=ROLE_WIDE),
+        "MIC": TrackConfig(role=ROLE_MIC, speaker="Host"),
+    }))
 
     state = AppState(xml_path=str(xml))
     state.load()
-    assert state.settings.tracks["WIDE"].role == "wide"
+    assert state.settings.tracks["WIDE"].role == "shot"
+    assert state.settings.tracks["WIDE"].covers == ["Host"]
+    assert state.settings.tracks["WIDE"].context is True
     assert state.inherited_from == ""
 
 

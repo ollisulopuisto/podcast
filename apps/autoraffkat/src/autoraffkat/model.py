@@ -18,6 +18,7 @@ from .layout import (  # noqa: F401  LAYOUTS: muiden moduulien käyttöön
     LAYOUTS,
 )
 
+ROLE_SHOT = "shot"
 ROLE_WIDE = "wide"
 ROLE_CLOSE = "close"
 ROLE_MIC = "mic"
@@ -25,7 +26,7 @@ ROLE_MIC = "mic"
 # Laaja kattaa kaikki ja lähikuva yhden; tämä on niiden väli.
 ROLE_GROUP = "group"
 ROLE_UNUSED = "unused"
-ROLES = (ROLE_UNUSED, ROLE_WIDE, ROLE_CLOSE, ROLE_GROUP, ROLE_MIC)
+ROLES = (ROLE_SHOT, ROLE_UNUSED, ROLE_WIDE, ROLE_CLOSE, ROLE_GROUP, ROLE_MIC)
 
 OVERLAP_WIDE = "wide"
 OVERLAP_HOLD = "hold"
@@ -99,7 +100,8 @@ class TrackConfig:
 
     role: str = ROLE_UNUSED
     speaker: str = ""  # lähikuvan ja mikin yhdistävä nimi
-    covers: list[str] = field(default_factory=list)  # ryhmäkuvan puhujat
+    covers: list[str] = field(default_factory=list)  # kuvassa näkyvät puhujat
+    context: bool = False  # ohjelman ympäristön näyttävä kuva
     # Laajan tai ryhmäkuvan istujat vasemmalta oikealle, jos käyttäjä on
     # korjannut mitatun järjestyksen. Tyhjä = mitattu (``seats.py``).
     seats: list[str] = field(default_factory=list)
@@ -113,7 +115,7 @@ class TrackConfig:
     def from_json(cls, data: dict) -> "TrackConfig":
         known = {
             f: data[f]
-            for f in ("role", "speaker", "sensitivity_db", "gain_db")
+            for f in ("role", "speaker", "context", "sensitivity_db", "gain_db")
             if f in data
         }
         for name in ("covers", "seats"):
@@ -417,7 +419,7 @@ class Segment:
 
 @dataclass
 class Speaker:
-    """Puhuja: yksi mikki ja enintään yksi lähikuva."""
+    """Puhujan yhteensopivuusnäkymä: mikit ja ensimmäinen lähikuva."""
 
     name: str
     mic_keys: list[str] = field(default_factory=list)

@@ -9,6 +9,7 @@ from autoraffkat.model import (
     ROLE_CLOSE,
     ROLE_GROUP,
     ROLE_MIC,
+    ROLE_SHOT,
     ROLE_WIDE,
     TrackConfig,
 )
@@ -70,5 +71,5 @@ def test_covers_survive_a_save(tmp_path):
     xml.write_text("<fcpxml/>")
     project.save(str(xml), project.ProjectSettings(tracks=_studio(["1", "2"])))
     again = project.load(str(xml))
-    assert again.tracks["CAM B"].role == ROLE_GROUP
+    assert again.tracks["CAM B"].role == ROLE_SHOT
     assert again.tracks["CAM B"].covers == ["1", "2"]

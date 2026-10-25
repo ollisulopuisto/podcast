@@ -273,6 +273,7 @@ for (const name of Object.keys(context)) {
 }
 
 let failures = 0;
+vm.runInContext("pluginList = [{ name: 'Example', path: '/x/Example.vst3' }]", context);
 function run(label, fn) {
   try {
     fn();
@@ -301,11 +302,65 @@ for (const lang of ['fi', 'en']) {
     run(`${tag} renderStatic`, () => context.renderStatic());
     run(`${tag} renderLanguage`, () => context.renderLanguage());
     run(`${tag} renderHeader`, () => context.renderHeader());
+    run(`${tag} plugin name lookup`, () => {
+      if (context.pluginPath('Example') !== '/x/Example.vst3') {
+        throw new Error('plugin name did not resolve to its path');
+      }
+    });
     run(`${tag} renderTracks`, () => context.renderTracks());
     run(`${tag} renderGlobals`, () => context.renderGlobals());
     run(`${tag} renderAudio`, () => context.renderAudio());
     run(`${tag} renderLegend`, () => context.renderLegend());
     run(`${tag} renderCuts`, () => context.renderCuts());
+    run(`${tag} canonical preview shot mapping`, () => {
+      const preview = {
+        speakers: [{ name: 'Alice', index: 0 }, { name: 'Bob', index: 1 }],
+        shots: [
+          { key: 'A1', label: 'Alice alt', index: 0, covers: ['Alice'], context: false },
+          { key: 'B1', label: 'Bob alt', index: 1, covers: ['Bob'], context: false },
+          { key: 'AB', label: 'Two shot', index: 2, covers: ['Alice', 'Bob'], context: false },
+          { key: 'ROOM', label: 'Room', index: 3, covers: ['Alice', 'Bob'], context: true },
+          { key: 'A2', label: 'Alice alt', index: 4, covers: ['Alice'], context: false },
+        ],
+        groups: [],
+      };
+      context.__canonicalPreview = preview;
+      vm.runInContext('latest.preview = __canonicalPreview;', context);
+      context.getComputedStyle = () => ({ getPropertyValue: (name) => name });
+      if (context.shotColor(2, preview) !== '--grp0') {
+        throw new Error('multi-person shot index did not use its shot color');
+      }
+      if (context.shotColor(3, preview) !== '--wide') {
+        throw new Error('context shot index did not use the context color');
+      }
+      if (context.labelIndex('Alice alt', 'A2') !== 4
+          || context.labelIndex('Two shot', 'AB') !== 2) {
+        throw new Error('shot labels did not resolve to canonical shot indices');
+      }
+      vm.runInContext(`
+        latest.segments = [{ angle: 'A2', label: 'Alice alt', start: 0, end: 1, duration: 1 }];
+        latest.reactions = [];
+        latest.program = { start: 0, duration: 1 };
+        latest.counts = {};
+        latest.edits = [];
+      `, context);
+      const originalQuery = context.document.querySelector;
+      const body = makeElement('tbody');
+      context.document.querySelector = (selector) => selector === '#cut-table tbody'
+        ? body : originalQuery.call(context.document, selector);
+      let usedTrackKey = '';
+      const originalLabelIndex = context.labelIndex;
+      context.labelIndex = (label, key) => {
+        usedTrackKey = key;
+        return originalLabelIndex(label, key);
+      };
+      context.renderCuts();
+      context.labelIndex = originalLabelIndex;
+      context.document.querySelector = originalQuery;
+      if (usedTrackKey !== 'A2') {
+        throw new Error('cut rows did not use their angle key to find a shot');
+      }
+    });
     run(`${tag} renderRuler`, () => context.renderRuler());
     run(`${tag} drawBar`, () => context.drawBar());
     run(`${tag} payload`, () => {
@@ -322,69 +377,8 @@ for (const lang of ['fi', 'en']) {
       if (first) throw first;
     });
 
-    /* Kytkentätaulu: kortin siirto paikasta toiseen. Piirto yksin ei aja
-       sijoitusta lainkaan, ja juuri sijoitus on se joka kirjoittaa raidan
-       roolin ja puhujan — eli koko taulun tarkoitus. */
-    run(`${tag} kytkentätaulu`, () => {
-      const video = fresh.tracks.find((t) => t.kind === 'video');
-      const audio = fresh.tracks.find((t) => t.kind === 'audio');
-      if (!video || !audio) return;
-      context.assign(video, { kind: 'shared', side: 'video', name: '' });
-      context.assign(audio, { kind: 'shared', side: 'audio', name: '' });
-      if (fresh.audio.room_track !== audio.key) throw new Error('tilaääni ei asettunut');
-      context.assign(audio, { kind: 'tray', side: 'any', name: '' });
-      if (audio.config.role !== 'unused') throw new Error('varastoon jäi rooli');
-      const name = context.newSpeakerName();
-      context.assign(video, { kind: 'speaker', side: 'video', name });
-      context.assign(audio, { kind: 'speaker', side: 'audio', name });
-      const { slots } = context.buildSlots();
-      if (!slots.some((sl) => sl.video.length && sl.audio.length)) {
-        throw new Error('pari ei päätynyt samaan paikkaan');
-      }
-      context.pickUp(video);
-      context.renderTracks();
-      context.pickUp(video);
-
-      /* Ryhmäkuva: kamera, jolle kytketään kaksi mikkiä. Kummallakaan ei
-         ole omaa lähikuvaa, joten mikit ovat kameran rivillä ja nimi on
-         kunkin mikin kortissa. */
-      const audios = fresh.tracks.filter((t) => t.kind === 'audio');
-      context.assign(video, { kind: 'group', side: 'video', name: '' });
-      if (video.config.role !== 'group' || video.config.speaker) {
-        throw new Error('ryhmäkuva ei asettunut');
-      }
-      const groupSlot = () => context.buildSlots().slots.find(
-        (sl) => sl.kind === 'group' && sl.video.includes(video));
-      if (!groupSlot()) throw new Error('ryhmäkuvalla ei ole omaa riviä');
-      const dest = { kind: 'group', side: 'audio', name: '', camera: video.key };
-      audios.slice(0, 2).forEach((mic) => context.assign(mic, dest));
-      const covered = video.config.covers.slice().sort();
-      const mics = audios.slice(0, 2).map((m) => m.config.speaker).sort();
-      if (audios.length >= 2 && (covered.length !== 2
-          || covered.join() !== mics.join()
-          || !audios.slice(0, 2).every((m) => m.config.role === 'mic'))) {
-        throw new Error(`kaksi mikkiä ei kytkeytynyt kameraan: ${covered} / ${mics}`);
-      }
-      if (audios.length >= 2 && groupSlot().audio.length !== 2) {
-        throw new Error('ryhmäkuvan mikit eivät ole sen rivillä');
-      }
-      const first = audios[0];
-      const old = first.config.speaker;
-      context.renameCovers(old, 'Uusi nimi');
-      if (!video.config.covers.includes('Uusi nimi')) {
-        throw new Error('nimen vaihto ei seurannut ryhmäkuvaan');
-      }
-      first.config.speaker = 'Uusi nimi';
-      context.renderTracks();
-      context.assign(first, { kind: 'tray', side: 'any', name: '' });
-      if (video.config.covers.includes('Uusi nimi')) {
-        throw new Error('varastoon siirretty mikki jäi ryhmäkuvaan');
-      }
-      context.assign(video, { kind: 'tray', side: 'any', name: '' });
-      if (video.config.covers.length) throw new Error('varastoon jäi ryhmä');
-      /* Uusi puhuja mikistä saa nimen tiedostosta, ei «Puhuja N»:ää. */
-      const guessed = context.guessName(first);
-      if (!guessed) throw new Error('mikin nimestä ei tullut puhujaa');
+    run(`${tag} track coverage`, () => context.renderTracks());
+    run(`${tag} video controls`, () => {
       /* Pystyviennin osiossa on oma mittauspainike: se oli vain
          reaktiokuvien alla, piilossa juuri siltä joka käytti pystyvientiä. */
       const host = context.document.createElement('div');
@@ -435,9 +429,6 @@ for (const lang of ['fi', 'en']) {
         }
         wide.config.seats = [];
       }
-      /* Tila takaisin: seuraava kierros piirtää saman tilan, ja
-         varastoon jäänyt mikki piilottaisi äänipaneelin haarat. */
-      context.assign(first, { kind: 'speaker', side: 'audio', name: guessed });
     });
 
     /* Käsittelyn ollessa kesken piirto menee eri haaraan. */
@@ -531,6 +522,7 @@ for (const lang of ['fi', 'en']) {
 /* Asynkroniset polut: pyyntökierros, vienti ja edistymisen seuranta. Näitä
    piirto ei aja lainkaan, ja juuri ne koskevat palvelinta. */
 async function asyncPaths() {
+  await context.loadPlugins();
   await step('send', () => context.send());
   await step('exportXml', () => context.exportXml());
   /* Renderöinti: vienti renderöintipyynnöllä ja edistymisen seuranta. */
@@ -663,6 +655,73 @@ run('esiasetuksen säätimet', () => {
   }
   if (custom < 3) {
     throw new Error(`mukautetussa näkyi ${custom} säädintä, odotettiin 3+`);
+  }
+});
+
+/* Kuvan kattavuus on ihminen–kameraraita-matriisi. Valinnan pitää näkyä
+   kameran kortissa ja kirjoittua saman raidan canonical-asetuksiin. */
+run('puhujan kuvakattavuus', () => {
+  created.length = 0;
+  vm.runInContext(`
+    state.tracks = [
+      { key: 'mic-host', kind: 'audio', name: 'Host mic', config: { role: 'mic', speaker: 'Host' } },
+      { key: 'mic-guest', kind: 'audio', name: 'Guest mic', config: { role: 'mic', speaker: 'Guest' } },
+      { key: 'cam-a', kind: 'video', name: 'Camera A', config: { role: 'shot', covers: ['Host', 'Visual only'], context: false } },
+      { key: 'cam-b', kind: 'video', name: 'Camera B', config: { role: 'unused', covers: [], context: false } },
+    ];
+    renderTracks();
+  `, context);
+  const boxes = created.filter((el) => el.type === 'checkbox');
+  if (boxes.length !== 8) {
+    throw new Error(`näkyvyysruutuja ${boxes.length}, odotettiin 8`);
+  }
+  const hostInA = boxes.find((el) => el.dataset.track === 'cam-a' && el.dataset.speaker === 'Host');
+  const guestInB = boxes.find((el) => el.dataset.track === 'cam-b' && el.dataset.speaker === 'Guest');
+  const visualOnlyInB = boxes.find((el) => el.dataset.track === 'cam-b'
+    && el.dataset.speaker === 'Visual only');
+  const contextB = boxes.find((el) => el.dataset.track === 'cam-b' && el.dataset.context === 'true');
+  if (!hostInA || !hostInA.checked) throw new Error('Host puuttuu Camera A:n valinnoista');
+  if (!guestInB || guestInB.checked) throw new Error('Guestin Camera B -valinnan tila on väärä');
+  if (!visualOnlyInB || visualOnlyInB.checked) {
+    throw new Error('mikkitön kuvassa näkyvä henkilö ei ollut uudelleenvalittavissa');
+  }
+  if (!contextB) throw new Error('kontekstikuvan valintaa ei piirretty');
+  guestInB.checked = true;
+  guestInB._handlers.change[0].call(guestInB, { target: guestInB });
+  const result = vm.runInContext("state.tracks.find((t) => t.key === 'cam-b').config", context);
+  if (result.role !== 'shot' || !result.covers.includes('Guest')) {
+    throw new Error('puhujavalinta ei päivittänyt shot-roolia ja covers-listaa');
+  }
+  const addPerson = created.find((el) => el.type === 'text'
+    && el.className === 'coverage-add-person' && el.dataset.track === 'cam-b');
+  const addButton = created.find((el) => el.tagName === 'BUTTON'
+    && el.className.includes('coverage-add-button') && el.dataset.track === 'cam-b');
+  if (!addPerson || !addButton) {
+    throw new Error(`henkilökontrollit puuttuivat (kenttä=${!!addPerson}, painike=${!!addButton})`);
+  }
+  addPerson.value = 'Remote guest';
+  addButton._handlers.click[0].call(addButton, { target: addButton });
+  const withVisualOnly = vm.runInContext("state.tracks.find((t) => t.key === 'cam-b').config", context);
+  if (!withVisualOnly.covers.includes('Remote guest') || withVisualOnly.role !== 'shot') {
+    throw new Error('mikkitön henkilö ei tallentunut kameran kattavuuteen');
+  }
+  if (vm.runInContext("state.tracks.filter((t) => t.kind === 'audio').length", context) !== 2) {
+    throw new Error('mikkitön henkilö lisäsi vahingossa mikrofoniraidan');
+  }
+  const summary = created.find((el) => el.className === 'muted small coverage-summary'
+    && el.textContent.includes('Guest'));
+  if (!summary) throw new Error('kameran kattavuusyhteenveto ei päivittynyt valinnan mukana');
+  contextB.checked = true;
+  contextB._handlers.change[0].call(contextB, { target: contextB });
+  if (result.context !== true) throw new Error('kontekstivalinta ei tallentunut');
+  const owner = created.find((el) => el.tagName === 'INPUT' && el.type === 'text'
+    && el.attributes['aria-label'] === 'Host mic: Puhuja');
+  if (!owner) throw new Error('mikrofonin puhujaomistajaa ei näytetty');
+  owner.value = 'Presenter';
+  owner._handlers.change[0].call(owner, { target: owner });
+  const renamed = vm.runInContext("state.tracks.find((t) => t.key === 'cam-a').config", context);
+  if (!renamed.covers.includes('Presenter') || renamed.covers.includes('Host')) {
+    throw new Error('puhujan nimen vaihto ei päivittynyt kuvakattavuuteen');
   }
 });
 

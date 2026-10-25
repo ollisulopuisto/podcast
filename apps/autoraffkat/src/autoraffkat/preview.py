@@ -79,7 +79,15 @@ def build(grid: Grid, decision: Decision, columns: int = 1400,
                 lane[column] = int(index)
 
     chosen = decision.chosen[mids] if n else np.zeros(0, dtype=np.int32)
+    shots = getattr(grid, "shots", ())
+    context_key = getattr(grid, "context_key", "")
     return {
+        "shots": [
+            {"key": shot.key, "label": shot.label, "index": index,
+             "covers": [grid.speakers[i].name for i in shot.covers],
+             "context": shot.context or shot.key == context_key}
+            for index, shot in enumerate(shots)
+        ],
         "columns": columns,
         "reactions": lane,
         "duration": grid.duration,

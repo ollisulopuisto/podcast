@@ -10,6 +10,7 @@ silmukka jaksojen (ei näytteiden) yli.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from itertools import pairwise
 
 import numpy as np
 
@@ -120,6 +121,13 @@ class GroupShot:
 
 
 @dataclass
+class ShotLanes(GroupShot):
+    """Yksi valittava kuva, riippumatta puhujien määrästä tai järjestyksestä."""
+
+    context: bool = False
+
+
+@dataclass
 class Grid:
     """Päätöskerroksen syöte: kaikki ruudukolle kohdistettuna."""
 
@@ -132,6 +140,20 @@ class Grid:
     # sekunteja, ``program_start`` poistettuna): niiden kohdalla on leikkaus
     # ja eri kuva kummallakin puolella. Ks. ``_respect_edits``.
     edits: tuple[float, ...] = ()
+    shots: list[ShotLanes] = field(default_factory=list)
+
+    @property
+    def context_key(self) -> str:
+        """Ensisijainen ympäristökuva; yhden puhujan kuva ei ole oletuslaaja."""
+        explicit = next((shot.key for shot in self.shots if shot.context), "")
+        if explicit:
+            return explicit
+        if len(self.speakers) >= 2:
+            roster = set(range(len(self.speakers)))
+            return next((shot.key for shot in self.shots
+                         if roster <= set(shot.covers)), "")
+        return ""
+
 
     @property
     def duration(self) -> float:
@@ -144,8 +166,8 @@ class Decision:
 
     segments: list[Segment]
     active: np.ndarray  # (puhujia, n) bool — esikatselupalkkia varten
-    # (n,) int — puhujan indeksi, ryhmäkuvan indeksi puhujien määrän päältä
-    # (``len(speakers) + g``) tai WIDE
+    # (n,) int — kuvan indeksi Grid.shotsissa. Vanhassa, ilman shots-
+    # valikoimaa rakennetussa ruudukossa puhujan/ryhmän indeksi tai WIDE.
     chosen: np.ndarray
 
 
@@ -168,6 +190,11 @@ def _shot_active(grid: Grid, active: np.ndarray) -> np.ndarray:
     (L-cut) tietää milloin kuvassa olevat ovat vaienneet, samalla indeksillä
     kuin ``want``.
     """
+    if grid.shots:
+        return np.vstack([
+            active[list(shot.covers)].any(axis=0) if shot.covers
+            else np.zeros(grid.n, dtype=bool) for shot in grid.shots
+        ])
     if not grid.groups:
         return active
     rows = [active[list(shot.covers)].any(axis=0) if shot.covers
@@ -196,6 +223,9 @@ def _want_array(grid: Grid, g: Globals) -> tuple[np.ndarray, np.ndarray]:
         # Vuoto ei ole puhetta, ks. BLEED_DB.
         loudest_on = np.where(active, levels, -300.0).max(axis=0)
         active &= levels >= loudest_on - BLEED_DB
+
+    if grid.shots:
+        return _coverage_want(grid, g, active, levels), active
 
     count = active.sum(axis=0)
     # Vertailu vain äänessä olevien kesken. Hiljaisen mikin taso voi olla
@@ -262,6 +292,62 @@ def _want_array(grid: Grid, g: Globals) -> tuple[np.ndarray, np.ndarray]:
         want[mine] = fallback
 
     return want, active
+
+
+def _coverage_want(grid: Grid, g: Globals, active, levels) -> np.ndarray:
+    """Tiukin saatavilla oleva kuva; tasatilanteessa pidetään nykyinen."""
+    count = active.sum(axis=0)
+    masked = np.where(active, levels, -300.0)
+    loudest = np.argmax(masked, axis=0)
+    overlap = _open_runs(count >= 2, _hops(g.min_overlap))
+    required = active.copy()
+    brief = (count >= 2) & ~overlap
+    if g.overlap_rule != OVERLAP_WIDE:
+        brief |= overlap
+    required[:, brief] = False
+    columns = np.flatnonzero(brief)
+    required[loudest[columns], columns] = True
+    eligible = count > 0
+    if g.overlap_rule == OVERLAP_HOLD:
+        eligible &= ~overlap
+    elif g.overlap_rule != OVERLAP_WIDE and len(grid.speakers) >= 2:
+        ordered = np.sort(masked, axis=0)
+        eligible &= ~overlap | (ordered[-1] - ordered[-2] >= g.dominance_db)
+    # Ehdokasmatriisi lasketaan vektoreina; ajallinen silmukka käy vain
+    # kelvollisuusjaksojen rajat eikä yksittäisiä ruutuja.
+    missing = 2 * len(grid.speakers) + 2
+    scores = np.full((len(grid.shots), grid.n), missing, dtype=int)
+    for index, shot in enumerate(grid.shots):
+        outside = [i for i in range(len(grid.speakers)) if i not in shot.covers]
+        ok = eligible & (~required[outside].any(axis=0) if outside else True)
+        if shot.available is not None:
+            ok &= shot.available
+        # Ympäristökuva on tavallisen valinnan varakuva. Näin kahden kuva
+        # voittaa koko huoneen kuvan myös kahden puhujan ohjelmassa.
+        context_cost = (len(grid.speakers) + 1
+                        if shot.context or shot.key == grid.context_key else 0)
+        scores[index, ok] = len(shot.covers) + context_cost
+    best = scores.min(axis=0)
+    candidates = scores == best
+    candidates[:, best == missing] = False
+    changes = np.flatnonzero(np.any(candidates[:, 1:] != candidates[:, :-1], axis=0)) + 1
+    bounds = np.concatenate(([0], changes, [grid.n]))
+    want = np.full(grid.n, HOLD, dtype=np.int32)
+    current = -1
+    for lo, hi in pairwise(bounds):
+        options = np.flatnonzero(candidates[:, lo])
+        if not options.size:
+            continue
+        if current not in options:
+            current = int(options[0])
+        want[lo:hi] = current
+    # Ympäristökuva säilyttää rytmikoneen laajan semantiikan: lyhytkin
+    # vahvistettu päällekkäispuhe saa siihen leikata ilman vuorosuodatinta.
+    context = next((i for i, shot in enumerate(grid.shots)
+                    if shot.key == grid.context_key), None)
+    if context is not None:
+        want[want == context] = WIDE
+    return want
 
 
 def _turns(want: np.ndarray) -> np.ndarray:
@@ -438,6 +524,9 @@ def _find_breath_point(
 
 def _lanes_of(grid: Grid, angle: str) -> list[SpeakerLanes]:
     """Kuvassa näkyvien puhujien rivit: lähikuvan puhuja tai ryhmäkuvan puhujat."""
+    for shot in grid.shots:
+        if shot.key == angle:
+            return [grid.speakers[i] for i in shot.covers]
     for sp in grid.speakers:
         if sp.close_key and sp.close_key == angle:
             return [sp]
@@ -800,6 +889,8 @@ def decide(grid: Grid, g: Globals, marks=None) -> Decision:
     reaktiohetkistä. Taulukko eikä rajapinta: päätöskerros ei lue
     tiedostoja, ks. CLAUDE.md.
     """
+    if grid.shots:
+        grid = replace(grid, wide_key=grid.context_key)
     want, active = _want_array(grid, g)
     tempo = _compute_tempo(active, grid.n)
     # Pysty ilman asettelua: laaja on rajaus, ei laaja kuva (pp 56: ensimmäinen
@@ -825,7 +916,10 @@ def decide(grid: Grid, g: Globals, marks=None) -> Decision:
         end = cuts[index + 1][0] if index + 1 < len(cuts) else total
         if end <= at:
             continue
-        if target == WIDE:
+        if grid.shots and target >= 0:
+            shot = grid.shots[target]
+            key, label = shot.key, shot.label
+        elif target == WIDE:
             key, label = grid.wide_key, WIDE_LABEL
         elif target >= len(grid.speakers):
             shot = grid.groups[target - len(grid.speakers)]
@@ -860,6 +954,8 @@ def decide(grid: Grid, g: Globals, marks=None) -> Decision:
     key_to_index.update(
         (shot.key, len(grid.speakers) + i) for i, shot in enumerate(grid.groups)
     )
+    if grid.shots:
+        key_to_index = {shot.key: i for i, shot in enumerate(grid.shots)}
     for seg in segments:
         lo = int(round((seg.start - grid.program_start) / HOP))
         hi = int(round((seg.end - grid.program_start) / HOP))

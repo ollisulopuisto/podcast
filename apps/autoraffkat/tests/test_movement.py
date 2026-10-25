@@ -151,6 +151,30 @@ def test_each_return_to_a_speaker_alternates_the_framing():
     assert host == [False, True, False]
 
 
+def test_each_return_alternates_for_alternate_singleton_shots():
+    """Additional singleton cameras participate in the same punch cycle."""
+    from autoraffkat.decide import ShotLanes
+    from autoraffkat.model import Segment
+
+    grid = _turn_grid()
+    grid.shots = [
+        ShotLanes(key="ALT A", label="Host", covers=(0,)),
+        ShotLanes(key="ALT B", label="Guest", covers=(1,)),
+        ShotLanes(key="GROUP", label="Host + Guest", covers=(0, 1)),
+        ShotLanes(key="ROOM", label="Room", covers=(0, 1), context=True),
+    ]
+    cut = [
+        Segment("ALT A", "Host", 3.0, 10.0),
+        Segment("ALT B", "Guest", 10.0, 12.0),
+        Segment("ALT A", "Host", 12.0, 20.0),
+    ]
+
+    out = movement.punch_segments(cut, grid)
+
+    assert [s.punch for s in out if s.angle == "ALT A"] == [False, True]
+    assert [s.punch for s in out if s.angle == "ALT B"] == [False]
+
+
 def test_shorts_plan_jumps_a_full_punch_or_not_at_all():
     """Saman kameran leikkauksessa koko joko pysyy tai hyppää punchin
     verran — välistä hyppy näyttää virheeltä. Punch on 112 %, pusku vain
