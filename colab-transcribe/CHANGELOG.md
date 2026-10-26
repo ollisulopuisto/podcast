@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.26.3] - 2026-10-26
+
+### Changed
+- **Colab transcription now uses Orukeet instead of Whisper.** The NeMo ASR model is pinned to the published Orukeet revision; Silero VAD splits audio into speech chunks of at most 20 seconds, and word timestamps are restored to the source-file clock. The old Whisper prompt/model flags remain for compatibility but do not affect Orukeet. Fillers and repeated words are kept. Not yet run on a real Colab.
+
 ## [2026.10.26.2] - 2026-10-26
 
 ### Fixed
