@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.26.1] - 2026-10-26
+
+### Added
+- **`--backend {colab,parakeet,orukeet}`: Orukeet MLX as local transcription backend.** Supports `--backend orukeet` alongside `parakeet`, defaulting to `~/.models/orukeet-mlx` (with fallback to base Parakeet). Provides 12,288 fitted Gabor filters and explicit Finnish acoustic modeling with ~43x real-time transcription.
+- **`--orukeet-model` CLI flag & `COLAB_ORUKEET_MODEL` environment variable:** Configures model weights path for local Apple Silicon inference.
+- **Word timing contract:** Automatically sets `"timing": "orukeet"` in `<name>.words.json` when running via Orukeet.
+
 ## [2026.10.25.1] - 2026-10-25
 
 ### Added

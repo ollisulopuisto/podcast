@@ -150,9 +150,14 @@ def run_audio_mode_parakeet(
         p.unlink(missing_ok=True)
 
     if events_enabled:
-        events.emit("session", state="local", backend="parakeet")
+        events.emit("session", state="local", backend=options.backend)
 
     total = len(audio)
+    backend_title = (
+        "Orukeet"
+        if "oruk" in options.parakeet_model.lower() or options.backend == "orukeet"
+        else "Parakeet"
+    )
     for idx, audio_file in enumerate(audio):
         audio_path = Path(audio_file)
         if not audio_path.is_file():
@@ -163,7 +168,7 @@ def run_audio_mode_parakeet(
             return 1
 
         step_pct = int(10 + (idx / total) * 80)
-        msg = f"[{idx + 1}/{total}] Litteroidaan paikallisesti (Parakeet): {audio_path.name}"
+        msg = f"[{idx + 1}/{total}] Litteroidaan paikallisesti ({backend_title}): {audio_path.name}"
         log(msg)
         if on_progress:
             on_progress(step_pct, msg)
@@ -179,7 +184,7 @@ def run_audio_mode_parakeet(
                 events.emit("error", message=err_msg, file=audio_path.name)
             return 1
 
-        doc = pipeline.words_document(raw, options.language, timing="parakeet")
+        doc = pipeline.words_document(raw, options.language, timing=options.backend)
         dest = out_dir / f"{audio_path.stem}.words.json"
         dest.write_text(
             json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

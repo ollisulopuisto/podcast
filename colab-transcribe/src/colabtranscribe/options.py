@@ -31,11 +31,16 @@ TRANSFERS = ("drive", "direct")
 SOURCES = ("tracks", "downmix", "audio")
 
 #: Tuetut litterointitaustat. "colab" ajaa ketjun Google Colabissa (oletus),
-#: "parakeet" ajaa litteroinnin paikallisesti Apple Siliconilla (parakeet-mlx).
-BACKENDS = ("colab", "parakeet")
+#: "parakeet" tai "orukeet" ajaa litteroinnin paikallisesti Apple Siliconilla (parakeet-mlx / orukeet).
+BACKENDS = ("colab", "parakeet", "orukeet")
 
-#: Parakeet-oletusmalli paikalliseen ajoon.
-DEFAULT_PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
+#: Orukeet/Parakeet-oletusmalli paikalliseen ajoon.
+DEFAULT_ORUKEET_MODEL = (
+    str(Path.home() / ".models" / "orukeet-mlx")
+    if (Path.home() / ".models" / "orukeet-mlx").exists()
+    else "mlx-community/parakeet-tdt-0.6b-v3"
+)
+DEFAULT_PARAKEET_MODEL = DEFAULT_ORUKEET_MODEL
 
 #: Täytesanat Whispereille. Oletus on sama kuin skriptissa itsessään; jos
 #: se muuttuu sinne, se muuttuu tänne samaan hengessä.
@@ -85,9 +90,9 @@ class RunOptions:
             raise ValueError(
                 f"Tuntematon backend: {self.backend} (sallitut: {', '.join(BACKENDS)})"
             )
-        if self.backend == "parakeet" and self.source != "audio":
+        if self.backend in ("parakeet", "orukeet") and self.source != "audio":
             raise ValueError(
-                "Backend 'parakeet' tukee toistaiseksi vain pelkän äänen tilaa (--audio / --json). "
+                f"Backend '{self.backend}' tukee toistaiseksi vain pelkän äänen tilaa (--audio / --json). "
                 "Käytä .nhsx-istuntojen paikalliseen ajoon podcast-magicia."
             )
         if not self.parakeet_model.strip():
@@ -161,7 +166,10 @@ class RunOptions:
             "yes",
         )
         backend = os.environ.get("COLAB_BACKEND", "colab")
-        parakeet_model = os.environ.get("COLAB_PARAKEET_MODEL", DEFAULT_PARAKEET_MODEL)
+        parakeet_model = os.environ.get(
+            "COLAB_ORUKEET_MODEL",
+            os.environ.get("COLAB_PARAKEET_MODEL", DEFAULT_PARAKEET_MODEL),
+        )
 
         return cls(
             session=session,
