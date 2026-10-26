@@ -18,6 +18,7 @@ from colabtranscribe.options import BACKENDS, RunOptions
 def test_backend_choices_contain_colab_and_parakeet():
     assert "colab" in BACKENDS
     assert "parakeet" in BACKENDS
+    assert "orukeet" in BACKENDS
 
 
 def test_default_backend_is_colab():
@@ -38,6 +39,31 @@ def test_parakeet_backend_rejects_non_audio_source():
 def test_empty_parakeet_model_is_rejected():
     with pytest.raises(ValueError, match="parakeet_model"):
         RunOptions(source="audio", backend="parakeet", parakeet_model="")
+
+
+def test_orukeet_backend_dry_run_prints_local_commands(tmp_path, capsys):
+    audio = tmp_path / "haastattelu.wav"
+    audio.write_bytes(b"data")
+    out = tmp_path / "sanat"
+
+    code = cli.main(
+        [
+            "--audio",
+            str(audio),
+            "--json",
+            str(out),
+            "--backend",
+            "orukeet",
+            "--dry-run",
+        ]
+    )
+
+    assert code == 0
+    stdout = capsys.readouterr().out
+    assert "parakeet-mlx" in stdout
+    assert "haastattelu.wav" in stdout
+    assert "haastattelu.words.json" in stdout
+    assert "colab new" not in stdout
 
 
 def test_parakeet_backend_dry_run_prints_local_commands(tmp_path, capsys):
@@ -241,6 +267,32 @@ def test_parakeet_backend_progress_and_events(monkeypatch, tmp_path, capsys):
     session_ev = next(e for e in event_lines if e.get("event") == "session")
     assert session_ev.get("backend") == "parakeet"
     assert session_ev.get("state") == "local"
+    assert all(e.get("schema") == 1 for e in event_lines)
+    stages = [e for e in event_lines if e.get("event") == "stage"]
+    assert stages == [
+        {
+            "schema": 1,
+            "event": "stage",
+            "stage": "transcribe",
+            "state": "start",
+            "index": 1,
+            "total": 1,
+            "name": "puhe.wav",
+        },
+        {
+            "schema": 1,
+            "event": "stage",
+            "stage": "transcribe",
+            "state": "done",
+            "index": 1,
+            "total": 1,
+            "name": "puhe.wav",
+        },
+    ]
+    progress_events = [e for e in event_lines if e.get("event") == "progress"]
+    assert progress_events
+    assert progress_events[-1]["percent"] == 100
+    assert [e.get("event") for e in event_lines][-1] == "done"
 
 
 def test_parakeet_backend_missing_audio_fails(tmp_path, capsys):

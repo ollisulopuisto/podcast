@@ -55,12 +55,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--backend",
         choices=BACKENDS,
         default=None,
-        help="litterointitausta: colab (Google Colab GPU, oletus) tai parakeet (paikallinen Apple Silicon)",
+        help="litterointitausta: colab (Google Colab GPU, oletus), orukeet tai parakeet (paikallinen Apple Silicon)",
     )
     parser.add_argument(
         "--parakeet-model",
+        "--orukeet-model",
+        dest="parakeet_model",
         default=DEFAULT_PARAKEET_MODEL,
-        help=f"Parakeet-mallin tunniste paikallisessa ajossa (oletus: {DEFAULT_PARAKEET_MODEL})",
+        help=f"Orukeet/Parakeet-mallin tunniste paikallisessa ajossa (oletus: {DEFAULT_PARAKEET_MODEL})",
     )
     parser.add_argument(
         "--model", default=None, help="Whisper-malli (--audio, oletus: turbo)"
@@ -347,7 +349,7 @@ def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
         parakeet_model=args.parakeet_model or env_opts.parakeet_model,
     )
 
-    if options.backend == "parakeet":
+    if options.backend in ("parakeet", "orukeet"):
         printer = (
             _progress_printer(args.progress) if (args.progress or args.events) else None
         )
