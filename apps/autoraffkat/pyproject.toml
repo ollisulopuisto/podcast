@@ -19,7 +19,7 @@ dependencies = [
     "speechmix",
     "fcpxml",
     "numpy>=2.5.4",
-    "fastapi>=0.115",
+    "fastapi>=0.161.1",
     "uvicorn[standard]>=0.54.0",
     "pedalboard>=0.9.26",
     "pyloudnorm>=0.2.0",
