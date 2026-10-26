@@ -138,7 +138,7 @@ def run_audio_mode_parakeet(
     if not available:
         log(f"Virhe: {reason}")
         if events_enabled:
-            events.emit("error", message=reason, phase="environment")
+            events.emit("error", reason="environment", message=reason)
         return 1
 
     out_dir = options.resolved_output_dir()
@@ -153,6 +153,14 @@ def run_audio_mode_parakeet(
         events.emit("session", state="local", backend=options.backend)
 
     total = len(audio)
+    trail = events.StageTrail()
+
+    def report_progress(percent: int, message: str) -> None:
+        if on_progress:
+            on_progress(percent, message)
+        if events_enabled:
+            events.emit("progress", percent=percent, message=message)
+
     backend_title = (
         "Orukeet"
         if "oruk" in options.parakeet_model.lower() or options.backend == "orukeet"
@@ -164,16 +172,20 @@ def run_audio_mode_parakeet(
             msg = f"Äänitiedostoa ei löydy: {audio_file}"
             log(msg)
             if events_enabled:
-                events.emit("error", message=msg, file=audio_file)
+                events.emit(
+                    "error", reason="failed", code=1, stage=trail.current,
+                    message=msg, file=audio_file
+                )
             return 1
 
         step_pct = int(10 + (idx / total) * 80)
         msg = f"[{idx + 1}/{total}] Litteroidaan paikallisesti ({backend_title}): {audio_path.name}"
         log(msg)
-        if on_progress:
-            on_progress(step_pct, msg)
         if events_enabled:
-            events.emit("stage", name="transcribe", file=audio_path.name)
+            trail.enter(
+                "transcribe", index=idx + 1, total=total, name=audio_path.name
+            )
+        report_progress(step_pct, msg)
 
         try:
             raw = transcribe_file(audio_path, model_name=options.parakeet_model)
@@ -181,7 +193,10 @@ def run_audio_mode_parakeet(
             err_msg = f"Litterointi epäonnistui tiedostolle {audio_path.name}: {e}"
             log(err_msg)
             if events_enabled:
-                events.emit("error", message=err_msg, file=audio_path.name)
+                events.emit(
+                    "error", reason="failed", code=1, stage=trail.current,
+                    message=err_msg, file=audio_path.name
+                )
             return 1
 
         doc = pipeline.words_document(raw, options.language, timing=options.backend)
@@ -199,11 +214,10 @@ def run_audio_mode_parakeet(
                 )
 
         end_pct = int(10 + ((idx + 1) / total) * 80)
-        if on_progress:
-            on_progress(end_pct, f"[{idx + 1}/{total}] Valmis: {audio_path.name}")
+        trail.finish()
+        report_progress(end_pct, f"[{idx + 1}/{total}] Valmis: {audio_path.name}")
 
-    if on_progress:
-        on_progress(100, "Valmis.")
+    report_progress(100, "Valmis.")
     if events_enabled:
         events.emit("done", files=[str(p) for p in expected])
 

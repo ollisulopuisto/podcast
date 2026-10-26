@@ -165,6 +165,22 @@ list of wishes from `docs/PODCAST-MAGIC.md`, built as asked.
   - `done`: `files`, the paths of the `<name>.words.json` written, in the order of the `--audio` arguments. The last event
     of a successful run. Unchanged by the 2026-10-23 list.
 
+### Paikallinen Parakeet/Orukeet-tausta
+
+`--backend parakeet` and `--backend orukeet` use the same plain-audio JSON
+contract as Colab and accept `--events`. Their `words` array uses the same
+`w`/`s`/`e` fields, sorted order, three-decimal seconds, overlap handling,
+20 ms minimum duration, and `version: 1`. `timing` is the selected backend
+(`parakeet` or `orukeet`); `rejected` is zero because no forced alignment is
+performed.
+
+The event stream keeps schema 1. A local run emits `session` with
+`state: "local"` and `backend`, then one `stage` start/done pair per file
+(`stage: "transcribe"`, with `index`, `total`, and `name`), `progress` events
+including 100%, and finally `done`. Local failures end with an `error` event
+using the same `reason`, `code`, and `stage` fields as a failed Colab run.
+`state: "local"` identifies that no Colab VM is started or reused.
+
 ### Recovery from a lost session (built inside the tool, with or without `--events`)
 
 When the run fails and the Colab CLI said the session appears to be lost (Colab reclaimed the VM), the tool no longer
