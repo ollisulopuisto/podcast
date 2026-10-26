@@ -42,9 +42,9 @@ DEFAULT_ORUKEET_MODEL = (
 )
 DEFAULT_PARAKEET_MODEL = DEFAULT_ORUKEET_MODEL
 
-#: Täytesanat Whispereille. Oletus on sama kuin skriptissa itsessään; jos
-#: se muuttuu sinne, se muuttuu tänne samaan hengessä.
-DEFAULT_PROMPT = "öö, tota, niinku, mhm, joo, silleen, vähän, niinkun, ööh, ömm."
+#: Orukeet ei tarjoa dekooderin initial prompt -toimintoa. Säilytetään
+#: --prompt-yhteensopivuusvalitsin, mutta oletusarvo on tyhjä.
+DEFAULT_PROMPT = ""
 
 
 @dataclass
@@ -74,9 +74,8 @@ class RunOptions:
     bleed_filter: bool = True
     # Käsikirjoitus: lyhyet huomautukset kappaleen sisään, ei omille riveilleen.
     inline_remarks: bool = False
-    # Vain ``source="audio"``: malli ja kieli. Muissa tiloissa skripti käyttää
-    # omia kiinteitä arvojaan (turbo, fi), eikä näitä viedä sille.
-    model: str = "turbo"
+    # ``model`` säilyy yhteensopivuusvalitsimena; Colab käyttää Orukeetia.
+    model: str = "orukeet"
     language: str = "fi"
     # Vain ``source="audio"``: sanojen alut kohdistetaan ääneen Colabissa
     # (``wordalign``), ja tiedoston ``timing`` on silloin ``ctc-v1``.

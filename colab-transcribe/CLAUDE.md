@@ -42,7 +42,7 @@ mukana, joten paikallinen puoli ei muutu eikä saa uusia riippuvuuksia.
 `--source downmix` litteroi koko miksauksen kerran ilman puhujia ja palauttaa
 `<nimi> downmix.md`:n. Miksaus on **vain gain-summaus**: `ClipGain` voittaa
 `Gain`in, raidan `Volume` (dB) kerrotaan mukaan, mykistetyt raidat ja alueet
-ohitetaan; panorointi, ramppi ja häivytys jätetään pois. Whisper ottaa monon,
+ohitetaan; panorointi, ramppi ja häivytys jätetään pois. Orukeet ottaa monon,
 joten ne eivät tuo mitään.
 
 Osio on käsin kopioitu neljästä lähteestä, eikä mikään commit tavoita sitä:
@@ -54,7 +54,7 @@ vertaa `paragraph_lines`ia alkuperäiseen. Gain-säännöt ja tiedostohaku ovat
 pinnattu omilla testeillään mutta **ei** vertailtu alkuperäiseen, joten
 muutos `mix.py`:ssä ei kaada mitään täällä — siirrä se käsin.
 
-numpy ei ole pinnattu: se tulee faster-whisperin mukana. Ajuri kertoo
+numpy tulee Colabin ASR-ympäristöstä. Ajuri kertoo
 valmiin tiedoston `Käsikirjoitus luotu:` -rivillä; `.md` tulee alas koko
 tulostekansion mukana, joten uutta `driver.parse_*`-markeria ei tarvita.
 
@@ -99,12 +99,28 @@ pilvipään ajoa ole kokeiltu oikealla Colabilla.
 `--align` lataa Colabiin toisen yhden tiedoston, `wordalign.py`n
 (`driver.ALIGN_MODULE`), samalla tavalla kuin `silencelearn`in. Kohdistin
 ajetaan **omassa prosessissaan** ja torch omaan kansioonsa
-(`pipeline.ALIGN_SITE`, `aligner_env`), koska CTranslate2 käyttää
-järjestelmän pip-nvidia-kirjastoja ja torch 2.8 tuo omansa: erillään ne eivät
-tarvitse sopia yhteen. Se on suunnitteluvalinta, ei mitattu tosiasia. Kohdistin
+(`pipeline.ALIGN_SITE`, `aligner_env`), jotta kohdistimen torch 2.8:n
+riippuvuudet pysyvät erillään NeMo-ASR:n torch-ympäristöstä. Kohdistin
 tarkistetaan ennen litterointia (`check_aligner`), ja jos mikään sana ei
-kohdistu, ajo kaatuu: korjatuksi merkitty tiedosto, jossa on Whisperin aika, olisi
+kohdistu, ajo kaatuu: korjatuksi merkitty tiedosto, jossa on ASR:n aika, olisi
 juuri se hiljainen vika. `ALIGN_TIMING` seuraa `wordalign.VERSION`ia testillä.
+
+## Orukeet ja podcastin puheajat
+
+Pilven ASR on Orukeet (`oruk/orukeet`, HF-revisio
+`555136b50265a132d4cea0d35560c26fc4f657ab`) NeMo 3.0.0:n kautta; Whisper/CTranslate2 ei ole enää
+asennettava riippuvuus. Orukeet tukee 25 kieltä, niiden joukossa suomi. Ääni muunnetaan Silero VAD:lle
+mono-16 kHz PCM:ksi ja jaetaan enintään 20 sekunnin puheikkunoihin ennen tunnistusta; ikkunan
+sanakohtaiset ajat siirretään alkuperäisen tiedoston kelloon. Aikaraja on muistinkäytön suunnitteluraja,
+ei mitattu optimaalinen jakopituus. VAD:n lyhyen puheen alaraja on 80 ms, jotta lyhyet täytesanat
+eivät putoa oletusarvoisella 250 ms rajalla.
+
+Orukeet ei tue Whisperin `initial_prompt`ia eikä tässä toteutuksessa hotword-biasointia. `--prompt`
+ja `--model` säilyvät vanhojen komentojen yhteensopivuuden vuoksi, mutta eivät vaikuta dekoodaukseen;
+mukautetusta promptista annetaan varoitus. VAD ja jälkikäsittely eivät poista täytesanoja tai
+peräkkäistoistoja. Whisperin vanhat laatumittaukset eivät päde tähän malliin. Orukeet-polku on
+testattu paikallisilla testeillä, mutta ei oikealla Colabilla; pip-asennuksen, GPU-ajon ja mallin
+pitkien äänien toimivuutta ei ole vielä mitattu tuotantoraidalla.
 
 ## Opittu kynnys ladataan, ei kopioida
 

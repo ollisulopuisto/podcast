@@ -65,7 +65,8 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Orukeet/Parakeet-mallin tunniste paikallisessa ajossa (oletus: {DEFAULT_PARAKEET_MODEL})",
     )
     parser.add_argument(
-        "--model", default=None, help="Whisper-malli (--audio, oletus: turbo)"
+        "--model", default=None,
+        help="vanha yhteensopivuusvalitsin (--audio); litterointi käyttää aina Orukeetia",
     )
     parser.add_argument("--language", default=None, help="kieli (--audio, oletus: fi)")
     parser.add_argument(

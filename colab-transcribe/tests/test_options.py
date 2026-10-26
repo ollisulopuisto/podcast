@@ -21,7 +21,7 @@ def test_defaults_are_the_remote_preset():
     assert options.thr == -35
     assert options.tail == 1.0
     assert options.gap == 1.0
-    assert options.prompt  # täytesanoissa ei ole tyhjää
+    assert options.prompt == ""  # Orukeet ei tue initial promptia
 
 
 def test_gpu_choices():

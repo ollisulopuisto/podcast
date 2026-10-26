@@ -7,8 +7,8 @@ a pipeline that runs in the cloud — this machine uploads, the GPU works.
 ## What it does
 
 Point it at a folder holding Hindenburg `.nhsx` sessions and their audio.
-It starts a Colab VM, uploads everything, transcribes there with Whisper
-(faster-whisper on a T4/L4/A100), writes the words into the session, mutes
+It starts a Colab VM, uploads everything, transcribes there with Orukeet
+(NeMo ASR on a T4/L4/A100), writes the words into the session, mutes
 every region where nobody speaks (Auto-Silence), and downloads the results:
 `<jakso> litteroitu.nhsx` and `<jakso>_processed.nhsx`.
 To transcribe without Auto-Silence, use `--transcribe-only` (or switch
@@ -98,26 +98,32 @@ colab-transcribe --audio "Olli 1.wav" --audio Panu.mp3 --json words/ --progress
 ```
 
 Every `--audio` file goes up in the same Colab session and `words/<name>.words.json` comes
-back: `{"version":1,"timing":"whisper","language":"fi","rejected":0,"words":[{"w","s","e"}]}`,
+back: `{"version":1,"timing":"orukeet","language":"fi","rejected":0,"words":[{"w","s","e"}]}`,
 seconds from the start of that file, in time order with `s < e` (an overlap shortens the
 earlier word). No `.nhsx`, no Auto-Silence. The transfer is always direct: the audio goes to
-a Google Colab VM and not through Drive. `--model` (default `turbo`) and `--language`
-(default `fi`) are passed to Whisper. `--progress` prints `PROGRESS <0-100> <message>`
+a Google Colab VM and not through Drive. Orukeet detects the language; `language` is
+output metadata and `--model` remains as a compatibility option for old callers.
+`--prompt` does not affect Orukeet decoding. `--progress` prints `PROGRESS <0-100> <message>`
 lines whose number never falls. A file that gets no words, or a missing result, makes the
 exit code 1 with the reason on stderr; old `*.words.json` of the same names are deleted
 before the run so they cannot pass for new ones. SIGTERM and Ctrl+C stop the Colab session
-(unless `--keep-session`) and exit 130. Word starts are Whisper's own (`timing: "whisper"`):
-they run early (see `docs/KUULAS-TIMECODES.md`).
+(unless `--keep-session`) and exit 130. Word times come from Orukeet's NeMo word timestamps
+(`timing: "orukeet"`).
+
+The cloud installs NeMo and Silero VAD, then downloads Orukeet's roughly 2.5 GB checkpoint on
+first use. Silero splits long recordings into speech chunks capped at 20 seconds; their word
+times are shifted back to the original recording clock. No post-processing removes fillers or
+repeated words. Orukeet does not currently accept the Whisper-style `--prompt` vocabulary.
 
 `--align` (with `--audio`) corrects the word starts on the Colab VM with a forced aligner
 (`packages/wordalign`, torchaudio `MMS_FA`) and marks the file `"timing": "ctc-v1"`; `rejected` is the
-number of words that could not be placed (they keep Whisper's time). It installs torch 2.8 into its
+number of words that could not be placed (they keep Orukeet's time). It installs torch 2.8 into its
 own folder on the VM and loads about 1.2 GB of weights, and it checks that **before** transcribing, so a
 broken aligner stops the run without spending GPU time. If no word at all gets aligned the run fails
 instead of writing a file marked as corrected. **Not run on a real Colab yet:** the install size and
 time, and whether the aligner coexists with the transcriber's CUDA libraries, are unmeasured.
-Measured quality (one speaker, 15 hand-marked starts): median error 28 ms against Whisper's 117 ms;
-word ends and other speakers are not measured (`docs/KUULAS-TIMECODES.md`).
+`docs/KUULAS-TIMECODES.md` records measurements from the former Whisper backend; they do not
+transfer to Orukeet. Podcast accuracy has not been measured in this repository.
 
 ## Requirements
 
