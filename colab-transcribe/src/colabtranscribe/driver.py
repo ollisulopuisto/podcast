@@ -61,8 +61,8 @@ REMOTE_INPUT = "/content/input"
 REMOTE_CACHE = "/content/cache"
 REMOTE_OUTPUT = "/content/output"
 
-#: Paikallinen raja yhdelle `colab`-komennolle. Pilven whisper-raja on 2 h
-#: (`colab/pipeline.py:WHISPER_TIMEOUT`); tätä lyhyempi wait tappaisi
+#: Paikallinen raja yhdelle `colab`-komennolle. Pilven ASR-raja on 2 h
+#: (`colab/pipeline.py:ORUKEET_TIMEOUT`); tätä lyhyempi wait tappaisi
 #: onnistuneen litteroinnin. Asennus ja siirrot mahtuvat tunnin marginaaliin.
 COMMAND_TIMEOUT = 3 * 3600
 

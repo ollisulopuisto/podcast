@@ -6,8 +6,8 @@ ovat testattavissa erillään ilman Colabia.
 
 from __future__ import annotations
 
+import json
 import os
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -18,6 +18,98 @@ from colabtranscribe.colab.pipeline import (
     seconds_to_time,
     time_to_seconds,
 )
+
+
+def test_install_dependencies_uses_orukeet_not_whisper(monkeypatch):
+    from colabtranscribe.colab import pipeline
+
+    calls = []
+    monkeypatch.setattr(pipeline.subprocess, "run", lambda cmd, **kwargs: calls.append(cmd))
+    monkeypatch.setattr(pipeline, "configure_cuda_libs", lambda: None)
+
+    pipeline.install_dependencies()
+
+    pip = next(cmd for cmd in calls if cmd[:2] == ["pip", "install"])
+    assert "nemo_toolkit[asr]==3.0.0" in pip
+    assert "silero-vad==6.2.2" in pip
+    assert not any("whisper" in package.lower() for package in pip)
+
+
+def test_orukeet_hypothesis_becomes_word_timestamp_json():
+    from types import SimpleNamespace
+
+    from colabtranscribe.colab.pipeline import _orukeet_raw
+
+    raw = _orukeet_raw(SimpleNamespace(
+        text="Öö, tämä toimii.",
+        timestamp={"word": [
+            {"word": "Öö,", "start": 0.1, "end": 0.5},
+            {"word": "tämä", "start": 0.6, "end": 0.9},
+            {"word": "toimii.", "start": 1.0, "end": 1.5},
+        ]},
+    ))
+
+    assert raw == {
+        "segments": [{
+            "start": 0.1,
+            "end": 1.5,
+            "text": "Öö, tämä toimii.",
+            "words": [
+                {"word": "Öö,", "start": 0.1, "end": 0.5},
+                {"word": "tämä", "start": 0.6, "end": 0.9},
+                {"word": "toimii.", "start": 1.0, "end": 1.5},
+            ],
+        }]
+    }
+
+
+def test_orukeet_config_uses_timestamp_capable_greedy_decoder():
+    from types import SimpleNamespace
+
+    from colabtranscribe.colab.pipeline import _configure_orukeet_timestamps
+
+    cfg = SimpleNamespace(strategy="greedy_batch", compute_timestamps=False, preserve_alignments=False)
+    model = SimpleNamespace(
+        cfg=SimpleNamespace(decoding=cfg),
+        change_decoding_strategy=lambda config: setattr(model, "changed", config),
+    )
+
+    _configure_orukeet_timestamps(model)
+
+    assert cfg.strategy == "greedy"
+    assert cfg.compute_timestamps is True
+    assert cfg.preserve_alignments is True
+    assert model.changed is cfg
+
+
+def test_transcribe_file_uses_vad_chunks_and_restores_original_offsets(
+    monkeypatch, tmp_path
+):
+    import numpy as np
+
+    from colabtranscribe.colab import pipeline
+
+    audio = np.zeros(16000, dtype=np.float32)
+    monkeypatch.setattr(
+        pipeline, "_vad_audio", lambda path, tmp: (audio, [(1600, 4800), (8000, 11200)])
+    )
+    seen = []
+
+    class FakeModel:
+        def transcribe(self, paths, **kwargs):
+            seen.append((paths, kwargs))
+            return [type("Hypothesis", (), {
+                "text": "niinku",
+                "timestamp": {"word": [{"word": "niinku", "start": 0.1, "end": 0.3}]},
+            })()]
+
+    monkeypatch.setattr(pipeline, "_orukeet_model", lambda: FakeModel())
+    raw = pipeline.transcribe_file(str(tmp_path / "puhe.wav"))
+
+    words = [word for segment in raw["segments"] for word in segment["words"]]
+    assert [(word["start"], word["end"]) for word in words] == [(0.2, 0.4), (0.6, 0.8)]
+    assert len(seen) == 2
+    assert all(call[1]["timestamps"] is True and call[1]["batch_size"] == 1 for call in seen)
 
 
 def test_time_to_seconds_valid_formats():
@@ -318,9 +410,8 @@ def test_install_dependencies_pins_locked_versions(monkeypatch):
     pip_cmd = pip_installs[0]
     assert "-U" not in pip_cmd
     assert any("av==" in str(arg) or "av<19" in str(arg) for arg in pip_cmd)
-    assert any("CTranslate2==" in str(arg) for arg in pip_cmd)
-    assert any("faster-whisper==" in str(arg) for arg in pip_cmd)
-    assert any("whisper-ctranslate2==" in str(arg) for arg in pip_cmd)
+    assert "nemo_toolkit[asr]==3.0.0" in pip_cmd
+    assert not any("whisper" in str(arg).lower() for arg in pip_cmd)
 
 
 def test_configure_cuda_libs(tmp_path, monkeypatch):
@@ -474,18 +565,18 @@ def test_run_transcription_logs_litterointi_luotu(tmp_path, capsys, monkeypatch)
     (in_dir / "haastattelu.wav").write_bytes(b"data")
     out_dir = tmp_path / "out"
 
-    def fake_run(cmd, check, timeout):
-        # Whisper luo json-tiedoston
-        transcripts_dir = out_dir / "transcripts"
-        transcripts_dir.mkdir(parents=True, exist_ok=True)
-        (transcripts_dir / "haastattelu.json").write_text("{}", encoding="utf-8")
+    def fake_transcribe(path, model, language, prompt):
+        return {"segments": [{"words": [{"word": "Moi", "start": 0.1, "end": 0.3}]}]}
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("colabtranscribe.colab.pipeline.transcribe_file", fake_transcribe)
     run_transcription(str(in_dir), str(out_dir), "prompt")
 
     captured = capsys.readouterr().out
     assert "Litterointi luotu:" in captured
     assert "haastattelu.json" in captured
+    assert "ei tue Whisperin promptia" in captured
+    written = json.loads((out_dir / "transcripts" / "haastattelu.json").read_text())
+    assert written["segments"][0]["words"][0]["word"] == "Moi"
 
 
 @pytest.mark.parametrize(("argv", "silenced"), [([], True), (["--no-silence"], False)])
@@ -843,7 +934,7 @@ def test_identical_audio_is_transcribed_once_and_the_others_get_a_copy(
     tmp_path, monkeypatch
 ):
     """Sama äänitys kahdella nimellä (kopio, ``_D``-versio, ``.TAKE``): sisältö
-    tunnistetaan tarkistussummasta, Whisper ajetaan kerran ja muiden nimille
+    tunnistetaan tarkistussummasta, Orukeet ajetaan kerran ja muiden nimille
     kopioidaan tulos, jotta istunnon jokainen tiedosto saa litteroinnin."""
     in_dir = tmp_path / "in"
     (in_dir / "alikansio").mkdir(parents=True)
@@ -853,14 +944,14 @@ def test_identical_audio_is_transcribed_once_and_the_others_get_a_copy(
     out_dir = tmp_path / "out"
     ran: list[str] = []
 
-    def fake_run(cmd, check, timeout):
-        src = Path(cmd[1])
+    def fake_transcribe(path, model, language, prompt):
+        src = Path(path)
         ran.append(src.name)
-        t = out_dir / "transcripts"
-        t.mkdir(parents=True, exist_ok=True)
-        (t / (src.stem + ".json")).write_text(f'{{"from": "{src.name}"}}', encoding="utf-8")
+        return {"segments": [{"text": src.name, "words": [
+            {"word": "moi", "start": 0.1, "end": 0.3}
+        ]}]}
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("colabtranscribe.colab.pipeline.transcribe_file", fake_transcribe)
     run_transcription(str(in_dir), str(out_dir), "prompt")
 
     assert len(ran) == 2 and "c.wav" in ran
@@ -1071,9 +1162,8 @@ def test_the_snapshot_script_matches_podcast_magics_on_whole_file_regions(tmp_pa
     assert open(written, encoding="utf-8").read() == core.script(core.read(str(session)))
 
 
-def test_a_hallucinated_loop_of_one_word_is_not_written_into_the_session(tmp_path):
-    """Whisper toistaa hiljaisessa kohdassa samaa sanaa kymmeniä kertoja
-    («niin, niin, niin, …»). Viisi tai useampi peräkkäin on silmukka, ei puhetta."""
+def test_orukeet_repetitions_are_preserved_in_the_session(tmp_path):
+    """Podcastin aitoja toistoja ei siivota litteroinnin jälkikäsittelyssä."""
     import json
 
     from colabtranscribe.colab.pipeline import inject_transcriptions_to_nhsx
@@ -1093,7 +1183,9 @@ def test_a_hallucinated_loop_of_one_word_is_not_written_into_the_session(tmp_pat
     from lxml import etree
 
     tree = etree.parse(str(next(out.glob("*litteroitu.nhsx"))))
-    assert [w.text for w in tree.iter("w")] == ["ensin", "sitten", "niin", "niin"]
+    assert [w.text for w in tree.iter("w")] == [
+        "ensin", *["niin"] * 9, "sitten", "niin", "niin"
+    ]
 
 
 def test_script_turns_use_the_same_gap_as_auto_silence():

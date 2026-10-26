@@ -23,7 +23,10 @@ def test_pipeline_script_ships_with_the_package():
     script = driver.PIPELINE_SCRIPT
     assert script.is_file()
     assert script.name == "pipeline.py"
-    assert "whisper-ctranslate2" in script.read_text(encoding="utf-8")
+    source = script.read_text(encoding="utf-8")
+    assert 'ORUKEET_REPO = "oruk/orukeet"' in source
+    assert 'ORUKEET_REVISION = "555136b50265a132d4cea0d35560c26fc4f657ab"' in source
+    assert "whisper-ctranslate2" not in source
 
 
 @pytest.mark.parametrize("transfer", ["drive", "direct"])
@@ -214,10 +217,10 @@ def test_run_kills_a_hung_process_that_prints_nothing():
     assert any("aikarajan" in line for line in logs)
 
 
-def test_command_timeout_outlasts_whisper():
+def test_command_timeout_outlasts_orukeet():
     from colabtranscribe.colab import pipeline
 
-    assert driver.COMMAND_TIMEOUT >= pipeline.WHISPER_TIMEOUT
+    assert driver.COMMAND_TIMEOUT >= pipeline.ORUKEET_TIMEOUT
 
 
 def test_run_translates_colab_exec_to_stdin(monkeypatch):

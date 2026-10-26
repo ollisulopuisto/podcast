@@ -20,8 +20,15 @@ from lxml import etree
 # Oletusaikarajat (sekunteina) aliprosesseille. Colabissa asennus ja
 # litterointi voivat kestään kauan, joten rajat ovat ydinsä.
 APT_TIMEOUT = 600  # 10 min apt-get:lle
-PIP_TIMEOUT = 600  # 10 min pip:lle
-WHISPER_TIMEOUT = 7200  # 2 h whisper-ctranslate2:lle (pitkät tiedostot)
+PIP_TIMEOUT = 1800  # suunnitteluraja NeMon ja ASR-riippuvuuksien asennukselle, ei mitattu
+ORUKEET_TIMEOUT = 7200  # 2 h Orukeetin mallin lataukseen ja pitkiin tiedostoihin
+ORUKEET_REPO = "oruk/orukeet"
+ORUKEET_REVISION = "555136b50265a132d4cea0d35560c26fc4f657ab"
+ORUKEET_FILE = "orukeet-v0.1.0.nemo"
+VAD_SAMPLE_RATE = 16000
+VAD_MAX_CHUNK_S = 20  # suunnitteluraja: VAD ei anna pitkän raidankaan mennä yhtenä lohkona
+_ORUKEET = None
+_SILERO_VAD = None
 
 AUDIO_EXTENSIONS = (".wav", ".aiff", ".flac", ".m4a", ".mp4", ".mp3")
 
@@ -88,7 +95,7 @@ LD_SO_CONF_PATH = "/etc/ld.so.conf.d/00-nvidia-pip.conf"
 
 
 def configure_cuda_libs():
-    """Varmistaa että pipin asentamat nvidia-kirjastot (libcublas ym.) löytyvät."""
+    """Varmistaa että pipin asentamat NVIDIA-kirjastot löytyvät Colabissa."""
     import glob
 
     nvidia_dirs = glob.glob("/usr/local/lib/python*/dist-packages/nvidia/*/lib")
@@ -107,9 +114,8 @@ def configure_cuda_libs():
 # 1. Asennetaan tarvittavat kirjastot pilviympäristössä
 def install_dependencies():
     packages = [
-        "CTranslate2==4.8.2",
-        "faster-whisper==1.2.1",
-        "whisper-ctranslate2==0.5.7",
+        "nemo_toolkit[asr]==3.0.0",
+        "silero-vad==6.2.2",
         "av==18.1.0",
         "lxml==6.1.3",
         "pydub==0.25.1",
@@ -195,8 +201,13 @@ def _duplicates_of(audio_items):
     return dupes
 
 
-# 3. Litterointi Faster-Whisperillä
+# 3. Litterointi Orukeetilla
 def run_transcription(input_dir, output_dir, initial_prompt):
+    if initial_prompt:
+        print(
+            "Huom: Orukeet ei tue Whisperin promptia; sanalista jätetään huomiotta.",
+            flush=True,
+        )
     transcripts_dir = os.path.join(output_dir, "transcripts")
     os.makedirs(transcripts_dir, exist_ok=True)
     audio_items = []
@@ -239,37 +250,9 @@ def run_transcription(input_dir, output_dir, initial_prompt):
         if not os.path.isfile(output_path):
             print(f"[vaihe 2/4 ({idx}/{total})] Litteroidaan: {filename}", flush=True)
             print(f"Litteroidaan tiedostoa: {full_path}", flush=True)
-            cmd = [
-                "whisper-ctranslate2",
-                full_path,
-                "--batched",
-                "True",
-                "--compute_type",
-                "auto",
-                "--word_timestamps",
-                "True",
-                "--max_line_width",
-                "33",
-                "--max_line_count",
-                "2",
-                "--vad_filter",
-                "True",
-                "--model",
-                "turbo",
-                "--language",
-                "fi",
-                "--initial_prompt",
-                initial_prompt,
-                "--output_dir",
-                transcripts_dir,
-                "--suppress_tokens",
-                "",
-                "--suppress_blank",
-                "False",
-                "--condition_on_previous_text",
-                "False",
-            ]
-            subprocess.run(cmd, check=True, timeout=WHISPER_TIMEOUT)
+            raw = transcribe_file(full_path, "orukeet", "auto", "")
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(raw, f, ensure_ascii=False)
             print(f"Litterointi luotu: {output_path}", flush=True)
         else:
             print(
@@ -279,29 +262,6 @@ def run_transcription(input_dir, output_dir, initial_prompt):
             print(f"Ohitetaan '{output_path}', se on jo litteroitu.", flush=True)
             print(f"Litterointi luotu: {output_path}", flush=True)
 
-
-
-#: Saman sanan näin pitkä jono peräkkäin on Whisperin silmukka hiljaisessa kohdassa
-#: («niin, niin, niin, …» kymmeniä kertoja), ei puhetta. Luku on arvaus: aito
-#: toisto («niin niin niin») jää tämän alle.
-LOOP_MIN_RUN = 5
-
-
-def _drop_loops(words):
-    """Pudota viisi tai useampi saman sanan peräkkäistoisto; ``words`` on
-    ``[(alku, loppu, teksti)]`` ja järjestys säilyy."""
-    def norm(text):
-        return "".join(ch for ch in text.casefold() if ch.isalnum())
-
-    out, i = [], 0
-    while i < len(words):
-        j = i
-        while j + 1 < len(words) and norm(words[j + 1][2]) == norm(words[i][2]):
-            j += 1
-        if j - i + 1 < LOOP_MIN_RUN:
-            out.extend(words[i : j + 1])
-        i = j + 1
-    return out
 
 
 def _injection_bleed(tree, pending, nhsx_path, input_dir):
@@ -393,7 +353,7 @@ def inject_transcriptions_to_nhsx(input_dir, output_dir, bleed_filter=True):
                     if not text:
                         continue
                     words.append((start, end, text))
-            pending.append((file_elem, _drop_loops(words)))
+            pending.append((file_elem, words))
 
         dropped = set()
         if bleed_filter:
@@ -429,7 +389,7 @@ def get_speech_intervals_for_track(
     """Raidan puhejaksot aikajanalla.
 
     ``learn``: käsin vaimennetun alueen sanat eivät avaa sitä (käyttäjän oma
-    vaimennus on tosi, eikä Whisperin kuulema sana ole sitä vastaan), ja taso
+    vaimennus on tosi, eikä Orukeetin kuulema sana ole sitä vastaan), ja taso
     mitataan samalla mittarilla jolla kynnys opittiin (``_Levels``), ei
     pydubilla. ``calibration.threshold`` korvaa ``threshold``in; ilman sitä
     (ei opittu) raita ajetaan kiinteällä kynnyksellä.
@@ -633,7 +593,7 @@ def _decode_pcm16(path):
         "-f", "s16le", "-ac", "1", "-acodec", "pcm_s16le",
         "-ar", str(LEARN_RATE), "-",
     ]
-    out = subprocess.run(cmd, check=True, capture_output=True, timeout=WHISPER_TIMEOUT).stdout
+    out = subprocess.run(cmd, check=True, capture_output=True, timeout=ORUKEET_TIMEOUT).stdout
     return np.frombuffer(out, np.int16)
 
 
@@ -832,7 +792,7 @@ BLEED_MARGIN_MAX_DB = 12.0
 def _bleed_dropped(items, regions, levels):
     """Indeksit joiden sana on toisen mikin vuotoa.
 
-    Kaksi mikkiä kuulee molemmat puhujat, ja Whisper litteroi vuodon kummallakin
+    Kaksi mikkiä kuulee molemmat puhujat, ja Orukeet litteroi vuodon kummallakin
     raidalla: sama puhe näkyisi jokaisen puhujan alla. ``items`` on
     ``(raita, tiedosto, tiedosto-alku, tiedosto-loppu, aikajana-alku,
     aikajana-loppu)``; taso mitataan sanan ajalta ja suhteutetaan raidan omaan
@@ -981,7 +941,6 @@ def write_script(nhsx_path, audio_dirs=None, gap=TURN_GAP_S, inline_remarks=Fals
                 we = ws + time_to_seconds(word.get("l"))
                 if ws < offset + length and we > offset:
                     words.append((start + ws - offset, start + we - offset, text))
-            words = _drop_loops(words)
             if words:  # musiikkiraita ja tyhjä alue eivät ole käsikirjoitusta
                 entries.append((start, name, words))
                 meta.append((file_elem, start, offset))
@@ -1006,7 +965,7 @@ def write_script(nhsx_path, audio_dirs=None, gap=TURN_GAP_S, inline_remarks=Fals
 #   - podcast-magicin nhsx/write.py `paragraphs` (PARAGRAPH_GAP, _MAX_WORDS)
 # Vain gain-summaus: ei panorointia, ramppeja eikä häivytyksiä. Yhtäläisyys
 # podcast-magicin kanssa on testattu vain kappalejaon ja tekstin osalta.
-DOWNMIX_RATE = 16000  # Whisperin oma näytteenottotaajuus
+DOWNMIX_RATE = 16000  # VAD:n ja ASR:n näytteenottotaajuus
 PARAGRAPH_GAP = 1.2  # s; sama kuin podcast-magicin nhsx/write.py
 PARAGRAPH_MAX_WORDS = 80
 
@@ -1116,7 +1075,7 @@ def decode_mono(path, offset, length, rate):
         "ffmpeg", "-v", "error", "-ss", f"{offset:.6f}", "-t", f"{length:.6f}",
         "-i", path, "-vn", "-ac", "1", "-ar", str(rate), "-f", "f32le", "-",
     ]
-    result = subprocess.run(cmd, check=True, capture_output=True, timeout=WHISPER_TIMEOUT)
+    result = subprocess.run(cmd, check=True, capture_output=True, timeout=ORUKEET_TIMEOUT)
     return np.frombuffer(result.stdout, dtype="<f4")
 
 
@@ -1124,7 +1083,7 @@ def gain_mix(clips, duration, rate=DOWNMIX_RATE, decode=None):
     """Monomiksaus: leikkeen näytteet kerrottuna gainilla ja summattuna.
 
     Ei panorointia, ramppeja eikä häivytyksiä. Lyhyt lähde täytetään
-    hiljaisuudella. numpy on mukana jo faster-whisperin riippuvuutena.
+    hiljaisuudella. numpy tulee Colabin NumPy-asennuksesta.
     """
     import numpy as np
 
@@ -1168,12 +1127,14 @@ def paragraph_lines(words):
 
 
 def transcribe_samples(samples, rate, initial_prompt):
-    """Litteroi näytteet samalla whisper-ctranslate2-kutsulla kuin raidat."""
+    """Litteroi miksauksen Orukeetilla ja säilytä sanakohtaiset ajat."""
     import tempfile
     import wave
 
     import numpy as np
 
+    if initial_prompt:
+        print("Huom: Orukeet ei tue Whisperin promptia; sanalista jätetään huomiotta.", flush=True)
     with tempfile.TemporaryDirectory() as tmp:
         wav_path = os.path.join(tmp, "downmix.wav")
         pcm = (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2")
@@ -1182,17 +1143,7 @@ def transcribe_samples(samples, rate, initial_prompt):
             wav.setsampwidth(2)
             wav.setframerate(rate)
             wav.writeframes(pcm.tobytes())
-        cmd = [
-            "whisper-ctranslate2", wav_path, "--batched", "True",
-            "--compute_type", "auto", "--word_timestamps", "True",
-            "--vad_filter", "True", "--model", "turbo", "--language", "fi",
-            "--initial_prompt", initial_prompt, "--output_dir", tmp,
-            "--output_format", "json", "--suppress_tokens", "",
-            "--suppress_blank", "False", "--condition_on_previous_text", "False",
-        ]
-        subprocess.run(cmd, check=True, timeout=WHISPER_TIMEOUT)
-        with open(os.path.join(tmp, "downmix.json"), "r", encoding="utf-8") as f:
-            data = json.load(f)
+        data = transcribe_file(wav_path, "orukeet", "auto", "")
     words = []
     for segment in data.get("segments", []):
         for word in segment.get("words", []):
@@ -1246,8 +1197,8 @@ WORDS_VERSION = 1
 WORD_FLOOR_S = 0.02  # lyhin sana, jonka loppu on alun jälkeen (kuulaksen sopimus)
 
 
-def words_document(raw, language, timing="whisper", rejected=0):
-    """Whisperin raakatulos kuulaksen sanatiedostoksi (``docs/KUULAS-COLAB.md``).
+def words_document(raw, language, timing="orukeet", rejected=0):
+    """ASR:n raakatulos kuulaksen sanatiedostoksi (``docs/KUULAS-COLAB.md``).
 
     Sanat ajan mukaan järjestyksessä ja ``s < e``. Päällekkäisyydessä
     lyhennetään **edeltävää** sanaa, ei siirretä seuraavaa: alkuaika on se
@@ -1281,28 +1232,155 @@ def words_document(raw, language, timing="whisper", rejected=0):
     }
 
 
-def transcribe_file(path, model, language, initial_prompt):
-    """Yksi äänitiedosto Whisperiin; palauttaa raa'an JSONin."""
-    import tempfile
+def _orukeet_model():
+    """Lataa Orukeetin kerran Colabin GPU:lle."""
+    global _ORUKEET
+    if _ORUKEET is None:
+        import torch
+        from huggingface_hub import hf_hub_download
+        from nemo.collections.asr.models import ASRModel
 
+        model_path = hf_hub_download(
+            repo_id=ORUKEET_REPO,
+            filename=ORUKEET_FILE,
+            revision=ORUKEET_REVISION,
+        )
+        _ORUKEET = ASRModel.restore_from(model_path)
+        _ORUKEET.eval()
+        if torch.cuda.is_available():
+            _ORUKEET.to(torch.device("cuda"))
+        _configure_orukeet_timestamps(_ORUKEET)
+    return _ORUKEET
+
+
+def _silero_vad_model():
+    """Lataa VAD-verkon kerran ja käytä sitä peräkkäisille raidoille."""
+    global _SILERO_VAD
+    if _SILERO_VAD is None:
+        from silero_vad import load_silero_vad
+
+        _SILERO_VAD = load_silero_vad()
+    return _SILERO_VAD
+
+
+def _configure_orukeet_timestamps(model):
+    """Valitse TDT:n aikaleimoja tukeva, ei-batched greedy-dekoodaus."""
+    decoding = model.cfg.decoding
+    decoding.strategy = "greedy"
+    decoding.compute_timestamps = True
+    decoding.preserve_alignments = True
+    model.change_decoding_strategy(decoding)
+
+
+def _vad_audio(path, tmp):
+    """Muunna mono-16 kHz PCM:ksi ja palauta Silero VAD:n puheikkunat."""
+    import wave
+
+    import numpy as np
+    import torch
+    from silero_vad import get_speech_timestamps
+
+    wav_path = os.path.join(tmp, "vad-input.wav")
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-i", path, "-vn", "-ac", "1", "-ar",
+            str(VAD_SAMPLE_RATE), "-c:a", "pcm_s16le", wav_path,
+        ],
+        check=True,
+        timeout=ORUKEET_TIMEOUT,
+        capture_output=True,
+    )
+    with wave.open(wav_path, "rb") as wav:
+        if wav.getnchannels() != 1 or wav.getframerate() != VAD_SAMPLE_RATE:
+            raise RuntimeError("ffmpeg ei tuottanut VAD:lle mono-16 kHz -ääntä")
+        pcm = np.frombuffer(wav.readframes(wav.getnframes()), dtype="<i2")
+    audio = torch.from_numpy(pcm.astype(np.float32) / 32768.0)
+    speech = get_speech_timestamps(
+        audio,
+        _silero_vad_model(),
+        sampling_rate=VAD_SAMPLE_RATE,
+        min_speech_duration_ms=80,
+        max_speech_duration_s=VAD_MAX_CHUNK_S,
+        min_silence_duration_ms=500,
+        speech_pad_ms=250,
+    )
+    return pcm, [(int(item["start"]), int(item["end"])) for item in speech]
+
+
+def _orukeet_raw(hypothesis):
+    """Orukeetin NeMo-hypoteesi sisäiseen sana-aikaesitykseen."""
+    timestamp = getattr(hypothesis, "timestamp", None) or {}
+    rows = timestamp.get("word", []) if isinstance(timestamp, dict) else []
+    words = []
+    for row in rows:
+        text = (row.get("word") or row.get("text") or "").strip()
+        try:
+            start, end = float(row["start"]), float(row["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if text and end > start:
+            words.append({"word": text, "start": start, "end": end})
+    if not words:
+        raise RuntimeError(
+            "Orukeet ei palauttanut sanakohtaisia aikaleimoja; litterointia ei kirjoitettu."
+        )
+    words.sort(key=lambda word: word["start"])
+    return {
+        "segments": [{
+            "start": words[0]["start"],
+            "end": words[-1]["end"],
+            "text": (getattr(hypothesis, "text", "") or "").strip(),
+            "words": words,
+        }]
+    }
+
+
+def transcribe_file(path, model=None, language="auto", initial_prompt=""):
+    """Jaa ääni VAD:lla, litteroi Orukeetilla ja siirrä ajat raidan kelloon.
+
+    ``model``, ``language`` ja ``initial_prompt`` säilyvät kutsurajapinnassa;
+    Orukeet käyttää kiinteää mallia eikä tue Whisperin promptia tai kielilippua.
+    """
+    if initial_prompt:
+        print("Huom: Orukeet ei tue Whisperin promptia; sanalista jätetään huomiotta.", flush=True)
+    if model not in (None, "", "orukeet", "turbo"):
+        print("Huom: Orukeet käyttää kiinteää mallia; --model-arvo ohitetaan.", flush=True)
+    _ = language  # säilytetään vanha argumentti; Orukeet tunnistaa kielen automaattisesti.
+    import tempfile
+    import wave
+
+    raw = {"segments": []}
     with tempfile.TemporaryDirectory() as tmp:
-        cmd = [
-            "whisper-ctranslate2", path, "--batched", "True",
-            "--compute_type", "auto", "--word_timestamps", "True",
-            "--vad_filter", "True", "--model", model, "--language", language,
-            "--initial_prompt", initial_prompt, "--output_dir", tmp,
-            "--output_format", "json", "--suppress_tokens", "",
-            "--suppress_blank", "False", "--condition_on_previous_text", "False",
-        ]
-        subprocess.run(cmd, check=True, timeout=WHISPER_TIMEOUT)
-        stem = _swap_audio_ext(os.path.basename(path), "")
-        with open(os.path.join(tmp, stem + ".json"), "r", encoding="utf-8") as f:
-            return json.load(f)
+        pcm, intervals = _vad_audio(path, tmp)
+        recognizer = _orukeet_model()
+        for index, (start, end) in enumerate(intervals):
+            chunk_path = os.path.join(tmp, f"speech-{index:05d}.wav")
+            with wave.open(chunk_path, "wb") as wav:
+                wav.setnchannels(1)
+                wav.setsampwidth(2)
+                wav.setframerate(VAD_SAMPLE_RATE)
+                wav.writeframes(pcm[start:end].astype("<i2", copy=False).tobytes())
+            result = recognizer.transcribe(
+                [chunk_path], timestamps=True, batch_size=1, num_workers=0, verbose=False
+            )
+            if not result:
+                raise RuntimeError(f"Orukeet ei palauttanut tulosta tiedostolle {path}.")
+            chunk_raw = _orukeet_raw(result[0])
+            offset = start / VAD_SAMPLE_RATE
+            for segment in chunk_raw["segments"]:
+                segment["start"] += offset
+                segment["end"] += offset
+                for word in segment["words"]:
+                    word["start"] += offset
+                    word["end"] += offset
+                raw["segments"].append(segment)
+    raw["segments"].sort(key=lambda segment: segment["start"])
+    return raw
 
 
 #: Kohdistimen torch asennetaan omaan kansioonsa eikä järjestelmän pythoniin:
-#: CTranslate2 (litterointi) käyttää järjestelmän pip-nvidia-kirjastoja, ja
-#: torch 2.8 tuo omansa eri versioina. Erillään niiden ei tarvitse sopia yhteen.
+#: NeMo-ASR ja MMS_FA-kohdistin käyttävät eri torch-pinnejä. Erillään niiden
+#: riippuvuuksien ei tarvitse sopia samaan prosessiin.
 #: Ei kokeiltu oikealla Colabilla: kuinka suuri lataus ja kuinka kauan se kestää
 #: on mittaamatta.
 ALIGN_SITE = "/content/aligner_site"
@@ -1314,10 +1392,10 @@ ALIGN_TIMING = "ctc-v1"
 
 
 def aligner_env():
-    """Kohdistimen ympäristö: sen oma kansio ensin, ei pip-nvidia-kirjastoja.
+    """Kohdistimen ympäristö: sen oma torch-asennus ensin.
 
-    ``configure_cuda_libs`` lisää ne ``LD_LIBRARY_PATH``iin CTranslate2:n takia;
-    torch löytää omansa asennuskansionsa vierestä.
+    ``configure_cuda_libs`` lisää tarvittaessa NVIDIA-kirjastot
+    ``LD_LIBRARY_PATH``iin; kohdistin lataa torchin tästä erillisestä kansiosta.
     """
     env = dict(os.environ)
     existing = env.get("PYTHONPATH", "")
@@ -1360,7 +1438,7 @@ def check_aligner():
 def align_files(jobs):
     """Kaikki tiedostot kerralla omassa prosessissaan; ``{nimi: {rows, rejected}}``.
 
-    Jokainen työ on ``{"name", "audio", "raw"}``, ``raw`` Whisperin tulos.
+    Jokainen työ on ``{"name", "audio", "raw"}``, ``raw`` Orukeetin tulos.
     """
     import tempfile
 
@@ -1489,8 +1567,8 @@ def main():
     parser.add_argument(
         "--prompt",
         type=str,
-        default="öö, tota, niinku, mhm, joo, silleen, vähän, niinkun, ööh, ömm.",
-        help="Whisper initial prompt täytesanoille",
+        default="",
+        help="yhteensopivuusvalitsin; Orukeet ei tue promptia",
     )
     parser.add_argument(
         "--inline-remarks",
@@ -1514,8 +1592,8 @@ def main():
         help="downmix: koko miksaus litteroidaan kerran ilman puhujia; "
         "audio: pelkät äänitiedostot, sanat JSONina",
     )
-    parser.add_argument("--model", default="turbo", help="Whisper-malli (vain --source audio)")
-    parser.add_argument("--language", default="fi", help="kieli (vain --source audio)")
+    parser.add_argument("--model", default="orukeet", help="yhteensopivuusvalitsin; käytössä aina Orukeet")
+    parser.add_argument("--language", default="fi", help="tulosteen kielimerkintä (malli tunnistaa kielen)")
     parser.add_argument(
         "--align",
         action="store_true",

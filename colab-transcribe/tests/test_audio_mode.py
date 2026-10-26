@@ -25,7 +25,7 @@ from colabtranscribe.options import RunOptions, pipeline_args
 def test_audio_is_a_source_and_its_arguments_reach_the_script():
     args = pipeline_args(RunOptions(source="audio"))
     assert args[args.index("--source") + 1] == "audio"
-    assert args[args.index("--model") + 1] == "turbo"
+    assert args[args.index("--model") + 1] == "orukeet"
     assert args[args.index("--language") + 1] == "fi"
 
 
@@ -60,7 +60,7 @@ def test_the_document_has_the_contracts_fields():
     doc = pipeline.words_document(_raw((" moi", 1.0, 1.4)), "fi")
     assert doc == {
         "version": 1,
-        "timing": "whisper",
+        "timing": "orukeet",
         "language": "fi",
         "rejected": 0,
         "words": [{"w": "moi", "s": 1.0, "e": 1.4}],
@@ -168,26 +168,36 @@ def test_run_audio_without_audio_fails_loudly(tmp_path):
         pipeline.run_audio(str(tmp_path / "in"), str(tmp_path / "out"), "turbo", "fi", "")
 
 
-def test_transcribe_file_asks_whisper_for_the_chosen_model_and_language(
-    monkeypatch, tmp_path
-):
+def test_transcribe_file_uses_orukeet_word_timestamps(monkeypatch, tmp_path):
     seen = {}
+    import numpy as np
 
-    def fake_run(cmd, check, timeout):
-        seen["cmd"] = cmd
-        out = cmd[cmd.index("--output_dir") + 1]
-        with open(os.path.join(out, "puhe.json"), "w", encoding="utf-8") as f:
-            json.dump(_raw(("moi", 1.0, 1.2)), f)
+    monkeypatch.setattr(
+        pipeline,
+        "_vad_audio",
+        lambda path, tmp: (np.zeros(32000, dtype=np.int16), [(16000, 32000)]),
+    )
 
-    monkeypatch.setattr(pipeline.subprocess, "run", fake_run)
+    class FakeModel:
+        def transcribe(self, paths, **kwargs):
+            seen["paths"] = paths
+            seen["kwargs"] = kwargs
+            return [type("Hypothesis", (), {
+                "text": "moi",
+                "timestamp": {"word": [{"word": "moi", "start": 1.0, "end": 1.2}]},
+            })()]
+
+    monkeypatch.setattr(pipeline, "_orukeet_model", lambda: FakeModel())
     data = pipeline.transcribe_file(str(tmp_path / "puhe.wav"), "large-v3", "en", "täyte")
-    cmd = seen["cmd"]
-    assert cmd[cmd.index("--model") + 1] == "large-v3"
-    assert cmd[cmd.index("--language") + 1] == "en"
-    assert cmd[cmd.index("--initial_prompt") + 1] == "täyte"
-    assert cmd[cmd.index("--word_timestamps") + 1] == "True"
-    assert cmd[cmd.index("--output_format") + 1] == "json"
+    assert seen["paths"][0].endswith("speech-00000.wav")
+    assert seen["kwargs"] == {
+        "timestamps": True,
+        "batch_size": 1,
+        "num_workers": 0,
+        "verbose": False,
+    }
     assert data["segments"][0]["words"][0]["word"] == "moi"
+    assert data["segments"][0]["words"][0]["start"] == 2.0
 
 
 def test_main_audio_runs_only_the_audio_step(monkeypatch):
@@ -648,7 +658,7 @@ def test_aligned_starts_go_into_the_file_marked_ctc_v1(tmp_path, monkeypatch):
     doc = json.loads((tmp_path / "out" / "puhe.words.json").read_text(encoding="utf-8"))
     assert doc["timing"] == "ctc-v1"
     assert doc["words"][0] == {"w": "moi", "s": 1.5, "e": 1.9}
-    assert doc["words"][1]["s"] == 2.0  # hylätty sana jää Whisperin aikaan
+    assert doc["words"][1]["s"] == 2.0  # hylätty sana jää Orukeetin aikaan
     assert doc["rejected"] == 1
 
 
@@ -687,9 +697,9 @@ def test_nothing_aligned_is_an_error_not_a_file_marked_corrected(tmp_path, monke
 def test_without_align_the_aligner_is_never_touched(tmp_path, monkeypatch):
     order = _align_fixture(tmp_path, monkeypatch)
     pipeline.run_audio(str(tmp_path / "in"), str(tmp_path / "out"), "turbo", "fi", "")
-    assert order == ["whisper"]
+    assert order == ["whisper"]  # fake transcribe - oikea tausta-ajuri on Orukeet
     doc = json.loads((tmp_path / "out" / "puhe.words.json").read_text(encoding="utf-8"))
-    assert doc["timing"] == "whisper"
+    assert doc["timing"] == "orukeet"
 
 
 def test_the_aligned_file_is_in_time_order_even_when_a_word_moved_past_the_next(
