@@ -91,7 +91,7 @@ try_collect("ctranslate2", dylibs=True)
 try_collect("huggingface_hub")
 
 a = Analysis(
-    [str(SRC_DIR / PKG / "__main__.py")],
+    [str(BASE_DIR / "scripts" / "launch_app.py")],
     pathex=[str(SRC_DIR)],
     binaries=binaries,
     datas=datas,
