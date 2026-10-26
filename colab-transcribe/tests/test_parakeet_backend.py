@@ -267,6 +267,32 @@ def test_parakeet_backend_progress_and_events(monkeypatch, tmp_path, capsys):
     session_ev = next(e for e in event_lines if e.get("event") == "session")
     assert session_ev.get("backend") == "parakeet"
     assert session_ev.get("state") == "local"
+    assert all(e.get("schema") == 1 for e in event_lines)
+    stages = [e for e in event_lines if e.get("event") == "stage"]
+    assert stages == [
+        {
+            "schema": 1,
+            "event": "stage",
+            "stage": "transcribe",
+            "state": "start",
+            "index": 1,
+            "total": 1,
+            "name": "puhe.wav",
+        },
+        {
+            "schema": 1,
+            "event": "stage",
+            "stage": "transcribe",
+            "state": "done",
+            "index": 1,
+            "total": 1,
+            "name": "puhe.wav",
+        },
+    ]
+    progress_events = [e for e in event_lines if e.get("event") == "progress"]
+    assert progress_events
+    assert progress_events[-1]["percent"] == 100
+    assert [e.get("event") for e in event_lines][-1] == "done"
 
 
 def test_parakeet_backend_missing_audio_fails(tmp_path, capsys):
