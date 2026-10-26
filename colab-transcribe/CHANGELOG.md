@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [2026.10.26.2] - 2026-10-26
+
+### Fixed
+- **Local Parakeet/Orukeet structured events match Kuulas schema 1.** Emit per-file transcribe stage start/done events, progress events, and protocol-shaped errors. Document the local timing labels and session state.
+
 ## [2026.10.26.1] - 2026-10-26
 
 ### Added
