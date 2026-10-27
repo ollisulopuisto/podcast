@@ -24,8 +24,8 @@ def test_pipeline_script_ships_with_the_package():
     assert script.is_file()
     assert script.name == "pipeline.py"
     source = script.read_text(encoding="utf-8")
-    assert 'ORUKEET_REPO = "oruk/orukeet"' in source
-    assert 'ORUKEET_REVISION = "555136b50265a132d4cea0d35560c26fc4f657ab"' in source
+    assert 'ULTRA_REPO = "moondream/parakeet-ultra"' in source
+    assert '"moondream==2.4.1"' in source
     assert "whisper-ctranslate2" not in source
 
 
@@ -217,10 +217,10 @@ def test_run_kills_a_hung_process_that_prints_nothing():
     assert any("aikarajan" in line for line in logs)
 
 
-def test_command_timeout_outlasts_orukeet():
+def test_command_timeout_outlasts_ultra():
     from colabtranscribe.colab import pipeline
 
-    assert driver.COMMAND_TIMEOUT >= pipeline.ORUKEET_TIMEOUT
+    assert driver.COMMAND_TIMEOUT >= pipeline.PIPELINE_TIMEOUT
 
 
 def test_run_translates_colab_exec_to_stdin(monkeypatch):

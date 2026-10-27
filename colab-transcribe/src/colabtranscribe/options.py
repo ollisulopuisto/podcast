@@ -75,7 +75,7 @@ class RunOptions:
     # Käsikirjoitus: lyhyet huomautukset kappaleen sisään, ei omille riveilleen.
     inline_remarks: bool = False
     # ``model`` säilyy yhteensopivuusvalitsimena; Colab käyttää Orukeetia.
-    model: str = "orukeet"
+    model: str = "parakeet-ultra"
     language: str = "fi"
     # Vain ``source="audio"``: sanojen alut kohdistetaan ääneen Colabissa
     # (``wordalign``), ja tiedoston ``timing`` on silloin ``ctc-v1``.

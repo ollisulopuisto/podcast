@@ -66,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--model", default=None,
-        help="vanha yhteensopivuusvalitsin (--audio); litterointi käyttää aina Orukeetia",
+        help="vanha yhteensopivuusvalitsin (--audio); Colab käyttää Parakeet Ultraa",
     )
     parser.add_argument("--language", default=None, help="kieli (--audio, oletus: fi)")
     parser.add_argument(

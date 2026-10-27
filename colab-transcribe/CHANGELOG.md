@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Calendar Versioning (CalVer).
 
+## [Unreleased]
+
+### Changed
+- **Colab transcription uses Parakeet Ultra through Photon.** The driver requests native word timestamps, converts AIFF input to mono 16 kHz WAV, and preserves the existing Kuulas output/event contract. A generated four-second Finnish clip completed on a real T4 on 2026-10-27: Photon downloaded 1.26 GB of model files and wrote seven words with timestamps. This is a runtime smoke test; podcast accuracy, throughput and long recordings remain unmeasured.
+
+### Documentation
+- Removed unsupported local speed and architecture claims from the entries below. No repository measurement supports the former 65x–85x or approximately 43x figures. Local Orukeet still requires separately supplied MLX weights and may fall back to base Parakeet; its name alone does not prove that Orukeet weights were used.
+
 ## [2026.10.26.3] - 2026-10-26
 
 ### Changed
@@ -18,14 +26,14 @@ and this project adheres to Calendar Versioning (CalVer).
 ## [2026.10.26.1] - 2026-10-26
 
 ### Added
-- **`--backend {colab,parakeet,orukeet}`: Orukeet MLX as local transcription backend.** Supports `--backend orukeet` alongside `parakeet`, defaulting to `~/.models/orukeet-mlx` (with fallback to base Parakeet). Provides 12,288 fitted Gabor filters and explicit Finnish acoustic modeling with ~43x real-time transcription.
+- **`--backend {colab,parakeet,orukeet}`: Orukeet MLX as local transcription backend.** Supports `--backend orukeet` alongside `parakeet`, defaulting to `~/.models/orukeet-mlx` (with fallback to base Parakeet). Speed and accuracy on podcast audio have not been measured in this repository.
 - **`--orukeet-model` CLI flag & `COLAB_ORUKEET_MODEL` environment variable:** Configures model weights path for local Apple Silicon inference.
 - **Word timing contract:** Automatically sets `"timing": "orukeet"` in `<name>.words.json` when running via Orukeet.
 
 ## [2026.10.25.1] - 2026-10-25
 
 ### Added
-- **`--backend {colab,parakeet}`: Local Parakeet MLX backend for plain-audio mode.** Allows running transcription 100% locally on Apple Silicon Macs at 65x–85x real-time via `parakeet-mlx`, completely bypassing Colab VM provisioning, authentication, and network uploads.
+- **`--backend {colab,parakeet}`: Local Parakeet MLX backend for plain-audio mode.** Allows running transcription 100% locally on Apple Silicon Macs via `parakeet-mlx` (throughput unmeasured here), completely bypassing Colab VM provisioning, authentication, and network uploads.
 - **`--parakeet-model`:** Selects the Parakeet model identifier (default: `mlx-community/parakeet-tdt-0.6b-v3`).
 - **SentencePiece subword token reconstruction:** Automatically reconstructs BPE subwords and punctuation into clean word timestamps (`timing: "parakeet"`), fully satisfying the Kuulas plain-audio contract (`<name>.words.json`) and emitting `--progress` and `--events` (`@@kuulas`) events.
 

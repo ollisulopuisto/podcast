@@ -25,7 +25,7 @@ from colabtranscribe.options import RunOptions, pipeline_args
 def test_audio_is_a_source_and_its_arguments_reach_the_script():
     args = pipeline_args(RunOptions(source="audio"))
     assert args[args.index("--source") + 1] == "audio"
-    assert args[args.index("--model") + 1] == "orukeet"
+    assert args[args.index("--model") + 1] == "parakeet-ultra"
     assert args[args.index("--language") + 1] == "fi"
 
 
@@ -60,7 +60,7 @@ def test_the_document_has_the_contracts_fields():
     doc = pipeline.words_document(_raw((" moi", 1.0, 1.4)), "fi")
     assert doc == {
         "version": 1,
-        "timing": "orukeet",
+        "timing": "parakeet-ultra",
         "language": "fi",
         "rejected": 0,
         "words": [{"w": "moi", "s": 1.0, "e": 1.4}],
@@ -168,36 +168,39 @@ def test_run_audio_without_audio_fails_loudly(tmp_path):
         pipeline.run_audio(str(tmp_path / "in"), str(tmp_path / "out"), "turbo", "fi", "")
 
 
-def test_transcribe_file_uses_orukeet_word_timestamps(monkeypatch, tmp_path):
-    seen = {}
-    import numpy as np
+def test_transcribe_file_uses_photon_ultra_word_timestamps(monkeypatch, tmp_path):
+    import sys
+    import types
 
-    monkeypatch.setattr(
-        pipeline,
-        "_vad_audio",
-        lambda path, tmp: (np.zeros(32000, dtype=np.int16), [(16000, 32000)]),
-    )
+    seen = []
 
     class FakeModel:
-        def transcribe(self, paths, **kwargs):
-            seen["paths"] = paths
-            seen["kwargs"] = kwargs
-            return [type("Hypothesis", (), {
-                "text": "moi",
-                "timestamp": {"word": [{"word": "moi", "start": 1.0, "end": 1.2}]},
-            })()]
+        def __enter__(self):
+            return self
 
-    monkeypatch.setattr(pipeline, "_orukeet_model", lambda: FakeModel())
-    data = pipeline.transcribe_file(str(tmp_path / "puhe.wav"), "large-v3", "en", "täyte")
-    assert seen["paths"][0].endswith("speech-00000.wav")
-    assert seen["kwargs"] == {
-        "timestamps": True,
-        "batch_size": 1,
-        "num_workers": 0,
-        "verbose": False,
+        def __exit__(self, *exc):
+            return False
+
+        def transcribe(self, **kwargs):
+            seen.append(kwargs)
+            return {"text": "moi", "segments": [{
+                "words": [{"word": "moi", "start": 1.0, "end": 1.2}],
+            }]}
+
+    def photon(model_id, **kwargs):
+        seen.append({"model_id": model_id, **kwargs})
+        return FakeModel()
+
+    monkeypatch.setitem(sys.modules, "moondream", types.SimpleNamespace(photon=photon))
+    monkeypatch.setattr(pipeline, "_ULTRA", None)
+    path = str(tmp_path / "puhe.wav")
+    data = pipeline.transcribe_file(path, "large-v3", "en", "täyte")
+
+    assert seen[0] == {"model_id": "moondream/parakeet-ultra", "device": "cuda"}
+    assert seen[1] == {"audio": path, "timestamps": "word"}
+    assert data["segments"][0]["words"][0] == {
+        "word": "moi", "start": 1.0, "end": 1.2,
     }
-    assert data["segments"][0]["words"][0]["word"] == "moi"
-    assert data["segments"][0]["words"][0]["start"] == 2.0
 
 
 def test_main_audio_runs_only_the_audio_step(monkeypatch):
@@ -699,7 +702,7 @@ def test_without_align_the_aligner_is_never_touched(tmp_path, monkeypatch):
     pipeline.run_audio(str(tmp_path / "in"), str(tmp_path / "out"), "turbo", "fi", "")
     assert order == ["whisper"]  # fake transcribe - oikea tausta-ajuri on Orukeet
     doc = json.loads((tmp_path / "out" / "puhe.words.json").read_text(encoding="utf-8"))
-    assert doc["timing"] == "orukeet"
+    assert doc["timing"] == "parakeet-ultra"
 
 
 def test_the_aligned_file_is_in_time_order_even_when_a_word_moved_past_the_next(
