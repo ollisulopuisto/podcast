@@ -1891,3 +1891,129 @@ def test_render_and_audio_processing_can_be_stopped(scratch_xml, monkeypatch):
     worker.join(timeout=5)
     assert not worker.is_alive()
     assert not state.mix_progress["running"] and state.mix_progress["stopped"]
+
+
+def _spine_files(root):
+    """Viennin spinen leikkeiden tiedostot järjestyksessä."""
+    names = {a.get("id"): a.get("name") for a in root.findall(".//asset")}
+    return [names.get(c.get("ref"), c.get("ref")) for c in root.find(".//spine")
+            if c.tag in ("video", "asset-clip")]
+
+
+COVERAGES = {
+    # Kaksi yksittäistä kuvaa kattaa Hostin; Guestilla on vain laaja.
+    "two_singles_for_host": {
+        "CLOSE_A.mp4": ["Host"], "CLOSE_B.mp4": ["Host"],
+        "WIDE.mp4": ["Host", "Guest"],
+    },
+    # CLOSE_B kattaa molemmat: Host saa kaksi kuvaa, Guest yhden kahden kuvan.
+    "host_in_two_guest_in_one": {
+        "CLOSE_A.mp4": ["Host"], "CLOSE_B.mp4": ["Host", "Guest"],
+        "WIDE.mp4": ["Host", "Guest"],
+    },
+    # Jokainen kuva kattaa jokaisen: valinta ei saa nojata puhujan nimeen.
+    "everyone_in_every_shot": {
+        "CLOSE_A.mp4": ["Host", "Guest"], "CLOSE_B.mp4": ["Host", "Guest"],
+        "WIDE.mp4": ["Host", "Guest"],
+    },
+}
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("name", sorted(COVERAGES))
+def test_the_export_follows_the_shots_the_preview_chose(scratch_xml, name):
+    """Sama puhuja usemmassa kuvassa: vienti seuraa kuvan identiteettiä, ei nimeä.
+
+    Eri kuvien nimike voi olla sama (``Host``), joten jos vienti ratkaisisi
+    kuvan puhujan nimestä tai ``roles.closes``ista (yksi lähikuva per puhuja),
+    se valitsisi väärän tai yhden kuvan kahdesti. Spinen tiedostojen järjestys
+    on esikatselun kuvien järjestys, peräkkäiset samat yhdistettynä.
+    """
+    state = AppState(xml_path=str(scratch_xml()))
+    state.load()
+    for _ in range(200):
+        if state.progress.get("ready"):
+            break
+        time.sleep(0.05)
+    assert state.progress["ready"], "verhokäyrät eivät valmistuneet"
+
+    client = TestClient(create_app(state))
+    tracks = {k: v.to_json() for k, v in _tracks().items()}
+    for key, covers in COVERAGES[name].items():
+        tracks[key] = {"role": "shot", "covers": covers,
+                       "context": key == "WIDE.mp4"}
+    result = client.post("/api/settings", json={
+        "tracks": tracks,
+        "globals": Globals(min_shot=1.5, lead=0.15, confirm=0.3,
+                           min_overlap=0.4).to_json(),
+    }).json()
+    assert result["ok"], result.get("problems")
+    chosen = [s["angle"] for s in result["segments"]]
+    assert chosen, "leikkauslista ei saa olla tyhjä"
+
+    exp = client.post("/api/export").json()
+    assert exp["ok"], exp.get("problems")
+    root = ET.fromstring(pathlib.Path(exp["path"]).read_text(encoding="utf-8"))
+    merged = [a for i, a in enumerate(chosen) if i == 0 or chosen[i - 1] != a]
+    assert _spine_files(root) == merged
+    print(name, "kuvat:", sorted(set(chosen)))
+
+
+MULTICAM_COVERAGES = {
+    "two_singles_for_host": {
+        "CLOSE_A": ["Host"], "CLOSE_B": ["Host"], "WIDE": ["Host", "Guest"],
+    },
+    "host_in_two_guest_in_one": {
+        "CLOSE_A": ["Host"], "CLOSE_B": ["Host", "Guest"], "WIDE": ["Host", "Guest"],
+    },
+}
+
+
+def _collapsed(keys):
+    return [k for i, k in enumerate(keys) if i == 0 or keys[i - 1] != k]
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("name", sorted(MULTICAM_COVERAGES))
+def test_the_multicam_export_follows_the_shots_the_preview_chose(scratch_xml, name):
+    """Sama kuin litteällä lähteellä, mutta kulma on yksi raita useassa osassa.
+
+    Viennin kuvakulma luetaan ``mc-source``n ``angleID``stä ja käännetään
+    takaisin raidaksi; jakso kulkee osien rajojen yli, joten peräkkäiset samat
+    kuvat yhdistetään ennen vertailua.
+    """
+    state = AppState(xml_path=str(scratch_xml("multicam.fcpxml")))
+    state.load()
+    for _ in range(200):
+        if state.progress.get("ready"):
+            break
+        time.sleep(0.05)
+    assert state.progress["ready"], "verhokäyrät eivät valmistuneet"
+
+    client = TestClient(create_app(state))
+    tracks = {k: v.to_json() for k, v in _multicam_tracks().items()}
+    for key, covers in MULTICAM_COVERAGES[name].items():
+        tracks[key] = {"role": "shot", "covers": covers, "context": key == "WIDE"}
+    result = client.post("/api/settings", json={
+        "tracks": tracks,
+        "globals": Globals(min_shot=1.5, lead=0.15, confirm=0.3,
+                           min_overlap=0.4).to_json(),
+    }).json()
+    assert result["ok"], result.get("problems")
+    chosen = _collapsed([s["angle"] for s in result["segments"]])
+    assert chosen, "leikkauslista ei saa olla tyhjä"
+
+    exp = client.post("/api/export").json()
+    assert exp["ok"], exp.get("problems")
+    root = ET.fromstring(pathlib.Path(exp["path"]).read_text(encoding="utf-8"))
+    track_of = {angle: t.key for t in state.timeline.tracks for angle in t.angle_ids}
+    shown = []
+    for clip in root.findall(".//spine/mc-clip"):
+        video = [s.get("angleID") for s in clip.findall("mc-source")
+                 if s.get("srcEnable") in ("all", "video")]
+        keys = {track_of.get(a) for a in video}
+        # Kuvakulmia on yksi näytettävä; mikkikulmat ovat ``audio``-lähteitä.
+        assert len(keys) == 1, (keys, video)
+        shown.append(keys.pop())
+    print(name, "kuvat:", sorted(set(shown)))
+    assert _collapsed(shown) == chosen
