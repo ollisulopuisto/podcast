@@ -128,7 +128,7 @@ siirtää Parakeet Ultralle. Parakeet Ultran podcast-tarkkuutta ei ole tässä r
 
 ## Vaatimukset
 
-* [uv](https://docs.astral.sh/uv/) (`brew install uv`). `colab`-komentorivityökalu on riippuvuus ja tulee `uvx`:n mukana, kiinnitettynä versioon jossa on Googlen oma `jupyter-kernel-client`.
+* [uv](https://docs.astral.sh/uv/) (`brew install uv`). `colab`-komentorivityökalu on riippuvuus ja tulee `uvx`:n mukana, kiinnitettynä yhteensopivaan `jupyter-kernel-client` 0.9.0 -pyörään.
 * Google-tili, jolla on Colab, kirjautuneena kerran komennolla `colab-transcribe --login`. Vaihtoehtoisesti Google Cloud ADC -tunnisteet (`gcloud auth application-default login`) tai `GOOGLE_APPLICATION_CREDENTIALS`.
 * `colab-transcribe` opastaa automaattisesti TUI:ssa tai `--check`-valitsimella, jos jotain puuttuu.
 * Siinä kaikki paikallisesti. ffmpegiä ei tarvita: raskas työ tehdään pilvessä, ja ketjun skripti tulee tämän paketin mukana.

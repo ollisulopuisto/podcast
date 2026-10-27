@@ -65,9 +65,12 @@ uv run python scripts/bump_version.py autoraffkat
 git tag autoraffkat-v2026.8.28.1
 ```
 
-Tagi käynnistää `build-<sovellus>.yml`in. Paketoitavia sovelluksia on kaksi
-(autoraffkat, podcast-magic); automixer on komentorivityökalu eikä sillä ole
-`.spec`iä, joten sillä ei ole julkaisuputkeakaan.
+Tagi käynnistää sovelluksen julkaisuputken. Autoraffkat ja podcast-magic
+paketoidaan omilla `build-<sovellus>.yml`-työnkuluillaan; viewerillä on omansa.
+`automixer-v*` ja `colab-transcribe-v*` käynnistävät `build-cli.yml`in, joka
+pakkaa sovelluksen ja sen työtilakirjastot samasta commitista sekä kiinnittää
+muut riippuvuudet lukosta. PR:t ja käsiajot tarkistavat paketoinnin julkaisematta.
+Asennus, Kuulas-polut ja julkaisuohje: [CLI-RELEASES.md](docs/CLI-RELEASES.md).
 
 ## Feature Roadmaps & Ideas
 

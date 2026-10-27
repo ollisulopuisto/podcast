@@ -128,7 +128,7 @@ transfer to Parakeet Ultra. Podcast accuracy has not been measured in this repos
 
 ## Requirements
 
-* [uv](https://docs.astral.sh/uv/) (`brew install uv`). The `colab` command-line tool is a dependency and comes with `uvx`, pinned to a version with Google's own `jupyter-kernel-client`.
+* [uv](https://docs.astral.sh/uv/) (`brew install uv`). The `colab` command-line tool is a dependency and comes with `uvx`, pinned with the compatible `jupyter-kernel-client` 0.9.0 wheel.
 * A Google account with Colab, signed in once with `colab-transcribe --login`. Alternatively, Google Cloud ADC credentials (`gcloud auth application-default login`) or `GOOGLE_APPLICATION_CREDENTIALS`.
 * `colab-transcribe` onboards you automatically in the TUI or via `--check` if anything is missing.
 * That is all locally. No ffmpeg is needed: the heavy work runs in the cloud, and the pipeline script ships inside this package.
