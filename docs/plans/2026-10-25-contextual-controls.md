@@ -1,7 +1,16 @@
 # Contextual Controls: Floating Toolbar, Context Menus, Palette
 
-**Status (2026-10-25):** design only. Nothing here is built. The mockups under
-`docs/plans/assets/` are static pages, and nothing in them is wired.
+**Status (2026-10-27): revised for the shot-coverage model.** The shortcut
+registry and help sheet already exist. The former keyboard-carry phase is
+retired: #93 removed lifted cards, speaker slots and the patch bay. The current
+controls are speaker-coverage checkboxes and a context-shot checkbox. This is a
+documentation update, not a new keyboard or palette implementation.
+
+Checked against main `6be58ad`, `server/static/app.js`, `server/CLAUDE.md` and
+`tests/test_shortcuts.py`. Older screenshots and the alternatives discussion
+below are historical design material; they must not be implemented as a slot
+assignment workflow. No browser or assistive-technology session was run for this
+revision.
 
 **The owner's question:** "Would a Photoshop style floating toolbar be a good
 idea? What about contextual menus, eg if you highlight something first and then
@@ -9,109 +18,50 @@ the relevant options pop up?" The apps target power users and keyboard
 shortcuts, and "we DEFINITELY need a way to surface these features in the GUI so
 that people can discover them". Scope: autoraffkat first, the other apps second.
 
-**Builds on:** the shortcut registry being built on
-`feat/autoraffkat-shortcut-help`: one table in `static/app.js` that generates
-the keydown handler, the `<kbd>` hints, the tooltips and a `?` cheat sheet. The
-branch was not on `origin` when this was written, so the section "What this
-needs from the registry" states the contract this design depends on, not what
-that branch contains.
+**Builds on:** the existing `SHORTCUTS` registry, generated key hints and `?`
+help sheet in `static/app.js`. New application shortcuts belong there. Native
+checkbox and text-field behavior remains native.
 
 ## Decision
 
-1. **No floating tool palette, in any of these apps.** A Photoshop tool palette
-   switches between *tools*: modes that change what the pointer does on a
-   canvas. None of these apps has tools. They have commands on objects, plus one
-   transient mode (autoraffkat's lifted card). A palette of commands that floats
-   over a 960 × 600 window covers the cards it acts on, needs a mouse to move it
-   out of the way, and adds nothing the header does not already show.
-2. **autoraffkat gets two contextual surfaces and one discovery layer, in this
-   order:**
-   1. **Keyboard carry with a carry bar.** The card is the app's only
-      selection, and today the keyboard can lift one but not put it down. Lift
-      with Enter, place with a digit, cancel with Esc. While a card is carried,
-      the Tracks panel's own heading row shows those keys and every slot shows
-      its digit. This is the selection-anchored contextual toolbar, but docked
-      into an existing row rather than floating.
-   2. **A context menu on track cards**, opened by right-click, Shift+F10, the
-      Menu key and a visible `⋯` button. Every item comes from the registry and
-      shows its key.
-   3. **A command palette (⌘K)** that finds commands *and settings*, after the
-      registry and the menu have landed.
-3. **Not for autoraffkat:** a floating toolbar near the selection, a menu bar,
-   context menus on the preview bar or the cut list (nothing there can be
-   selected), and hover-only controls.
-4. **podcast-magic:** nothing beyond key hints and a cheat sheet. It has
-   nothing to select.
-5. **automixer:** Textual's Footer already *is* a contextual toolbar (it shows
-   the focused widget's bindings), and Ctrl+P already opens a palette that
-   lists none of the app's own commands. Register them there, and bind the
-   Speech/Music marking to the file list.
-6. **kuulas (separate repository; a recommendation only):** it already has the
-   registry, menu bar, palette, context menus and status-bar hints. Make the
-   status-bar hints follow the *selection kind*, not only the panel, instead of
-   adding a floating selection bar over the waveform. Check two suspected
-   keyboard bugs in its context menu (see "Kuulas" below).
-
-The rule that holds all of it together: **one registry, and every surface is a
-view of it.** Nothing appears in a menu, bar or palette without its key, and
-nothing has a key that cannot be found in the cheat sheet and the palette. Both
-halves are tests, not intentions (see "The tests that make it true").
+1. Keep controls on the object they affect. No floating palette is proposed.
+2. Keep video tracks as shots with `covers` and `context`; microphone assignments
+   identify speakers. A shot can cover several speakers, and a speaker can appear
+   in several shots. Do not restore speaker slots or lifted-card state.
+3. Coverage is currently operated with native controls: Tab/Shift+Tab to move,
+   Space to toggle a checkbox, text input plus its Add control to add a speaker.
+   A dedicated faster keyboard path is a new proposal, not a missing drop handler.
+4. Re-evaluate card menus around current actions (coverage, context, relinking,
+   microphone controls). A menu must not offer the former close/group/wide slot
+   destinations. First establish that it improves on the visible controls.
+5. A later palette can expose project commands and reveal existing settings.
+   It must share the registry, translations and availability rules, and must not
+   require a carry mode or card selection.
+6. Automixer and podcast-magic proposals remain separate app work. Kuulas has
+   its own active implementation and release work in a separate repository.
 
 ## What the code says: selection and actions per app
 
 ### autoraffkat
 
-Read from `server/static/app.js`, `index.html`, `style.css` and
-`server/CLAUDE.md` on `origin/main` at `8ec4914`.
+`trackCard` sets `draggable = false` and `tabIndex = -1`. There is no `picked`,
+`pickUp`, `dropTarget`, `buildSlots`, `applyPicked` or `renderTray` path. The
+shortcut test explicitly prohibits a card-level `keydown` handler; new global
+shortcuts go through the registry. Nested text fields retain their own native
+or field-specific behavior.
 
-**What can be selected today.** One thing: a track card, held in `picked`
-(app.js:276). A click or `dragstart` lifts it, and a click on a slot or a
-`drop` places it (`dropTarget`, app.js:767). `picked` is a single key. There is
-no multiple selection, no time range, no selected shot and no selected cut-list
-row.
+| Surface | Current action |
+| --- | --- |
+| Video-track card | Toggle the speakers visible in the shot (`covers`), add a speaker, set the preferred context shot (`context`), relink missing media |
+| Microphone controls | Assign the speaker and adjust the existing audio controls |
+| Preview canvas | Zoom, pan and reset the view; no selection model |
+| Cut list | Inspect the generated cuts; no selectable command target |
+| Header | Project commands, including registered Open/Export/help keys |
+| Settings rows | Existing radios, sliders, disclosures and resets |
 
-| Surface | Selectable? | What the user can do there |
-| --- | --- | --- |
-| Track card (`trackCard`) | yes, one at a time (`picked`) | lift and place into a slot (sets role and speaker in `assign`); mic sliders; group-shot "Also in the shot" chips; seat-order chips and their reset; relink when a file is missing |
-| Slot strip | no (it is a text field) | rename the speaker (`renameCovers`) |
-| Preview bar (`#bar`, a canvas) | no | wheel zooms, drag pans when zoomed, double-click resets (`bindZoom`). No click, no keyboard, no range |
-| Cut list (`#cut-table`) | no | read only |
-| Rail panels (rhythm, overlap, audio rows) | no | radios, sliders, disclosure rows (`settingRow`), per-section reset |
-| Header | n/a | Open (⌘O), Reload, Relink (only when files are missing), Process audio, Render video, Stop, Export (⌘E), FI/EN |
-
-**Tools or commands?** Commands. No control changes what the pointer does on a
-canvas. The one moded state is "a card is in your hand", and it is transient
-(it ends when the card lands). That settles the floating-toolbar question.
-
-**What the selection actually offers.** A lifted card can go to: the shared
-row (the wide for video, room tone for audio), any speaker row, a group-shot
-row, a new speaker row, a new group-shot row (video only), or the Unassigned
-tray. `accepts()` (app.js:403) restricts it by kind. That is the whole set of
-"actions that apply to the selection". Everything in the header and the rail
-applies to the whole project.
-
-**Surprises, all in the selection model:**
-
-- **The keyboard can lift a card but cannot put it down.** The card's
-  `keydown` handles Enter and Space by calling `pickUp(media)` only
-  (app.js:632–636). The slot cells and the tray are `div`s with a `click`
-  listener and no `tabIndex` (`dropTarget`, `slotCell`, `renderTray`), so they
-  cannot be focused. Enter on a second card *re-lifts* that card instead of
-  placing the first one, because `pickUp` toggles `picked` (app.js:494–497).
-  The comment above `picked` says the same path serves "the mouse and the
-  keyboard", and `server/CLAUDE.md` says so too, but for placing it does not.
-  I read this; I did not drive it in a browser.
-- **There is no way to cancel a lift except clicking the same card again.**
-  There is no Escape anywhere in app.js. The global `keydown` (app.js:3319)
-  knows only ⌘E and ⌘O.
-- **The tray hint is the app's only description of the selection model:**
-  "Drag a card into a slot — or click a card, then a slot"
-  (`patch.hint`). It sits under the patch bay and says nothing about keys.
-- **Finnish gives two different controls the same name.** The Ducking row
-  (`audio.duckRow`) and its depth slider (`audio.duckDb`) are both
-  "Vaimennus". Any surface that lists controls by label (a palette, a cheat
-  sheet of settings) shows two identical entries. The palette mockup had to
-  work around this by hand.
+A card menu or a keyboard path therefore needs to act on coverage data rather
+than move cards into speaker roles. The unused `patch.hint` translation is
+historical residue, not evidence of a remaining patch bay.
 
 ### podcast-magic
 
@@ -156,7 +106,7 @@ have to be found from the menus" and that every menu item shows its key, and a
 any of these apps: the preference "Mouse: dragging paints a range / moves
 clips" (BUGS #45).
 
-## The six options, judged against that code
+## Historical alternatives (2026-10-25; former slot model)
 
 | Option | autoraffkat | podcast-magic | automixer | kuulas (rec.) |
 | --- | --- | --- | --- | --- |
@@ -260,176 +210,53 @@ with no selection and a handful of commands, it is the right amount.
 
 ## What to build in autoraffkat
 
-### 1. Keyboard carry and the carry bar
+### Coverage keyboard proposal
 
-**Appears** when a card is lifted (Enter or Space on a focused card, a click on
-a card, `dragstart`, or the menu's "Pick up" item). **Disappears** when the card
-lands, on Esc, or when the card is clicked again (as now).
+First check the present Tab/Space path on realistic speaker/shot counts. If a
+faster route is needed, define how focus identifies a shot and which registered
+commands move between its controls. Preserve checkbox focus, checked state,
+accessible labels and text editing. Do not bind digits to speaker positions:
+coverage is many-to-many and timeline order is not a stable speaker identifier.
+A card scope would require an explicit registry and shortcut-test change in the
+same implementation PR; it is not authorized by the historical carry design.
 
-**Contents, in the Tracks heading row:** "Moving STATUS CAM 4", then
-`1–3 slot`, `N new speaker`, `G group shot`, `0 unassigned`, `Esc cancel`. It is
-generated from the registry's carry-scope commands, with the range collapsed
-when the digits are consecutive. Each slot that accepts the card shows its
-digit as a badge, numbered top to bottom in the same order as `buildSlots()`:
-shared row, speakers in palette order, group shots. Cells that do not accept
-the card's kind get no digit, exactly as `applyPicked` already leaves them
-without `.is-target`.
+### Menus and command palette
 
-**Why digits, and why up to nine:** `SPEAKER_COLORS` has 5 entries and
-`GROUP_COLORS` 3 (app.js:8–10), so a fully distinct board is 1 shared + 5
-speakers + 3 group shots = 9 rows, exactly 1–9. Beyond five speakers the
-colours repeat (`colorFor` wraps), and rows past the ninth get no digit; they
-are still reachable with the mouse and from the menu with the arrow keys.
-`N`, `G` and `0` are fixed, so they never move as rows are added.
+List current actions before choosing a menu layout. Use shared command IDs,
+translated labels and applicability rules for the help sheet, menu and palette.
+A palette setting result reveals the existing control instead of duplicating
+its state. Parameterized coverage commands, if any, use stable track/speaker
+identifiers and synchronize the visible checkbox state.
 
-**Keyboard story:** Tab to a card, Enter lifts, a digit places, Esc cancels.
-Focus stays on the placed card in its new slot, so the next Tab continues from
-where the user is. That needs `renderTracks` to restore focus by `data-track`,
-because it rebuilds the whole board. Single keys are inactive while a text
-field (the speaker names, the mic name) has focus.
+### Verification required for an implementation
 
-**Several things selected:** cannot happen; `picked` is one key. **Nothing
-selected:** no bar, and the heading row looks as it does today.
-
-**Translated:** every label is a `T()` key in both languages in the same
-commit. The digits are not translated. Finnish label lengths were checked in
-the mockup at 960 px and fit on one line.
-
-**Never:** shift the layout (it uses the existing heading row), cover a slot,
-or take focus away from the card.
-
-### 2. Card context menu
-
-**Appears** on right-click on a card, Shift+F10 or the Menu key with the card
-focused, or a click on the card's `⋯` button. **Disappears** on Esc (focus
-returns to the card), Tab (closes; focus moves on), a pick, a click outside, a
-window blur or a resize. One menu at a time.
-
-**Contents (for the card it was opened on):**
-
-1. Caption: "Move STATUS CAM 1 to".
-2. Destinations as `menuitemradio`, with the current one checked. The digit is
-   the same as in carry mode, so the two surfaces teach one numbering. A
-   destination that replaces something says so ("Wide, replaces STATUS CAM 2",
-   because `assign` sends the old wide to Unassigned). Destinations the card
-   cannot take are not listed (Apple: hide, don't dim).
-3. Card commands, only when they apply: "Pick up and place with the keyboard"
-   (↵), "Relink files…" when the file is missing, "Use the measured order" when
-   the seat order is manual. All three already exist on the card or in the
-   header; the menu never holds the only path to anything.
-
-**Maximum 12 items.** In the mockup an item is about 32 px high, and the
-960 × 600 window holds about 15 after the 16 px margins and the caption. Twelve
-keeps the menu from scrolling and leaves some of the board visible. With
-digit-numbered destinations capped at nine, plus N/G/0, plus up to three card
-commands, the cap is reached only on a board with more than five speakers.
-
-**Keyboard story:** the APG menu pattern: focus on the first item, Up/Down,
-Home/End, Enter activates and closes, Esc closes and returns focus to the card.
-Type-ahead is replaced by the digit and letter accelerators: speaker names
-often share a first letter, and the digits are already the keys the user should
-learn. The `⋯` button has `tabIndex = -1`, so the tab order through the board
-does not double. The keyboard opens the menu from the card itself.
-
-**Key hints:** every item shows its key, right-aligned, in the same chip as
-`<kbd>`. A context-menu item without a key fails a test (below).
-
-**Translated:** labels come from the registry's `T()` keys. Speaker names are
-data and are not translated.
-
-**Never:** appear on hover; hide a command that exists nowhere else; cover the
-card it was opened on (it opens beside the `⋯` and slides up only as far as it
-must, never flipping above the card. In the mockup, flipping covered the header
-and the speaker's name at 960 × 600); steal focus without returning it.
-
-### 3. Command palette (⌘K), after 1 and 2
-
-**Contents:** every registry command (with its key, or with no key and "palette
-only") and every setting, shown with where it lives ("Audio › Ducking") and its
-current value. Choosing a setting opens its disclosure row and focuses the
-control; it never changes the value by itself. Results are grouped Settings
-and Commands, and matching also uses the `why.*` text, so "bleed" finds
-de-bleeding.
-
-**Keyboard:** ⌘K opens, typing filters, Up/Down move, Enter runs or opens, Esc
-closes and returns focus. It is a modal dialog with a combobox and a listbox.
-
-**Never:** be the only place a command lives; reorder results while the user
-is pressing arrows.
-
-**Prerequisite found while mocking it up:** every setting needs a label that
-is unique in both languages. Finnish `audio.duckRow` and `audio.duckDb` are
-both "Vaimennus".
-
-## What this needs from the registry
-
-The other branch defines the registry. This design needs these fields per
-command. Where that branch names them differently, this list is the contract,
-not the names.
-
-```text
-id          stable string, e.g. "card.place", "app.export"
-labelKey    T() key, present in both languages
-keys        zero or more combos, as the cheat sheet shows them
-scope       "global" | "card" | "carry"   (which surface may show it)
-when(state) whether it applies now        (hide, don't dim, in context menus)
-run(state, arg)
-targets(state, card) -> [{ arg, labelKey|label, key }]
-            for parameterised commands: card.place lists its slots with their
-            digits, so the menu and the carry bar read one list
-```
-
-Settings for the palette are a separate table generated from the existing
-`*_KNOBS` and `settingRow` specs (`{ key, labelKey, where, value(state),
-reveal() }`). They are not commands and need no keys.
-
-## The tests that make it true
-
-All of these run in `tests/test_ui.py` / `tests/ui_smoke.js`, which already
-load `app.js` and `i18n.js` in a stub DOM in both languages.
-
-1. **Every item has a key and a translation.** Build the card menu for every
-   card in the smoke state (video, audio, group, wide, missing file, manual
-   seats) in `fi` and `en`. Assert that each item has a non-empty key and that
-   its `labelKey` exists in both catalogues. The existing
-   `test_every_visible_string_is_translated_in_both_languages` only sees
-   literal `T('…')` calls, so registry `labelKey` strings need the same check.
-2. **Nothing has a key without being discoverable.** For each registry entry
-   with a key: it is in the cheat sheet data and in the palette list.
-3. **Menu and carry agree.** For each card, `targets()` gives the same arg→key
-   pairs to the menu and to the badges.
-4. **The keyboard can place a card** (red today). Fire Enter on a card, then
-   the digit `2` on the window, and assert the card's `config.role` and
-   `config.speaker` changed as `assign` would set them. This fails on
-   `origin/main` because nothing handles the digit, and also because no
-   focusable element accepts a drop.
-5. **Esc cancels a lift** (red today): `picked` is null after Esc and the card
-   stays where it was.
-6. **Labels are unique per language**, among the palette's settings (red today:
-   `Vaimennus` twice).
-7. **Coverage stays total.** The smoke test already fails on any top-level
-   function that is never called (`NEVER_CALLED_OK`). The new menu and palette
-   functions are called by firing their handlers, not excused.
+- Cover a shot containing two speakers and a speaker present in two shots.
+- Confirm keyboard actions update the same `covers`/`context` data as pointer
+  actions and preserve every unrelated selection.
+- Preserve native text entry, Tab/Space checkbox behavior, focus return and Esc
+  for any newly introduced menu.
+- Derive command hints from the registry and verify labels in Finnish and
+  English. Keep the existing UI smoke test and shortcut contract tests.
+- Exercise actual browser and pywebview behavior before claiming accessibility
+  or macOS keyboard compatibility. Mock DOM results alone do not establish it.
 
 ## Phased plan
 
-Each phase is one PR and is shippable on its own.
+Each future implementation is a separate PR; this revision only updates the
+plan. The first two rows replace the old carry phase.
 
-| Phase | What ships | The test that proves it |
+| Phase | State and next step | Evidence needed |
 | --- | --- | --- |
-| 0 | (other branch) the registry, `<kbd>` hints, `?` cheat sheet | that branch's own tests |
-| 1 | Keyboard carry: Esc cancels, digits/N/G/0 place, focus returns to the placed card, slot badges, carry bar in the Tracks heading (sticky while carrying) | tests 4 and 5, red first; 3 for the badges; smoke in both languages |
-| 2 | Card context menu: right-click, Shift+F10, Menu key, `⋯`; APG keys; focus return | tests 1 and 3; a smoke check that Esc returns focus to the card |
-| 3 | Unique labels (`audio.duckDb` gets its own Finnish name), then the settings table | test 6 red first |
-| 4 | Command palette with commands and settings | test 2; opening a setting from the palette expands its row (smoke) |
-| A | automixer: register app actions in `get_system_commands`; bind Speech/Music on the file list | a Textual `run_test` pilot: Ctrl+P lists every `BINDINGS` action and every `Button` id has a command; the key marks ticked files |
-| P | podcast-magic: keys on tabs and Run, `?` sheet, only if the shared registry shape fits without a second copy | its `tests/ui_smoke.js` |
+| Registry/help | Already present; extend it when adding actual commands | Existing shortcut and bilingual UI smoke tests |
+| Keyboard carry | Retired after #93; no implementation | No lifted-card or slot state reintroduced |
+| Coverage keyboard | Optional design after checking native Tab/Space | Realistic many-to-many coverage and focus behavior |
+| Card context menu | Re-scope to current actions before implementation | Shared command rules, current targets, focus return, both languages |
+| Settings labels | Inspect current translated labels before changing them | No ambiguous setting results in a future palette |
+| Project/settings palette | Independent of carry or card selection | Registry completeness and reveal of existing controls |
+| Automixer | Separate Textual command-discovery work | Focused Textual pilot tests |
+| Podcast-magic | Separate key hints/help proposal | Its own UI smoke test |
 
-What not to build, at any phase: a floating palette, a hover toolbar, a menu
-bar, a context menu on the preview canvas or the cut list, or a way to switch
-any of this off. With nothing floating, there is nothing that needs pinning.
-
-## Mockups
+## Mockups (historical slot-model proposal)
 
 `docs/plans/assets/contextual-controls-mockup.html` links autoraffkat's real
 `style.css` by relative path, so the tokens (`--bg`, `--panel`, `--line`,
@@ -535,15 +362,13 @@ deliberately. Otherwise this app does not need one.
 
 ## What is not known
 
-| Unknown | Why it matters | Cheapest way to find out |
+| Unknown | Why it matters | Next evidence |
 | --- | --- | --- |
-| Does the owner place cards by mouse or keyboard? | If always drag, phase 1's value is the keys it teaches, not the path it adds | Ask; or count, for one week, `pickUp` calls from `click`/`dragstart` vs `keydown` in the terminal log (a debug-only line, removed after) |
-| Is the right-click menu found at all in a pywebview window on macOS? | WKWebView must deliver `contextmenu` to the page and not show its own menu; not tested here | Five minutes on the owner's Mac with phase 2's branch: right-click, Ctrl+click, two-finger click |
-| Is Shift+F10 free in pywebview/WKWebView on macOS? | It may be swallowed before the page sees it | Same session, with a `keydown` logger |
-| How many speakers do real episodes have? | Above five, slots lose distinct colours and digits past nine | Count roles in the owner's existing `*.autoraffkat.json` files (they sit beside every episode) |
-| Will anyone open the palette for settings rather than commands? | Phase 4's whole argument | Ship phase 4 with "recent" stored per user; look at the list after a month of episodes |
-| Touch (an iPad browser on the local server)? | Long-press would be the context-menu trigger, and the carry bar is already touch-safe | Ask whether autoraffkat is ever opened on a tablet; if not, ignore it |
-| The letters for automixer's marking keys | Owner's taste; `s` and `m` are only a suggestion | Ask |
+| Whether native coverage controls are too slow | Determines whether a dedicated keyboard feature has value | Observe a real episode with several shots/speakers |
+| pywebview context-menu and focus behavior on macOS | Browser mock tests cannot prove it | Interactive check when a current-model menu exists |
+| Whether users need settings search | Determines the palette scope | Trial against the existing settings rows |
+| Touch use | May change trigger and focus requirements | Owner workflow |
+| Podcast transcription speed and timing accuracy | Separate model validation, not a controls decision | `scripts/ab/transcribe_bench.py` on real audio and hand marks |
 
 ## Sources read for this document
 
