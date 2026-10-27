@@ -1,0 +1,127 @@
+name: build CLI releases
+
+on:
+  pull_request:
+  push:
+    tags: ["automixer-v*", "colab-transcribe-v*"]
+  workflow_dispatch:
+    inputs:
+      app:
+        description: App to build (manual builds stay as workflow artifacts)
+        type: choice
+        options: [all, automixer, colab-transcribe]
+        default: all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cli-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-latest]
+        app: ${{ fromJSON(startsWith(github.ref, 'refs/tags/automixer-v') && '["automixer"]' || startsWith(github.ref, 'refs/tags/colab-transcribe-v') && '["colab-transcribe"]' || inputs.app == 'automixer' && '["automixer"]' || inputs.app == 'colab-transcribe' && '["colab-transcribe"]' || '["automixer","colab-transcribe"]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      CLI_APP: ${{ matrix.app }}
+      RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: System tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg portaudio
+      - name: System tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg zsh libportaudio2 libsndfile1
+      - name: Install workspace without changing the lockfile
+        run: uv sync --locked --all-packages
+      - name: Lint
+        run: uv run --locked ruff check .
+      - name: Workspace contracts
+        run: uv run --locked pytest tests -q
+      - name: App and shared library tests
+        run: |
+          if [ "$CLI_APP" = automixer ]; then
+            if [ "$RUNNER_OS" = Linux ]; then
+              # Same documented memory-measurement exclusion as tests-linux.yml.
+              uv run --locked --directory packages/speechmix pytest -q \
+                --deselect tests/test_stems.py::test_a_stem_holds_few_copies_of_its_track
+              uv run --locked --directory apps/automixer pytest -q -m "not mlx"
+            else
+              uv run --locked --directory packages/speechmix pytest -q
+              uv run --locked --directory apps/automixer pytest -q
+              uv run --locked --directory apps/automixer pytest -m mlx -q --no-header -rs | tee /tmp/cli-mlx.log
+              if grep -q "skipped" /tmp/cli-mlx.log; then
+                echo "The macOS release must run the real mlx tests."
+                exit 1
+              fi
+            fi
+            uv run --locked --directory packages/nhsx pytest -q
+          else
+            uv run --locked --directory packages/silencelearn pytest -q
+            uv run --locked --directory packages/wordalign pytest -q
+            uv run --locked --directory colab-transcribe pytest -q
+          fi
+      - name: Build app and matching libraries
+        run: uv run --locked python scripts/build_cli_release.py "$CLI_APP" --tag "$RELEASE_TAG"
+      - name: Install archive outside the checkout and check installed packages
+        run: |
+          bundle="$RUNNER_TEMP/cli-bundle"
+          environment="$RUNNER_TEMP/cli-installed"
+          mkdir "$bundle"
+          tar -xzf dist/*.tar.gz -C "$bundle"
+          cd "$RUNNER_TEMP"
+          uv run --no-project --python 3.13 python "$bundle/install.py" --venv "$environment"
+          "$environment/bin/python" -I "$GITHUB_WORKSPACE/scripts/smoke_cli_release.py" "$bundle/manifest.json"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.app }}-${{ matrix.os }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish tested release bundles
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cat > notes.md <<'NOTES'
+          Tested Python wheel bundles for macOS and Linux. Each bundle includes
+          the app and its workspace libraries from the same commit, dependencies
+          pinned from uv.lock, an integrity manifest, and install.py.
+
+          Install uv and the system dependencies, extract the matching archive,
+          then run: python3 install.py --venv /path/to/new/environment
+          Run commands from that environment's bin directory.
+
+          Full instructions: docs/CLI-RELEASES.md in the tagged source.
+          These are online installers; model weights and system tools are separate.
+          NOTES
+          gh release create "$RELEASE_TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "$RELEASE_TAG" --notes-file notes.md --generate-notes

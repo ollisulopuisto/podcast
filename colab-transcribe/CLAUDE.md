@@ -193,10 +193,12 @@ samat komennot jotka oikea ajo suorittaa. Jos komennon muoto muuttuu,
 muuttuu vain `driver.py` ja sen testit — ei kolmea kopiota.
 
 `colab`-työkalu (`google-colab-cli`) on riippuvuus, jotta `uvx` riittää
-asennukseksi. Se ja Googlen `jupyter-kernel-client`-fork ovat suoria
-git-viittauksia kiinnitettyinä toimiviksi todettuihin committeihin: PyPI:n
-samanniminen `jupyter-kernel-client` on eri paketti, eikä Colab CLI:n oma
-`[tool.uv.sources]` päde kun se on toisen riippuvuus. `onboarding.bundled_colab`
+asennukseksi. CLI on kiinnitetty git-committiin. Sen vaatima `jupyter-kernel-client`
+0.9.0 on kiinnitetty PyPI-pyörän URL:iin ja SHA-256:een. Tämä versio sisältää
+CLI:n tukeman `KernelClient`-rajapinnan ja oletus-WebSocket-protokollan. Vanha
+Google-fork ilmoitti versiokseen 0.8.0 ja rikkoi puhtaan asennuksen
+riippuvuustarkistuksen. Juuren `override-dependencies` ohittaa CLI:n lähteen
+fork-viittauksen samalla 0.9.0-pyörällä. `onboarding.bundled_colab`
 löytää sen oman Pythonin vierestä, ja `colab_env` lisää sen hakemiston
 PATHin alkuun: komennot pysyvät muodossa `colab ...`, joten `--dry-run`
 näyttää täsmälleen mitä ajetaan. uv:n `#!/bin/sh`-käynnistimen takana
