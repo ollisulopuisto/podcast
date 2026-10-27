@@ -7,6 +7,8 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.10.27.1] - 2026-10-27
+
 ### Added
 - **`?` shows every key in the terminal interface.** Both the mixer and the ad-spot picker open Textual's keys panel with `?` and close it with `?` or `Esc`. The panel lists every binding with what it does; before, it opened only from the command palette (Ctrl+P, "Keys"), which you had to know about first. `?` typed into a text field is still a `?`, and `Esc` is only taken while the panel is open. In the mixer `? Keys` comes first on the bottom row, because at 80 columns the row runs out at "space Play" and an entry after it was never seen.
 
