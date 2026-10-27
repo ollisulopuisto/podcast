@@ -14,6 +14,14 @@
 # asentaa riippuvuutensa itse. Siksi se ei ota speechmixia eikä seiso
 # `apps/`issa: se on juuressa `viewer/`in tapaan, mutta pyproject.tomlilla,
 # ja tämä rivi tekee siitä jäsenen ilman globia.
+[tool.uv]
+# Google's CLI declares a 0.9.0 requirement but its source checkout redirects
+# that dependency to a fork reporting 0.8.0. Use the compatible, hash-pinned
+# 0.9.0 wheel for workspace resolution as well as installed release metadata.
+override-dependencies = [
+    "jupyter-kernel-client @ https://files.pythonhosted.org/packages/7a/68/287315ba355aa93bda2e344de5febc45e6de1b47d8f4a5b69400b24cfdfd/jupyter_kernel_client-0.9.0-py3-none-any.whl#sha256=77acb8f2f738d97625d6bd01ee8cf21c4d59790b7ba464108712db3870416f20",
+]
+
 [tool.uv.workspace]
 members = ["packages/*", "apps/*", "colab-transcribe"]
 

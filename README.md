@@ -24,6 +24,10 @@ Whether you need to automatically cut multicam video to the speaker, transcribe 
 
 ## Quick Start
 
+For a pinned automixer or colab-transcribe installation, use the
+[tested release bundles](docs/CLI-RELEASES.md). The source launchers below use
+`main` by default.
+
 ### One command
 
 On a Mac with [Homebrew](https://brew.sh), paste this into Terminal:
