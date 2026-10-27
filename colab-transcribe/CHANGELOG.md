@@ -7,6 +7,8 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.10.27.1] - 2026-10-27
+
 ### Changed
 - **Colab transcription uses Parakeet Ultra through Photon.** The driver requests native word timestamps, converts AIFF input to mono 16 kHz WAV, and preserves the existing Kuulas output/event contract. A generated four-second Finnish clip completed on a real T4 on 2026-10-27: Photon downloaded 1.26 GB of model files and wrote seven words with timestamps. This is a runtime smoke test; podcast accuracy, throughput and long recordings remain unmeasured.
 

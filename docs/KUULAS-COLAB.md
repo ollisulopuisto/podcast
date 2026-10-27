@@ -205,3 +205,17 @@ when the tool has already recovered; if it still sees the failure, the tool fail
 - What this does not give: the Colab CLI's own error text beyond `message` (it is in the text lines), a time estimate (no
   timings have been recorded; see "First real Colab runs"), the model download progress inside `run`, or bytes inside the
   small uploads.
+
+
+### Fresh-install integration check (2026-10-27)
+
+Rechecked with the release install from #116 (Google CLI at `930275e`,
+`jupyter-kernel-client` 0.9.0 and the declared lxml dependency) and the Ultra
+pipeline from #117. A generated Finnish macOS Satu AIFF clip, 4.228 seconds at
+22,050 Hz, completed on a uniquely named T4 session. The cloud pipeline converted
+AIFF to mono 16 kHz WAV and returned eight timestamped words with
+`timing: "parakeet-ultra"`. The result downloaded, progress reached 100, `done`
+was emitted and the session terminated automatically. This verifies the fresh
+client environment and the cloud transport together; it is not a podcast
+accuracy or throughput measurement. The existing local MLX Orukeet weight/fallback
+limitation remains.
