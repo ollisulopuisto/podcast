@@ -7,6 +7,14 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.10.28.1] - 2026-10-28
+
+### Changed
+- Rebuild the desktop app with the current shared audio libraries, including bounded-window programme mastering and native MLX coverage. Long multi-microphone app exports and optional debleed memory use still need separate measurement.
+
+### Fixed
+- Preview/export shot-choice regression coverage is included in this build.
+
 ## [2026.10.26.1] - 2026-10-26
 
 ### Fixed
