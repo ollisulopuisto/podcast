@@ -58,3 +58,19 @@ memory, not a claim of mathematically constant total memory at arbitrary length.
 - Native Windows close/delete lifecycle test; source intentionally uses normal
   file handles, not whole-programme memmaps.
 - Full repository CI, large-programme disk/quota failure behavior and product UX.
+
+## Existing-CI route
+
+`tests/test_streaming_master_long.py` invokes this actual harness for10,30,90minute
+active48k stereo fixtures in separate processes. Existing standard public CI
+already runs the speechmix suite, so no workflow/settings/artifact change is
+needed. Expect several extra minutes; the overall jobs retain their existing
+30minute timeout. Each child has a20minute timeout. Low disk is an explicit
+failure, not a skip. Incremental RSS must remain below256MiB, complete frame
+counts/scratch cleanup and peak ceiling are checked. The large active fixture
+correctly reports target not reached when the existing limiting budget binds.
+
+The separate native-MLX test records calls to the real GPU reference kernel and
+checks short output against streaming at explicitfloat32-scale tolerances. It
+skips with a clear unmet-GPU-parity note if MLXhardware/path is unavailable;
+CPU-only fallback is not reported as nativeGPU acceptance.
