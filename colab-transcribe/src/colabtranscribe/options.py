@@ -81,6 +81,7 @@ class RunOptions:
     # (``wordalign``), ja tiedoston ``timing`` on silloin ``ctc-v1``.
     align: bool = False
     # Litterointitausta: "colab" (Colab GPU, oletus) tai "parakeet" (paikallinen Apple Silicon).
+    allow_low_memory: bool = False
     backend: str = "colab"
     parakeet_model: str = DEFAULT_PARAKEET_MODEL
 
