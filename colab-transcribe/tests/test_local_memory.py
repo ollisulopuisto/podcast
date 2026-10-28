@@ -1,6 +1,9 @@
 import sys
+
 import pytest
+
 from colabtranscribe import local_memory, parakeet
+
 
 @pytest.mark.parametrize("memory,expected", [(None, False), (8*1024**3, False), (16*1024**3-1, False), (16*1024**3, True)])
 def test_policy(monkeypatch, memory, expected):
