@@ -25,8 +25,11 @@ def _audio(channels, frames):
 @pytest.mark.parametrize("target,budget", [(-16.0, 3.0), (-4.0, 0.1)])
 @pytest.mark.parametrize("block", [4096, 65536])
 def test_streaming_master_matches_reference_signal_and_global_result(
-    channels, target, budget, block, tmp_path,
+    channels, target, budget, block, tmp_path, monkeypatch,
 ):
+    # This contract compares the same float64 CPU backend on every platform.
+    # Native float32 MLX has its own observed-kernel coverage below.
+    monkeypatch.setattr(chain, "_gpu_peak_envelope_available", lambda: False)
     audio = _audio(channels, RATE * 2 + 123)
     expected, baseline = programme.master(audio, RATE, target, budget_lu=budget)
     output, progress, reads = [], [], []
@@ -58,6 +61,49 @@ def test_streaming_master_matches_reference_signal_and_global_result(
     assert progress == sorted(progress)
     assert progress[-1] == 1.0
     assert max(reads) <= max(block, chain._TRUE_PEAK_CHUNK + 2 * chain._TRUE_PEAK_PAD)
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("channels", [1, 2])
+@pytest.mark.parametrize("target,budget", [(-16.0, 3.0), (-4.0, 0.1)])
+@pytest.mark.parametrize("block", [4096, 65536])
+def test_streaming_master_matches_native_reference_signal_and_global_result(
+    channels, target, budget, block, tmp_path, monkeypatch,
+):
+    if not chain._gpu_peak_envelope_available():
+        pytest.skip("native MLX envelope unavailable; GPU parity remains unverified")
+    calls = []
+    original = chain._envelope_chunks_gpu
+
+    def observed(audio):
+        calls.append(True)
+        yield from original(audio)
+
+    monkeypatch.setattr(chain, "_envelope_chunks_gpu", observed)
+    audio = _audio(channels, RATE * 2 + 123)
+    expected, baseline = programme.master(audio, RATE, target, budget_lu=budget)
+    assert calls, "reference did not actually exercise the native GPU envelope"
+    output = []
+    result = programme.master_stream(
+        lambda a, b: audio[:, a:b], output.append,
+        audio.shape[1], channels, RATE, target, budget_lu=budget,
+        block_frames=block, scratch_dir=tmp_path,
+    )
+    actual = np.concatenate(output, axis=1)
+    # Separate float32-scale native tolerance, never a relaxation of CPU parity.
+    np.testing.assert_allclose(actual, expected, rtol=1e-6, atol=1e-6)
+    assert result.boost_db == baseline.boost_db
+    assert result.reached == baseline.reached
+    assert result.cost_lu == baseline.cost_lu
+    assert result.lufs == pytest.approx(baseline.lufs, abs=1e-5)
+    assert chain.true_peak(actual) == pytest.approx(chain.true_peak(expected), abs=1e-6)
+    crest_actual = np.max(np.abs(actual)) / np.sqrt(np.mean(actual * actual))
+    crest_expected = np.max(np.abs(expected)) / np.sqrt(np.mean(expected * expected))
+    assert crest_actual == pytest.approx(crest_expected, abs=1e-6)
+    if channels == 2:
+        mask = np.abs(audio[1] - audio[0] * 0.6) < 1e-12
+        np.testing.assert_allclose(actual[1, mask], actual[0, mask] * 0.6,
+                                   atol=1e-10, rtol=1e-10)
     assert not list(tmp_path.iterdir())
 
 
