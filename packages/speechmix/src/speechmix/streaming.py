@@ -5,6 +5,7 @@ ordinary files, not full-length resident arrays. Audio is always re-read from
 its original source for each global loudness-search attempt.
 """
 
+import errno
 import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -101,7 +102,7 @@ def master_stream(read, write, frames, channels, rate, target_lufs, *,
 
     with TemporaryDirectory(prefix="speechmix-master-", dir=scratch_dir) as folder:
         if shutil.disk_usage(folder).free < scratch_bytes(frames):
-            raise OSError("insufficient scratch space for streaming mastering")
+            raise OSError(errno.ENOSPC, "insufficient scratch space for streaming mastering")
         vectors = []
 
         def vector(name):
@@ -165,6 +166,7 @@ def master_stream(read, write, frames, channels, rate, target_lufs, *,
                     return measured(meter), 0.0
                 # The reference peak stage operates on dB requirements.
                 for start in blocks():
+                    checkpoint()
                     stop = min(frames, start + block_frames)
                     needed.put(start, 20.0 * np.log10(needed.get(start, stop)))
                 width = max(1, int(chain.PEAK_STAGE_MS * rate / 1000))
