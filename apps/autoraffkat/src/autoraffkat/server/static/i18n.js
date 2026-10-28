@@ -5,6 +5,13 @@
 
 const STRINGS = {
   fi: {
+    'keys.group.history': 'Muokkaushistoria',
+    'history.undo': 'Kumoa',
+    'history.redo': 'Tee uudelleen',
+    'history.branches': 'Muokkaushaarat',
+    'history.edit': 'Muutos {n}',
+    'history.hint': 'Valitse haara ja kumoa aiempiin muutoksiin. Historia säilyy vain tämän ikkunan ajan. Ei automaattista poistoa; pitkä historia käyttää muistia.',
+
     'app.open': 'Avaa XML…',
     'app.reload': 'Lue uudestaan',
     'app.reloading': 'Luetaan…',
@@ -444,6 +451,13 @@ const STRINGS = {
     'unit.hourMin': '{h} h {m} min',
   },
   en: {
+    'keys.group.history': 'Edit history',
+    'history.undo': 'Undo',
+    'history.redo': 'Redo',
+    'history.branches': 'Edit branches',
+    'history.edit': 'Edit {n}',
+    'history.hint': 'Choose a branch, then undo to earlier edits. History lasts only for this window. No automatic pruning; long histories use memory.',
+
     'app.open': 'Open XML…',
     'app.reload': 'Reload',
     'app.reloading': 'Reading…',

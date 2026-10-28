@@ -132,7 +132,6 @@ let state = null;               // /api/state
 let latest = null;              // viimeisin laskettu tulos
 let lastSeats = '{}';           // viimeksi piirretyt istujat
 let pending = null;             // ajastin
-let inflight = null;            // AbortController
 let progressTimer = null;
 let speechTimer = null;
 let mixTimer = null;
@@ -2018,6 +2017,8 @@ function fmtLeft(seconds) {
 /* Käsittelyn käynnistys ja edistymisen seuranta. */
 async function runMix(force) {
   try {
+    clearTimeout(pending);
+    await send();
     const response = await fetch('/api/mix', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2453,27 +2454,111 @@ function payload() {
            preview_window: previewWindow };
 }
 
+/* Session-only tree, one snapshot per accepted settings change. No pruning.
+   Server saving remains separate; closing the window discards this history. */
+class SessionHistory {
+  constructor(value) {
+    this.nodes = [{ id: 0, parent: null, value: JSON.stringify(value) }];
+    this.head = 0;
+    this.preferred = new Map();
+  }
+  commit(value) {
+    const raw = JSON.stringify(value);
+    if (raw === this.nodes[this.head].value) return;
+    const id = this.nodes.length;
+    this.nodes.push({ id, parent: this.head, value: raw });
+    this.preferred.set(this.head, id);
+    this.head = id;
+  }
+  undo() {
+    const parent = this.nodes[this.head].parent;
+    if (parent === null) return;
+    this.preferred.set(parent, this.head); this.head = parent;
+  }
+  redo() { if (this.preferred.has(this.head)) this.head = this.preferred.get(this.head); }
+  goto(id) {
+    if (!this.nodes[id]) return;
+    let node = this.nodes[id];
+    while (node.parent !== null) {
+      this.preferred.set(node.parent, node.id); node = this.nodes[node.parent];
+    }
+    this.head = id;
+  }
+  tips() {
+    const parents = new Set(this.nodes.map((node) => node.parent));
+    return this.nodes.filter((node) => !parents.has(node.id) || node.id === this.head);
+  }
+}
+const sessionHistories = new Map();
+function editSnapshot() {
+  const { tracks, globals, audio } = payload();
+  return { tracks, globals, audio };
+}
+function currentHistory() {
+  const key = state.xml_path || '';
+  if (!sessionHistories.has(key)) sessionHistories.set(key, new SessionHistory(editSnapshot()));
+  return sessionHistories.get(key);
+}
+function renderHistory() {
+  if (!state) return;
+  const h = currentHistory();
+  const undoButton = $('history-undo'), redoButton = $('history-redo'), select = $('history-branches');
+  undoButton.textContent = T('history.undo'); redoButton.textContent = T('history.redo');
+  undoButton.disabled = h.nodes[h.head].parent === null;
+  redoButton.disabled = !h.preferred.has(h.head);
+  select.setAttribute('aria-label', T('history.branches'));
+  select.title = T('history.hint'); select.textContent = '';
+  h.tips().forEach((node) => {
+    const option = document.createElement('option'); option.value = node.id;
+    option.textContent = T('history.edit', { n: node.id }) + (node.id === h.head ? ' ✓' : '');
+    select.append(option);
+  });
+  select.value = String(h.head);
+}
+function moveHistory(action, id) {
+  if (!state) return;
+  const h = currentHistory();
+  h.commit(editSnapshot());
+  if (action === 'goto') h.goto(Number(id)); else h[action]();
+  const restored = JSON.parse(h.nodes[h.head].value);
+  state.tracks.forEach((track) => { if (restored.tracks[track.key]) track.config = restored.tracks[track.key]; });
+  state.globals = restored.globals; state.audio = restored.audio;
+  renderHeader(); renderTracks(); renderGlobals();
+  clearTimeout(pending); send();
+}
+
 /* Niputus: säätimen liike ei lähetä pyyntöä heti. Roolin vaihto kutsutaan
    viiveellä 0, koska se on kertaklikkaus eikä raahaus. */
 function schedule(delay = DEBOUNCE_MS) {
+  if (state) { currentHistory().commit(editSnapshot()); renderHistory(); }
+  settingsRevision++; // Any older response is already stale, even before the debounce fires.
   clearTimeout(pending);
   pending = setTimeout(send, delay);
 }
 
-/* Päätöskierros. Edellinen pyyntö keskeytetään, jotta raahaus ei kasaa jonoa
-   eikä vanhentunut vastaus ehdi ylikirjoittaa tuoretta. */
-async function send() {
-  if (!state) return;
-  if (inflight) inflight.abort();
-  inflight = new AbortController();
+/* Serialize writes: aborting fetch cannot undo an already accepted server write.
+   Debounce only server computation, never the local edit tree. */
+let settingsWrites = Promise.resolve();
+let settingsRevision = 0;
+function send() {
+  if (!state) return Promise.resolve();
+  const body = JSON.stringify(payload());
+  const revision = ++settingsRevision;
+  const projectPath = state.xml_path;
+  settingsWrites = settingsWrites.catch(() => {}).then(() => sendSettings(body, revision, projectPath));
+  return settingsWrites;
+}
+async function sendSettings(body, revision, projectPath) {
+  if (!state || state.xml_path !== projectPath) return;
+
   try {
     const response = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload()),
-      signal: inflight.signal,
+      body,
     });
     const data = await response.json();
+    if (revision !== settingsRevision || state.xml_path !== projectPath) return;
     latest = data;
     noteSpeech(data.speech);
     /* Istujat muuttuvat mittauksen valmistuttua tai kun järjestystä
@@ -2509,8 +2594,6 @@ async function send() {
     }
   } catch (err) {
     if (err.name !== 'AbortError') banner(T('app.noServer', { error: err.message }), true);
-  } finally {
-    inflight = null;
   }
 }
 
@@ -2605,6 +2688,8 @@ async function exportXml() {
   if (button.disabled) return;
   setBusy(button, true, T('app.exporting'));
   try {
+    clearTimeout(pending);
+    await send();
     const response = await fetch('/api/export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2640,6 +2725,8 @@ async function renderVideo() {
   if (button.disabled) return;
   setBusy(button, true, T('app.renderStarting'));
   try {
+    clearTimeout(pending);
+    await send();
     const response = await fetch('/api/export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2700,6 +2787,7 @@ async function watchRender(button) {
 /* ------------------------------------------------------------ käynnistys */
 
 function renderHeader() {
+  renderHistory();
   $('project-name').textContent = state.name || '—';
   const bits = [T(`kind.${state.kind}`), T('meta.fps', { fps: state.fps ?? '?' }),
                 T('meta.tracks', { n: state.tracks.length })];
@@ -2830,6 +2918,10 @@ function renderStatic() {
      esikatselun rulla ja veto kerrottiin vasta lähennetyn tilan rivillä,
      eli vasta kun ne oli jo löydetty. */
 const SHORTCUTS = [
+  { id: 'undo', group: 'history', label: 'history.undo', combos: [{ mod: true, key: 'z' }],
+    scope: ['page'], control: 'history-undo', text: 'history.undo', run: () => moveHistory('undo') },
+  { id: 'redo', group: 'history', label: 'history.redo', combos: [{ mod: true, shift: true, key: 'z' }],
+    scope: ['page'], control: 'history-redo', text: 'history.redo', run: () => moveHistory('redo') },
   { id: 'open', group: 'file', label: 'keys.open', combos: [{ mod: true, key: 'o' }],
     scope: ['page', 'sheet'], control: 'open', text: 'app.open', run: () => openXml() },
   { id: 'export', group: 'file', label: 'keys.export', combos: [{ mod: true, key: 'e' }],
@@ -2845,7 +2937,7 @@ const SHORTCUTS = [
 ];
 
 /* Ryhmät tehtävän mukaan ja tässä järjestyksessä ohjeikkunaan. */
-const SHORTCUT_GROUPS = ['file', 'preview', 'help'];
+const SHORTCUT_GROUPS = ['file', 'history', 'preview', 'help'];
 
 let shortcutReturn = null;      // kohdistus ennen ohjeikkunan avausta
 
@@ -3112,6 +3204,8 @@ async function openXml(path) {
   const button = $('open');
   setBusy(button, true, T('app.reloading'));
   try {
+    clearTimeout(pending);
+    await send();
     const res = await fetch('/api/open', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3164,6 +3258,8 @@ async function relinkFiles(searchDir) {
   }
   if (button) setBusy(button, true, T('app.relinking'));
   try {
+    clearTimeout(pending);
+    await send();
     const res = await fetch('/api/relink', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3221,6 +3317,8 @@ $('reload').addEventListener('click', async () => {
   if (button.disabled) return;
   setBusy(button, true, T('app.reloading'));
   try {
+    clearTimeout(pending);
+    await send();
     state = await (await fetch('/api/reload', { method: 'POST' })).json();
   } catch (err) {
     setBusy(button, false);
@@ -3241,6 +3339,9 @@ $('reload').addEventListener('click', async () => {
 });
 window.addEventListener('resize', () => { drawBar(); renderRuler(); });
 window.addEventListener('keydown', (e) => onShortcutKey(e));
+$('history-undo').addEventListener('click', () => moveHistory('undo'));
+$('history-redo').addEventListener('click', () => moveHistory('redo'));
+$('history-branches').addEventListener('change', (event) => moveHistory('goto', event.target.value));
 $('shortcuts').addEventListener('click', () => openShortcuts());
 $('shortcut-sheet').addEventListener('close', () => {
   if (shortcutReturn) restoreShortcutFocus();

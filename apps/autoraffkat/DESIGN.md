@@ -595,3 +595,26 @@ seconds and `decide.py` knows nothing about the interface. What's needed:
 3. a `<video>` element and a playhead over the bar
 4. switching source at cut points, since one `<video>` cannot show two cameras
    — in practice two stacked elements with one preloading
+
+## Session undo and branches
+
+The browser window retains an uncapped tree of settings snapshots (track roles,
+people, cutting/layout controls and audio settings). Every accepted settings
+change passed to `schedule` is captured immediately, before the existing
+server-request debounce. Editing after Undo forks without deleting old nodes.
+The branch menu selects a tip; Undo reaches its ancestors. Redo follows the last
+visited child. Keyboard shortcuts are Cmd/Ctrl-Z and Cmd/Ctrl-Shift-Z, including
+settings inputs. Each source XML has its own tree in the same window.
+
+The tree lasts only until that window closes, refreshes or crashes. Existing
+settings saves remain separate; unsent debounce edits can be lost on a crash.
+No cross-restart recovery promise is added. Snapshots exclude preview pan/zoom,
+language preferences, analysis caches, output files and operations in external
+plugin windows. Exporting, rendering or replacing a source XML is not reversible
+through settings undo. Changing settings does not delete previously exported files.
+
+There is no automatic history pruning. Long sessions consume memory; unlimited
+history means no fixed app-imposed count, not unlimited physical storage.
+Settings requests are serialized because aborting a fetch cannot cancel an
+already accepted server write. Local history does not wait for or merge edits
+based on remote completion. Earlier responses cannot overwrite newer UI state.

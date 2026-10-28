@@ -700,3 +700,6 @@ dialog.sheet::backdrop { background: rgba(8, 9, 11, .62); }
   border-radius: 5px;
 }
 .sheet-row .gesture { color: var(--text); }
+
+/* Session branch navigation stays compact alongside the other header actions. */
+#history-branches { width: auto; max-width: 11rem; min-width: 7rem; }
