@@ -7,6 +7,17 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.10.28.2] - 2026-10-28
+
+### Added
+- Uncapped branching undo for editing settings during the current app session. Earlier branches remain reachable until the session closes; this is not disk history or crash recovery.
+
+### Fixed
+- Make the envelope parallelism regression test deterministic.
+
+### Packaging
+- Prepare a fresh desktop build containing the merged session-undo changes. Native build and download verification happen after the release tag, not at this version bump.
+
 ## [2026.10.28.1] - 2026-10-28
 
 ### Changed
