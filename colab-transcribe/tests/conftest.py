@@ -31,3 +31,10 @@ def no_bundled_colab(request, monkeypatch):
     juuri sitä merkitään ``real_bundled_colab``."""
     if request.node.get_closest_marker("real_bundled_colab") is None:
         monkeypatch.setattr(onboarding, "bundled_colab", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def physical_memory_fixture(monkeypatch):
+    """Keep non-hardware tests independent of the host memory/platform."""
+    from colabtranscribe import local_memory
+    monkeypatch.setattr(local_memory, "physical_memory", lambda: 16 * 1024**3)
