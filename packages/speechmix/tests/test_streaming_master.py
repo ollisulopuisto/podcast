@@ -104,3 +104,52 @@ def test_streaming_sink_failure_cleans_scratch(tmp_path):
             RATE, 1, RATE, -16, scratch_dir=tmp_path,
         )
     assert not list(tmp_path.iterdir())
+
+
+def test_streaming_refuses_insufficient_scratch_before_read(monkeypatch, tmp_path):
+    from collections import namedtuple
+
+    from speechmix import streaming
+
+    usage = namedtuple("usage", "total used free")
+    monkeypatch.setattr(streaming.shutil, "disk_usage", lambda _: usage(100, 100, 0))
+    reads = []
+    with pytest.raises(OSError, match="insufficient scratch"):
+        programme.master_stream(
+            lambda a, b: reads.append((a, b)), lambda _: None,
+            RATE, 2, RATE, -16, scratch_dir=tmp_path,
+        )
+    assert not reads
+    assert not list(tmp_path.iterdir())
+    assert programme.master_scratch_bytes(RATE) == 40 * RATE
+
+
+def test_streaming_invalid_reader_shape_cleans_scratch(tmp_path):
+    with pytest.raises(ValueError, match="unexpected block shape"):
+        programme.master_stream(
+            lambda a, b: np.zeros((1, b - a)), lambda _: None,
+            RATE, 2, RATE, -16, scratch_dir=tmp_path,
+        )
+    assert not list(tmp_path.iterdir())
+
+
+def test_streaming_disk_failure_cleans_every_open_vector(monkeypatch, tmp_path):
+    from speechmix import streaming
+
+    original = streaming._Vector.put
+    calls = 0
+
+    def fail(self, start, values):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("disk full")
+        return original(self, start, values)
+
+    monkeypatch.setattr(streaming._Vector, "put", fail)
+    with pytest.raises(OSError, match="disk full"):
+        programme.master_stream(
+            lambda a, b: np.zeros((2, b - a)), lambda _: None,
+            RATE * 2, 2, RATE, -16, scratch_dir=tmp_path,
+        )
+    assert not list(tmp_path.iterdir())
