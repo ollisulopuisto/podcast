@@ -14,8 +14,14 @@ import platform
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from . import events
+from . import events, local_memory
 from .colab import pipeline
+from .local_inference import local_inference_slot
+
+# Match parakeet-mlx CLI defaults. Its Python API defaults to unchunked
+# whole-file attention, which can request tens of GB for long recordings.
+CHUNK_SECONDS = 120.0
+OVERLAP_SECONDS = 15.0
 
 if TYPE_CHECKING:
     from .options import RunOptions
@@ -37,6 +43,8 @@ def is_available() -> tuple[bool, str]:
             False,
             f"Parakeet MLX vaatii Apple Silicon (arm64) -suorittimen (nykyinen: {platform.machine()}).",
         )
+    if not local_memory.eligible():
+        return False, "Local transcription requires at least 16 GiB physical RAM under the current policy (or RAM could not be detected). Use Colab instead. This is not a free-memory safety guarantee."
     try:
         import parakeet_mlx  # noqa: F401
 
@@ -60,10 +68,16 @@ def transcribe_file(
     ``{"segments": [{"words": [{"word": str, "start": float, "end": float}]}]}``,
     jotta se voidaan suoraan viedä ``pipeline.words_document``-funktiolle.
     """
+    if not local_memory.eligible():
+        raise RuntimeError("Local transcription blocked: 16 GiB physical RAM required, detection must succeed. Use Colab instead.")
     from parakeet_mlx import from_pretrained
 
-    model = from_pretrained(model_name)
-    result = model.transcribe(str(audio_path))
+    with local_inference_slot():
+        model = from_pretrained(model_name)
+        result = model.transcribe(
+            str(audio_path), chunk_duration=CHUNK_SECONDS,
+            overlap_duration=OVERLAP_SECONDS,
+        )
 
     segments = []
     for sentence in getattr(result, "sentences", []):
