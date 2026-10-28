@@ -8,7 +8,6 @@ kymmenestä (M1 Max).
 from __future__ import annotations
 
 import threading
-import time
 from types import SimpleNamespace
 
 import numpy as np
@@ -22,22 +21,25 @@ def test_envelopes_are_computed_in_parallel(monkeypatch):
     timeline = SimpleNamespace(media=items)
     running, peak = 0, 0
     lock = threading.Lock()
+    overlap = threading.Event()
 
     def slow(path, cache_dir=None):
         nonlocal running, peak
         with lock:
             running += 1
             peak = max(peak, running)
-        time.sleep(0.3)
+            if running > 1:
+                overlap.set()
+        # Prove a second decoder actually entered while the first was active.
+        # Generous timeout only prevents a deadlock if the implementation regresses.
+        assert overlap.wait(10), "envelope decoders never overlapped"
         with lock:
             running -= 1
         return np.zeros(10, dtype=np.float32)
 
     monkeypatch.setattr(analysis, "envelope_for", slow)
     calls = []
-    started = time.perf_counter()
     result = analysis.analyze(timeline, progress=lambda i, n, name: calls.append((i, n)))
-    elapsed = time.perf_counter() - started
     assert set(result.envelopes) == {"k0", "k1", "k2", "k3"}
-    assert peak > 1 and elapsed < 0.9, (peak, elapsed)
+    assert peak > 1
     assert calls[-1] == (4, 4)
