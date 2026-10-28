@@ -35,3 +35,39 @@ def test_override_not_read_from_environment(monkeypatch):
     monkeypatch.setenv("COLAB_TRANSCRIBE_ALLOW_LOW_MEMORY", "1")
     args = cli.build_parser().parse_args(["--audio", "fixture.wav"])
     assert args.allow_low_memory is False
+
+@pytest.mark.parametrize("memory", [None, 8 * 1024**3])
+def test_override_keeps_chunking_and_does_not_persist(monkeypatch, tmp_path, memory):
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(local_memory, "physical_memory", lambda: memory)
+    calls = []
+
+    class Model:
+        def transcribe(self, path, *, chunk_duration, overlap_duration):
+            calls.append((path, chunk_duration, overlap_duration))
+            return SimpleNamespace(text="", sentences=[])
+
+    monkeypatch.setitem(sys.modules, "parakeet_mlx",
+                        SimpleNamespace(from_pretrained=lambda _: Model()))
+    parakeet.transcribe_file("fixture.wav", allow_low_memory=True)
+    assert calls == [("fixture.wav", 120.0, 15.0)]
+    with pytest.raises(RuntimeError, match="Colab"):
+        parakeet.transcribe_file("fixture.wav")
+    assert len(calls) == 1
+
+
+def test_memory_override_cannot_bypass_concurrency(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from colabtranscribe.local_inference import local_inference_slot
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(local_memory, "physical_memory", lambda: 8 * 1024**3)
+    loads = []
+    monkeypatch.setitem(sys.modules, "parakeet_mlx",
+                        SimpleNamespace(from_pretrained=lambda name: loads.append(name)))
+    with local_inference_slot(), pytest.raises(RuntimeError, match="already running"):
+        parakeet.transcribe_file("fixture.wav", allow_low_memory=True)
+    assert loads == []
