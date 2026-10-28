@@ -1164,3 +1164,30 @@ def test_the_cli_leaves_its_own_output_folder_out_of_the_upload(tmp_path: Path, 
     code = cli.main(["--input", str(tmp_path), "--dry-run", "--transfer", "direct"])
     out = capsys.readouterr().out
     assert code == 0 and "jakso.nhsx" in out and "vanha" not in out
+
+
+def test_cache_identity_rehashes_same_size_rewrite_with_preserved_mtime(tmp_path):
+    import os
+
+    source = tmp_path / "edited.wav"
+    source.write_bytes(b"first")
+    metadata = source.stat()
+    original = driver.cache_path(source)
+    source.write_bytes(b"other")
+    os.utime(source, ns=(metadata.st_atime_ns, metadata.st_mtime_ns))
+    changed = driver.cache_path(source)
+    assert changed != original
+    assert driver.cache_path(source) == changed
+    same_content = tmp_path / "renamed.wav"
+    same_content.write_bytes(b"other")
+    assert driver.cache_path(same_content) == changed
+
+
+def test_cache_identity_rehashes_each_rapid_rewrite(tmp_path):
+    source = tmp_path / "rapid.wav"
+    keys = []
+    for value in [b"first", b"other", b"third", b"first"]:
+        source.write_bytes(value)
+        keys.append(driver.cache_path(source))
+    assert len(set(keys[:3])) == 3
+    assert keys[0] == keys[3]

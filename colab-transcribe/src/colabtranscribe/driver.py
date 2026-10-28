@@ -9,7 +9,6 @@ ajettavan skriptin tuloste on ainoa tieto siitä mitä siellä tapahtui.
 from __future__ import annotations
 
 import contextlib
-import functools
 import re
 import shlex
 import subprocess
@@ -67,13 +66,14 @@ REMOTE_OUTPUT = "/content/output"
 COMMAND_TIMEOUT = 3 * 3600
 
 
-@functools.lru_cache(maxsize=256)
-def _content_key(path: str, size: int, mtime_ns: int) -> str:
-    """Sisällön SHA-256 (16 merkkiä). Koko ja aika ovat vain muistin avain, ettei
-    sama tiedosto luettaisi uudestaan saman ajon aikana."""
+def _content_key(path: str) -> str:
+    """Sisällön SHA-256 (16 merkkiä), luetaan uudestaan joka suunnitelmaan.
+
+    Polku, koko ja muokkausaika eivät todista sisällön pysyneen samana:
+    samankokoinen korvaus voi säilyttää aikaleiman tai osua sen tarkkuuteen.
+    """
     import hashlib
 
-    del size, mtime_ns  # vain välimuistin avaimena
     h = hashlib.sha256()
     with open(path, "rb") as f:
         while chunk := f.read(8 * 1024 * 1024):
@@ -88,11 +88,10 @@ def cache_path(source: Path) -> str:
     ``…Arjanne1142^.wav.flac``in (HTTP 400, ``%5E``), ja nimessä voi olla mitä
     tahansa. Oikea nimi tulee syötteen linkistä (``ln``), jossa se on lainattu."""
     source = Path(source)
-    st = source.stat()
     suffix = source.suffix.lower()
     if not (suffix[1:].isascii() and suffix[1:].isalnum()):
         suffix = ""
-    return f"{REMOTE_CACHE}/{_content_key(str(source), st.st_size, st.st_mtime_ns)}/data{suffix}"
+    return f"{REMOTE_CACHE}/{_content_key(str(source))}/data{suffix}"
 
 
 def list_input_files(input_dir: Path, exclude: Path | None = None) -> list[str]:
