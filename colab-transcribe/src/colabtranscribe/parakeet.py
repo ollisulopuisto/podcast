@@ -17,6 +17,11 @@ from typing import TYPE_CHECKING, Callable
 from . import events
 from .colab import pipeline
 
+# Match parakeet-mlx CLI defaults. Its Python API defaults to unchunked
+# whole-file attention, which can request tens of GB for long recordings.
+CHUNK_SECONDS = 120.0
+OVERLAP_SECONDS = 15.0
+
 if TYPE_CHECKING:
     from .options import RunOptions
 
@@ -63,7 +68,10 @@ def transcribe_file(
     from parakeet_mlx import from_pretrained
 
     model = from_pretrained(model_name)
-    result = model.transcribe(str(audio_path))
+    result = model.transcribe(
+        str(audio_path), chunk_duration=CHUNK_SECONDS,
+        overlap_duration=OVERLAP_SECONDS,
+    )
 
     segments = []
     for sentence in getattr(result, "sentences", []):
