@@ -51,6 +51,8 @@ def build_parser() -> argparse.ArgumentParser:
         "<nimi>.words.json (ei .nhsx:ää, aina suora siirto)",
     )
     parser.add_argument("--json", metavar="KANSIO", help="--audio-tilan tulostekansio")
+    parser.add_argument("--allow-low-memory", action="store_true",
+                        help="Accept risk of Mac freeze/restart for this local run; bypass provisional RAM policy")
     parser.add_argument(
         "--backend",
         choices=BACKENDS,
@@ -212,6 +214,7 @@ def options_from_args(args: argparse.Namespace) -> RunOptions:
         prompt=args.prompt if args.prompt != DEFAULT_PROMPT else env_opts.prompt,
         reset_session=args.reset_session or env_opts.reset_session,
         keep_session=args.keep_session or env_opts.keep_session,
+        allow_low_memory=args.allow_low_memory,
         backend=args.backend if args.backend is not None else env_opts.backend,
         parakeet_model=args.parakeet_model or env_opts.parakeet_model,
     )
@@ -346,6 +349,7 @@ def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
         model=args.model or "turbo",
         language=args.language or "fi",
         align=args.align,
+        allow_low_memory=args.allow_low_memory,
         backend=args.backend if args.backend is not None else env_opts.backend,
         parakeet_model=args.parakeet_model or env_opts.parakeet_model,
     )

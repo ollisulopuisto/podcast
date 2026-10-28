@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from .options import RunOptions
 
 
-def is_available() -> tuple[bool, str]:
+def is_available(*, allow_low_memory: bool = False) -> tuple[bool, str]:
     """Tarkistaa onko Parakeet MLX käytettävissä tällä laitteistolla.
 
     Vaatii macOS:n, Apple Silicon -suorittimen (arm64) sekä asennetun
@@ -43,7 +43,7 @@ def is_available() -> tuple[bool, str]:
             False,
             f"Parakeet MLX vaatii Apple Silicon (arm64) -suorittimen (nykyinen: {platform.machine()}).",
         )
-    if not local_memory.eligible():
+    if not allow_low_memory and not local_memory.eligible():
         return False, "Local transcription requires at least 16 GiB physical RAM under the current policy (or RAM could not be detected). Use Colab instead. This is not a free-memory safety guarantee."
     try:
         import parakeet_mlx  # noqa: F401
@@ -60,6 +60,7 @@ def is_available() -> tuple[bool, str]:
 def transcribe_file(
     audio_path: Path | str,
     model_name: str = "mlx-community/parakeet-tdt-0.6b-v3",
+    *, allow_low_memory: bool = False,
 ) -> dict:
     """Litteroi yhden äänitiedoston Parakeet MLX:llä ja palauttaa raw-rakenteen.
 
@@ -68,7 +69,7 @@ def transcribe_file(
     ``{"segments": [{"words": [{"word": str, "start": float, "end": float}]}]}``,
     jotta se voidaan suoraan viedä ``pipeline.words_document``-funktiolle.
     """
-    if not local_memory.eligible():
+    if not allow_low_memory and not local_memory.eligible():
         raise RuntimeError("Local transcription blocked: 16 GiB physical RAM required, detection must succeed. Use Colab instead.")
     from parakeet_mlx import from_pretrained
 
@@ -148,7 +149,8 @@ def run_audio_mode_parakeet(
             log(" ".join(cmd))
         return 0
 
-    available, reason = is_available()
+    memory_options = {"allow_low_memory": True} if options.allow_low_memory else {}
+    available, reason = is_available(**memory_options)
     if not available:
         log(f"Virhe: {reason}")
         if events_enabled:
@@ -202,7 +204,8 @@ def run_audio_mode_parakeet(
         report_progress(step_pct, msg)
 
         try:
-            raw = transcribe_file(audio_path, model_name=options.parakeet_model)
+            raw = transcribe_file(audio_path, model_name=options.parakeet_model,
+                                  **memory_options)
         except Exception as e:
             err_msg = f"Litterointi epäonnistui tiedostolle {audio_path.name}: {e}"
             log(err_msg)
