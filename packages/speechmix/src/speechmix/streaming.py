@@ -5,10 +5,9 @@ ordinary files, not full-length resident arrays. Audio is always re-read from
 its original source for each global loudness-search attempt.
 """
 
+import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
-
-import shutil
 
 import numpy as np
 from scipy import signal
