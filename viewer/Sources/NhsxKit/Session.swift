@@ -111,6 +111,9 @@ public struct Region {
     public let pan: Double?
     /// Äänenvoimakkuuskäyrän luiskat, `<Fade>`-lapsielementeistä.
     public let ramps: [Ramp]
+    /// Häivytykset hiljaisuudesta ja hiljaisuuteen, alueen sisään rajattuina.
+    public let fadeIn: Double
+    public let fadeOut: Double
     /// Attribuutit ja lapsielementit, joita tämä ei osaa lukea.
     public let unknown: [String]
 
@@ -156,6 +159,7 @@ public let knownRegionAttributes: Set<String> = [
     "ClipGain",
     // Eivät vaikuta tasoon; tunnettuja jotta varoitus säilyy merkitsevänä.
     "IsMusic", "UseTranscription",
+    "FadeIn", "FadeOut",
 ]
 
 public let knownTrackAttributes: Set<String> = ["Name", "Gain", "Pan", "Muted", "Volume"]
@@ -171,6 +175,12 @@ public let knownFadeAttributes: Set<String> = ["Start", "Length", "Gain"]
 func truthy(_ value: String?) -> Bool {
     guard let value else { return false }
     return ["true", "1", "yes"].contains(value.trimmingCharacters(in: .whitespaces).lowercased())
+}
+
+/// A malformed duration must not prevent previewing the rest of a session.
+private func boundedFade(_ value: String?, length: Double) -> Double {
+    let seconds = timeToSeconds(value)
+    return seconds.isFinite ? max(0, min(seconds, length)) : 0
 }
 
 // MARK: - Luku
@@ -235,6 +245,8 @@ public func readSession(at path: String) throws -> Session {
                 gainDb: (node.attr("ClipGain") ?? node.attr("Gain")).flatMap(Double.init),
                 pan: node.attr("Pan").flatMap(Double.init),
                 ramps: ramps,
+                fadeIn: boundedFade(node.attr("FadeIn"), length: length),
+                fadeOut: boundedFade(node.attr("FadeOut"), length: length),
                 unknown: unknown
             ))
         }

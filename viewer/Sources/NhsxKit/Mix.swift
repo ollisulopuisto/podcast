@@ -23,6 +23,10 @@ public struct Clip {
     public let pan: Double
     /// Äänenvoimakkuuskäyrä. Luiskat on leikattu leikkeen sisään.
     public let ramps: [Ramp]
+    public let fadeIn: Double
+    public let fadeOut: Double
+
+    public var hasEnvelope: Bool { !ramps.isEmpty || fadeIn > 0 || fadeOut > 0 }
 
     public var end: Double { start + length }
 
@@ -43,6 +47,24 @@ public struct Clip {
             return level + (ramp.gain - level) * (1 - cos(.pi * share)) / 2
         }
         return level
+    }
+
+    /// Edge fades use sample centers, as Python `nhsx.mix.envelope` does.
+    /// Their raised-cosine shape is assumed, not measured from Hindenburg.
+    /// `frame` stays relative to the original clip, including after seeking.
+    public func envelopeLevel(atFrame frame: Int, sampleRate: Double) -> Double {
+        let count = Int((length * sampleRate).rounded(.toNearestOrEven))
+        var value = level(at: Double(frame) / sampleRate)
+        for (duration, head) in [(fadeIn, true), (fadeOut, false)] {
+            let span = min(count, Int((duration * sampleRate).rounded(.toNearestOrEven)))
+            guard span > 0 else { continue }
+            let position = head ? frame : count - 1 - frame
+            if position >= 0 && position < span {
+                let share = (Double(position) + 0.5) / Double(span)
+                value *= (1 - cos(.pi * share)) / 2
+            }
+        }
+        return value
     }
 
     /// Ohjelma-ajasta tiedostoaikaan. Yksi kaava, ja se on kaikki mitä
@@ -189,7 +211,9 @@ public func plan(_ session: Session, extraDirectory: String = "") -> Mix {
                 gain: dbToLinear(region.gainDb ?? 0) * trackGain,
                 // Raidan panorointi siirtää leikkeen omaa, ei korvaa sitä.
                 pan: min(max(regionPan + trackPan, -1), 1),
-                ramps: region.ramps
+                ramps: region.ramps,
+                fadeIn: region.fadeIn,
+                fadeOut: region.fadeOut
             ))
         }
     }
