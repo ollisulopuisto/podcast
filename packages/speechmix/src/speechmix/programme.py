@@ -289,11 +289,14 @@ def _lufs(audio: np.ndarray, rate: int) -> float | None:
     """
     from speechmix.meter import IntegratedMeter
 
-    block = np.asarray(audio, dtype=np.float64)
+    block = np.asarray(audio)
     if block.shape[-1] < rate:
         return None
     meter = IntegratedMeter(rate)
-    meter.add(block)
+    # The meter carries its filter state across chunks. Keep its temporary
+    # power and speech-mask arrays bounded, as chain.loudness already does.
+    for start in range(0, block.shape[-1], chain._MEASURE_CHUNK):
+        meter.add(block[..., start:start + chain._MEASURE_CHUNK])
     value = meter.value()
     return value if value is not None and np.isfinite(value) and value >= -70.0 else None
 
@@ -342,3 +345,17 @@ def master(audio: np.ndarray, rate: int, target_lufs: float,
     reached = (not capped and after is not None
                and abs(target_lufs - after) <= MASTER_TOLERANCE_LU)
     return out, MasterResult(round(boost, 2), after, round(cost, 2), reached)
+
+
+def master_stream(read, write, frames, channels, rate, target_lufs, **kwargs):
+    """Bounded-window, disk-backed mastering; see streaming.master_stream."""
+    from .streaming import master_stream as run
+
+    return run(read, write, frames, channels, rate, target_lufs, **kwargs)
+
+
+def master_scratch_bytes(frames):
+    """Maximum private scratch file bytes, excluding source and output spools."""
+    from .streaming import scratch_bytes
+
+    return scratch_bytes(frames)
