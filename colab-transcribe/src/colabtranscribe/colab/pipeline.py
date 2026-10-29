@@ -1262,15 +1262,26 @@ def _whisper_model():
     return _WHISPER
 
 
+def _cloud_timing_model(model):
+    """Moottorin ja sanakellon tunniste, ei hiljaista vaihtoa tuntemattomaan."""
+    model = model or "parakeet-ultra"
+    if model in ("whisper", WHISPER_REPO, "turbo"):
+        return "whisper"
+    if model in ("parakeet-ultra", "ultra", ULTRA_REPO):
+        return "parakeet-ultra"
+    raise ValueError(
+        f"Tuntematon Colab-malli: {model}. Paikallinen Orukeet valitaan "
+        "valitsimella --backend orukeet."
+    )
+
+
 def transcribe_file(path, model=None, language="auto", initial_prompt=""):
     """Litteroi tiedosto Photon Whisperillä tai Parakeet Ultralla."""
-    model = model or "parakeet-ultra"
-    use_whisper = model in ("whisper", WHISPER_REPO)
+    timing = _cloud_timing_model(model)
+    use_whisper = timing == "whisper"
     engine = "Whisper" if use_whisper else "Parakeet Ultra"
     if initial_prompt:
         print(f"Huom: {engine} ei käytä litteroinnin promptia; sanalista jätetään huomiotta.", flush=True)
-    if not use_whisper and model not in ("parakeet-ultra", "ultra", "orukeet", "turbo"):
-        print("Huom: tuntematon malli; käytetään Parakeet Ultraa.", flush=True)
     _ = language  # Molemmat Photon-mallit tunnistavat kielen automaattisesti.
     import tempfile
 
@@ -1426,7 +1437,8 @@ def run_audio(input_dir, output_dir, model, language, initial_prompt, align=Fals
     for idx, filename in enumerate(names, 1):
         print(f"[ääni ({idx}/{total})] Litteroidaan: {filename}", flush=True)
         raw = transcribe_file(os.path.join(input_dir, filename), model, language, initial_prompt)
-        if not words_document(raw, language)["words"]:
+        timing = _cloud_timing_model(model)
+        if not words_document(raw, language, timing=timing)["words"]:
             print(
                 f"  VAROITUS: {filename}: ei tunnistettu yhtään sanaa. "
                 "Onko siinä puhetta, ja onko kieli oikein? Tiedostoa ei kirjoitettu.",
@@ -1456,7 +1468,7 @@ def run_audio(input_dir, output_dir, model, language, initial_prompt, align=Fals
             for reason in aligned[filename]["rejected"][:10]:
                 print(f"    hylätty: {reason}", flush=True)
         else:
-            document = words_document(raw, language)
+            document = words_document(raw, language, timing=timing)
         output_path = os.path.join(output_dir, _swap_audio_ext(filename, ".words.json"))
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(document, f, ensure_ascii=False)
