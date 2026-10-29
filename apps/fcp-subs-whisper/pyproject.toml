@@ -36,6 +36,9 @@ fcp-subs-whisper = "fcp_subs_whisper.main:cli"
 [tool.hatch.build.targets.wheel]
 packages = ["src/fcp_subs_whisper"]
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
