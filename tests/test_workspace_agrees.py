@@ -490,21 +490,24 @@ def test_no_workflow_is_hidden_inside_an_app():
 
 
 def test_ci_runs_every_members_tests_and_lints_everything():
-    """Jäsen jonka testejä CI ei aja on jäsen jonka testit ovat vihreitä aina.
+    """Linux and macOS together cover members; Mac keeps its platform-specific suites.
 
     `packages/nhsx`in testit eivät ajautuneet lainkaan, lintti tarkisti vain
     luettelemansa hakemistot (nhsx, `scripts/` ja `tests/` jäivät ulos), ja
     automixerin lintti oli `continue-on-error`. Kaikki kolme olivat
     hiljaisia: CI oli vihreä ja tarkisti vähemmän kuin näytti.
     """
-    workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
-    assert "continue-on-error" not in workflow.replace("`continue-on-error`", "")
-    assert re.search(r"run: uv run ruff check \.\s*$", workflow, re.MULTILINE)
+    mac = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+    linux = (ROOT / ".github" / "workflows" / "tests-linux.yml").read_text(encoding="utf-8")
+    assert "continue-on-error" not in mac.replace("`continue-on-error`", "")
+    assert "continue-on-error" not in linux.replace("`continue-on-error`", "")
+    assert re.search(r"run: uv run ruff check \.\s*$", mac, re.MULTILINE)
+    assert re.search(r"run: uv run ruff check \.\s*$", linux, re.MULTILINE)
     for member in MEMBERS:
         if not (member / "tests").is_dir():
             continue
         where = member.relative_to(ROOT).as_posix()
-        assert f"--directory {where} pytest" in workflow, f"CI ei aja: {where}"
+        assert f"--directory {where} pytest" in mac + linux, f"CI ei aja: {where}"
 
 
 # --------------------------------------------------------------------------

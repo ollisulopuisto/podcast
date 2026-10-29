@@ -90,6 +90,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: uv run --directory packages/wordalign pytest -q
 
+      - name: framescore
+        if: ${{ !cancelled() }}
+        run: uv run --directory packages/framescore pytest -q
+
       # The FCPXML reader: standard library and XML fixtures, no media, so it
       # is the same suite on every platform. kuulas reads Final Cut exports
       # through it on whatever machine it runs on.
