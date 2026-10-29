@@ -11,6 +11,12 @@ name: build podcast-magic
 # tagiavaruuden ja pelkkä `v*` osuisi mihin tahansa.
 on:
   workflow_dispatch:
+    inputs:
+      hotfix_artifact:
+        description: Build an artifact now without the test suites (no GitHub Release)
+        type: boolean
+        required: false
+        default: false
   push:
     tags: ["podcast-magic-v*"]
 
@@ -89,7 +95,13 @@ jobs:
       # Testit ennen pakkausta. Rikkinäinen binääri on pahempi kuin hidas
       # käännös: sen ehtii ladata ennen kuin kukaan huomaa.
       - name: Tests
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.hotfix_artifact }}
         run: uv run pytest -q
+
+      - name: Hotfix artifact bypass notice
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.hotfix_artifact }}
+        run: >-
+          echo "HOTFIX BUILD ONLY: tests were skipped; this run cannot publish a release."
 
       # Niputettavat ffmpeg-binäärit ovat iso lataus ulkopuoliselta
       # palvelimelta. Välimuisti pitää käännöksen pystyssä silloinkin kun se

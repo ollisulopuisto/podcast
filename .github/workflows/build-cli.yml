@@ -20,12 +20,65 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.apps.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: apps
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          BASE_REF: ${{ github.base_ref }}
+          REQUESTED_APP: ${{ inputs.app }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          event = os.environ["EVENT_NAME"]
+          if event == "pull_request":
+              base = os.environ["BASE_REF"]
+              subprocess.run(["git", "fetch", "origin", base], check=True)
+              changed = subprocess.check_output(
+                  ["git", "diff", "--name-only", f"origin/{base}...HEAD"], text=True
+              ).splitlines()
+              apps = set()
+              for path in changed:
+                  if path.startswith(("apps/automixer/", "packages/speechmix/", "packages/nhsx/")):
+                      apps.add("automixer")
+                  if path.startswith(("colab-transcribe/", "packages/silencelearn/", "packages/wordalign/")):
+                      apps.add("colab-transcribe")
+                  if path in {
+                      "uv.lock", "pyproject.toml", "scripts/build_cli_release.py",
+                      "scripts/smoke_cli_release.py", ".github/workflows/build-cli.yml",
+                  } or path.startswith("tests/"):
+                      apps.update(("automixer", "colab-transcribe"))
+              selected = [app for app in ("automixer", "colab-transcribe") if app in apps]
+          elif os.environ["REF_NAME"].startswith("automixer-v"):
+              selected = ["automixer"]
+          elif os.environ["REF_NAME"].startswith("colab-transcribe-v"):
+              selected = ["colab-transcribe"]
+          else:
+              requested = os.environ.get("REQUESTED_APP") or "all"
+              selected = [requested] if requested != "all" else ["automixer", "colab-transcribe"]
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"matrix={json.dumps(selected)}\n")
+          print(f"CLI checks selected: {selected}")
+          PY
+
   build:
+    needs: [select]
     strategy:
       fail-fast: false
       matrix:
         os: [macos-15, ubuntu-latest]
-        app: ${{ fromJSON(startsWith(github.ref, 'refs/tags/automixer-v') && '["automixer"]' || startsWith(github.ref, 'refs/tags/colab-transcribe-v') && '["colab-transcribe"]' || inputs.app == 'automixer' && '["automixer"]' || inputs.app == 'colab-transcribe' && '["colab-transcribe"]' || '["automixer","colab-transcribe"]') }}
+        app: ${{ fromJSON(needs.select.outputs.apps) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     defaults:
@@ -96,7 +149,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [build]
+    needs: [select, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write

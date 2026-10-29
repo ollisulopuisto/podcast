@@ -72,6 +72,17 @@ pakkaa sovelluksen ja sen työtilakirjastot samasta commitista sekä kiinnittä�
 muut riippuvuudet lukosta. PR:t ja käsiajot tarkistavat paketoinnin julkaisematta.
 Asennus, Kuulas-polut ja julkaisuohje: [CLI-RELEASES.md](docs/CLI-RELEASES.md).
 
+`tests-linux.yml` runs the portable workspace and application suites. The
+macOS `tests.yml` repeats only the suites that need Apple frameworks, Metal,
+or macOS application behavior, alongside the workspace agreement check.
+This avoids spending macOS minutes on the same portable tests twice.
+
+For an urgent installer check, `build-autoraffkat.yml` and
+`build-podcast-magic.yml` can be dispatched manually with **hotfix artifact**
+enabled. That skips only the build workflow's test suite and uploads an
+artifact; it cannot publish a GitHub Release. Tag-triggered releases always
+run tests.
+
 ## Feature Roadmaps & Ideas
 
 Looking for a high-impact feature to contribute?
