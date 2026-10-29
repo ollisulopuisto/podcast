@@ -7,6 +7,8 @@ Alueissa on myös yskäisyjä ja muuta, eikä niitä saa ottaa kynnykseksi.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -137,8 +139,9 @@ def test_every_file_is_decoded_once_however_many_tracks_there_are(tmp_path, monk
     calls = []
 
     def counting(file_path):
-        calls.append(file_path.rsplit("/", 1)[-1])
-        return arrays[file_path.rsplit("/", 1)[-1]]
+        name = Path(file_path).name
+        calls.append(name)
+        return arrays[name]
 
     monkeypatch.setattr("podcastmagic.silence.detect.audio_io.decode_pcm", counting)
     calibrate.calibrate(nhsx.read(path), AudioCache())
