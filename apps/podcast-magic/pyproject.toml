@@ -47,6 +47,13 @@ json-to-text = "podcastmagic.transcribe.json_to_text:main"
 mlx = ["mlx-whisper>=0.4.0"]
 # Kaikille alustoille sopiva varakone. Sama moottori kuin Colab-muistikirjassa.
 faster = ["faster-whisper>=1.1.0"]
+# Orukeet SDK asennetaan pyörästä; natiivi ajuri ja malli asennetaan erikseen
+# `orukeet install` -komennolla, eikä niitä kopioida sovelluspakettiin.
+orukeet = [
+    "orukeet @ https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl",
+]
+# Photon lataa Ultra-painot ensimmäisellä ajolla. Ultra vaatii NVIDIA-GPU:n.
+ultra = ["moondream>=2.6.1"]
 
 [tool.uv.sources]
 speechmix = { workspace = true }

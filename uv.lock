@@ -2,12 +2,18 @@ version = 1
 revision = 5
 requires-python = ">=3.13"
 resolution-markers = [
-    "python_full_version >= '3.14' and sys_platform == 'win32'",
-    "python_full_version >= '3.14' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version < '3.14' and sys_platform == 'win32'",
-    "python_full_version < '3.14' and sys_platform == 'emscripten'",
-    "python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version >= '3.14' and platform_machine != 'aarch64' and sys_platform == 'win32'",
+    "python_full_version >= '3.14' and platform_machine == 'aarch64' and sys_platform == 'win32'",
+    "python_full_version >= '3.14' and platform_machine != 'aarch64' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and platform_machine == 'aarch64' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and platform_machine != 'aarch64' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version >= '3.14' and platform_machine == 'aarch64' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version < '3.14' and platform_machine != 'aarch64' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and platform_machine == 'aarch64' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and platform_machine != 'aarch64' and sys_platform == 'emscripten'",
+    "python_full_version < '3.14' and platform_machine == 'aarch64' and sys_platform == 'emscripten'",
+    "python_full_version < '3.14' and platform_machine != 'aarch64' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version < '3.14' and platform_machine == 'aarch64' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
 [manifest]
@@ -607,6 +613,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+orukeet = [
+    { name = "orukeet" },
+]
 parakeet = [
     { name = "parakeet-mlx" },
 ]
@@ -616,13 +625,14 @@ requires-dist = [
     { name = "google-colab-cli", git = "https://github.com/googlecolab/google-colab-cli?rev=930275e62970df10055f411c8e28ca61755dcfc7" },
     { name = "jupyter-kernel-client", url = "https://files.pythonhosted.org/packages/7a/68/287315ba355aa93bda2e344de5febc45e6de1b47d8f4a5b69400b24cfdfd/jupyter_kernel_client-0.9.0-py3-none-any.whl" },
     { name = "lxml", specifier = ">=6.1.3" },
+    { name = "orukeet", marker = "extra == 'orukeet'", url = "https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl" },
     { name = "parakeet-mlx", marker = "extra == 'parakeet'", specifier = ">=0.3.0" },
     { name = "silencelearn", editable = "packages/silencelearn" },
     { name = "soundfile", specifier = ">=0.13.1" },
     { name = "textual", specifier = ">=8.0.0" },
     { name = "wordalign", editable = "packages/wordalign" },
 ]
-provides-extras = ["parakeet"]
+provides-extras = ["parakeet", "orukeet"]
 
 [[package]]
 name = "colorama"
@@ -968,15 +978,26 @@ dependencies = [
     { name = "wyoming" },
 ]
 
+[package.optional-dependencies]
+orukeet = [
+    { name = "orukeet" },
+]
+ultra = [
+    { name = "moondream" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "faster-whisper", specifier = ">=1.2.1" },
     { name = "mlx-whisper", specifier = ">=0.4.3" },
+    { name = "moondream", marker = "extra == 'ultra'", specifier = ">=2.6.1" },
+    { name = "orukeet", marker = "extra == 'orukeet'", url = "https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl" },
     { name = "pyannote-audio", specifier = ">=3.3.1" },
     { name = "torch", specifier = ">=2.5.1" },
     { name = "tqdm", specifier = ">=4.70.1" },
     { name = "wyoming", specifier = ">=1.8.0" },
 ]
+provides-extras = ["orukeet", "ultra"]
 
 [[package]]
 name = "fcpxml"
@@ -1576,6 +1597,170 @@ wheels = [
 ]
 
 [[package]]
+name = "kestrel"
+version = "0.9.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "huggingface-hub" },
+    { name = "kestrel-kernels" },
+    { name = "kestrel-native" },
+    { name = "numpy" },
+    { name = "safetensors" },
+    { name = "tokenizers" },
+    { name = "torch" },
+    { name = "torch-c-dlpack-ext" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6d/26/d6a3530617148deff50f92323425601b31006393d3b9f74e1cd3340a5792/kestrel-0.9.1.tar.gz", hash = "sha256:52083e88c71ccd6023096714033403d73a7cfb7a83b72493509bfb09163f344a", size = 565547, upload-time = "2026-09-30T00:39:50.098Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/98/ff/8f779728d192ba3a09d8e063193d180597372f223a2c1f9bcf37c26c21ac/kestrel-0.9.1-py3-none-any.whl", hash = "sha256:80640639279b18b2da61b08c06c550f8eaab6596d6d15978fd56f76707462cb7", size = 647466, upload-time = "2026-09-30T00:39:48.455Z" },
+]
+
+[[package]]
+name = "kestrel-kernels"
+version = "0.7.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "kestrel-kernels-bundle-a", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "kestrel-kernels-bundle-b", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "kestrel-kernels-bundle-c", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or sys_platform == 'win32'" },
+    { name = "kestrel-kernels-bundle-d", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or sys_platform == 'win32'" },
+    { name = "kestrel-kernels-bundle-e", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or sys_platform == 'win32'" },
+    { name = "kestrel-kernels-bundle-f", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "kestrel-kernels-bundle-g", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "kestrel-kernels-bundle-h", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "kestrel-mps-torch-ext", marker = "sys_platform == 'darwin'" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "torch-c-dlpack-ext" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/de/8d/31c6503d2f11ea700b3186e38cb923fa06e5e2b8965bd16df6c3402a95de/kestrel_kernels-0.7.4-cp313-cp313-macosx_13_0_arm64.whl", hash = "sha256:6c2bacbf7adfd36ad81b770f37f350ca2ab71ff6da95c5d633131e271c023181", size = 1419431, upload-time = "2026-09-29T22:11:21.143Z" },
+    { url = "https://files.pythonhosted.org/packages/a7/37/9ba1f591e787ed24f8bd24ed2796ae8d57531e14f494da02e3228a73750b/kestrel_kernels-0.7.4-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_31_x86_64.whl", hash = "sha256:a38261e2438223ee85a25a81d6236510a5ed0fab918a8e2edad6bebd145d622e", size = 4312027, upload-time = "2026-09-29T22:11:22.753Z" },
+    { url = "https://files.pythonhosted.org/packages/04/52/c484a885928bf75ef77a5e81a6c957cab1a846e497d5492a763661b2228a/kestrel_kernels-0.7.4-cp313-cp313-manylinux_2_34_aarch64.manylinux_2_35_aarch64.whl", hash = "sha256:696de064f38c745a4c3ea4c8b284bed7a2f44f8bbc8bf6122e8e2e7dc0212a3d", size = 3974510, upload-time = "2026-09-29T22:11:24.206Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/87/5524bb48b94fec04152a92eacd35c400f57563c8f39a3a2d3d96ef9f096d/kestrel_kernels-0.7.4-cp313-cp313-manylinux_2_34_x86_64.manylinux_2_35_x86_64.whl", hash = "sha256:51e4ee27fe48a779ad3634496a5831ccf9c21c14101467b9c3411b5aaba29aed", size = 7492129, upload-time = "2026-09-29T22:11:25.698Z" },
+    { url = "https://files.pythonhosted.org/packages/6a/0c/d964cd0d270bb12f9fcda3a377a7fd36b356e526b86905eb26cac0d35430/kestrel_kernels-0.7.4-cp313-cp313-win_amd64.whl", hash = "sha256:042aa19e79239c79621d151f82aa2e4dedc341a17aaaac0a41bcc3aeaa9f693c", size = 4389410, upload-time = "2026-09-29T22:11:27.464Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/2f/e0e45a6461d5b5fe0311cf87f34962074c58f7aaf56a92191a85c9d9ea95/kestrel_kernels-0.7.4-cp314-cp314-macosx_13_0_arm64.whl", hash = "sha256:ec0af8b7cd005c7a532cc26cc0f0531df88dab7f89f4960cf759fe256e6dc9a1", size = 1419352, upload-time = "2026-09-29T22:11:28.723Z" },
+    { url = "https://files.pythonhosted.org/packages/62/c0/bbc870c5d7931ea1634238bbc8d7b1c2386152d5d3c35b06e3fd9508500f/kestrel_kernels-0.7.4-cp314-cp314-manylinux_2_24_x86_64.manylinux_2_31_x86_64.whl", hash = "sha256:2a4ea87dabce2271d5639f65ac8d835d40d2153ca3066e34a5e89dea963da582", size = 4311992, upload-time = "2026-09-29T22:11:30.277Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/cd/58cf3be2824a98661269ad0efc34b43ee87af465f6c81b4f46a039569d9d/kestrel_kernels-0.7.4-cp314-cp314-manylinux_2_34_aarch64.manylinux_2_35_aarch64.whl", hash = "sha256:40c7a1c51e4b67915aea1ca261cbcafa0827c7473c2ac72e755fc55d2ed50f23", size = 3974516, upload-time = "2026-09-29T22:11:31.75Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/bc/e4a4ffeb2c2cd3fe815269e9c949253c798b263928c3aefa61d895241e80/kestrel_kernels-0.7.4-cp314-cp314-manylinux_2_34_x86_64.manylinux_2_35_x86_64.whl", hash = "sha256:cf802041962e7ea3750c8bb379cb4339d89c606fedc1b0b9281627a68046831a", size = 7492146, upload-time = "2026-09-29T22:11:33.237Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/df/49041f2aa736e626b2d8c4395b446bbe6c2431ad4fd05c3d598edc7e7977/kestrel_kernels-0.7.4-cp314-cp314-win_amd64.whl", hash = "sha256:bb669d6a8fa82833af23dea2b0ef3810681482c34c8880ae60e22492dfc469cd", size = 4389444, upload-time = "2026-09-29T22:11:34.725Z" },
+]
+
+[[package]]
+name = "kestrel-kernels-bundle-a"
+version = "0.7.4"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e2/a7/c0dd106aff336f5882df9098084f5f2ad8cfbaf69d151bac4093faf7b915/kestrel_kernels_bundle_a-0.7.4-py3-none-manylinux_2_24_x86_64.manylinux_2_31_x86_64.whl", hash = "sha256:e5497b5afaf73608d565a9d446740d1196c95d1150cb9ca5f80d30d5e7d58ce3", size = 77221478, upload-time = "2026-09-29T22:08:39.831Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/77/e541d796565f806557cd5fd25c541b05348a5e947422ce8ae25867f98c96/kestrel_kernels_bundle_a-0.7.4-py3-none-manylinux_2_34_aarch64.manylinux_2_35_aarch64.whl", hash = "sha256:ae8cb1bb7ac56b20ada72b16c380dc83e165706f01491ad5a5537ef3038e6acf", size = 51187518, upload-time = "2026-09-29T22:08:31.438Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/33/b7ad0039ba2e3bc0788e4020ff3d57a31e2f914b27e584634a2d654c0d44/kestrel_kernels_bundle_a-0.7.4-py3-none-manylinux_2_34_x86_64.manylinux_2_35_x86_64.whl", hash = "sha256:a9054198c034a9f8ebfb3fb1cd15a68ae8b18a766632520ac6bde536efa78b95", size = 86658913, upload-time = "2026-09-29T22:09:38.495Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/90/f7387a93f6cb521bcc4255b4b8135222cc01422a4c7214f4d0a16c803c45/kestrel_kernels_bundle_a-0.7.4-py3-none-win_amd64.whl", hash = "sha256:2a12aafc9ba2aa805b23c092b16c288564bb56766fdc61e63bab0fc9ed467b26", size = 93075524, upload-time = "2026-09-29T22:09:09.374Z" },
+]
+
+[[package]]
+name = "kestrel-kernels-bundle-b"
+version = "0.7.4"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/57/ff/7fd1f8b65afc53a4e77ef5f3d6896c00cc965e2b910377da6761f0ddd482/kestrel_kernels_bundle_b-0.7.4-py3-none-manylinux_2_24_x86_64.manylinux_2_31_x86_64.whl", hash = "sha256:d75f1d897b649b966295260dd04649de6c187512e10f2917f1b5972c967506ea", size = 77218807, upload-time = "2026-09-29T22:08:44.876Z" },
+    { url = "https://files.pythonhosted.org/packages/3a/a4/a224ba3a749e5e7d110f46cf7d927e6966be9f5605b24fc0b6e8b3f12141/kestrel_kernels_bundle_b-0.7.4-py3-none-manylinux_2_34_aarch64.manylinux_2_35_aarch64.whl", hash = "sha256:75b1b55ee64e49c1d54000b93e6ed9cf1c194ec322a99db3fee26ae11d512c9a", size = 31408481, upload-time = "2026-09-29T22:08:35.187Z" },
+    { url = "https://files.pythonhosted.org/packages/8d/d6/dcc1697d7fe3ca12758353c8cf1ea116ed025c33c3b397e58415340303ce/kestrel_kernels_bundle_b-0.7.4-py3-none-manylinux_2_34_x86_64.manylinux_2_35_x86_64.whl", hash = "sha256:8e954e9cabb6a57264b22ef15f7b1e178242d339211572f2b462b4139187a7f6", size = 86656107, upload-time = "2026-09-29T22:09:44.012Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/57/27dab3a66f2121e2ba38ff5f00f29b66bd1bf7d7ef71e2251281fb63edc9/kestrel_kernels_bundle_b-0.7.4-py3-none-win_amd64.whl", hash = "sha256:2336407984ae21b3d641163d3bc3c275f89851608ca0f45ee27567ce835a33e4", size = 93088920, upload-time = "2026-09-29T22:09:15.522Z" },
+]
+
+[[package]]
+name = "kestrel-kernels-bundle-c"
+version = "0.7.4"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/87/41/8bd546f50f8793820191503a2ba959e5ff80ffd9894424de9630338d11e9/kestrel_kernels_bundle_c-0.7.4-py3-none-manylinux_2_24_x86_64.manylinux_2_31_x86_64.whl", hash = "sha256:e9bdb4cb45c376d26d587d4c9270036065341c10b3e708c1217a144706580e12", size = 77226427, upload-time = "2026-09-29T22:08:50.033Z" },
+    { url = "https://files.pythonhosted.org/packages/44/79/ba67e032782bb7914e6e65231c154782cdc3a14996865e14f69df8f0f29e/kestrel_kernels_bundle_c-0.7.4-py3-none-manylinux_2_34_x86_64.manylinux_2_35_x86_64.whl", hash = "sha256:557dc5b73ef6ad150c6e8678f285f8dbf3e1b7edeb07980d2ae8880c223d88fe", size = 86663449, upload-time = "2026-09-29T22:09:49.429Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/2c/bc971fc791867c8db4dfd8e36ce19ea868a21578e88b74aafd1eb70a7471/kestrel_kernels_bundle_c-0.7.4-py3-none-win_amd64.whl", hash = "sha256:dcd70dfe0e9c80313384fe48b29eb2c76faeb274a741d2c637c1cf224f142365", size = 93082808, upload-time = "2026-09-29T22:09:21.179Z" },
+]
+
+[[package]]
+name = "kestrel-kernels-bundle-d"
+version = "0.7.4"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7f/39/f1a209873835311a17f4479085db9c3786378db38fec307dfbedc693fe42/kestrel_kernels_bundle_d-0.7.4-py3-none-manylinux_2_24_x86_64.manylinux_2_31_x86_64.whl", hash = "sha256:869b3e4321a0af2a0f4779c32bcc9bc92bc2d5fd62f26baf5e0876b9e369bad7", size = 77233940, upload-time = "2026-09-29T22:08:55.596Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/05/6fc8c2e16ede91ba8bf329feec38682bad8e286cd1798889585e20b1a42f/kestrel_kernels_bundle_d-0.7.4-py3-none-manylinux_2_34_x86_64.manylinux_2_35_x86_64.whl", hash = "sha256:57829cdfa7303852f94677750769c9f042fb31e13579abc421c03d5c24bb327e", size = 86653032, upload-time = "2026-09-29T22:09:54.971Z" },
+    { url = "https://files.pythonhosted.org/packages/77/5e/aab131f655c9e113dc418f52635d6ab3433441e0c5c92b484e3e9d66f017/kestrel_kernels_bundle_d-0.7.4-py3-none-win_amd64.whl", hash = "sha256:de84c7bdef2ab1e0f5442bf6d6028be8889bad9aa915a3746600f93c8d52be03", size = 93094293, upload-time = "2026-09-29T22:09:26.986Z" },
+]
+
+[[package]]
+name = "kestrel-kernels-bundle-e"
+version = "0.7.4"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/54/1d/2ce40d4537fc99cf57fbc367fe74e424278582542cb7d1c6f5c8e6f4bee8/kestrel_kernels_bundle_e-0.7.4-py3-none-manylinux_2_24_x86_64.manylinux_2_31_x86_64.whl", hash = "sha256:e73adcc6fe420f4506680703a97cc9f1bfc96648477364473d6b767d43fb37e1", size = 77221432, upload-time = "2026-09-29T22:09:00.817Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/aa/ba7570a77933c2d7eae78de7ae2271db5b6f8ec109b6e4374ccb60cb47a6/kestrel_kernels_bundle_e-0.7.4-py3-none-manylinux_2_34_x86_64.manylinux_2_35_x86_64.whl", hash = "sha256:500cf46fdb07b46516d76cc4bff7a67b9e4e78cad831443d7b908f22c3658843", size = 86656492, upload-time = "2026-09-29T22:10:00.163Z" },
+    { url = "https://files.pythonhosted.org/packages/74/73/21030748b89fa588a37bfc7719ac9d2b177bb5c471e627f001e7359c02c1/kestrel_kernels_bundle_e-0.7.4-py3-none-win_amd64.whl", hash = "sha256:7c7dd27afcf201f5b4da9ca73a8ebea513f632a1b97711265c18df2738fc099c", size = 93098626, upload-time = "2026-09-29T22:09:32.937Z" },
+]
+
+[[package]]
+name = "kestrel-kernels-bundle-f"
+version = "0.7.4"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/66/e1/1e8972ca4de997aeebc0417647e13b8889eb201b7bc1bdf505f4e87137c0/kestrel_kernels_bundle_f-0.7.4-py3-none-manylinux_2_24_x86_64.manylinux_2_31_x86_64.whl", hash = "sha256:748921b67b78d37c5577acc15430e7cbd6d39b30e7ab46696a17f83a29c72851", size = 1278, upload-time = "2026-09-29T22:09:03.14Z" },
+    { url = "https://files.pythonhosted.org/packages/dc/ae/e1e51715ba0bb6ee9dc5e25f8f87eed41699622f9e6c416fa17b91115955/kestrel_kernels_bundle_f-0.7.4-py3-none-manylinux_2_34_x86_64.manylinux_2_35_x86_64.whl", hash = "sha256:2bc734bc0c1aaa2b617c2340c461e5ebcdd163752afeb4519106694c6bbe5779", size = 86656422, upload-time = "2026-09-29T22:10:05.673Z" },
+]
+
+[[package]]
+name = "kestrel-kernels-bundle-g"
+version = "0.7.4"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/92/d9/3e623ca32548ed2db3535ad7de8161b86d2ec0691a57e58258fb0d11ea0d/kestrel_kernels_bundle_g-0.7.4-py3-none-manylinux_2_24_x86_64.manylinux_2_31_x86_64.whl", hash = "sha256:3d55eaefbae08c8ccb91298d2a84ed47eeab76f43fb72e8505839585583b3efa", size = 1278, upload-time = "2026-09-29T22:09:03.866Z" },
+    { url = "https://files.pythonhosted.org/packages/42/64/6f4e3dfa67a95a84d2cabf859e70b9bbcfb55c23331997bec5536e4c6728/kestrel_kernels_bundle_g-0.7.4-py3-none-manylinux_2_34_x86_64.manylinux_2_35_x86_64.whl", hash = "sha256:7ff7e38df37f177a8273089c298d628f6f94cb6bd3c050c9c0a5f0d4177f2a54", size = 86648470, upload-time = "2026-09-29T22:10:11.903Z" },
+]
+
+[[package]]
+name = "kestrel-kernels-bundle-h"
+version = "0.7.4"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/71/e5/7145290edbb208e923fbee246a9836e9c75881bbfe860e6a8552cdce7ff7/kestrel_kernels_bundle_h-0.7.4-py3-none-manylinux_2_24_x86_64.manylinux_2_31_x86_64.whl", hash = "sha256:997b2301b20d4900766b91b1ea5e5712ca3c1d6b8f4cd7018802ee4557f8d1e6", size = 1279, upload-time = "2026-09-29T22:09:04.798Z" },
+    { url = "https://files.pythonhosted.org/packages/54/4a/c1838ceecbe4df1e025a9bb392339ca5bcba584120901a24fb5093fdc907/kestrel_kernels_bundle_h-0.7.4-py3-none-manylinux_2_34_x86_64.manylinux_2_35_x86_64.whl", hash = "sha256:7ddd51d2807bd4eaddf714b89dad190b3cf2d16f61e7116c9ed23ed77d7eb33c", size = 86660329, upload-time = "2026-09-29T22:10:17.585Z" },
+]
+
+[[package]]
+name = "kestrel-mps-torch-ext"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/28/0e/a602c90deb6b88504aafdf14571e576f8d2d3be125c3f6dc8b046d6d1154/kestrel_mps_torch_ext-0.1.2-cp313-cp313-macosx_13_0_arm64.whl", hash = "sha256:10edab7280b63fa64595510e117b8f1398f014d474a7cf16c1fb03666affdf7b", size = 326889, upload-time = "2026-09-18T11:22:56.234Z" },
+    { url = "https://files.pythonhosted.org/packages/ed/49/819f1518ac97bbfd60df90ffaa6f5ec97f6e7b2422277c4861b0fc8a9e52/kestrel_mps_torch_ext-0.1.2-cp314-cp314-macosx_13_0_arm64.whl", hash = "sha256:d548e18aa9edc5bdb6da7ec6c114443df1d0f04f3992f8c364d70a6c4bebf94f", size = 327100, upload-time = "2026-09-18T11:22:57.695Z" },
+]
+
+[[package]]
+name = "kestrel-native"
+version = "0.1.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/42/63c44e6fc6b89613abb19d02a8e94a8dd17f8c6aaaf60a8b4e6ee39eb256/kestrel_native-0.1.8-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:12476404aee5158ed96ab870c5bfa918486404ac5229c21593398c0109eafff3", size = 2206050, upload-time = "2026-08-16T15:10:21.822Z" },
+    { url = "https://files.pythonhosted.org/packages/be/89/669f6dcdcbb3453e02c789a638a84c2531e703b73e3821d6e33109e58a9d/kestrel_native-0.1.8-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:8d400bb238a140a37a98d2d89d80ecf5444f9d96c3fb9ce7de46d92c5fd21917", size = 1858012, upload-time = "2026-08-16T15:09:52.02Z" },
+    { url = "https://files.pythonhosted.org/packages/a6/85/bda7a9b493c359dcdd1032abe1774485247dd2b04f7425526c0c72bf1d7a/kestrel_native-0.1.8-cp313-cp313-manylinux_2_12_i686.manylinux2010_i686.whl", hash = "sha256:0c9bdc439f813534de08703700f0d7d6695a5bb4700e350c6253b2798433775d", size = 2018492, upload-time = "2026-08-16T15:10:10.077Z" },
+    { url = "https://files.pythonhosted.org/packages/76/54/5a0df958a092c36b6d5d38c5b8e966c61f67c09699f39dad16643cd57253/kestrel_native-0.1.8-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:71a3e8fc0f99af0977b9eb0fa9b1cdedf672019fbdced4b102bc48e9524f113d", size = 2331164, upload-time = "2026-08-16T15:11:00.759Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/53/d3680d2547c272ab8b1001322bc55f30fed21bf004b19be97f84ab967357/kestrel_native-0.1.8-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:457a91a346d14a0ec5f0c20164d5119a94e90f4cb3e6e077230b131a441f49de", size = 1920123, upload-time = "2026-08-16T15:10:00.166Z" },
+    { url = "https://files.pythonhosted.org/packages/38/c7/1c7d5719c582a7ad77cc07cf383ca0e8804776d781576447b29c359a540c/kestrel_native-0.1.8-cp313-cp313-win_amd64.whl", hash = "sha256:fe79a47335c1078ccc7725a9a2584d523753498b81cd759f14e98f151fc0147a", size = 3138362, upload-time = "2026-08-16T15:10:44.513Z" },
+    { url = "https://files.pythonhosted.org/packages/91/89/2b52b79bb7c87559014bfda530941e2cf1cc29a1c81e74ead6d9218040fa/kestrel_native-0.1.8-cp314-cp314-macosx_10_12_x86_64.whl", hash = "sha256:41be2be0ef542a8879abe9cd5feab2d0a534c3c30debbebfecfa3a9387489d78", size = 2206063, upload-time = "2026-08-16T15:10:23.896Z" },
+    { url = "https://files.pythonhosted.org/packages/eb/8b/c3498016d6a7163feebbbc05ea06a9e7c9c32e1e4b7dcb8752cd7547fb2d/kestrel_native-0.1.8-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:83eb18bde43cdde058b18d6a8834be6292ef0c781aa8e7c29d8c7662959e1773", size = 1857539, upload-time = "2026-08-16T15:09:53.647Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/78/c72bd989385836a5c99b9952a190e4a1c8015246795ff7eb2affe39f7164/kestrel_native-0.1.8-cp314-cp314-manylinux_2_12_i686.manylinux2010_i686.whl", hash = "sha256:9dfa1a929f0b387544324df59bea50700230c1e50c1639dc12f71451e92fe30b", size = 2018759, upload-time = "2026-08-16T15:10:12.081Z" },
+    { url = "https://files.pythonhosted.org/packages/2d/48/efe3846ee89d3371a32b02ae33a09480ffe50024d938e03e9b468a2950f7/kestrel_native-0.1.8-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:15da40fef6e659fd6ebbc02c3f6a54f17f7b4f50c392e7e72e3d7be06bac6326", size = 2331303, upload-time = "2026-08-16T15:11:03.414Z" },
+    { url = "https://files.pythonhosted.org/packages/dd/a5/04dd54846b3e036d0875db45e3a7586780a31101b89b949387a7d3d111c3/kestrel_native-0.1.8-cp314-cp314-manylinux_2_28_aarch64.whl", hash = "sha256:4125e79436579ca796aa8776cabd623e77e60908675723f870a3362d37e38205", size = 1919745, upload-time = "2026-08-16T15:10:02.002Z" },
+    { url = "https://files.pythonhosted.org/packages/81/e0/d2d9ebb3f483cebac357f64c9d9dc730cd5438d1a2047bd16421245487b1/kestrel_native-0.1.8-cp314-cp314-win_amd64.whl", hash = "sha256:ed0fb8aa975a640386751665410c6f3e9aeac518cce3524e02ac083927b69170", size = 3138359, upload-time = "2026-08-16T15:10:48.776Z" },
+]
+
+[[package]]
 name = "kiwisolver"
 version = "1.5.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2115,6 +2300,19 @@ dependencies = [
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/22/b7/a35232812a2ccfffcb7614ba96a91338551a660a0e9815cee668bf5743f0/mlx_whisper-0.4.3-py3-none-any.whl", hash = "sha256:6b82b6597a994643a3e5496c7bc229a672e5ca308458455bfe276e76ae024489", size = 890544, upload-time = "2025-08-29T14:56:13.815Z" },
+]
+
+[[package]]
+name = "moondream"
+version = "2.6.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "kestrel" },
+    { name = "pillow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a0/9d/5b6b3b8fe0f78698a53c40f205eaa9c475b83f42ceab369f7af0bb4a5a52/moondream-2.6.1.tar.gz", hash = "sha256:749304cd24391fd899c5504825c44512576b296e130fd677d2f902e580576b85", size = 116947, upload-time = "2026-09-30T00:46:22.477Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9a/20/39e0dfb6520a9f282a8c8cb47415f91dc2c76b3b768669801513005619d4/moondream-2.6.1-py3-none-any.whl", hash = "sha256:73adcfa8bd701a78f589b8e4b56696fbd305486c3d9bf8856f9bbb759f7d0ff4", size = 111272, upload-time = "2026-09-30T00:46:21.277Z" },
 ]
 
 [[package]]
@@ -2810,6 +3008,33 @@ wheels = [
 ]
 
 [[package]]
+name = "orukeet"
+version = "0.1.1"
+source = { url = "https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl" }
+dependencies = [
+    { name = "av" },
+    { name = "huggingface-hub" },
+    { name = "numpy" },
+]
+wheels = [
+    { url = "https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl", hash = "sha256:923a9bf13fa1ce98ff24f8647f7beed22b69388f3ce2b6e7fac71f0f9e7c8f27" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "av", specifier = ">=14,<19" },
+    { name = "build", marker = "extra == 'dev'", specifier = ">=1" },
+    { name = "huggingface-hub", specifier = ">=0.34,<2" },
+    { name = "markdown", marker = "extra == 'dev'", specifier = ">=3" },
+    { name = "matplotlib", marker = "extra == 'dev'", specifier = ">=3.9" },
+    { name = "numpy", specifier = ">=2,<3" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "rapidfuzz", marker = "extra == 'eval'", specifier = ">=3,<4" },
+    { name = "reportlab", marker = "extra == 'dev'", specifier = ">=4" },
+]
+provides-extras = ["eval", "dev"]
+
+[[package]]
 name = "packaging"
 version = "26.3"
 source = { registry = "https://pypi.org/simple" }
@@ -3011,6 +3236,12 @@ faster = [
 mlx = [
     { name = "mlx-whisper" },
 ]
+orukeet = [
+    { name = "orukeet" },
+]
+ultra = [
+    { name = "moondream" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -3024,15 +3255,17 @@ requires-dist = [
     { name = "faster-whisper", marker = "extra == 'faster'", specifier = ">=1.1.0" },
     { name = "lxml", specifier = ">=6.1.3" },
     { name = "mlx-whisper", marker = "extra == 'mlx'", specifier = ">=0.4.0" },
+    { name = "moondream", marker = "extra == 'ultra'", specifier = ">=2.6.1" },
     { name = "nhsx", editable = "packages/nhsx" },
     { name = "numpy", specifier = ">=2.5.4" },
+    { name = "orukeet", marker = "extra == 'orukeet'", url = "https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl" },
     { name = "pywebview", specifier = ">=6.0" },
     { name = "silencelearn", editable = "packages/silencelearn" },
     { name = "speechmix", editable = "packages/speechmix" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
     { name = "wordalign", editable = "packages/wordalign" },
 ]
-provides-extras = ["mlx", "faster"]
+provides-extras = ["mlx", "faster", "orukeet", "ultra"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -4581,6 +4814,25 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/31/8d/2f8fd7e34c75f5ee8de4310c3bd3f22270acd44d1f809e2fe7c12fbf35f8/torch_audiomentations-0.12.0.tar.gz", hash = "sha256:b02d4c5eb86376986a53eb405cca5e34f370ea9284411237508e720c529f7888", size = 52094, upload-time = "2025-01-15T09:07:01.071Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/21/9d/1ee04f49c15d2d632f6f7102061d7c07652858e6d91b58a091531034e84f/torch_audiomentations-0.12.0-py3-none-any.whl", hash = "sha256:1b80b91d2016ccf83979622cac8f702072a79b7dcc4c2bee40f00b26433a786b", size = 48506, upload-time = "2025-01-15T09:06:59.687Z" },
+]
+
+[[package]]
+name = "torch-c-dlpack-ext"
+version = "0.1.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/37/de/921b6491efce5c389a5ef9bbed3d2d6660005840dae488124173180859ab/torch_c_dlpack_ext-0.1.5.tar.gz", hash = "sha256:d06f0357d575d22a168cc77acb9020fc4bae30968ceb6718a055dcbe92bacabe", size = 12913, upload-time = "2026-01-12T11:25:08.484Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ca/c6/65346a201d921b616731311fc9941f15137672b444cebdad702cb52ccee0/torch_c_dlpack_ext-0.1.5-cp313-cp313-macosx_14_0_arm64.whl", hash = "sha256:74acea2ed395cadda63342845b9e9ee7cd4537846223dacfb4431b4610109265", size = 1993243, upload-time = "2026-01-12T11:24:51.079Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/ec/faf10be09a5812b1c5ec9922b53fb5def5fc4080b81a653b9347bb169ebb/torch_c_dlpack_ext-0.1.5-cp313-cp313-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:49f1e99d13c64e22dac0a34a1560e9e5a398a49a9fa81df83053e04fde6ec5bd", size = 443798, upload-time = "2026-01-12T11:24:52.754Z" },
+    { url = "https://files.pythonhosted.org/packages/2d/68/f434b48700f3e04f33882f54d8d3910327b935f55e14ec49da7d607bf470/torch_c_dlpack_ext-0.1.5-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:debe62e5ef93e631065d6b9f6e60d3d39bae6b89fa1b25d9523f40b3efbf8aba", size = 755004, upload-time = "2026-01-12T11:24:54.004Z" },
+    { url = "https://files.pythonhosted.org/packages/03/a8/cc64e563f05ea99bd79bdb43f71f0f46452d3acd734da4843ede5fc73a35/torch_c_dlpack_ext-0.1.5-cp313-cp313-win_amd64.whl", hash = "sha256:30e3eab616dbc81dfdb7492aca557be551a9163ba9b585f97394a42b336b113a", size = 999126, upload-time = "2026-01-12T11:24:55.44Z" },
+    { url = "https://files.pythonhosted.org/packages/96/5e/449324ca8e81573e650b6851fc31c1038f750d1de85d0b185d788e1c7a3a/torch_c_dlpack_ext-0.1.5-cp314-cp314-macosx_14_0_arm64.whl", hash = "sha256:cac94a4905d391889e679a8da31e46dc325af5d55d13b7c70c0ce3d71d1ced6d", size = 1982154, upload-time = "2026-01-12T11:24:58.038Z" },
+    { url = "https://files.pythonhosted.org/packages/20/62/11c05b99f69aa5152bca0313e0dfa6d125a020cf890dc888ef009aa7891c/torch_c_dlpack_ext-0.1.5-cp314-cp314-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:3a58fdf45fb0bda7bc459632cec891570f31c11636d5851c825cf308ec8b73c2", size = 163825, upload-time = "2026-01-12T11:24:59.474Z" },
+    { url = "https://files.pythonhosted.org/packages/15/b5/be613cd8e71c9982bd07af530f86c5a7f30df7831d14cec5414857af7149/torch_c_dlpack_ext-0.1.5-cp314-cp314-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7b985a324c68241cf83a9474b28015524b66775b12a91930dd4c0760aa628d01", size = 171740, upload-time = "2026-01-12T11:25:00.776Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/11/52e291f1659e2ec70a09f5ca4ad27e015eb4f0a1371ae68d23a9fbd1c704/torch_c_dlpack_ext-0.1.5-cp314-cp314-win_amd64.whl", hash = "sha256:d794e19fa3f330ab7a29987c07e031fc08e4953aec516d35701d0827863e356b", size = 277086, upload-time = "2026-01-12T11:25:01.901Z" },
 ]
 
 [[package]]

@@ -109,6 +109,22 @@
         })),
       ]);
       backendSelect.value = saved.backend || 'auto';
+      const alignControl = check('tr-align', PM.t('tr.align'),
+        state.info.aligner.available
+          ? PM.t('tr.alignWhy')
+          : `${PM.t('tr.alignWhy')} ${PM.t('tr.alignMissing', {
+              reason: state.info.aligner.reason, cmd: state.info.aligner.install })}`,
+        saved.align === true, !state.info.aligner.available);
+      const updateBackendFields = () => {
+        const whisper = !['orukeet', 'parakeet-ultra'].includes(backendSelect.value);
+        modelSelect.disabled = !whisper;
+        promptInput.disabled = !whisper;
+        root.querySelector('#tr-fillers').disabled = !whisper;
+        root.querySelector('#tr-vad').disabled = !whisper;
+        if (backendSelect.value === 'orukeet' && state.info.aligner.available) {
+          root.querySelector('#tr-align').checked = true;
+        }
+      };
 
       const modelSelect = PM.el('select', { id: 'tr-model' }, state.info.models.map(
         (m) => PM.el('option', { value: m.key, text: m.label }),
@@ -155,15 +171,12 @@
         check('tr-vad', PM.t('tr.vad'), PM.t('tr.vadWhy'), saved.vad),
         check('tr-paragraphs', PM.t('tr.paragraphs'), PM.t('tr.paragraphsWhy'),
               saved.paragraphs !== false),
-        check('tr-align', PM.t('tr.align'),
-              state.info.aligner.available
-                ? PM.t('tr.alignWhy')
-                : `${PM.t('tr.alignWhy')} ${PM.t('tr.alignMissing', {
-                    reason: state.info.aligner.reason, cmd: state.info.aligner.install })}`,
-              saved.align === true, !state.info.aligner.available),
+        alignControl,
         check('tr-force', PM.t('tr.force'), PM.t('tr.forceWhy'), false),
       ]);
       root.appendChild(PM.el('div', { class: 'cols' }, [left, right]));
+      backendSelect.addEventListener('change', updateBackendFields);
+      updateBackendFields();
 
       root.appendChild(PM.el('h3', { text: PM.t('tr.plan') }));
       root.appendChild(PM.el('div', { id: 'tr-plan' }));

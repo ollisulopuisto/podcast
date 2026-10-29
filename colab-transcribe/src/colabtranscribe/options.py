@@ -14,6 +14,7 @@ from pathlib import Path
 
 #: GPU:t joita Colab tarjoaa. `--gpu` menee suoraan `colab new`ille.
 GPUS = ("T4", "L4", "A100")
+CLOUD_MODELS = ("parakeet-ultra", "whisper")
 
 #: Skriptin tuntemat esiasetukset. Niiden numerot asuvat pilvessä ajettavassa
 #: skriptissa, ei täällä — täällä on vain valinta.
@@ -31,16 +32,11 @@ TRANSFERS = ("drive", "direct")
 SOURCES = ("tracks", "downmix", "audio")
 
 #: Tuetut litterointitaustat. "colab" ajaa ketjun Google Colabissa (oletus),
-#: "parakeet" tai "orukeet" ajaa litteroinnin paikallisesti Apple Siliconilla (parakeet-mlx / orukeet).
+#: "parakeet" ajaa MLX:llä Apple Siliconilla; "orukeet" käyttää natiivipakettia paikallisesti.
 BACKENDS = ("colab", "parakeet", "orukeet")
 
-#: Orukeet/Parakeet-oletusmalli paikalliseen ajoon.
-DEFAULT_ORUKEET_MODEL = (
-    str(Path.home() / ".models" / "orukeet-mlx")
-    if (Path.home() / ".models" / "orukeet-mlx").exists()
-    else "mlx-community/parakeet-tdt-0.6b-v3"
-)
-DEFAULT_PARAKEET_MODEL = DEFAULT_ORUKEET_MODEL
+#: Parakeet MLX -oletusmalli paikalliseen ajoon.
+DEFAULT_PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
 
 #: Orukeet ei tarjoa dekooderin initial prompt -toimintoa. Säilytetään
 #: --prompt-yhteensopivuusvalitsin, mutta oletusarvo on tyhjä.
@@ -74,7 +70,7 @@ class RunOptions:
     bleed_filter: bool = True
     # Käsikirjoitus: lyhyet huomautukset kappaleen sisään, ei omille riveilleen.
     inline_remarks: bool = False
-    # ``model`` säilyy yhteensopivuusvalitsimena; Colab käyttää Orukeetia.
+    # Photon-moottori Colabissa; paikalliset backendit valitsevat oman mallinsa.
     model: str = "parakeet-ultra"
     language: str = "fi"
     # Vain ``source="audio"``: sanojen alut kohdistetaan ääneen Colabissa
@@ -115,6 +111,11 @@ class RunOptions:
             raise ValueError("align vaatii source=audio")
         if not self.model.strip():
             raise ValueError("model ei saa olla tyhjä")
+        if self.backend == "colab" and self.model not in CLOUD_MODELS:
+            raise ValueError(
+                f"Tuntematon Colab-malli: {self.model} "
+                f"(sallitut: {', '.join(CLOUD_MODELS)})"
+            )
         if not self.language.strip():
             raise ValueError("language ei saa olla tyhjä")
         if self.tail <= 0:
@@ -166,6 +167,7 @@ class RunOptions:
             "yes",
         )
         backend = os.environ.get("COLAB_BACKEND", "colab")
+        model = os.environ.get("COLAB_MODEL", "parakeet-ultra")
         parakeet_model = os.environ.get(
             "COLAB_ORUKEET_MODEL",
             os.environ.get("COLAB_PARAKEET_MODEL", DEFAULT_PARAKEET_MODEL),
@@ -188,6 +190,7 @@ class RunOptions:
             reset_session=reset_session,
             keep_session=keep_session,
             backend=backend,
+            model=model,
             parakeet_model=parakeet_model,
         )
 
@@ -212,8 +215,9 @@ def pipeline_args(options: RunOptions) -> list[str]:
     ]
     if options.source != "tracks":
         args += ["--source", options.source]
+    args += ["--model", options.model]
     if options.source == "audio":
-        args += ["--model", options.model, "--language", options.language]
+        args += ["--language", options.language]
         if options.align:
             args.append("--align")
     if options.rms:

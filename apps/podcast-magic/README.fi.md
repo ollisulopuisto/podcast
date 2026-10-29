@@ -117,8 +117,16 @@ Kaksi työkalua nauhoituksen ympärillä, ei itse äänen:
 |---|---|---|
 | `mlx-whisper` | Applen GPU, Metalilla | **oletus Apple Siliconilla** |
 | `faster-whisper` | Suoritin, int8 | Intel-Macit, tai toinen mielipide |
+| `orukeet` | Orukeetin natiivi Metal/CUDA/CPU-ajuri | Paikallinen vaihtoehto; vaatii asennus kuitin ja CTC-kohdistuksen |
+| `parakeet-ultra` | Moondream Photon, tuettu GPU | Ultra-malli, kun käytössä on NVIDIA-GPU |
 
-Kolmatta vaihtoehtoa ei tähän ole. `faster-whisper` on sama moottori kuin
+Whisperin molemmat vaihtoehdot tuottavat sanakohtaiset ajat sellaisenaan.
+Orukeet antaa lauseajat, joten se edellyttää torchaudion CTC-kohdistusta ennen
+kuin Podcast Magic kirjoittaa sanat istuntoon. Parakeet Ultra pyytää Photonilta
+sanakohtaiset ajat. Ultra ei ole tarkoitettu CPU-ajoon; paikallisella Macilla
+käytä MLX Whisperiä tai Orukeetia.
+
+`faster-whisper` on sama moottori kuin
 Colab-muistikirjassa, ja CTranslate2:ssa ei ole Metal-taustaa lainkaan — se
 ajaa Macilla suorittimella, joten `--compute_type auto` ei löydä
 näytönohjainta käytettäväksi. MLX ajaa saman mallin GPU:lla ilman erillistä

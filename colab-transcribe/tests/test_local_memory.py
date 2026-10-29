@@ -19,7 +19,10 @@ def test_no_mlx_import_or_model_load_when_refused(monkeypatch, memory):
 
 
 def test_explicit_override_reaches_model_only_when_requested(monkeypatch):
+    from contextlib import nullcontext
     from types import SimpleNamespace
+
+    monkeypatch.setattr(parakeet, "local_inference_slot", nullcontext)
     monkeypatch.setattr(local_memory, "physical_memory", lambda: 8 * 1024**3)
     calls = []
     def load(name):

@@ -129,6 +129,24 @@ def test_the_aligner_is_not_loaded_when_the_alignment_is_cached(tmp_path):
     assert second[1]["aligned"] == first[1]["aligned"] == 2
 
 
+def test_segment_alignment_can_place_late_words_without_inventing_seed_times(tmp_path):
+    raw = {"segments": [{"start": 1.0, "end": 10.0, "text": "yksi kaksi kolme"}]}
+    cache = tmp_path / "segment-align.json"
+    seen = []
+
+    def fake_segment_aligner(chunk, words):
+        seen.append((len(chunk), words))
+        return [(0.4, 0.7), (4.0, 4.4), (7.2, 7.8)]
+
+    words, summary = align.refine_segments(raw, _audio(), lambda: fake_segment_aligner, cache)
+
+    assert [word.text for word in words] == ["yksi", "kaksi", "kolme"]
+    assert [word.start for word in words] == pytest.approx([0.9, 4.5, 7.7])
+    assert [word.length for word in words] == pytest.approx([0.3, 0.4, 0.6])
+    assert summary["aligned"] == 3 and seen[0][1] == ["yksi", "kaksi", "kolme"]
+    assert cache.is_file()
+
+
 def test_the_audio_is_decoded_only_when_the_alignment_is_not_cached(tmp_path):
     """Tunnin ääni on 115 MB int16:na: välimuistiosuma ei saa purkaa sitä turhaan."""
     cache = tmp_path / "a.json"

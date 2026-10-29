@@ -87,6 +87,8 @@ try_collect("mlx_whisper")
 try_collect("tiktoken_ext.openai_public")
 try_collect("faster_whisper")
 try_collect("ctranslate2", dylibs=True)
+try_collect("moondream")
+try_collect("orukeet")
 # Mallien lataus ensimmäisellä ajolla.
 try_collect("huggingface_hub")
 

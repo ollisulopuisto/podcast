@@ -89,6 +89,22 @@ def test_the_window_is_the_group_with_padding_clipped_to_the_audio():
     assert align.window([_word("a", 0.2, 0.4)], 10.0, pad=0.5) == (0.0, 0.9)
 
 
+def test_segment_text_is_aligned_within_its_sentence_bounds_without_word_seeds():
+    raw = {"segments": [{"start": 1.0, "end": 10.0, "text": "yksi kaksi kolme"}]}
+    seen = {}
+
+    def segment_aligner(chunk, words):
+        seen.update(samples=len(chunk), words=words)
+        return [(0.4, 0.7), (4.0, 4.4), (7.2, 7.8)]
+
+    rows = align.align_segments(raw["segments"], _audio(), segment_aligner)
+
+    assert [row["word"] for row in rows] == ["yksi", "kaksi", "kolme"]
+    assert [row["ctc_start"] for row in rows] == pytest.approx([0.9, 4.5, 7.7])
+    assert [row["ctc_end"] for row in rows] == pytest.approx([1.2, 4.9, 8.3])
+    assert seen["words"] == ["yksi", "kaksi", "kolme"]
+
+
 # --- Kohdistus ----------------------------------------------------------------
 
 

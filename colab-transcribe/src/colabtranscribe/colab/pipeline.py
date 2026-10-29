@@ -23,9 +23,12 @@ APT_TIMEOUT = 600  # 10 min apt-get:lle
 PIP_TIMEOUT = 1800  # suunnitteluraja ASR-riippuvuuksien asennukselle, ei mitattu
 PIPELINE_TIMEOUT = 7200  # 2 h äänen dekoodaukseen ja pitkiin tiedostoihin
 ULTRA_REPO = "moondream/parakeet-ultra"
+WHISPER_REPO = "openai/whisper-large-v3-turbo"
 PHOTON_SAMPLE_RATE = 16000
 _ULTRA = None
 _ULTRA_STACK = None
+_WHISPER = None
+_WHISPER_STACK = None
 
 AUDIO_EXTENSIONS = (".wav", ".aiff", ".flac", ".m4a", ".mp4", ".mp3")
 
@@ -111,7 +114,7 @@ def configure_cuda_libs():
 # 1. Asennetaan tarvittavat kirjastot pilviympäristössä
 def install_dependencies():
     packages = [
-        "moondream==2.4.1",
+        "moondream==2.6.1",
         "lxml==6.1.3",
         "pydub==0.25.1",
     ]
@@ -197,7 +200,7 @@ def _duplicates_of(audio_items):
 
 
 # 3. Litterointi Parakeet Ultralla
-def run_transcription(input_dir, output_dir, initial_prompt):
+def run_transcription(input_dir, output_dir, initial_prompt, model="parakeet-ultra"):
     if initial_prompt:
         print(
             "Huom: Parakeet Ultra ei tue Whisperin promptia; sanalista jätetään huomiotta.",
@@ -245,7 +248,7 @@ def run_transcription(input_dir, output_dir, initial_prompt):
         if not os.path.isfile(output_path):
             print(f"[vaihe 2/4 ({idx}/{total})] Litteroidaan: {filename}", flush=True)
             print(f"Litteroidaan tiedostoa: {full_path}", flush=True)
-            raw = transcribe_file(full_path, "parakeet-ultra", "auto", "")
+            raw = transcribe_file(full_path, model, "auto", "")
             with open(output_path, "w", encoding="utf-8") as f:
                 json.dump(raw, f, ensure_ascii=False)
             print(f"Litterointi luotu: {output_path}", flush=True)
@@ -1121,15 +1124,15 @@ def paragraph_lines(words):
     return "\n\n".join(lines) + "\n"
 
 
-def transcribe_samples(samples, rate, initial_prompt):
-    """Litteroi miksauksen Parakeet Ultralla ja säilytä sanakohtaiset ajat."""
+def transcribe_samples(samples, rate, initial_prompt, model="parakeet-ultra"):
+    """Litteroi miksauksen valitulla Photon-moottorilla."""
     import tempfile
     import wave
 
     import numpy as np
 
     if initial_prompt:
-        print("Huom: Parakeet Ultra ei tue Whisperin promptia; sanalista jätetään huomiotta.", flush=True)
+        print(f"Huom: {model} ei käytä litteroinnin promptia; sanalista jätetään huomiotta.", flush=True)
     with tempfile.TemporaryDirectory() as tmp:
         wav_path = os.path.join(tmp, "downmix.wav")
         pcm = (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2")
@@ -1138,7 +1141,7 @@ def transcribe_samples(samples, rate, initial_prompt):
             wav.setsampwidth(2)
             wav.setframerate(rate)
             wav.writeframes(pcm.tobytes())
-        data = transcribe_file(wav_path, "parakeet-ultra", "auto", "")
+        data = transcribe_file(wav_path, model, "auto", "")
     words = []
     for segment in data.get("segments", []):
         for word in segment.get("words", []):
@@ -1152,7 +1155,7 @@ def transcribe_samples(samples, rate, initial_prompt):
     return words
 
 
-def run_downmix(input_dir, output_dir, initial_prompt):
+def run_downmix(input_dir, output_dir, initial_prompt, model="parakeet-ultra"):
     """Jokaisen ``.nhsx``:n miksaus kerran litteroituna: ``<nimi> downmix.md``."""
     found = sorted(f for f in os.listdir(input_dir) if f.lower().endswith(".nhsx"))
     # Alkuperäinen istunto ensin; vaimennettu vain jos muuta ei ole.
@@ -1174,7 +1177,7 @@ def run_downmix(input_dir, output_dir, initial_prompt):
         print(f"Miksaus: {duration / 60:.1f} min — kootaan gaineilla…", flush=True)
         samples = gain_mix(clips, duration)
         print("Litteroidaan miksaus…", flush=True)
-        words = transcribe_samples(samples, DOWNMIX_RATE, initial_prompt)
+        words = transcribe_samples(samples, DOWNMIX_RATE, initial_prompt, model)
         if not words:
             print(
                 "  VAROITUS: miksauksessa ei tunnistettu yhtään sanaa. "
@@ -1242,16 +1245,36 @@ def _ultra_model():
     return _ULTRA
 
 
+def _whisper_model():
+    """Lataa Whisper large-v3-turbon Colabin GPU:lle kerran."""
+    global _WHISPER, _WHISPER_STACK
+    if _WHISPER is None:
+        import atexit
+        from contextlib import ExitStack
+
+        import moondream as md
+
+        _WHISPER_STACK = ExitStack()
+        _WHISPER = _WHISPER_STACK.enter_context(
+            md.photon(WHISPER_REPO, device="cuda")
+        )
+        atexit.register(_WHISPER_STACK.close)
+    return _WHISPER
+
+
 def transcribe_file(path, model=None, language="auto", initial_prompt=""):
-    """Litteroi tiedosto Parakeet Ultralla ja palauta mallin sana-ajat."""
+    """Litteroi tiedosto Photon Whisperillä tai Parakeet Ultralla."""
+    model = model or "parakeet-ultra"
+    use_whisper = model in ("whisper", WHISPER_REPO)
+    engine = "Whisper" if use_whisper else "Parakeet Ultra"
     if initial_prompt:
-        print("Huom: Parakeet Ultra ei tue Whisperin promptia; sanalista jätetään huomiotta.", flush=True)
-    if model not in (None, "", "parakeet-ultra", "ultra", "orukeet", "turbo"):
-        print("Huom: Colab käyttää kiinteää Parakeet Ultra -mallia; --model-arvo ohitetaan.", flush=True)
-    _ = language  # säilytetään vanha argumentti; Parakeet tunnistaa kielen automaattisesti.
+        print(f"Huom: {engine} ei käytä litteroinnin promptia; sanalista jätetään huomiotta.", flush=True)
+    if not use_whisper and model not in ("parakeet-ultra", "ultra", "orukeet", "turbo"):
+        print("Huom: tuntematon malli; käytetään Parakeet Ultraa.", flush=True)
+    _ = language  # Molemmat Photon-mallit tunnistavat kielen automaattisesti.
     import tempfile
 
-    with tempfile.TemporaryDirectory(prefix="parakeet-ultra-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="photon-asr-") as tmp:
         audio_path = path
         if os.path.splitext(path)[1].lower() == ".aiff":
             audio_path = os.path.join(tmp, "audio.wav")
@@ -1265,12 +1288,13 @@ def transcribe_file(path, model=None, language="auto", initial_prompt=""):
                 timeout=PIPELINE_TIMEOUT,
                 capture_output=True,
             )
-        result = _ultra_model().transcribe(audio=audio_path, timestamps="word")
+        recognizer = _whisper_model() if use_whisper else _ultra_model()
+        result = recognizer.transcribe(audio=audio_path, timestamps="word")
     segments = result.get("segments", [])
     words = [word for segment in segments for word in segment.get("words", [])]
     if not words:
         raise RuntimeError(
-            f"Parakeet Ultra ei palauttanut sanakohtaisia aikaleimoja tiedostolle {path}."
+            f"{engine} ei palauttanut sanakohtaisia aikaleimoja tiedostolle {path}."
         )
     return {"segments": segments, "text": result.get("text", "")}
 
@@ -1491,8 +1515,9 @@ def main():
     )
     parser.add_argument(
         "--model",
+        choices=("parakeet-ultra", "whisper"),
         default="parakeet-ultra",
-        help="yhteensopivuusvalitsin; Colab käyttää aina Parakeet Ultraa",
+        help="Colabissa ajettava Photon-malli (oletus: parakeet-ultra)",
     )
     parser.add_argument("--language", default="fi", help="tulosteen kielimerkintä (malli tunnistaa kielen)")
     parser.add_argument(
@@ -1536,10 +1561,10 @@ def main():
         print("\nKoko putki suoritettu onnistuneesti.", flush=True)
         return
     if args.source == "downmix":
-        run_downmix(input_dir, output_dir, args.prompt)
+        run_downmix(input_dir, output_dir, args.prompt, args.model)
         print("\nKoko putki suoritettu onnistuneesti.", flush=True)
         return
-    run_transcription(input_dir, output_dir, args.prompt)
+    run_transcription(input_dir, output_dir, args.prompt, args.model)
     print("[vaihe 3/4] Injektoidaan litteroinnit .nhsx-rakenteeseen...", flush=True)
     generated_files = inject_transcriptions_to_nhsx(
         input_dir, output_dir, bleed_filter=not args.no_bleed_filter
