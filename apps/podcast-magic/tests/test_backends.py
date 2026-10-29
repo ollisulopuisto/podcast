@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import types
+import wave
 
 import numpy as np
 import pytest
@@ -11,6 +12,7 @@ import pytest
 from podcastmagic.jobs import Cancelled, Job, Progress
 from podcastmagic.transcribe.backends import BACKENDS
 from podcastmagic.transcribe.backends import mlx as mlx_backend
+from podcastmagic.transcribe.backends.audio import wav_file
 from podcastmagic.transcribe.options import Options
 
 
@@ -182,6 +184,16 @@ def test_parakeet_ultra_requests_word_timestamps(monkeypatch):
     assert calls["timestamps"] == "word"
     assert [word.text for word in result.words] == ["Hei", "maailma"]
     assert result.words[1].start == 0.4
+
+
+def test_backend_audio_wav_can_be_reopened_while_in_use():
+    samples = np.array([0.0, 0.5, -0.5], dtype=np.float32)
+
+    with wav_file(samples) as path, wave.open(path, "rb") as audio:
+        assert audio.getnchannels() == 1
+        assert audio.getsampwidth() == 2
+        assert audio.getframerate() == 16000
+        assert len(audio.readframes(3)) == 6
 
 
 def test_orukeet_segments_are_word_seeded_for_ctc_alignment():
