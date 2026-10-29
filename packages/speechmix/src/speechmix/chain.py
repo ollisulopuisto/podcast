@@ -1288,8 +1288,11 @@ def _envelope_chunks_gpu(audio: np.ndarray):
     if isinstance(audio, np.ndarray):
         audio = np.atleast_2d(audio)
     total = audio.shape[1]
-    for start in range(0, total, _GPU_CHUNK):
-        stop = min(total, start + _GPU_CHUNK)
+    # Lazy streaming sources request a smaller resident convolution window;
+    # the same FIR kernel and halo still determine every output sample.
+    chunk_frames = getattr(audio, "envelope_chunk_frames", _GPU_CHUNK)
+    for start in range(0, total, chunk_frames):
+        stop = min(total, start + chunk_frames)
         lo = max(0, start - _TRUE_PEAK_PAD)
         hi = min(total, stop + _TRUE_PEAK_PAD)
         n = hi - lo
@@ -1301,14 +1304,23 @@ def _envelope_chunks_gpu(audio: np.ndarray):
             y = mx.abs(y[delay:delay + n * up]).reshape(n, up).max(axis=1)
             piece = y if piece is None else mx.maximum(piece, y)
         mx.eval(piece)
-        yield start, stop, np.array(piece, dtype=np.float64)[start - lo:stop - lo]
+        result = np.array(piece, dtype=np.float64)[start - lo:stop - lo]
+        # This convolution is stateless; release unused Metal buffers before
+        # the next window so repeated long passes do not retain peak cache RSS.
+        del dense, y, piece
+        mx.clear_cache()
+        yield start, stop, result
 
 
 def _envelope_threads() -> int:
     """Montako säiettä CPU-verholle: ``SPEECHMIX_ENVELOPE_THREADS`` pakottaa
-    luvun (``1`` = kuten ennen, kutsujan säikeessä), muuten ``worker_count()``."""
+    luvun (``1`` = kuten ennen, kutsujan säikeessä), muuten enintään neljä."""
     forced = os.environ.get("SPEECHMIX_ENVELOPE_THREADS", "").strip()
-    return worker_count(int(forced)) if forced.isdigit() and int(forced) > 0 else worker_count()
+    if forced.isdigit() and int(forced) > 0:
+        return worker_count(int(forced))
+    # Four concurrent stereo float64 resampling windows keep the original
+    # 60-second synthetic gain-memory contract below one input-sized buffer.
+    return min(4, worker_count())
 
 
 def _envelope_piece(audio, start: int, total: int):
