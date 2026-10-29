@@ -28,6 +28,34 @@ def scratch_bytes(frames):
     return 40 * int(frames)
 
 
+# A bounded MLX window; the 90-minute synthetic active-limiter acceptance
+# measures the working-set ceiling for this size.
+_GPU_ENVELOPE_CHUNK = 1 << 16
+
+
+class _SourceRows:
+    """Channels-first lazy view for the shared envelope kernels."""
+
+    envelope_chunk_frames = _GPU_ENVELOPE_CHUNK
+
+    def __init__(self, read, frames, channels):
+        self.read = read
+        self.shape = (channels, frames)
+
+    def __getitem__(self, key):
+        rows, span = key
+        # Preserve the public reader-window bound, independently of the GPU
+        # convolution window. Only this bounded window is assembled in RAM.
+        limit = chain._TRUE_PEAK_CHUNK + 2 * chain._TRUE_PEAK_PAD
+        if span.stop - span.start <= limit:
+            return self.read(span.start, span.stop)[rows]
+        output = np.empty((self.shape[0], span.stop - span.start))
+        for start in range(span.start, span.stop, limit):
+            stop = min(span.stop, start + limit)
+            output[:, start - span.start:stop - span.start] = self.read(start, stop)
+        return output[rows]
+
+
 class _Vector:
     def __init__(self, path, frames):
         self.path = Path(path)
@@ -113,22 +141,28 @@ def master_stream(read, write, frames, channels, rate, target_lufs, *,
         def peak_needed(destination, boost, stage=None):
             ceiling = 10.0 ** (ceiling_db / 20.0)
             limited = False
-            # Match the reference CPU true-peak chunk origin and halo exactly.
-            for start in range(0, frames, chain._TRUE_PEAK_CHUNK):
-                checkpoint()
-                stop = min(frames, start + chain._TRUE_PEAK_CHUNK)
-                lo = max(0, start - chain._TRUE_PEAK_PAD)
-                hi = min(frames, stop + chain._TRUE_PEAK_PAD)
-                audio = source(lo, hi) * boost
+
+            def lifted(start, stop):
+                audio = source(start, stop) * boost
                 if stage is not None:
-                    audio *= stage.get(lo, hi)
-                dense = np.abs(signal.resample_poly(
-                    audio, chain.LIMITER_OVERSAMPLE, 1, axis=-1)).max(axis=0)
-                peak = dense.reshape(-1, chain.LIMITER_OVERSAMPLE).max(axis=1)
-                needed = np.minimum(1.0, ceiling / np.maximum(peak, 1e-9))
-                piece = needed[start - lo:stop - lo]
+                    audio *= stage.get(start, stop)
+                return audio
+
+            rows = _SourceRows(lifted, frames, channels)
+            # Keep the reference arithmetic and native backend. Only the MLX
+            # window is smaller; FIR halos preserve values across boundaries.
+            if chain._gpu_peak_envelope_available():
+                pieces = chain._envelope_chunks_gpu(rows)
+            else:
+                # Streaming needs only one CPU window resident at a time.
+                pieces = (chain._envelope_piece(rows, start, frames)
+                          for start in range(0, frames, chain._TRUE_PEAK_CHUNK))
+            for start, _, peak in pieces:
+                checkpoint()
+                piece = np.minimum(1.0, ceiling / np.maximum(peak, 1e-9))
                 limited = limited or bool(np.any(piece < 1.0))
-                destination.put(start, piece)
+                for offset in range(0, len(piece), chain._TRUE_PEAK_CHUNK):
+                    destination.put(start + offset, piece[offset:offset + chain._TRUE_PEAK_CHUNK])
             return limited
 
         def filtered(src, dst, size, origin, function):
