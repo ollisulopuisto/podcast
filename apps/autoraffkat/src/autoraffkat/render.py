@@ -122,11 +122,11 @@ def video_filter(shot: Shot, pw: int, ph: int, frames: int, fps: str) -> str:
 
     Mikroliike (``scale0 != scale1``): lähteestä rajataan alkuzoomin ja
     loppuzoomin ikkunoiden yhdiste — ikkuna liikkuu zoomin mukana
-    yksisuuntaisesti, joten yhdiste kattaa välin — ja se skaalataan joka
-    ruudulle. Ruudun numero aikaleimasta eikä ``n``istä: ``scale``n ``n``
-    on yhden edellä ``crop``in ``n``ää (mitattu: ensimmäinen ruutu 3,5 px
-    sivussa), ja ``crop`` ei konfiguroidu uudelleen kun kuvan koko muuttuu
-    kesken virran, joten koko lasketaan lausekkeesta molempiin.
+    yksisuuntaisesti, joten yhdiste kattaa välin. ``perspective`` lukee
+    tästä ikkunasta jokaisen ruudun lähdealueen alipikselitarkasti, ja
+    kiinteä skaalaus muuttaa sen projektin kokoiseksi. Animoitu skaalaus
+    ja erillinen kokonaislukurajaus askeltivat eri tahtiin ja huojuttivat
+    kuvaa (synteettisen 125 ruudun viivatestin rms 0,60 px).
     Sovitus joka jää projektia pienemmäksi (ei pystyviennissä) käyttää
     vanhaa polkua: skaalaus, mustat reunat, rajaus.
     """
@@ -155,20 +155,24 @@ def video_filter(shot: Shot, pw: int, ph: int, frames: int, fps: str) -> str:
         parts.append(f"crop=w={pw}:h={ph}:x={dx:.3f}:y={dy:.3f}")
     else:
         step = (shot.scale1 - shot.scale0) / max(1, frames - 1)
-        rate = 1 / Fraction(fps)
-        index = f"round(t*{float(1 / rate)})"
-        k = f"(({shot.scale0}+{step}*{index})*{factor})"
-        sw = f"(2*trunc({cw}*{k}/2))"
-        sh = f"(2*trunc({ch}*{k}/2))"
-        # Ikkunan vasen yläkulma lähteessä tällä zoomilla, rajatun alueen
-        # koordinaateissa, skaalattuna: sama kuin ``_source_window``.
+        k = f"(({shot.scale0}+{step}*clip(in,0,{frames - 1}))*{factor})"
+        # Rajaus ja skaala samassa alipikselimuunnoksessa: erilliset
+        # kokonaislukupyöristykset saivat hitaan puskun huojumaan.
         wx = (f"(clip({shot.width}*{k}/2-{pw}/2-({px}),0,{shot.width}*{k}-{pw})"
-              f"/{k}-{left})*{sw}/{cw}")
+              f"/{k}-{left})")
         wy = (f"(clip({shot.height}*{k}/2-{ph}/2+({py}),0,{shot.height}*{k}-{ph})"
-              f"/{k}-{top})*{sh}/{ch}")
-        parts.append(f"scale=w='{sw}':h='{sh}':eval=frame:flags=lanczos")
-        parts.append(f"crop=w={pw}:h={ph}"
-                     f":x='clip({wx},0,{sw}-{pw})':y='clip({wy},0,{sh}-{ph})'")
+              f"/{k}-{top})")
+        right_x = f"({wx}+{pw}/{k})"
+        bottom_y = f"({wy}+{ph}/{k})"
+        parts[-1] += ":exact=1"
+        # Täysi kromaresoluutio pitää myös parittoman lähdeikkunan ja
+        # sen alipikseliliikkeen samassa koordinaatistossa kaikilla tasoilla.
+        parts.insert(1, "format=yuv444p")
+        parts.append(f"perspective=x0='{wx}':y0='{wy}'"
+                     f":x1='{right_x}':y1='{wy}':x2='{wx}':y2='{bottom_y}'"
+                     f":x3='{right_x}':y3='{bottom_y}'"
+                     ":sense=source:eval=frame:interpolation=linear")
+        parts.append(f"scale={pw}:{ph}:flags=lanczos")
     parts += ["setsar=1", "format=yuv420p"]
     return ",".join(parts)
 
