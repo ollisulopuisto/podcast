@@ -169,7 +169,7 @@ def test_tag_publication_waits_for_all_platform_builds():
     text = workflow.read_text()
     assert '"automixer-v*"' in text and '"colab-transcribe-v*"' in text
     assert "pull_request:" in text
-    assert "needs: [build]" in text
+    assert "needs: [select, build]" in text
     assert "if: startsWith(github.ref, 'refs/tags/')" in text
     assert "ubuntu-latest" in text and "macos-15" in text
     assert "--locked" in text

@@ -14,7 +14,9 @@ litterointi toimisi kehityskoneella ja kaatuisi valmiissa .app-paketissa.
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import os
+import platform
 
 import numpy as np
 
@@ -147,16 +149,30 @@ class MlxWhisper(Backend):
     label = "mlx-whisper (Metal)"
 
     def info(self) -> BackendInfo:
+        if platform.system() != "Darwin" or platform.machine() != "arm64":
+            return BackendInfo(
+                key=self.key,
+                label=self.label,
+                available=False,
+                reason="Vaatii Apple Silicon -Macintoshin.",
+                install="uv sync --all-packages --extra mlx",
+            )
         try:
-            import mlx_whisper  # noqa: F401
-        # Puuttuva paketti on tavallisin, mutta mikä tahansa tuontivirhe
-        # tarkoittaa samaa: tätä moottoria ei voi tarjota.
+            installed = importlib.util.find_spec("mlx_whisper") is not None
         except Exception as exc:
             return BackendInfo(
                 key=self.key,
                 label=self.label,
                 available=False,
                 reason=f"Ei asennettu ({type(exc).__name__}). Vaatii Apple Siliconin.",
+                install="uv sync --all-packages --extra mlx",
+            )
+        if not installed:
+            return BackendInfo(
+                key=self.key,
+                label=self.label,
+                available=False,
+                reason="mlx-whisper ei ole asennettu.",
                 install="uv sync --all-packages --extra mlx",
             )
         return BackendInfo(

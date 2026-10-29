@@ -30,13 +30,14 @@ def test_audio_is_a_source_and_its_arguments_reach_the_script():
 
 
 def test_model_and_language_are_passed_on():
-    args = pipeline_args(RunOptions(source="audio", model="large-v3", language="en"))
-    assert args[args.index("--model") + 1] == "large-v3"
+    args = pipeline_args(RunOptions(source="audio", model="whisper", language="en"))
+    assert args[args.index("--model") + 1] == "whisper"
     assert args[args.index("--language") + 1] == "en"
 
 
-def test_the_nhsx_modes_do_not_get_model_arguments():
-    assert "--model" not in pipeline_args(RunOptions())
+def test_session_modes_get_the_selected_model():
+    assert pipeline_args(RunOptions())[pipeline_args(RunOptions()).index("--model") + 1] == "parakeet-ultra"
+    assert "--model" in pipeline_args(RunOptions(source="downmix"))
     assert "--language" not in pipeline_args(RunOptions(source="downmix"))
 
 
@@ -194,7 +195,7 @@ def test_transcribe_file_uses_photon_ultra_word_timestamps(monkeypatch, tmp_path
     monkeypatch.setitem(sys.modules, "moondream", types.SimpleNamespace(photon=photon))
     monkeypatch.setattr(pipeline, "_ULTRA", None)
     path = str(tmp_path / "puhe.wav")
-    data = pipeline.transcribe_file(path, "large-v3", "en", "täyte")
+    data = pipeline.transcribe_file(path, "parakeet-ultra", "en", "täyte")
 
     assert seen[0] == {"model_id": "moondream/parakeet-ultra", "device": "cuda"}
     assert seen[1] == {"audio": path, "timestamps": "word"}
@@ -213,7 +214,7 @@ def test_main_audio_runs_only_the_audio_step(monkeypatch):
     monkeypatch.setattr(
         sys,
         "argv",
-        ["pipeline.py", "--source", "audio", "--model", "large-v3", "--language", "en"],
+        ["pipeline.py", "--source", "audio", "--model", "whisper", "--language", "en"],
     )
     monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
@@ -227,7 +228,7 @@ def test_main_audio_runs_only_the_audio_step(monkeypatch):
     ):
         monkeypatch.setattr(pipeline, name, boom)
     pipeline.main()
-    assert called[0][0][:4] == ("/content/input", "/content/output", "large-v3", "en")
+    assert called[0][0][:4] == ("/content/input", "/content/output", "whisper", "en")
     assert called[0][1] == {"align": False}
 
 
@@ -272,9 +273,9 @@ def test_every_audio_file_lands_in_the_input_folder_by_its_own_name(audio, capsy
 
 
 def test_model_and_language_flags_reach_the_planned_command(audio, capsys):
-    cli.main(_args(audio, "--model", "large-v3", "--language", "en", "--dry-run"))
+    cli.main(_args(audio, "--model", "whisper", "--language", "en", "--dry-run"))
     out = capsys.readouterr().out
-    assert "--model large-v3" in out and "--language en" in out
+    assert "--model whisper" in out and "--language en" in out
 
 
 def test_keep_session_leaves_the_session_running(audio, capsys):

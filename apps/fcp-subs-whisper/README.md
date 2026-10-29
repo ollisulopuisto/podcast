@@ -11,6 +11,8 @@ A high-performance subtitle generator for Final Cut Pro (FCP) powered by OpenAI'
   - `mlx`: Native Apple Silicon (Fastest, recommended).
   - `faster`: CPU-optimized `faster-whisper`.
   - `wyoming`: Connects to an existing Wyoming Whisper server.
+  - `orukeet`: Local Orukeet Metal/CUDA/CPU runtime.
+  - `parakeet-ultra`: Moondream Photon on a supported GPU.
 
 ## Installation
 
@@ -36,6 +38,19 @@ Uses `faster-whisper` for efficient CPU transcription.
 
 ```bash
 uv run fcp-subs-whisper "video.mp4" --method faster
+```
+
+Orukeet and Ultra return sentence-timed captions. Install the relevant optional
+extra first. Orukeet also needs an installation receipt from its native model
+installer; Ultra uses Photon and requires a supported GPU.
+
+```bash
+uv sync --package fcp-subs-whisper --extra orukeet
+orukeet install --device auto --cache ~/.cache/orukeet --output ~/.cache/orukeet/installation.json
+uv run fcp-subs-whisper "video.mp4" --method orukeet
+
+uv sync --package fcp-subs-whisper --extra ultra
+uv run fcp-subs-whisper "video.mp4" --method parakeet-ultra
 ```
 
 

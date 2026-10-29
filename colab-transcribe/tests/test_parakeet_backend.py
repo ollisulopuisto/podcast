@@ -7,12 +7,18 @@ toteutumisen sekä edistymis- ja tapahtumatulosteet ilman Colab-kutsuja.
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 
 import pytest
 
 from colabtranscribe import __main__ as cli
 from colabtranscribe import parakeet
 from colabtranscribe.options import BACKENDS, RunOptions
+
+
+@pytest.fixture(autouse=True)
+def _isolate_inference_tests_from_the_user_cache(monkeypatch):
+    monkeypatch.setattr(parakeet, "local_inference_slot", nullcontext)
 
 
 def test_backend_choices_contain_colab_and_parakeet():
@@ -60,7 +66,7 @@ def test_orukeet_backend_dry_run_prints_local_commands(tmp_path, capsys):
 
     assert code == 0
     stdout = capsys.readouterr().out
-    assert "parakeet-mlx" in stdout
+    assert "orukeet transcribe" in stdout
     assert "haastattelu.wav" in stdout
     assert "haastattelu.words.json" in stdout
     assert "colab new" not in stdout

@@ -96,19 +96,31 @@ Kutsujalle, joka haluaa vain sanat (kuulas-editori kutsuu näin):
 
 ```bash
 colab-transcribe --audio "Olli 1.wav" --audio Panu.mp3 --json sanat/ --progress
+# Whisper Photonilla Ultran sijaan
+colab-transcribe --audio "Olli 1.wav" --json sanat/ --model whisper
+# Paikallinen Orukeet, ilman Colab-istuntoa
+colab-transcribe --audio "Olli 1.wav" --json sanat/ --backend orukeet
 ```
 
 Kaikki `--audio`-tiedostot menevät samaan Colab-istuntoon ja `sanat/<nimi>.words.json` tulee
 takaisin: `{"version":1,"timing":"parakeet-ultra","language":"fi","rejected":0,"words":[{"w","s","e"}]}`,
 sekunteja kyseisen tiedoston alusta, aikajärjestyksessä ja `s < e` (päällekkäisyys lyhentää
 aiempaa sanaa). Ei `.nhsx`:ää eikä Auto-Silencea. Siirto on aina suora: ääni menee Googlen
-Colab-koneelle eikä Driven kautta. Parakeet Ultra tunnistaa kielen itse; `language` on
-tulosteen metatieto ja `--model` säilyy vanhojen kutsujen yhteensopivuusvalitsimena.
-`--prompt` ei vaikuta Parakeet Ultran dekoodaukseen. `--progress` tulostaa rivit `PROGRESS <0-100> <viesti>`, joiden luku ei
+Colab-koneelle eikä Driven kautta. Parakeet Ultra on oletus; `--model whisper` valitsee Photon
+Whisperin. Molemmat palauttavat sanakohtaiset ajat. `--prompt` ei vaikuta kumpaankaan
+Photon-malliin. `--backend orukeet` käyttää Orukeetin natiivia paikallisruntimea ilman Colabia;
+se kohdistaa lauseiden sanat CTC:llä (`timing: "orukeet-ctc"`). `--progress` tulostaa rivit `PROGRESS <0-100> <viesti>`, joiden luku ei
 laske. Sanaton tiedosto tai puuttuva tulos antaa poistumiskoodin 1 ja syyn stderriin; samannimiset
 vanhat `*.words.json` poistetaan ennen ajoa, ettei vanha kelpaa uudeksi. SIGTERM ja Ctrl+C
 sulkevat Colab-istunnon (ellei `--keep-session`) ja palauttavat 130. Sanojen ajat tulevat
 Parakeet Ultran sanakohtaisista aikaleimoista (`timing: "parakeet-ultra"`).
+
+Asenna Orukeetin paikallinen runtime sekä kohdistimen Torch-riippuvuudet näin:
+
+```bash
+uv pip install 'https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl' torch==2.8.0 torchaudio==2.8.0
+orukeet install --device auto --cache ~/.cache/orukeet --output ~/.cache/orukeet/installation.json
+```
 
 Colabiin asennetaan Photon, ja malli ladataan ensimmäisellä ajolla. T4-savukoe latasi 1,26 Gt
 mallitiedostoja; siinä käytettiin synteettistä suomenkielistä puhetta, joten se ei mittaa podcastien

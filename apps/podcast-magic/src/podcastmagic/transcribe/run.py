@@ -120,6 +120,11 @@ def run(
 ) -> dict:
     """Litteroi istunnon äänipoolin ja kirjoittaa uuden istuntotiedoston."""
     backend = resolve(options.backend)
+    if backend.key == "orukeet" and not options.align:
+        raise RuntimeError(
+            "Orukeet tuottaa lauseajat. Podcast Magic tarvitsee sanakohtaiset ajat, "
+            "joten ota CTC-kohdistus käyttöön ennen ajoa."
+        )
     if options.align:
         # Ennen kuin mitään litteroidaan: puuttuva kohdistin selviäisi muuten vasta
         # tunnin litteroinnin jälkeen, ja kytkin lupasi korjatut alut.
@@ -212,12 +217,20 @@ def run(
         if options.align and words:
             progress.log("  kohdistetaan sanojen alut…")
             source = samples if samples is not None else (lambda: audio_io.decode(path))
-            words, summary = align.refine(
-                result_raw,
-                source,
-                get_aligner,
-                align.cache_path(directory, path, options),
-            )
+            if backend.key == "orukeet":
+                words, summary = align.refine_segments(
+                    result_raw,
+                    source,
+                    get_aligner,
+                    align.cache_path(directory, path, options),
+                )
+            else:
+                words, summary = align.refine(
+                    result_raw,
+                    source,
+                    get_aligner,
+                    align.cache_path(directory, path, options),
+                )
             align_candidates += summary["words"]
             aligned_words += summary["aligned"]
             shift = summary["median_shift_ms"]

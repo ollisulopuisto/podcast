@@ -38,6 +38,10 @@ dependencies = [
 [project.optional-dependencies]
 # Apple Silicon: nopea paikallinen Parakeet MLX -litterointi
 parakeet = ["parakeet-mlx>=0.3.0"]
+# Orukeet: natiivi paikallisruntime Apple Siliconille, CUDA:lle tai CPU:lle.
+orukeet = [
+    "orukeet @ https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl",
+]
 
 [tool.uv.sources]
 silencelearn = { workspace = true }

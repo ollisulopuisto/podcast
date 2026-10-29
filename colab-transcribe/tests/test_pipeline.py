@@ -30,7 +30,7 @@ def test_install_dependencies_uses_photon_for_parakeet_ultra(monkeypatch):
     pipeline.install_dependencies()
 
     pip = next(cmd for cmd in calls if cmd[:2] == ["pip", "install"])
-    assert "moondream==2.4.1" in pip
+    assert "moondream==2.6.1" in pip
     assert not any("nemo" in package.lower() for package in pip)
 
 
@@ -79,6 +79,50 @@ def test_transcribe_file_uses_photon_ultra_word_timestamps(monkeypatch, tmp_path
     assert raw["segments"][0]["words"][1] == {
         "word": "tämä", "start": 0.6, "end": 0.9,
     }
+
+
+def test_transcribe_file_can_select_photon_whisper(monkeypatch, tmp_path):
+    import sys
+    import types
+
+    from colabtranscribe.colab import pipeline
+
+    calls = []
+
+    class FakeModel:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def transcribe(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                "text": "Hei",
+                "segments": [{
+                    "start": 0.0,
+                    "end": 1.0,
+                    "text": "Hei",
+                    "words": [{"word": "Hei", "start": 0.0, "end": 0.5}],
+                }],
+            }
+
+    def photon(model_id, **kwargs):
+        calls.append({"model_id": model_id, **kwargs})
+        return FakeModel()
+
+    monkeypatch.setitem(sys.modules, "moondream", types.SimpleNamespace(photon=photon))
+    monkeypatch.setattr(pipeline, "_WHISPER", None, raising=False)
+
+    result = pipeline.transcribe_file(str(tmp_path / "speech.wav"), model="whisper")
+
+    assert calls[0] == {
+        "model_id": "openai/whisper-large-v3-turbo",
+        "device": "cuda",
+    }
+    assert calls[1] == {"audio": str(tmp_path / "speech.wav"), "timestamps": "word"}
+    assert result["segments"][0]["words"][0]["word"] == "Hei"
 
 
 def test_transcribe_file_converts_aiff_before_photon(monkeypatch, tmp_path):
@@ -422,7 +466,7 @@ def test_install_dependencies_pins_locked_versions(monkeypatch):
     assert pip_installs
     pip_cmd = pip_installs[0]
     assert "-U" not in pip_cmd
-    assert "moondream==2.4.1" in pip_cmd
+    assert "moondream==2.6.1" in pip_cmd
     assert not any("nemo" in str(arg).lower() for arg in pip_cmd)
     assert not any("whisper" in str(arg).lower() for arg in pip_cmd)
 
@@ -853,7 +897,9 @@ def test_run_downmix_writes_text_and_marker(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(pipeline, "decode_mono", _ones)
     monkeypatch.setattr(
         pipeline, "transcribe_samples",
-        lambda samples, rate, prompt: [pipeline._Word("moi", 0.0, 0.3)],
+        lambda samples, rate, prompt, model="parakeet-ultra": [
+            pipeline._Word("moi", 0.0, 0.3)
+        ],
     )
     pipeline.run_downmix(str(tmp_path), str(out), "")
     assert (out / "jakso downmix.md").read_text(encoding="utf-8") == "[00:00] moi\n"

@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import json
 import os
 import subprocess
 import sys
@@ -214,12 +215,48 @@ def transcribe_local(input_path, model_name, language, device):
             pbar.refresh()
     return all_segments
 
+
+def transcribe_orukeet(input_path):
+    """Litteroi Orukeetilla. Sen lauseajat riittävät SRT/SSA-tekstitykseen."""
+    from orukeet import Orukeet
+
+    receipt = os.environ.get(
+        "ORUKEET_INSTALLATION",
+        os.path.expanduser("~/.cache/orukeet/installation.json"),
+    )
+    with open(receipt, encoding="utf-8-sig") as file:
+        config = json.load(file)
+    print(f"Transcribing with Orukeet ({config['device']})...")
+    with Orukeet(config["model"], config["runtime"], device=config["device"]) as model:
+        result = model.transcribe(input_path)
+    return [
+        {"start": segment["start"], "end": segment["end"], "text": segment["text"]}
+        for segment in result.get("segments", [])
+    ]
+
+
+def transcribe_parakeet_ultra(input_path):
+    """Litteroi Parakeet Ultralla Photonissa; vaatii tuetun GPU:n."""
+    import moondream as md
+
+    print("Transcribing with Parakeet Ultra (Photon)...")
+    with md.photon("moondream/parakeet-ultra") as model:
+        result = model.transcribe(audio=input_path, timestamps="segment")
+    return [
+        {"start": segment["start"], "end": segment["end"], "text": segment["text"]}
+        for segment in result.get("segments", [])
+    ]
+
 async def main():
-    parser = argparse.ArgumentParser(description="Generate subtitles for FCP using Whisper")
+    parser = argparse.ArgumentParser(description="Generate FCP subtitles with Whisper, Orukeet, or Parakeet Ultra")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("input", help="Path to video or audio file")
-    parser.add_argument("--method", choices=["mlx", "faster", "wyoming"], default="mlx",
-                        help="Transcription method: mlx (native Apple Silicon), faster (local CPU), wyoming (server)")
+    parser.add_argument(
+        "--method",
+        choices=["mlx", "faster", "wyoming", "orukeet", "parakeet-ultra"],
+        default="mlx",
+        help="Transcription engine: mlx/faster Whisper, Orukeet, Parakeet Ultra, or Wyoming server",
+    )
     parser.add_argument("--model", default="mlx-community/whisper-large-v3-turbo",
                         help="Model path or name")
     parser.add_argument("--language", default=None, help="Language code (e.g. fi)")
@@ -237,6 +274,10 @@ async def main():
         all_segments = transcribe_mlx(args.input, args.model, args.language)
     elif args.method == "wyoming":
         all_segments = await transcribe_wyoming(args.input, args.wyoming_uri, args.language)
+    elif args.method == "orukeet":
+        all_segments = transcribe_orukeet(args.input)
+    elif args.method == "parakeet-ultra":
+        all_segments = transcribe_parakeet_ultra(args.input)
     else:
         model_name = "large-v3-turbo" if "turbo" in args.model else "small"
         all_segments = transcribe_local(args.input, model_name, args.language, "cpu")

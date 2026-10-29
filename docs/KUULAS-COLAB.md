@@ -43,12 +43,12 @@ The owner has decided: the heavy calculation runs on Colab (option B), local lat
    at Parakeet Ultra's time, so raw output can be out of order or overlapping. The writer sorts by start and shortens the
    *preceding* word on overlap (what `nhsx/write.py` does and why: moving the next word would push the error forward).
    Zero-length words get a 20 ms floor. `words` is therefore in time order with `s < e`.
-2. **`e` (word end) is not validated.** Parakeet Ultra provides word starts and ends; podcast accuracy has not been
+2. **`e` (word end) is not validated.** Both Photon models provide word starts and ends; podcast accuracy has not been
    measured. When `timing` is `ctc-v1`, starts are corrected by the forced aligner. Treat `e` as approximate.
-3. **`timing` values.** `parakeet-ultra` (Parakeet Ultra's Photon word timestamps) or `ctc-v1` (starts corrected by the forced
-   aligner, alignment version 1; the number changes if the rule or the model changes, so kuulas can tell an old
+3. **`timing` values.** `parakeet-ultra` (Parakeet Ultra's Photon word timestamps), `whisper` (Photon Whisper word timestamps), `ctc-v1` (Colab starts corrected by the forced
+   aligner), or `orukeet-ctc` (local Orukeet words aligned with the same CTC model). The alignment version changes if the rule or model changes, so kuulas can tell an old
    correction from a new one). The `"rejected": <n>` field is the number of words the aligner could not place
-   (they keep Parakeet Ultra's time), so
+   (they keep the recognizer's time), so
    kuulas can show how much of a transcript is corrected.
 
 Units are seconds from the start of that audio file (the same clock as the file), floats with 3 decimals.
@@ -176,14 +176,18 @@ list of wishes from `docs/PODCAST-MAGIC.md`, built as asked.
   - `done`: `files`, the paths of the `<name>.words.json` written, in the order of the `--audio` arguments. The last event
     of a successful run. Unchanged by the 2026-10-23 list.
 
-### Paikallinen Parakeet/Orukeet-tausta
+### Local Parakeet and Orukeet backends
 
-`--backend parakeet` and `--backend orukeet` use the same plain-audio JSON
+`--backend parakeet` uses Parakeet MLX. `--backend orukeet` uses Orukeet's native
+runtime, installed with the pinned 0.1.1 wheel and `orukeet install`. It returns
+segment times, so the local path uses the shared Finnish CTC aligner for word
+times and fails if a word cannot be placed. The local backend requires Torch,
+torchaudio 2.8.0, and ffmpeg. Both backends use the same plain-audio JSON
 contract as Colab and accept `--events`. Their `words` array uses the same
 `w`/`s`/`e` fields, sorted order, three-decimal seconds, overlap handling,
-20 ms minimum duration, and `version: 1`. `timing` is the selected backend
-(`parakeet` or `orukeet`); `rejected` is zero because no forced alignment is
-performed.
+20 ms minimum duration, and `version: 1`. `timing` is `parakeet` for Parakeet
+MLX and `orukeet-ctc` for local Orukeet; `rejected` is zero because an Orukeet
+file is written only when all words align.
 
 The event stream keeps schema 1. A local run emits `session` with
 `state: "local"` and `backend`, then one `stage` start/done pair per file

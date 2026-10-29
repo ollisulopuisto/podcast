@@ -24,11 +24,20 @@ dependencies = [
     "torch>=2.5.1",
 ]
 
+[project.optional-dependencies]
+orukeet = [
+    "orukeet @ https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl",
+]
+ultra = ["moondream>=2.6.1"]
+
 [project.scripts]
 fcp-subs-whisper = "fcp_subs_whisper.main:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fcp_subs_whisper"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [build-system]
 requires = ["hatchling"]

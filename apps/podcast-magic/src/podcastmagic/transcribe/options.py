@@ -70,6 +70,7 @@ class Options:
         """
         return "-".join(
             [
+                self.backend if self.backend in {"orukeet", "parakeet-ultra"} else "whisper",
                 self.model,
                 self.language or "auto",
                 "fill" if self.fillers else "clean",

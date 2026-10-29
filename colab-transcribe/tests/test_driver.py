@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from colabtranscribe import driver
-from colabtranscribe.options import RunOptions
+from colabtranscribe.options import RunOptions, pipeline_args
 
 
 def test_pipeline_script_ships_with_the_package():
@@ -25,7 +25,7 @@ def test_pipeline_script_ships_with_the_package():
     assert script.name == "pipeline.py"
     source = script.read_text(encoding="utf-8")
     assert 'ULTRA_REPO = "moondream/parakeet-ultra"' in source
-    assert '"moondream==2.4.1"' in source
+    assert '"moondream==2.6.1"' in source
     assert "whisper-ctranslate2" not in source
 
 
@@ -121,6 +121,14 @@ def test_pipeline_args_land_in_the_exec_call(tmp_path: Path):
     assert remote.startswith("python3 /content/pipeline.py")
     for token in ("--preset", "intra-mic", "--thr", "-42", "--tail", "0.4"):
         assert token in remote
+
+
+def test_whisper_selection_is_forwarded_for_session_transcription(tmp_path: Path):
+    options = RunOptions(input_dir=str(tmp_path), model="whisper")
+
+    args = pipeline_args(options)
+
+    assert args[args.index("--model") + 1] == "whisper"
 
 
 def test_prompt_with_spaces_is_quoted(tmp_path: Path):

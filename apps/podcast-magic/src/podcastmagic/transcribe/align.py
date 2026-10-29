@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
+from contextlib import suppress
 from pathlib import Path
 
 import numpy as np
@@ -37,6 +39,7 @@ from wordalign import (
     split_at_pauses,
     window,
 )
+from wordalign import align_segments as _align_segments
 from wordalign import make_aligner as _make_aligner
 from wordalign import summarize as _summarize
 
@@ -62,6 +65,7 @@ __all__ = [
     "make_aligner",
     "normalise_word",
     "refine",
+    "refine_segments",
     "refined_words",
     "split_at_pauses",
     "summarize",
@@ -175,3 +179,63 @@ def refine(raw: dict, samples: np.ndarray, get_aligner, cache: Path | None = Non
         except OSError as exc:
             summary["cache_error"] = str(exc)
     return refined_words(rows), summary
+
+
+def refine_segments(
+    raw: dict, samples: np.ndarray, get_aligner, cache: Path | None = None
+) -> tuple[list[Word], dict]:
+    """Kohdista lauseajat palauttavan moottorin sanat suoraan lauseen alueelta.
+
+    Orukeetin ajat rajaavat CTC-ikkunan, eivät yksittäisten sanojen alkua.
+    Sen vuoksi Whisperille mitattua kolmen sekunnin siirtorajaa ei käytetä
+    eikä yksittäisille sanoille muodosteta arvattuja lähtöaikoja.
+    """
+    groups: list[tuple[float, float, list[str]]] = []
+    for segment in raw.get("segments") or ():
+        words = re.findall(r"\S+", str(segment.get("text", "")))
+        if words:
+            groups.append((float(segment["start"]), float(segment["end"]), words))
+    source = [
+        [word, start, end]
+        for start, end, words in groups
+        for word in words
+    ]
+    if not source:
+        return [], summarize([], [])
+
+    cached = _load(cache, source) if cache else None
+    if cached is not None:
+        rows, rejected = cached
+    else:
+        audio = samples() if callable(samples) else samples
+        aligner = get_aligner()
+        rejected = []
+        rows = _align_segments(
+            raw.get("segments") or (), audio, aligner, errors=rejected
+        )
+        if cache:
+            with suppress(OSError):
+                Path(cache).write_text(
+                    json.dumps(
+                        {"version": VERSION, "source": source, "rows": rows,
+                         "rejected": rejected},
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
+
+    summary = summarize(rows, rejected)
+    if summary["aligned"] != len(source):
+        detail = "; ".join(rejected[:3]) or "osa sanoista jäi kohdistumatta"
+        raise RuntimeError(
+            f"Orukeetin {summary['aligned']}/{len(source)} sanaa sai kohdistuksen: {detail}"
+        )
+    words = [
+        Word(
+            text=row["word"].strip(),
+            start=row["ctc_start"],
+            length=max(0.02, row["ctc_end"] - row["ctc_start"]),
+        )
+        for row in rows
+    ]
+    return words, summary
