@@ -271,3 +271,13 @@ button.busy::before {
   .field { grid-template-columns: 1fr; }
   .browser { position: static; width: auto; max-width: none; box-shadow: none; }
 }
+
+/* Natiivi dialogi pitää kohdistuksen ohjeessa ja palauttaa sen avaajalle. */
+#shortcuts-dialog { width: min(440px, calc(100vw - 48px)); max-height: 85vh;
+  overflow: auto; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel); color: var(--text); padding: 24px; }
+#shortcuts-dialog::backdrop { background: rgb(0 0 0 / .55); }
+.shortcut-row { display: flex; justify-content: space-between; align-items: center;
+  gap: 24px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.shortcut-row kbd { white-space: nowrap; font: 12px ui-monospace, monospace; }
+#shortcuts-dialog form { margin-top: 20px; text-align: right; }

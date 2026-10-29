@@ -128,3 +128,14 @@ def test_the_transcribe_panel_offers_alignment_and_disables_it_when_it_is_missin
     script = (STATIC / "mod_transcribe.js").read_text(encoding="utf-8")
     assert "'tr-align'" in script and "align: root.querySelector('#tr-align').checked" in script
     assert "state.info.aligner" in script and "tr.alignMissing" in script
+
+
+@needs_node
+def test_keyboard_shortcuts_preserve_native_text_and_do_not_run_jobs():
+    """Ohje ja välilehdet eivät saa käynnistää raskasta ajoa vahingossa."""
+    done = subprocess.run(
+        ["node", str(Path(__file__).with_name("keyboard_shortcuts.js")), str(STATIC / "app.js")],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert done.returncode == 0, done.stderr or done.stdout
+    assert "OK keyboard" in done.stdout
