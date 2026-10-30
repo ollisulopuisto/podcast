@@ -1,5 +1,10 @@
 # kuulas and automixer
 
+Pinned release installation: [CLI-RELEASES.md](CLI-RELEASES.md). Release bundles
+include automixer, speechmix and nhsx from one commit; configure Kuulas to use
+the installed environment's absolute `bin/automixer` path. The separate Kuulas
+repository must adopt that path when a tested release is available.
+
 What automixer does today when kuulas drives it, what it would take to make
 that better, and what is not decided. Written from the code on this branch
 (`apps/automixer/src/automixer/`), answering the five questions the kuulas

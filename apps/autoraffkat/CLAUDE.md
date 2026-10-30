@@ -787,10 +787,10 @@ same marker tests run against both.
 Two ffmpeg facts cost a measurement each. `crop` does not reconfigure when
 its input size changes mid-stream: under an animated `scale` its `in_w`
 stayed the first frame's width and a test marker slid 185 px where the real
-move is 48 — so the scaled size is computed from the frame index in both
-filters. And the two filters do not agree on `n`: `scale`'s runs one ahead
-of `crop`'s (first frame 3.5 px off), so the index comes from the timestamp
-(`round(t*fps)`), which both see alike. Each shot is its own segment, then
+move is 48. And the two filters do not agree on `n`: `scale`'s runs one
+ahead of `crop`'s (first frame 3.5 px off). The previous workaround computed
+both sizes from `round(t*fps)`; the subpixel transform below now uses one
+filter's frame index instead. Each shot is its own segment, then
 a stream-copy concat: a filter graph of hundreds of shots is fragile, and
 frame counts per shot make the length exact by construction. Audio is
 made and AAC-encoded in its own thread while the picture draws, and the
@@ -802,13 +802,20 @@ summed in one-minute blocks — an hour of two microphones in memory is
 gigabytes. Pan follows FCP's balance for a mono clip in a stereo project
 (full level both sides at centre), not constant power.
 
-The ffmpeg path wobbles on a slow zoom and AVFoundation does not. Both the
-scaled size (even pixels) and the crop offset are integers, stepping at
+The old ffmpeg path wobbled on a slow zoom while AVFoundation did not. Both
+the scaled size (even pixels) and the crop offset were integers, stepping at
 different moments, so a push ticks back and forth: measured on a 125-frame
 push, rms 0.60 px off the smooth path, max 1.16, 82 reversals — seen by the
 user as a side-to-side sway in a close-up. AVFoundation's transform is
 subpixel: 0.02 px, no reversals. `test_a_slow_zoom_moves_smoothly_without_wobble`
-holds the AV path; the ffmpeg path fails it and is not fixed yet.
+now runs against both paths, in both zoom directions and from a nonzero
+source time. The ffmpeg fallback uses a fixed source crop, then a per-frame
+subpixel `perspective` transform at source resolution, then one fixed resize.
+The source is converted to 4:4:4 before the exact crop so chroma does not
+round an odd crop to a different origin. Independent animated integer
+scaling and cropping must not return. On the synthetic 125-frame marker
+push, ffmpeg's residual is below 0.1 px RMS; this measures geometric motion,
+not an episode or a comparison of image sharpness.
 
 ## Two movement styles: calm and shorts
 

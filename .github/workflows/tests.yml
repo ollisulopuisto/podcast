@@ -74,37 +74,8 @@ jobs:
         if: ${{ !cancelled() }}
         run: uv run --directory packages/speechmix pytest -q
 
-      # Hindenburg-istunnon lukija ja aluesijoittelu. Sen testit eivät
-      # ajautuneet CI:ssä lainkaan, vaikka podcast-magic ja automixer
-      # lukevat istunnot sen kautta.
-      - name: nhsx
-        if: ${{ !cancelled() }}
-        run: uv run --directory packages/nhsx pytest -q
-
-      # Kynnyksen oppiminen: ladataan sellaisenaan Colabiin, joten sen testit
-      # vartioivat myös sitä ettei se tuo mitään standardikirjaston ulkopuolelta.
-      - name: silencelearn
-        if: ${{ !cancelled() }}
-        run: uv run --directory packages/silencelearn pytest -q
-
-      # Sanojen alkujen kohdistus: sama tiedosto ladataan Colabiin, ja testit
-      # purkavat oikean äänen oikealla ffmpegillä.
-      - name: wordalign
-        if: ${{ !cancelled() }}
-        run: uv run --directory packages/wordalign pytest -q
-
-      # Kuvien pisteytys ja järjestys: pure Python, ajetaan kaikilla alustoilla
-      # samoilla testeillä, jotka pycapslap ja youthumber luottavat.
-      - name: framescore
-        if: ${{ !cancelled() }}
-        run: uv run --directory packages/framescore pytest -q
-
-      # Final Cut -viennin lukija: pelkkä standardikirjasto ja XML-fikstuurit,
-      # joten sama sviitti ajaa joka alustalla. Autoraffkat ja kuulas lukevat
-      # viennin sen kautta.
-      - name: fcpxml
-        if: ${{ !cancelled() }}
-        run: uv run --directory packages/fcpxml pytest -q
+      # Linux runs the portable library suites once. This Mac job retains the
+      # Apple-specific app, Metal, UI, and AVFoundation coverage below.
 
       - name: autoraffkat
         if: ${{ !cancelled() }}
@@ -144,15 +115,6 @@ jobs:
         if: ${{ !cancelled() }}
         run: uv run --directory apps/podcast-magic pytest -q
 
-      - name: colab-transcribe
-        if: ${{ !cancelled() }}
-        run: uv run --directory colab-transcribe pytest -q
-
-      - name: fcp-subs-whisper
-        if: ${{ !cancelled() }}
-        run: uv run --directory apps/fcp-subs-whisper pytest -q
-
-
       # Ohittunut testi on vihreä testi. Savutesti ohittuu jos ajurilta
       # puuttuu node, eikä siitä sanota mitään — joten sen ajaminen
       # tarkistetaan erikseen eikä luoteta yllä olevaan riviin.
@@ -190,8 +152,9 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           uv run --directory apps/podcast-magic python -c "
-          from podcastmagic.transcribe.backends import infos
-          for info in infos():
-              print(info.key, info.available, info.reason)
-              assert info.available, info.reason
+          from podcastmagic.transcribe.backends import resolve
+          backend = resolve('auto')
+          info = backend.info()
+          print(info.key, info.available, info.reason)
+          assert info.available, info.reason
           "

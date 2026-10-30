@@ -7,6 +7,27 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.10.28.2] - 2026-10-28
+
+### Added
+- Uncapped branching undo for editing settings during the current app session. Earlier branches remain reachable until the session closes; this is not disk history or crash recovery.
+
+### Fixed
+- Make the envelope parallelism regression test deterministic.
+
+### Packaging
+- Prepare a fresh desktop build containing the merged session-undo changes. Native build and download verification happen after the release tag, not at this version bump.
+
+## [2026.10.28.1] - 2026-10-28
+
+### Changed
+- Rebuild the desktop app with the current shared audio libraries, including bounded-window programme mastering and native MLX coverage. Long multi-microphone app exports and optional debleed memory use still need separate measurement.
+
+### Fixed
+- Preview/export shot-choice regression coverage is included in this build.
+
+## [2026.10.26.1] - 2026-10-26
+
 ### Fixed
 - **"Open in Final Cut" and "Show in Finder" only act on files the app wrote.** The server remembers the export (and the MP4 beside it) it wrote and refuses any other path with a message (403). They used to open any existing path a local request named. Opening a source XML is not restricted to a folder, since it can be anywhere.
 - **Opening a missing file shows a message, not a key.** The error for a missing XML read `read.file_missing` because the text was never added to the catalogue; it now exists in Finnish and English, and a test fails if code asks for a key the catalogue lacks.
@@ -25,6 +46,7 @@ and this project adheres to Calendar Versioning (CalVer).
 - **After an export the Export XML button keeps its key hint as a hint**; it was put back as plain text (found by reading `setBusy`, not seen on screen).
 
 ### Changed
+- **Video tracks are shots with coverage, not close/group/wide roles.** Each video track card lists the speakers visible in it (one checkbox per known speaker) and can be marked as the preferred establishing shot (the *context* checkbox). A speaker can be in any number of shots and a shot can show several speakers; microphones still decide who is speaking. The cut picks a shot that covers the active speakers, prefers the one with fewer extra people, keeps the current shot while it still fits, and otherwise takes timeline order. Overlapping speech needs a shot that covers everyone speaking. Context shots are used for the opening and closing shots and as a fallback. Saved settings (format 2) are migrated when loaded: a close-up covers its speaker, a group shot keeps its speakers, a wide covers everyone and is marked as context. Face measurement, reaction shots and vertical framing use only single-speaker, non-context shots (a one-face median would crop the other person out of a multi-person shot); multi-person and context shots use the crowd measurement. This entry was missing from the release it shipped in.
 - **The FCPXML reader and the rational time moved to the shared `fcpxml` package** (`packages/fcpxml`), so that kuulas reads a Final Cut export with the same code. What is read is unchanged; the reader's own tests moved with it. autoraffkat keeps what the package cannot know: the translated error text, the frame rate from ffprobe, relinking of missing files and the default name. The app's own subpackage `fcpxml/` is now `finalcut/` (a script run of `__main__.py`, which is how PyInstaller starts the app, would otherwise have put it ahead of the real package on the import path).
 
 ### Fixed

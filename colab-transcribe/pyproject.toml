@@ -1,6 +1,6 @@
 [project]
 name = "colab-transcribe"
-version = "2026.10.26.2"
+version = "2026.10.27.1"
 description = "Litterointi ja Auto-Silence Colabin näytönohjaimella: paikallinen ajuri ja TUI, ketju pilvessä"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -16,13 +16,13 @@ classifiers = [
 ]
 dependencies = [
     "textual>=8.0.0",
-    # ``colab``-komento mukaan, jotta ``uvx`` riittää asennukseksi. Suorat
-    # git-viittaukset eivätkä PyPI: PyPI:n ``jupyter-kernel-client`` on eri
-    # paketti kuin Colab CLI:n tarvitsema Google-fork, ja Colab CLI:n oma
-    # ``[tool.uv.sources]`` ei päde kun se on toisen riippuvuus. Commitit
-    # ovat ne joilla kehittäjän ``colab`` toimii (2026-10-08).
+    # Paikallinen tausta tuo pipeline-moduulin myös --help-käynnistyksessä.
+    "lxml>=6.1.3",
+    # ``colab``-komento mukaan. CLI pysyy testatussa commitissa; se tukee
+    # myös PyPI:n KernelClient-rajapintaa ja vaatii version 0.9.0. Vanhan
+    # Google-forkin 0.8.0 tuotti riippuvuusristiriidan puhtaassa asennuksessa.
     "google-colab-cli @ git+https://github.com/googlecolab/google-colab-cli@930275e62970df10055f411c8e28ca61755dcfc7",
-    "jupyter-kernel-client @ git+https://github.com/googlecolab/jupyter-kernel-client.git@f18e982c3265df5e923aa9def101ab3fd737e139",
+    "jupyter-kernel-client @ https://files.pythonhosted.org/packages/7a/68/287315ba355aa93bda2e344de5febc45e6de1b47d8f4a5b69400b24cfdfd/jupyter_kernel_client-0.9.0-py3-none-any.whl#sha256=77acb8f2f738d97625d6bd01ee8cf21c4d59790b7ba464108712db3870416f20",
     # Ei importoida täällä vaan **ladataan Colabiin**: yksi tiedosto ja pelkkä
     # standardikirjasto (``driver.LEARN_MODULE``). Ainoa työtilan paketti jonka
     # tämä sovellus ottaa, ja siksi että se ei tuo mitään mukanaan.
@@ -38,6 +38,10 @@ dependencies = [
 [project.optional-dependencies]
 # Apple Silicon: nopea paikallinen Parakeet MLX -litterointi
 parakeet = ["parakeet-mlx>=0.3.0"]
+# Orukeet: natiivi paikallisruntime Apple Siliconille, CUDA:lle tai CPU:lle.
+orukeet = [
+    "orukeet @ https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl",
+]
 
 [tool.uv.sources]
 silencelearn = { workspace = true }

@@ -100,19 +100,26 @@ uv run podcast-magic episode\ 8.nhsx --chain --steps silence,mix --lufs -18
 `--steps` takes any of `transcribe,silence,mix` (default: all three). The
 settings are the ones last saved in the tabs, same as the button.
 
-## Which Whisper
+## Transcription engines
 
 | Engine | Where it runs | When |
 |---|---|---|
 | `mlx-whisper` | Apple GPU, via Metal | **default on Apple Silicon** |
 | `faster-whisper` | CPU, int8 | Intel Macs, or a second opinion |
+| `orukeet` | Orukeet native Metal/CUDA/CPU runtime | Local alternative; requires its installation receipt and CTC alignment |
+| `parakeet-ultra` | Moondream Photon on a supported GPU | Ultra model on NVIDIA GPUs |
 
-There is no third option worth having here. `faster-whisper` is what the
-Colab notebook used, and CTranslate2 has no Metal backend at all — on a Mac
-it runs on the processor, so `--compute_type auto` never finds a GPU to use.
-MLX runs the same model on the GPU with no conversion step.
+Both Whisper engines return word timings directly. Orukeet returns segment
+timings, so Podcast Magic requires torchaudio CTC alignment before it writes
+words to the session. Parakeet Ultra requests word timings from Photon. Ultra
+is intended for GPU inference; on a local Mac, use MLX Whisper or Orukeet.
 
-Both produce word-level timings, which is the only output that matters: a
+`faster-whisper` is what the Colab notebook used, and CTranslate2 has no
+Metal backend at all — on a Mac it runs on the processor, so
+`--compute_type auto` never finds a GPU to use. MLX runs the same model on the
+GPU with no conversion step.
+
+Whisper and Ultra produce word-level timings, which is the only output that matters: a
 `.nhsx` transcription is a list of `<w>` elements with a start and a length,
 and the silencer's whole decision is built from them. The notebook's
 `--max_line_width` and `--max_line_count` only ever shaped subtitle files and

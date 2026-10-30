@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import types
+import wave
 
 import numpy as np
 import pytest
@@ -11,6 +12,7 @@ import pytest
 from podcastmagic.jobs import Cancelled, Job, Progress
 from podcastmagic.transcribe.backends import BACKENDS
 from podcastmagic.transcribe.backends import mlx as mlx_backend
+from podcastmagic.transcribe.backends.audio import wav_file
 from podcastmagic.transcribe.options import Options
 
 
@@ -47,6 +49,10 @@ def fake_mlx(monkeypatch, frames=100, on_call=None):
 
     package = types.ModuleType("mlx_whisper")
     package.transcribe = transcribe  # funktio varjostaa alimoduulin
+
+    # Backend tests exercise decoding and progress, not the real multi-GB
+    # Hugging Face download. Download behavior has dedicated tests.
+    monkeypatch.setattr(mlx_backend, "model_is_cached", lambda _repo: True)
 
     monkeypatch.setitem(sys.modules, "mlx_whisper", package)
     monkeypatch.setitem(sys.modules, "mlx_whisper.transcribe", submodule)
@@ -131,6 +137,92 @@ def test_missing_engines_report_why_not_how():
         assert info.key and info.label and info.install
         if not info.available:
             assert info.reason
+
+
+def test_backend_registry_exposes_whisper_orukeet_and_parakeet_ultra():
+    assert {backend.key for backend in BACKENDS} >= {
+        "mlx", "faster-whisper", "orukeet", "parakeet-ultra"
+    }
+
+
+def test_parakeet_ultra_requests_word_timestamps(monkeypatch):
+    import sys
+
+    from podcastmagic.transcribe.backends.ultra import ParakeetUltra
+
+    calls = {}
+
+    class Speech:
+        def transcribe(self, **kwargs):
+            calls.update(kwargs)
+            return {
+                "text": "Hei maailma",
+                "language": "fi",
+                "segments": [{
+                    "start": 0.0, "end": 1.0, "text": "Hei maailma",
+                    "words": [
+                        {"word": "Hei", "start": 0.0, "end": 0.4},
+                        {"word": "maailma", "start": 0.4, "end": 1.0},
+                    ],
+                }],
+            }
+
+    class Photon:
+        def __enter__(self):
+            return Speech()
+
+        def __exit__(self, *_args):
+            pass
+
+    monkeypatch.setitem(sys.modules, "moondream", types.SimpleNamespace(
+        photon=lambda model: (calls.update(model=model) or Photon())
+    ))
+    _job, progress = handle()
+    result = ParakeetUltra().transcribe(np.zeros(16000, np.float32), Options(), progress)
+
+    assert calls["model"] == "moondream/parakeet-ultra"
+    assert calls["timestamps"] == "word"
+    assert [word.text for word in result.words] == ["Hei", "maailma"]
+    assert result.words[1].start == 0.4
+
+
+def test_backend_audio_wav_can_be_reopened_while_in_use():
+    samples = np.array([0.0, 0.5, -0.5], dtype=np.float32)
+
+    with wav_file(samples) as path, wave.open(path, "rb") as audio:
+        assert audio.getnchannels() == 1
+        assert audio.getsampwidth() == 2
+        assert audio.getframerate() == 16000
+        assert len(audio.readframes(3)) == 6
+
+
+def test_orukeet_segments_are_word_seeded_for_ctc_alignment():
+    from podcastmagic.transcribe.backends.orukeet import _with_word_seeds
+
+    segments = _with_word_seeds([{"start": 1.0, "end": 2.0, "text": "Hei maailma!"}])
+
+    assert [word["word"] for word in segments[0]["words"]] == ["Hei", "maailma!"]
+    assert all(word["start"] == 1.0 and word["end"] == 2.0 for word in segments[0]["words"])
+
+
+def test_mlx_info_checks_platform_and_install_metadata_without_importing_runtime(monkeypatch):
+    import builtins
+    import importlib.util
+    import platform
+
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(importlib.util, "find_spec", lambda _name: object())
+    original_import = builtins.__import__
+
+    def checked_import(name, *args, **kwargs):
+        if name == "mlx_whisper":
+            raise AssertionError("MLX runtime was imported by its info check")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", checked_import)
+
+    assert mlx_backend.MlxWhisper().info().available
 
 
 def test_faster_whisper_maps_the_notebook_switches(monkeypatch):

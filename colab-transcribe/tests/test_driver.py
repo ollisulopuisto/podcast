@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from colabtranscribe import driver
-from colabtranscribe.options import RunOptions
+from colabtranscribe.options import RunOptions, pipeline_args
 
 
 def test_pipeline_script_ships_with_the_package():
@@ -24,8 +24,8 @@ def test_pipeline_script_ships_with_the_package():
     assert script.is_file()
     assert script.name == "pipeline.py"
     source = script.read_text(encoding="utf-8")
-    assert 'ORUKEET_REPO = "oruk/orukeet"' in source
-    assert 'ORUKEET_REVISION = "555136b50265a132d4cea0d35560c26fc4f657ab"' in source
+    assert 'ULTRA_REPO = "moondream/parakeet-ultra"' in source
+    assert '"moondream==2.6.1"' in source
     assert "whisper-ctranslate2" not in source
 
 
@@ -123,6 +123,14 @@ def test_pipeline_args_land_in_the_exec_call(tmp_path: Path):
         assert token in remote
 
 
+def test_whisper_selection_is_forwarded_for_session_transcription(tmp_path: Path):
+    options = RunOptions(input_dir=str(tmp_path), model="whisper")
+
+    args = pipeline_args(options)
+
+    assert args[args.index("--model") + 1] == "whisper"
+
+
 def test_prompt_with_spaces_is_quoted(tmp_path: Path):
     options = RunOptions(input_dir=str(tmp_path), prompt="öö, tota, niinku")
     commands = driver.plan_commands(options, [])
@@ -217,10 +225,10 @@ def test_run_kills_a_hung_process_that_prints_nothing():
     assert any("aikarajan" in line for line in logs)
 
 
-def test_command_timeout_outlasts_orukeet():
+def test_command_timeout_outlasts_ultra():
     from colabtranscribe.colab import pipeline
 
-    assert driver.COMMAND_TIMEOUT >= pipeline.ORUKEET_TIMEOUT
+    assert driver.COMMAND_TIMEOUT >= pipeline.PIPELINE_TIMEOUT
 
 
 def test_run_translates_colab_exec_to_stdin(monkeypatch):
@@ -1164,3 +1172,30 @@ def test_the_cli_leaves_its_own_output_folder_out_of_the_upload(tmp_path: Path, 
     code = cli.main(["--input", str(tmp_path), "--dry-run", "--transfer", "direct"])
     out = capsys.readouterr().out
     assert code == 0 and "jakso.nhsx" in out and "vanha" not in out
+
+
+def test_cache_identity_rehashes_same_size_rewrite_with_preserved_mtime(tmp_path):
+    import os
+
+    source = tmp_path / "edited.wav"
+    source.write_bytes(b"first")
+    metadata = source.stat()
+    original = driver.cache_path(source)
+    source.write_bytes(b"other")
+    os.utime(source, ns=(metadata.st_atime_ns, metadata.st_mtime_ns))
+    changed = driver.cache_path(source)
+    assert changed != original
+    assert driver.cache_path(source) == changed
+    same_content = tmp_path / "renamed.wav"
+    same_content.write_bytes(b"other")
+    assert driver.cache_path(same_content) == changed
+
+
+def test_cache_identity_rehashes_each_rapid_rewrite(tmp_path):
+    source = tmp_path / "rapid.wav"
+    keys = []
+    for value in [b"first", b"other", b"third", b"first"]:
+        source.write_bytes(value)
+        keys.append(driver.cache_path(source))
+    assert len(set(keys[:3])) == 3
+    assert keys[0] == keys[3]

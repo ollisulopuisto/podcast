@@ -2260,3 +2260,24 @@ def test_audio_of_a_project_without_mic_roles_plays_on(fixture_dir):
         tl, segments, [], Fraction(0), Fraction(12), "Ilman mikkejä", source="multicam.fcpxml",
     )
     assert not ET.fromstring(plain).findall('.//spine/mc-clip/mc-source[@srcEnable="audio"]')
+
+
+def test_neighbouring_spans_of_different_shots_with_the_same_label_stay_apart():
+    """Kuvan identiteetti on raidan avain, ei nimike.
+
+    Kaksi lähikuvaa voi kattaa saman puhujan, jolloin molempien nimike on
+    ``Host``. Jos peräkkäiset spänit yhdistettäisiin nimikkeen perusteella,
+    toisen kuvan jakso katoaisi ensimmäisen sisään ja vientiin jäisi väärä
+    kamera.
+    """
+    from autoraffkat.finalcut.write import _merge_spans
+    from autoraffkat.model import Segment
+
+    a = Segment(angle="CLOSE_A.mp4", label="Host", start=0.0, end=2.0)
+    b = Segment(angle="CLOSE_B.mp4", label="Host", start=2.0, end=4.0)
+    c = Segment(angle="CLOSE_B.mp4", label="Host", start=4.0, end=6.0)
+    merged = _merge_spans([(a, 0, 48), (b, 48, 96), (c, 96, 144)])
+    assert [(s.angle, x, y) for s, x, y in merged] == [
+        ("CLOSE_A.mp4", 0, 48),
+        ("CLOSE_B.mp4", 48, 144),
+    ]

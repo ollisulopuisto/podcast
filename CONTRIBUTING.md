@@ -65,9 +65,23 @@ uv run python scripts/bump_version.py autoraffkat
 git tag autoraffkat-v2026.8.28.1
 ```
 
-Tagi käynnistää `build-<sovellus>.yml`in. Paketoitavia sovelluksia on kaksi
-(autoraffkat, podcast-magic); automixer on komentorivityökalu eikä sillä ole
-`.spec`iä, joten sillä ei ole julkaisuputkeakaan.
+Tagi käynnistää sovelluksen julkaisuputken. Autoraffkat ja podcast-magic
+paketoidaan omilla `build-<sovellus>.yml`-työnkuluillaan; viewerillä on omansa.
+`automixer-v*` ja `colab-transcribe-v*` käynnistävät `build-cli.yml`in, joka
+pakkaa sovelluksen ja sen työtilakirjastot samasta commitista sekä kiinnittää
+muut riippuvuudet lukosta. PR:t ja käsiajot tarkistavat paketoinnin julkaisematta.
+Asennus, Kuulas-polut ja julkaisuohje: [CLI-RELEASES.md](docs/CLI-RELEASES.md).
+
+`tests-linux.yml` runs the portable workspace and application suites. The
+macOS `tests.yml` repeats only the suites that need Apple frameworks, Metal,
+or macOS application behavior, alongside the workspace agreement check.
+This avoids spending macOS minutes on the same portable tests twice.
+
+For an urgent installer check, `build-autoraffkat.yml` and
+`build-podcast-magic.yml` can be dispatched manually with **hotfix artifact**
+enabled. That skips only the build workflow's test suite and uploads an
+artifact; it cannot publish a GitHub Release. Tag-triggered releases always
+run tests.
 
 ## Feature Roadmaps & Ideas
 

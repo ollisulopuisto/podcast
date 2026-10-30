@@ -37,6 +37,9 @@ function makeElement(tag) {
     value: '',
     checked: false,
     disabled: false,
+    open: false,
+    showModal() { this.open = true; },
+    close() { this.open = false; },
     innerHTML: '',
     scrollTop: 0,
     scrollHeight: 0,
@@ -120,6 +123,7 @@ for (const tag of html.matchAll(/<[a-zA-Z][^>]*>/g)) {
 }
 
 const document = {
+  addEventListener() {},
   documentElement: { lang: 'fi' },
   body: root,
   createElement: makeElement,

@@ -249,6 +249,58 @@ def align_raw(
     return rows
 
 
+def align_segments(
+    segments: list[dict],
+    audio: np.ndarray,
+    aligner,
+    pad: float = PAD_S,
+    errors: list | None = None,
+) -> list[dict]:
+    """Kohdista lauseteksti suoraan sen aikarajojen sisällä.
+
+    Käytetään malleille, jotka palauttavat segmentin ajat mutta eivät
+    sanakohtaisia siemenleimoja. Toisin kuin ``align_words``, tässä ei
+    hyväksytä tai hylätä sanoja arvioidun sanaleiman siirron perusteella:
+    kohdistin sovittaa koko lauseen tekstin rajattuun äänipalaan.
+    """
+    rows: list[dict] = []
+    audio_s = len(audio) / RATE
+    for segment in segments:
+        start = float(segment["start"])
+        end = float(segment["end"])
+        words = [word for word in str(segment.get("text", "")).split() if word]
+        if not words:
+            continue
+        window_start = max(0.0, start - pad)
+        window_end = min(audio_s, end + pad)
+        chunk = audio[int(round(window_start * RATE)) : int(round(window_end * RATE))]
+        texts = [normalise_word(word) for word in words]
+        keep = [index for index, text in enumerate(texts) if text]
+        spans_by_index: dict[int, tuple[float, float]] = {}
+        try:
+            spans = aligner(chunk, [texts[index] for index in keep])
+            if len(spans) != len(keep):
+                raise RuntimeError(
+                    f"aligner returned {len(spans)} spans for {len(keep)} words"
+                )
+            spans_by_index = dict(zip(keep, spans, strict=True))
+        except Exception as exc:
+            if errors is not None:
+                errors.append(f"{start:.1f}-{end:.1f} s: {exc}")
+        for index, word in enumerate(words):
+            span = spans_by_index.get(index)
+            rows.append(
+                {
+                    "word": word,
+                    "start": start,
+                    "end": end,
+                    "ctc_start": window_start + span[0] if span else None,
+                    "ctc_end": window_start + span[1] if span else None,
+                }
+            )
+    return rows
+
+
 def refined(rows: list[dict]) -> list[dict]:
     """Kohdistetut sanat: alku kohdistimelta, loppu pidemmästä kahdesta.
 

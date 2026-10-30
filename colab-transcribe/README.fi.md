@@ -7,8 +7,8 @@ tekee. (In English: [README.md](README.md).)
 ## Mitä se tekee
 
 Osoita kansioon jossa on Hindenburgin `.nhsx`-istuntoja ja niiden äänet.
-Se käynnistää Colab-istunnon, lähettää kaiken, litteroi siellä Orukeetilla
-(NeMo ASR T4:llä, L4:llä tai A100:lla), kirjoittaa sanat istuntoon,
+Se käynnistää Colab-istunnon, lähettää kaiken, litteroi siellä Parakeet Ultralla
+(Photon NVIDIA-näytönohjaimella), kirjoittaa sanat istuntoon,
 vaimentaa jokaisen kohdan jossa kukaan ei puhu (Auto-Silence) ja lataa
 tulokset takaisin: `<jakso> litteroitu.nhsx` ja `<jakso>_processed.nhsx`.
 Pelkkä litterointi ilman Auto-Silencea: `--transcribe-only` (tai TUI:ssa
@@ -96,39 +96,49 @@ Kutsujalle, joka haluaa vain sanat (kuulas-editori kutsuu näin):
 
 ```bash
 colab-transcribe --audio "Olli 1.wav" --audio Panu.mp3 --json sanat/ --progress
+# Faster-Whisper Ultran sijaan
+colab-transcribe --audio "Olli 1.wav" --json sanat/ --model whisper
+# Paikallinen Orukeet, ilman Colab-istuntoa
+colab-transcribe --audio "Olli 1.wav" --json sanat/ --backend orukeet
 ```
 
 Kaikki `--audio`-tiedostot menevät samaan Colab-istuntoon ja `sanat/<nimi>.words.json` tulee
-takaisin: `{"version":1,"timing":"orukeet","language":"fi","rejected":0,"words":[{"w","s","e"}]}`,
+takaisin: `{"version":1,"timing":"parakeet-ultra","language":"fi","rejected":0,"words":[{"w","s","e"}]}`,
 sekunteja kyseisen tiedoston alusta, aikajärjestyksessä ja `s < e` (päällekkäisyys lyhentää
 aiempaa sanaa). Ei `.nhsx`:ää eikä Auto-Silencea. Siirto on aina suora: ääni menee Googlen
-Colab-koneelle eikä Driven kautta. Orukeet on oletus; `--model whisper` valitsee
-Faster-Whisperin `large-v3-turbo`-mallin. Whisper käyttää `--language`- ja `--prompt`-arvoja;
-Orukeet tunnistaa kielen itse ja jättää promptin huomiotta. `--progress` tulostaa rivit `PROGRESS <0-100> <viesti>`, joiden luku ei
+Colab-koneelle eikä Driven kautta. Parakeet Ultra on oletus; `--model whisper` valitsee Faster-Whisperin. Molemmat palauttavat sanakohtaiset ajat. `--prompt` välitetään Faster-Whisperille; Parakeet Ultra ohittaa sen. `--backend orukeet` käyttää Orukeetin natiivia paikallisruntimea ilman Colabia;
+se kohdistaa lauseiden sanat CTC:llä (`timing: "orukeet-ctc"`). `--progress` tulostaa rivit `PROGRESS <0-100> <viesti>`, joiden luku ei
 laske. Sanaton tiedosto tai puuttuva tulos antaa poistumiskoodin 1 ja syyn stderriin; samannimiset
 vanhat `*.words.json` poistetaan ennen ajoa, ettei vanha kelpaa uudeksi. SIGTERM ja Ctrl+C
-Sulkevat Colab-istunnon (ellei `--keep-session`) ja palauttavat 130. `timing` on `orukeet`
-NeMo-sanoille ja `whisper` Faster-Whisperin aikaleimoille.
+sulkevat Colab-istunnon (ellei `--keep-session`) ja palauttavat 130. Sanojen ajat tulevat
+Parakeet Ultran sanakohtaisista aikaleimoista (`timing: "parakeet-ultra"`).
 
-Colabiin asennetaan vain valitun litteroijan riippuvuudet. Orukeet asentaa NeMon ja Silero VAD:n,
-ja sen noin 2,5 Gt:n mallipainot ladataan ensimmäisellä ajolla. Silero jakaa pitkän raidan
-enintään 20 sekunnin puhejaksoihin ja ajat siirretään takaisin alkuperäisen äänitteen kelloon.
-Faster-Whisper käyttää CTranslate2:ta ja lataa `large-v3-turbo`-mallin ensimmäisellä ajolla.
-Kumpikaan polku ei poista täytesanoja eikä toistoja.
+Asenna Orukeetin paikallinen runtime sekä kohdistimen Torch-riippuvuudet näin:
+
+```bash
+uv pip install 'https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl' torch==2.8.0 torchaudio==2.8.0
+orukeet install --device auto --cache ~/.cache/orukeet --output ~/.cache/orukeet/installation.json
+```
+
+Colabiin asennetaan Photon, ja malli ladataan ensimmäisellä ajolla. T4-savukoe latasi 1,26 Gt
+mallitiedostoja; siinä käytettiin synteettistä suomenkielistä puhetta, joten se ei mittaa podcastien
+tarkkuutta. Photon pilkkoo pitkän äänen taukojen kohdalta ja palauttaa ajat alkuperäisen äänitteen
+kellossa. Jälkikäsittely ei poista täytesanoja eikä toistoja. Parakeet Ultra ei tue Whisper-tyyppistä
+`--prompt`-sanastoa.
 
 `--align` (`--audio`:n kanssa) korjaa sanojen alut Colab-koneella pakotetulla kohdistimella
 (`packages/wordalign`, torchaudion `MMS_FA`) ja merkitsee tiedoston `"timing": "ctc-v1"`; `rejected` on
-niiden sanojen määrä, joita ei saatu sijoitettua (ne jäävät valitun litteroijan aikaan). Se asentaa torch 2.8:n
+niiden sanojen määrä, joita ei saatu sijoitettua (ne jäävät Parakeet Ultran aikaan). Se asentaa torch 2.8:n
 koneella omaan kansioonsa ja lataa noin 1,2 Gt painoja, ja tarkistaa sen **ennen** litterointia, joten
 rikkinäinen kohdistin pysäyttää ajon kuluttamatta GPU-aikaa. Jos yksikään sana ei kohdistu, ajo
 epäonnistuu eikä korjatuksi merkittyä tiedostoa kirjoiteta. **Ei vielä ajettu oikealla Colabilla:**
 asennuksen koko ja kesto sekä se, sopiiko kohdistin yhteen litteroinnin CUDA-kirjastojen kanssa, on
 mittaamatta. `docs/KUULAS-TIMECODES.md` sisältää aiemman Whisper-ajon mittauksen; sitä ei voi
-siirtää Orukeetille. Orukeetin podcast-tarkkuutta ei ole tässä repossa mitattu.
+siirtää Parakeet Ultralle. Parakeet Ultran podcast-tarkkuutta ei ole tässä repossa mitattu.
 
 ## Vaatimukset
 
-* [uv](https://docs.astral.sh/uv/) (`brew install uv`). `colab`-komentorivityökalu on riippuvuus ja tulee `uvx`:n mukana, kiinnitettynä versioon jossa on Googlen oma `jupyter-kernel-client`.
+* [uv](https://docs.astral.sh/uv/) (`brew install uv`). `colab`-komentorivityökalu on riippuvuus ja tulee `uvx`:n mukana, kiinnitettynä yhteensopivaan `jupyter-kernel-client` 0.9.0 -pyörään.
 * Google-tili, jolla on Colab, kirjautuneena kerran komennolla `colab-transcribe --login`. Vaihtoehtoisesti Google Cloud ADC -tunnisteet (`gcloud auth application-default login`) tai `GOOGLE_APPLICATION_CREDENTIALS`.
 * `colab-transcribe` opastaa automaattisesti TUI:ssa tai `--check`-valitsimella, jos jotain puuttuu.
 * Siinä kaikki paikallisesti. ffmpegiä ei tarvita: raskas työ tehdään pilvessä, ja ketjun skripti tulee tämän paketin mukana.

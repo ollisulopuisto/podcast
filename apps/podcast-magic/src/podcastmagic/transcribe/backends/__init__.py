@@ -16,8 +16,12 @@ from __future__ import annotations
 from .base import Backend, BackendInfo, TranscriptResult
 from .faster import FasterWhisper
 from .mlx import MlxWhisper
+from .orukeet import Orukeet
+from .ultra import ParakeetUltra
 
-BACKENDS: tuple[Backend, ...] = (MlxWhisper(), FasterWhisper())
+BACKENDS: tuple[Backend, ...] = (
+    MlxWhisper(), FasterWhisper(), Orukeet(), ParakeetUltra()
+)
 
 
 def infos() -> list[BackendInfo]:

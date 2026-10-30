@@ -90,6 +90,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: uv run --directory packages/wordalign pytest -q
 
+      - name: framescore
+        if: ${{ !cancelled() }}
+        run: uv run --directory packages/framescore pytest -q
+
       # The FCPXML reader: standard library and XML fixtures, no media, so it
       # is the same suite on every platform. kuulas reads Final Cut exports
       # through it on whatever machine it runs on.
@@ -141,8 +145,9 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           uv run --directory apps/podcast-magic python -c "
-          from podcastmagic.transcribe.backends import infos
-          for info in infos():
-              print(info.key, info.available, info.reason)
-              assert info.available or info.key == 'mlx', info.reason
+          from podcastmagic.transcribe.backends import resolve
+          backend = resolve('auto')
+          info = backend.info()
+          print(info.key, info.available, info.reason)
+          assert info.available, info.reason
           "

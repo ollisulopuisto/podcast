@@ -116,6 +116,10 @@ Solmuja on yksi per **(puhuja, taso, panorointi)** eikä per leike:
 vaimennuksen läpi ajettu istunto on satoja pikkualueita raitaa kohden, ja
 ne jakavat raidan faderin, joten pilkottu raita on yksi ryhmä.
 
+Alueiden `FadeIn` ja `FadeOut` luetaan ja kerrotaan `<Fade>`-luiskien
+päälle myös kelattaessa keskelle leikettä. Reunahäivytysten muoto on
+Python-renderin tapaan oletettu raised-cosine, ei Hindenburgista mitattu.
+
 Häivytetyt leikkeet ovat poikkeus — häivytystä ei voi ajastaa solmun
 ominaisuutena palakohtaisesti — joten ne luetaan puskuriin ja verhokäyrä
 kerrotaan sisään. Niitä on käytännössä musiikkipohjan alku ja loppu.

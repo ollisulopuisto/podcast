@@ -64,14 +64,20 @@ def transcripts_dir(session_path: str, output_dir: str = "") -> Path:
     return base / TRANSCRIPTS_DIRNAME
 
 
-def cache_path(directory: Path, audio_path: str, options: Options) -> Path:
+def cache_path(
+    directory: Path,
+    audio_path: str,
+    options: Options,
+    *,
+    backend_key: str | None = None,
+) -> Path:
     """JSONin nimi: äänen nimi ja asetusten tunniste.
 
     Tunniste on nimessä, koska muuten mallin vaihtaminen ei tekisi mitään —
     vanha tulos löytyisi levyltä ja uusi malli jäisi ajamatta.
     """
     stem = Path(audio_path).stem
-    return directory / f"{stem}.{options.fingerprint()}.json"
+    return directory / f"{stem}.{options.fingerprint(backend_key)}.json"
 
 
 def plan(session_path: str, audio_dir: str = "", force: bool = False) -> Plan:
@@ -120,6 +126,11 @@ def run(
 ) -> dict:
     """Litteroi istunnon äänipoolin ja kirjoittaa uuden istuntotiedoston."""
     backend = resolve(options.backend)
+    if backend.key == "orukeet" and not options.align:
+        raise RuntimeError(
+            "Orukeet tuottaa lauseajat. Podcast Magic tarvitsee sanakohtaiset ajat, "
+            "joten ota CTC-kohdistus käyttöön ennen ajoa."
+        )
     if options.align:
         # Ennen kuin mitään litteroidaan: puuttuva kohdistin selviäisi muuten vasta
         # tunnin litteroinnin jälkeen, ja kytkin lupasi korjatut alut.
@@ -175,7 +186,7 @@ def run(
         progress.step(Path(path).name, done=index, total=total)
         progress.fraction(0.0)
 
-        cache = cache_path(directory, path, options)
+        cache = cache_path(directory, path, options, backend_key=backend.key)
         result_raw = None
         samples = None
         if cache.is_file() and not force:
@@ -212,12 +223,20 @@ def run(
         if options.align and words:
             progress.log("  kohdistetaan sanojen alut…")
             source = samples if samples is not None else (lambda: audio_io.decode(path))
-            words, summary = align.refine(
-                result_raw,
-                source,
-                get_aligner,
-                align.cache_path(directory, path, options),
-            )
+            if backend.key == "orukeet":
+                words, summary = align.refine_segments(
+                    result_raw,
+                    source,
+                    get_aligner,
+                    align.cache_path(directory, path, options),
+                )
+            else:
+                words, summary = align.refine(
+                    result_raw,
+                    source,
+                    get_aligner,
+                    align.cache_path(directory, path, options),
+                )
             align_candidates += summary["words"]
             aligned_words += summary["aligned"]
             shift = summary["median_shift_ms"]

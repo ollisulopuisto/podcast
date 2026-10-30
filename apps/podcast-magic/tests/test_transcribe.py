@@ -111,6 +111,43 @@ def test_alignment_is_not_in_the_fingerprint_because_it_has_its_own_cache():
     assert Options.from_dict({"align": True}).align is True
 
 
+def test_non_whisper_backend_is_part_of_the_transcript_fingerprint():
+    whisper = Options(backend="mlx")
+    assert whisper.fingerprint() != Options(backend="orukeet").fingerprint()
+    assert whisper.fingerprint() != Options(backend="parakeet-ultra").fingerprint()
+
+
+def test_transcript_cache_path_uses_the_resolved_backend(tmp_path):
+    options = Options(backend="auto")
+    mlx = runner.cache_path(tmp_path, "/audio/episode.wav", options, backend_key="mlx")
+    faster = runner.cache_path(
+        tmp_path, "/audio/episode.wav", options, backend_key="faster-whisper"
+    )
+    assert mlx != faster
+    assert mlx.name.startswith("episode.mlx-")
+    assert faster.name.startswith("episode.faster-whisper-")
+
+
+def test_default_fingerprint_keeps_whisper_alignment_cache_compatibility():
+    assert Options(backend="mlx").fingerprint() == Options(
+        backend="faster-whisper"
+    ).fingerprint()
+
+
+def test_orukeet_requires_word_alignment_before_opening_the_session(monkeypatch):
+    from podcastmagic.transcribe.backends.base import BackendInfo
+
+    class OrukeetBackend:
+        key = "orukeet"
+
+        def info(self):
+            return BackendInfo("orukeet", "Orukeet", True)
+
+    monkeypatch.setattr(runner, "resolve", lambda _key: OrukeetBackend())
+    with pytest.raises(RuntimeError, match="lauseajat"):
+        runner.run("does-not-exist.nhsx", Options(backend="orukeet"), progress_handle())
+
+
 def test_unknown_model_passes_through_to_both_engines():
     choice = model_choice("mlx-community/whisper-large-v3-turbo-q4")
     assert choice.mlx == choice.faster == "mlx-community/whisper-large-v3-turbo-q4"

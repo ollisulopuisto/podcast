@@ -274,7 +274,7 @@ public final class MixPlayer {
             sampleTime: zero.sampleTime + AVAudioFramePosition((clip.start - origin + skipped) * rate),
             atRate: rate)
 
-        if clip.ramps.isEmpty {
+        if !clip.hasEnvelope {
             node.scheduleSegment(
                 source, startingFrame: startFrame, frameCount: available,
                 at: when, completionHandler: nil)
@@ -291,7 +291,7 @@ public final class MixPlayer {
             note(clip.path, error)
             return
         }
-        applyEnvelope(to: buffer, clip: clip, skipped: skipped, rate: sourceRate)
+        Self.applyEnvelope(to: buffer, clip: clip, skipped: skipped, rate: sourceRate)
         node.scheduleBuffer(buffer, at: when, options: [], completionHandler: nil)
     }
 
@@ -300,7 +300,7 @@ public final class MixPlayer {
     /// Luiskat seuraavat toisiaan eivätkä summaudu, joten käyrä ei voi
     /// painua nollan ali. `skipped` on se osa leikkeestä joka on jo mennyt,
     /// kun soitto aloitetaan keskeltä.
-    private func applyEnvelope(
+    static func applyEnvelope(
         to buffer: AVAudioPCMBuffer, clip: Clip, skipped: Double, rate: Double
     ) {
         guard let channels = buffer.floatChannelData else { return }
@@ -308,8 +308,9 @@ public final class MixPlayer {
         guard count > 0 else { return }
 
         var curve = [Float](repeating: 1, count: count)
+        let firstFrame = Int((skipped * rate).rounded(.towardZero))
         for i in 0..<count {
-            curve[i] = Float(clip.level(at: skipped + Double(i) / rate))
+            curve[i] = Float(clip.envelopeLevel(atFrame: firstFrame + i, sampleRate: rate))
         }
         for channel in 0..<Int(buffer.format.channelCount) {
             let samples = channels[channel]

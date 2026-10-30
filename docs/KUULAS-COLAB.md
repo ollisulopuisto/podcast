@@ -1,11 +1,10 @@
 # kuulas calling colab-transcribe directly: what is accepted, what changes, what is open
 
 Answer to the kuulas session's proposed plain-audio contract (`colab-transcribe --audio ... --json <folder>`).
-Written 2026-10-19 and updated 2026-10-26. The original plain-audio contract
+Written 2026-10-19 and updated 2026-10-27. The original plain-audio contract
 (`--audio`/`--json`, `--progress`, exit codes, SIGTERM) is implemented and tested against a fake
-Colab transport. The default ASR backend is Orukeet via NeMo. `--model whisper` selects
-Faster-Whisper (`large-v3-turbo`) for CUDA GPUs including the T4 path used previously; the
-Faster-Whisper change has **not yet been run on a real Colab in this revision**.
+Colab transport. The cloud ASR backend is now Parakeet Ultra via Photon; this model change has **not been run on a
+real Colab**.
 The owner has decided: the heavy calculation runs on Colab (option B), local later. Items (2) and (3b) are built on branch `feat/colab-align` (`--align`, `timing: "ctc-v1"`): the aligner is a single-file library, `packages/wordalign`, uploaded to the VM. Still **not run on a real Colab**: install size and time, and whether it coexists with the transcriber's CUDA libraries. Where I know a number I say so; where I do not, I say that.
 
 ## What exists today (verified in the code)
@@ -19,7 +18,7 @@ The owner has decided: the heavy calculation runs on Colab (option B), local lat
   cached in the session by content hash.
 - The cloud pipeline already has modes that skip the `.nhsx` steps: `--source downmix`
   (`run_downmix`, returns before any session handling). A plain-audio mode is the same shape.
-- `run_transcription` writes Orukeet's word-timestamp JSON per audio file (`transcripts/`) and the driver downloads those
+- `run_transcription` writes Parakeet Ultra's word-timestamp JSON per audio file (`transcripts/`) and the driver downloads those
   (`parse_generated_transcripts`). Steps 3-4 (inject into `.nhsx`, Auto-Silence) are what a plain mode would
   skip.
 - Cancel: `KeyboardInterrupt` (SIGINT) is handled and stops the Colab session unless `--keep-session`.
@@ -41,16 +40,15 @@ The owner has decided: the heavy calculation runs on Colab (option B), local lat
 ### Three changes to the JSON
 
 1. **Order and overlap are guaranteed.** Aligned starts can move a word up to 3 s later while a rejected neighbour stays
-   at Orukeet's time, so raw output can be out of order or overlapping. The writer sorts by start and shortens the
+   at Parakeet Ultra's time, so raw output can be out of order or overlapping. The writer sorts by start and shortens the
    *preceding* word on overlap (what `nhsx/write.py` does and why: moving the next word would push the error forward).
    Zero-length words get a 20 ms floor. `words` is therefore in time order with `s < e`.
-2. **`e` (word end) is not validated.** Orukeet provides word starts and ends; podcast accuracy has not been
+2. **`e` (word end) is not validated.** Both cloud models provide word starts and ends; podcast accuracy has not been
    measured. When `timing` is `ctc-v1`, starts are corrected by the forced aligner. Treat `e` as approximate.
-3. **`timing` values.** `orukeet` (Orukeet's NeMo word timestamps), `whisper` (Faster-Whisper word
-   timestamps), or `ctc-v1` (starts corrected by the forced
-   aligner, alignment version 1; the number changes if the rule or the model changes, so kuulas can tell an old
+3. **`timing` values.** `parakeet-ultra` (Parakeet Ultra's Photon word timestamps), `whisper` (Faster-Whisper word timestamps), `ctc-v1` (Colab starts corrected by the forced
+   aligner), or `orukeet-ctc` (local Orukeet words aligned with the same CTC model). The alignment version changes if the rule or model changes, so kuulas can tell an old
    correction from a new one). The `"rejected": <n>` field is the number of words the aligner could not place
-   (they keep Orukeet's time), so
+   (they keep the recognizer's time), so
    kuulas can show how much of a transcript is corrected.
 
 Units are seconds from the start of that audio file (the same clock as the file), floats with 3 decimals.
@@ -60,7 +58,7 @@ Units are seconds from the start of that audio file (the same clock as the file)
 The aligner (torchaudio `MMS_FA`, CTC) needs torch and torchaudio **2.8.0** (`forced_align` is removed in 2.9) and
 about 1.2 GB of weights. Where it runs is the owner's call, and I have not tried either:
 
-- **A. Locally, after the download.** `colab-transcribe` downloads Orukeet's JSON, then aligns on the Mac
+- **A. Locally, after the download.** `colab-transcribe` downloads Parakeet Ultra's JSON, then aligns on the Mac
   (CPU: a few minutes per 10 minutes of audio on my measurements; not timed carefully) using the audio it already has.
   Needs torch on the Mac, so the command becomes
   `uvx --from "git+...#subdirectory=colab-transcribe" --with torch==2.8.0 --with torchaudio==2.8.0 colab-transcribe ...`.
@@ -81,26 +79,34 @@ small one.
   and transcribed in it).
 - **Does the Drive step still happen by default?** No. Direct is the default today, and in this mode it is the only
   transfer.
-- **First-run cost and wall time per hour of audio?** **Not measured in this repo.** There are no recorded timings. A fresh
-  VM runs `apt-get install ffmpeg` (10-minute timeout) and `pip install` (30-minute timeout), then downloads the model on first
-  use (the NeMo checkpoint is about 2.5 GB). The measured numbers I have are only for local runs. I will time the first
-  real plain-audio run and write the numbers into this file instead of guessing.
+- **First-run cost and wall time per hour of audio?** Wall time and cost per audio hour are **not measured**. The 2026-10-27
+  T4 smoke run downloaded 1.26 GB of Photon model files. A fresh VM also runs `apt-get install ffmpeg` (10-minute timeout)
+  and `pip install` (30-minute timeout); no duration was recorded for those stages.
 - **Which command string?** Today, and until the plain-audio mode is merged to `main`:
   `uvx --from "git+https://github.com/ollisulopuisto/podcast#subdirectory=colab-transcribe" colab-transcribe ...`
   works for the current CLI. For a branch, put `@<branch>` after the repository URL. Use a command setting in
   kuulas (as planned): the string will change when the aligner option adds `--with` arguments.
 
-## Backend update (2026-10-26)
+## Backend update (2026-10-27)
 
-The default cloud recognizer is the local multilingual Orukeet model through NeMo. Silero VAD prepares
-mono 16 kHz audio and caps speech chunks at 20 seconds; NeMo word timestamps are offset back to the
-source file clock. `--model whisper` selects Faster-Whisper large-v3-turbo through CTranslate2;
-it consumes the requested language and prompt and returns word timestamps. The selected recognizer's
-dependencies are installed for the audio run. `timing` is `orukeet`, `whisper`, or `ctc-v1` when
-alignment is enabled. Fillers and repetitions are preserved by post-processing.
+The cloud recognizer is now Parakeet Ultra through Photon. Photon handles long-form segmentation and
+returns native word timestamps on the source file clock. The JSON timing values are now
+`parakeet-ultra` and `ctc-v1`. Parakeet Ultra does not expose Whisper's prompt or hotword biasing,
+so the legacy `--prompt` and `--model` flags are compatibility only. Fillers and repetitions are
+preserved by post-processing.
 
-This change passed local unit tests but has not been run on a real Colab. The original 2026-10-19
-measurements below used Whisper and are historical; they do not describe Orukeet quality or speed.
+The new path passed the local tests and a real Colab T4 smoke test on 2026-10-27. It has not been
+measured for podcast accuracy or throughput. The original 2026-10-19 measurements below used
+Whisper and are historical; they do not describe Parakeet Ultra quality or speed.
+
+### Parakeet Ultra Colab smoke test (2026-10-27)
+
+Ran the current pipeline on a T4 using a 4-second Finnish macOS text-to-speech clip, not episode
+audio. Photon installed, downloaded 1.26 GB of model files, loaded Ultra, and wrote seven words with
+`timing: "parakeet-ultra"` and word-level `s`/`e` values. The Colab session stopped at the end of
+the run. This verifies the runtime, file conversion and Kuulas JSON path; the synthetic transcript
+is not an accuracy measurement. The first attempt exposed that Photon does not accept AIFF, so the
+pipeline now converts AIFF to 16 kHz mono WAV before inference.
 
 ## What is not known about the correction
 
@@ -170,14 +176,18 @@ list of wishes from `docs/PODCAST-MAGIC.md`, built as asked.
   - `done`: `files`, the paths of the `<name>.words.json` written, in the order of the `--audio` arguments. The last event
     of a successful run. Unchanged by the 2026-10-23 list.
 
-### Paikallinen Parakeet/Orukeet-tausta
+### Local Parakeet and Orukeet backends
 
-`--backend parakeet` and `--backend orukeet` use the same plain-audio JSON
+`--backend parakeet` uses Parakeet MLX. `--backend orukeet` uses Orukeet's native
+runtime, installed with the pinned 0.1.1 wheel and `orukeet install`. It returns
+segment times, so the local path uses the shared Finnish CTC aligner for word
+times and fails if a word cannot be placed. The local backend requires Torch,
+torchaudio 2.8.0, and ffmpeg. Both backends use the same plain-audio JSON
 contract as Colab and accept `--events`. Their `words` array uses the same
 `w`/`s`/`e` fields, sorted order, three-decimal seconds, overlap handling,
-20 ms minimum duration, and `version: 1`. `timing` is the selected backend
-(`parakeet` or `orukeet`); `rejected` is zero because no forced alignment is
-performed.
+20 ms minimum duration, and `version: 1`. `timing` is `parakeet` for Parakeet
+MLX and `orukeet-ctc` for local Orukeet; `rejected` is zero because an Orukeet
+file is written only when all words align.
 
 The event stream keeps schema 1. A local run emits `session` with
 `state: "local"` and `backend`, then one `stage` start/done pair per file
@@ -199,3 +209,17 @@ when the tool has already recovered; if it still sees the failure, the tool fail
 - What this does not give: the Colab CLI's own error text beyond `message` (it is in the text lines), a time estimate (no
   timings have been recorded; see "First real Colab runs"), the model download progress inside `run`, or bytes inside the
   small uploads.
+
+
+### Fresh-install integration check (2026-10-27)
+
+Rechecked with the release install from #116 (Google CLI at `930275e`,
+`jupyter-kernel-client` 0.9.0 and the declared lxml dependency) and the Ultra
+pipeline from #117. A generated Finnish macOS Satu AIFF clip, 4.228 seconds at
+22,050 Hz, completed on a uniquely named T4 session. The cloud pipeline converted
+AIFF to mono 16 kHz WAV and returned eight timestamped words with
+`timing: "parakeet-ultra"`. The result downloaded, progress reached 100, `done`
+was emitted and the session terminated automatically. This verifies the fresh
+client environment and the cloud transport together; it is not a podcast
+accuracy or throughput measurement. The existing local MLX Orukeet weight/fallback
+limitation remains.

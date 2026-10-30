@@ -1,6 +1,6 @@
 [project]
 name = "podcast-magic"
-version = "2026.10.12.1"
+version = "2026.10.30.1"
 description = "Hindenburg-jälkityöt macOS:llä: litterointi ja hiljaisten kohtien vaimennus"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -27,7 +27,7 @@ dependencies = [
     "wordalign",
     "numpy>=2.5.4",
     "lxml>=6.1.3",
-    "fastapi>=0.115",
+    "fastapi>=0.161.1",
     "uvicorn[standard]>=0.54.0",
     "pywebview>=6.0",  # FileDialog; OPEN_DIALOG on vanhentunut
 ]
@@ -47,6 +47,13 @@ json-to-text = "podcastmagic.transcribe.json_to_text:main"
 mlx = ["mlx-whisper>=0.4.0"]
 # Kaikille alustoille sopiva varakone. Sama moottori kuin Colab-muistikirjassa.
 faster = ["faster-whisper>=1.1.0"]
+# Orukeet SDK asennetaan pyörästä; natiivi ajuri ja malli asennetaan erikseen
+# `orukeet install` -komennolla, eikä niitä kopioida sovelluspakettiin.
+orukeet = [
+    "orukeet @ https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl",
+]
+# Photon lataa Ultra-painot ensimmäisellä ajolla. Ultra vaatii NVIDIA-GPU:n.
+ultra = ["moondream>=2.6.1"]
 
 [tool.uv.sources]
 speechmix = { workspace = true }
@@ -60,6 +67,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/podcastmagic"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

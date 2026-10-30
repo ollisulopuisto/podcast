@@ -265,10 +265,12 @@ def test_the_av_render_in_two_halves_joins_on_the_exact_frame(tmp_path):
 
 
 @needs_ffmpeg
-def test_a_slow_zoom_moves_smoothly_without_wobble(tmp_path):
+@pytest.mark.parametrize("backend", ["ffmpeg", "av"])
+@pytest.mark.parametrize("reverse", [False, True], ids=["sisään", "ulos"])
+def test_a_slow_zoom_moves_smoothly_without_wobble(tmp_path, backend, reverse):
     """Hidas mikroliike: kuva liukuu tasaisesti eikä nyi pikselin edestakaisin.
 
-    ffmpeg-polku pyöristää sekä skaalatun koon että rajauksen kokonaisiin
+    Vanha ffmpeg-polku pyöristi sekä skaalatun koon että rajauksen kokonaisiin
     (rajauksen x parillisiin) pikseleihin, ja kaksi eri tahtiin askeltavaa
     pyöristystä saa kuvan nykimään: mitattuna 125 ruudun zoomissa poikkeama
     tasaisesta rms 0,60 px, enimmillään 1,16 px ja suunnanvaihtoja 82 —
@@ -276,19 +278,24 @@ def test_a_slow_zoom_moves_smoothly_without_wobble(tmp_path):
     siirtää alipikselitarkasti kuten Final Cut: 0,02 px, ei yhtään
     suunnanvaihtoa. Ks. CLAUDE.md, renderöinti.
     """
-    # Vain AVFoundation: ffmpeg-varapolku huojuu yhä (punainen tällä testillä).
-    backend = _backend("av")
+    draw = _backend(backend)
     source = tmp_path / "bar.mp4"
     _bar_source(source, x=1000, seconds=6)
     plan = reframe.plan_shot(1100 / 1920, 0.5, 1920, 1080, lead=-0.12, face_w=0.1)
-    shot = Shot(0, 125, str(source), 0.0, 1920, 1080, scale0=plan.scale,
-                scale1=plan.scale * 1.06, pos_x=plan.pos_x, fill=True)
+    scales = (plan.scale, plan.scale * 1.06)
+    if reverse:
+        scales = scales[::-1]
+    shot = Shot(0, 125, str(source), 1.0, 1920, 1080, scale0=scales[0],
+                scale1=scales[1], pos_x=plan.pos_x, fill=True)
     out = tmp_path / "out.mp4"
-    backend([shot], 1080, 1920, render.Fraction(1, 25), 125, str(out))
+    draw([shot], 1080, 1920, render.Fraction(1, 25), 125, str(out))
     raw = subprocess.run([FFMPEG, "-v", "error", "-i", str(out), "-f", "rawvideo",
                           "-pix_fmt", "gray", "-"], capture_output=True, check=True).stdout
     rows = np.frombuffer(raw, np.uint8).reshape(-1, 1920, 1080)[:, 960].astype(float)
     xs = np.array([np.average(np.arange(1080), weights=r + 1e-9) for r in rows])
+    assert len(xs) == 125
+    assert abs(xs[0] - _expected(shot, 1000, shot.scale0)) < 3
+    assert abs(xs[-1] - _expected(shot, 1000, shot.scale1)) < 3
     frames = np.arange(len(xs))
     smooth = np.polyval(np.polyfit(frames, xs, 2), frames)
     assert np.sqrt(np.mean((xs - smooth) ** 2)) < 0.1

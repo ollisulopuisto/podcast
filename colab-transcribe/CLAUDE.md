@@ -42,7 +42,7 @@ mukana, joten paikallinen puoli ei muutu eikä saa uusia riippuvuuksia.
 `--source downmix` litteroi koko miksauksen kerran ilman puhujia ja palauttaa
 `<nimi> downmix.md`:n. Miksaus on **vain gain-summaus**: `ClipGain` voittaa
 `Gain`in, raidan `Volume` (dB) kerrotaan mukaan, mykistetyt raidat ja alueet
-ohitetaan; panorointi, ramppi ja häivytys jätetään pois. Orukeet ottaa monon,
+ohitetaan; panorointi, ramppi ja häivytys jätetään pois. Parakeet Ultra ottaa monon,
 joten ne eivät tuo mitään.
 
 Osio on käsin kopioitu neljästä lähteestä, eikä mikään commit tavoita sitä:
@@ -100,27 +100,25 @@ pilvipään ajoa ole kokeiltu oikealla Colabilla.
 (`driver.ALIGN_MODULE`), samalla tavalla kuin `silencelearn`in. Kohdistin
 ajetaan **omassa prosessissaan** ja torch omaan kansioonsa
 (`pipeline.ALIGN_SITE`, `aligner_env`), jotta kohdistimen torch 2.8:n
-riippuvuudet pysyvät erillään NeMo-ASR:n torch-ympäristöstä. Kohdistin
+riippuvuudet pysyvät erillään Photon-ASR:n ympäristöstä. Kohdistin
 tarkistetaan ennen litterointia (`check_aligner`), ja jos mikään sana ei
 kohdistu, ajo kaatuu: korjatuksi merkitty tiedosto, jossa on ASR:n aika, olisi
 juuri se hiljainen vika. `ALIGN_TIMING` seuraa `wordalign.VERSION`ia testillä.
 
-## Orukeet ja podcastin puheajat
+## Parakeet Ultra ja podcastin puheajat
 
-Pilven ASR on Orukeet (`oruk/orukeet`, HF-revisio
-`555136b50265a132d4cea0d35560c26fc4f657ab`) NeMo 3.0.0:n kautta; Whisper/CTranslate2 ei ole enää
-asennettava riippuvuus. Orukeet tukee 25 kieltä, niiden joukossa suomi. Ääni muunnetaan Silero VAD:lle
-mono-16 kHz PCM:ksi ja jaetaan enintään 20 sekunnin puheikkunoihin ennen tunnistusta; ikkunan
-sanakohtaiset ajat siirretään alkuperäisen tiedoston kelloon. Aikaraja on muistinkäytön suunnitteluraja,
-ei mitattu optimaalinen jakopituus. VAD:n lyhyen puheen alaraja on 80 ms, jotta lyhyet täytesanat
-eivät putoa oletusarvoisella 250 ms rajalla.
+Pilven ASR on Moondreamin Parakeet Ultra Photon-ajurilla (`moondream/parakeet-ultra`). Photon tukee
+25 kieltä, niiden joukossa suomi, ja hoitaa pitkän äänen segmentoinnin sekä sanakohtaiset
+aikaleimat. Mallin painot ladataan ensimmäisellä ajolla. Polku ajettiin oikealla T4-Colabilla
+2026-10-27 synteettisellä suomenkielisellä äänellä: Photon latasi 1,26 Gt mallitiedostoja ja
+kirjoitti seitsemän sanaa aikaleimoineen. Tämä on toimintatesti, ei tarkkuusmittaus.
 
-Orukeet ei tue Whisperin `initial_prompt`ia eikä tässä toteutuksessa hotword-biasointia. `--prompt`
+Parakeet Ultra ei tue Whisperin `initial_prompt`ia eikä tässä toteutuksessa hotword-biasointia. `--prompt`
 ja `--model` säilyvät vanhojen komentojen yhteensopivuuden vuoksi, mutta eivät vaikuta dekoodaukseen;
 mukautetusta promptista annetaan varoitus. VAD ja jälkikäsittely eivät poista täytesanoja tai
-peräkkäistoistoja. Whisperin vanhat laatumittaukset eivät päde tähän malliin. Orukeet-polku on
-testattu paikallisilla testeillä, mutta ei oikealla Colabilla; pip-asennuksen, GPU-ajon ja mallin
-pitkien äänien toimivuutta ei ole vielä mitattu tuotantoraidalla.
+peräkkäistoistoja. Whisperin vanhat laatumittaukset eivät päde tähän malliin. Ultra-polku on testattu paikallisilla
+yksikkötesteillä ja lyhyellä oikean Colab T4 -ajolla; mallin podcast-tarkkuutta, pitkän äänen
+toimivuutta tai suoritusnopeutta ei ole vielä mitattu tuotantoraidalla.
 
 ## Opittu kynnys ladataan, ei kopioida
 
@@ -193,10 +191,12 @@ samat komennot jotka oikea ajo suorittaa. Jos komennon muoto muuttuu,
 muuttuu vain `driver.py` ja sen testit — ei kolmea kopiota.
 
 `colab`-työkalu (`google-colab-cli`) on riippuvuus, jotta `uvx` riittää
-asennukseksi. Se ja Googlen `jupyter-kernel-client`-fork ovat suoria
-git-viittauksia kiinnitettyinä toimiviksi todettuihin committeihin: PyPI:n
-samanniminen `jupyter-kernel-client` on eri paketti, eikä Colab CLI:n oma
-`[tool.uv.sources]` päde kun se on toisen riippuvuus. `onboarding.bundled_colab`
+asennukseksi. CLI on kiinnitetty git-committiin. Sen vaatima `jupyter-kernel-client`
+0.9.0 on kiinnitetty PyPI-pyörän URL:iin ja SHA-256:een. Tämä versio sisältää
+CLI:n tukeman `KernelClient`-rajapinnan ja oletus-WebSocket-protokollan. Vanha
+Google-fork ilmoitti versiokseen 0.8.0 ja rikkoi puhtaan asennuksen
+riippuvuustarkistuksen. Juuren `override-dependencies` ohittaa CLI:n lähteen
+fork-viittauksen samalla 0.9.0-pyörällä. `onboarding.bundled_colab`
 löytää sen oman Pythonin vierestä, ja `colab_env` lisää sen hakemiston
 PATHin alkuun: komennot pysyvät muodossa `colab ...`, joten `--dry-run`
 näyttää täsmälleen mitä ajetaan. uv:n `#!/bin/sh`-käynnistimen takana
@@ -252,3 +252,5 @@ Raja ``BLEED_MARGIN_DB`` on mitattu yhdestä kahden mikin istunnosta.
 ``TURN_GAP_S`` on vain oletus kun ``write_script``ia kutsutaan ilman ajoa.
 podcast-magicin ``script/core.py`` ei voi tuoda sitä (työtilan raja) ja pitää
 oman 1 s:n kopionsa; testi pitää tulokset samoina oletusgapilla.
+
+Whisper-valinta käyttää Faster-Whisper 1.2.1:tä, large-v3-turbo CUDA float16:na; Photon jää Parakeet Ultralle. Tämä T4-yhteensopivuuskorjaus on yksikkötestattu valeajurilla, ei ajettu oikealla T4:llä.

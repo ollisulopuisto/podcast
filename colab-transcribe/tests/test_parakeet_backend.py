@@ -7,12 +7,18 @@ toteutumisen sekä edistymis- ja tapahtumatulosteet ilman Colab-kutsuja.
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 
 import pytest
 
 from colabtranscribe import __main__ as cli
 from colabtranscribe import parakeet
 from colabtranscribe.options import BACKENDS, RunOptions
+
+
+@pytest.fixture(autouse=True)
+def _isolate_inference_tests_from_the_user_cache(monkeypatch):
+    monkeypatch.setattr(parakeet, "local_inference_slot", nullcontext)
 
 
 def test_backend_choices_contain_colab_and_parakeet():
@@ -60,7 +66,7 @@ def test_orukeet_backend_dry_run_prints_local_commands(tmp_path, capsys):
 
     assert code == 0
     stdout = capsys.readouterr().out
-    assert "parakeet-mlx" in stdout
+    assert "orukeet transcribe" in stdout
     assert "haastattelu.wav" in stdout
     assert "haastattelu.words.json" in stdout
     assert "colab new" not in stdout
@@ -143,7 +149,9 @@ def test_parakeet_transcribe_file_mapping(monkeypatch, tmp_path):
             ]
 
     class FakeModel:
-        def transcribe(self, _path):
+        def transcribe(self, _path, *, chunk_duration, overlap_duration):
+            assert chunk_duration == 120.0
+            assert overlap_duration == 15.0
             return FakeResult()
 
     import sys
@@ -334,3 +342,52 @@ def test_parakeet_backend_unavailable_fails_cleanly(monkeypatch, tmp_path, capsy
     assert code == 1
     stdout = capsys.readouterr().out
     assert "parakeet-mlx ei ole asennettu" in stdout
+
+
+def test_long_orukeet_uses_bounded_overlapping_inference(monkeypatch, tmp_path):
+    """Fail before inference if the wrapper ever returns to unchunked API defaults."""
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    calls = []
+
+    class Model:
+        def transcribe(self, path, *, chunk_duration=None, overlap_duration=None):
+            assert chunk_duration is not None, "would allocate whole-file attention"
+            assert 0 < overlap_duration < chunk_duration <= 120
+            calls.append(path)
+            # The dependency returns globally offset, overlap-merged tokens.
+            return SimpleNamespace(text="rajan jälkeen", sentences=[SimpleNamespace(
+                tokens=[SimpleNamespace(text=" rajan", start=119.8, end=120.1),
+                        SimpleNamespace(text=" jälkeen", start=120.2, end=120.7),
+                        SimpleNamespace(text=" loppu", start=3600.0, end=3600.8)])])
+
+    module = ModuleType("parakeet_mlx")
+    module.from_pretrained = lambda _name: Model()
+    monkeypatch.setitem(sys.modules, "parakeet_mlx", module)
+    path = tmp_path / "261009_002_Tr1.WAV"
+    raw = parakeet.transcribe_file(path, "local/orukeet")
+    assert calls == [str(path)]
+    assert raw["segments"][0]["words"] == [
+        {"word": "rajan", "start": 119.8, "end": 120.1},
+        {"word": "jälkeen", "start": 120.2, "end": 120.7},
+        {"word": "loppu", "start": 3600.0, "end": 3600.8}]
+
+
+def test_local_inference_failure_does_not_publish_words(monkeypatch, tmp_path):
+    audio = tmp_path / "long.wav"
+    audio.write_bytes(b"audio")
+    out = tmp_path / "words"
+    out.mkdir()
+    stale = out / "long.words.json"
+    stale.write_text("stale")
+    monkeypatch.setattr(parakeet, "is_available", lambda: (True, ""))
+
+    def failed(*_args, **_kwargs):
+        raise RuntimeError("inference failed")
+
+    monkeypatch.setattr(parakeet, "transcribe_file", failed)
+    options = RunOptions(source="audio", backend="orukeet", output_dir=str(out))
+    assert parakeet.run_audio_mode_parakeet(
+        options, [str(audio)], False, lambda _: None) == 1
+    assert not stale.exists()
