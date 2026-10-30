@@ -9,6 +9,7 @@ from autoraffkat import decide as decide_mod
 from autoraffkat.decide import Grid, GroupShot, SpeakerLanes, decide
 from autoraffkat.model import (
     HOP,
+    LONGTAKE_REACTION_WIDE,
     LONGTAKE_RETURN,
     LONGTAKE_STAY,
     OVERLAP_HOLD,
@@ -883,6 +884,28 @@ def test_reaction_then_wide_puts_three_shots_where_reaction_puts_one():
     # Päätykuvat ovat molemmissa, omana sääntönään.
     assert any(s.angle == "WIDE" for s in middle(three))
     assert not any(s.angle == "WIDE" for s in middle(one))
+
+
+def test_reaction_and_wide_mode_makes_room_for_both_at_default_durations():
+    grid = _long_take_grid(60.0)
+    settings = Globals(
+        wide_every=14.0,
+        wide_hold=3.5,
+        min_shot=2.5,
+        long_take_rule=LONGTAKE_REACTION_WIDE,
+    )
+
+    segments = decide(grid, settings).segments
+    internal = middle(segments)
+
+    wide_index = next(
+        i for i, segment in enumerate(internal) if segment.angle == "WIDE"
+    )
+    reaction = internal[wide_index - 1]
+    wide = internal[wide_index]
+    assert reaction.angle == "CAM_B"
+    assert reaction.duration >= settings.min_shot
+    assert wide.duration >= settings.wide_hold
 
 
 # ------------------------------------ vuoro, ei äänipätkä (pp 55, 2026-09-23)

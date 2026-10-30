@@ -3,7 +3,7 @@
 import numpy as np
 
 from autoraffkat import preview
-from autoraffkat.decide import Grid, ShotLanes, SpeakerLanes, _want_array, decide
+from autoraffkat.decide import WIDE, Grid, ShotLanes, SpeakerLanes, _want_array, decide
 from autoraffkat.model import Globals
 from autoraffkat.project import ProjectSettings
 
@@ -59,6 +59,18 @@ def test_all_speaker_shot_infers_context_but_single_person_does_not():
     grid.speakers.pop()
     grid.shots = grid.shots[1:]
     assert grid.context_key == ''
+
+
+def test_inferred_wide_remains_an_ordinary_full_coverage_shot():
+    grid = shot_grid()
+    grid.shots[0].context = False
+    grid.shots.append(ShotLanes('pair', 'A & B', (0, 1)))
+    grid.speakers[1].on[500:700] = True
+
+    want, _ = _want_array(grid, Globals(min_shot=1, overlap_rule="wide"))
+
+    assert grid.context_key == 'room'
+    assert np.all(want[500:700] == WIDE)
 
 
 def test_roles_preserve_every_camera_in_track_order():

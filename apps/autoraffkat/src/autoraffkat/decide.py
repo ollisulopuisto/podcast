@@ -322,10 +322,9 @@ def _coverage_want(grid: Grid, g: Globals, active, levels) -> np.ndarray:
         ok = eligible & (~required[outside].any(axis=0) if outside else True)
         if shot.available is not None:
             ok &= shot.available
-        # Ympäristökuva on tavallisen valinnan varakuva. Näin kahden kuva
-        # voittaa koko huoneen kuvan myös kahden puhujan ohjelmassa.
-        context_cost = (len(grid.speakers) + 1
-                        if shot.context or shot.key == grid.context_key else 0)
+        # Erityisesti merkattu kontekstikuva on tavallisen valinnan varakuva.
+        # Peitosta päätelty laaja pysyy normaalina koko rosterin kuvana.
+        context_cost = len(grid.speakers) + 1 if shot.context else 0
         scores[index, ok] = len(shot.covers) + context_cost
     best = scores.min(axis=0)
     candidates = scores == best
@@ -608,6 +607,7 @@ def _force_wide(
     reaction = g.long_take_rule in (LONGTAKE_REACTION, LONGTAKE_REACTION_WIDE)
     through_wide = g.long_take_rule == LONGTAKE_REACTION_WIDE
     hold = max(g.wide_hold, g.min_shot)
+    reaction_wide_hold = max(g.wide_hold + g.min_shot, 2 * g.min_shot)
 
     def alt_target(speaker_angle: str, start: float, end: float) -> tuple[str, str]:
         """Mihin katkaisu menee: reaktiokuvaan jos sellainen on, muuten laajaan.
@@ -653,6 +653,11 @@ def _force_wide(
         to_alt = False
         while cursor < seg.end:
             step_len = hold if to_alt else g.wide_every
+            if to_alt and through_wide and grid is not None:
+                candidate_end = min(cursor + reaction_wide_hold, seg.end)
+                candidate, _ = alt_target(seg.angle, cursor, candidate_end)
+                if candidate != wide_key:
+                    step_len = reaction_wide_hold
             target_stop = min(cursor + step_len, seg.end)
             if not to_alt and target_stop < seg.end and grid is not None:
                 stop = _find_breath_point(
@@ -673,7 +678,7 @@ def _force_wide(
 
             if seg.end - stop < g.min_shot:
                 stop = seg.end
-            if to_alt and seg.end - cursor < hold + g.min_shot:
+            if to_alt and seg.end - cursor < step_len + g.min_shot:
                 # Katko jatkuisi vuoronvaihtoon asti eikä puhujaan palattaisi:
                 # vaihto katkaisee oton joka tapauksessa. Muuten kuva näyttää
                 # kuulijan, laajan ja saman kuulijan puhumassa.
@@ -684,7 +689,7 @@ def _force_wide(
                 # Reaktio, laaja, takaisin: kolme kuvaa yhden sijaan, kun
                 # katkaisun kesto riittää kumpaankin omaksi kuvakseen.
                 # Alle sen se olisi kaksi välähdystä eikä kahta kuvaa.
-                pivot = cursor + max(g.min_shot, (stop - cursor) / 2.0)
+                pivot = stop - max(g.min_shot, g.wide_hold)
                 if (through_wide and insert_key != wide_key and wide_key
                         and stop - pivot >= g.min_shot
                         and pivot - cursor >= g.min_shot):
