@@ -128,6 +128,12 @@ def test_transcript_cache_path_uses_the_resolved_backend(tmp_path):
     assert faster.name.startswith("episode.faster-whisper-")
 
 
+def test_default_fingerprint_keeps_whisper_alignment_cache_compatibility():
+    assert Options(backend="mlx").fingerprint() == Options(
+        backend="faster-whisper"
+    ).fingerprint()
+
+
 def test_orukeet_requires_word_alignment_before_opening_the_session(monkeypatch):
     from podcastmagic.transcribe.backends.base import BackendInfo
 

@@ -70,9 +70,10 @@ class Options:
         """
         return "-".join(
             [
-                backend_key or (
+                backend_key
+                or (
                     self.backend
-                    if self.backend in {"mlx", "faster-whisper", "orukeet", "parakeet-ultra"}
+                    if self.backend in {"orukeet", "parakeet-ultra"}
                     else "whisper"
                 ),
                 self.model,

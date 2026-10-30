@@ -23,3 +23,5 @@ Append decisions, files changed, tests, and commit SHA here.
 Root cause confirmed: `Options.fingerprint()` normalized both `mlx` and `faster-whisper` to `whisper`; `auto` also had no resolved runtime represented. Added a regression test first; it failed because `cache_path` had no resolved-backend parameter. The fix adds an optional backend key to the fingerprint/cache path and supplies `backend.key` after `resolve()`. Alignment cache remains unchanged.
 
 Files: `apps/podcast-magic/src/podcastmagic/transcribe/options.py`, `apps/podcast-magic/src/podcastmagic/transcribe/run.py`, `apps/podcast-magic/tests/test_transcribe.py`.
+
+Review refinement: left the default `Options.fingerprint()` normalization intact so alignment cache names do not change; only transcript `cache_path(..., backend_key=resolved.key)` gets the runtime-specific key. Added a regression test proving the old MLX/faster-whisper default fingerprint equivalence remains. Final Podcast Magic suite: 369 passed; Ruff clean.
