@@ -18,6 +18,15 @@ def test_main_gui_mode_called(monkeypatch):
     mock_launch.assert_called_once()
 
 
+def test_audio_worker_mode_dispatches_before_cli_argument_parsing(monkeypatch):
+    mock_worker = MagicMock(return_value=0)
+    monkeypatch.setattr("autoraffkat.audio.worker.main", mock_worker)
+
+    assert __main__.main(["--audio-worker"]) == 0
+
+    mock_worker.assert_called_once_with()
+
+
 def test_main_headless_mode(monkeypatch, scratch_xml):
     """--no-gui tai --headless ajaa uvicorn.run komentorivillä."""
     mock_run = MagicMock()

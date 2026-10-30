@@ -6,6 +6,7 @@ tuoreuden tunnistus ja näytemäärän tarkistus.
 
 import os
 import pathlib
+import sys
 import time
 
 import numpy as np
@@ -27,6 +28,17 @@ def test_original_is_never_the_target():
     for suffix in (mix.MIX_SUFFIX, mix.ROOM_SUFFIX):
         source = "/x/mic.wav"
         assert mix.sibling(source, suffix) != source
+
+
+def test_frozen_mix_command_reenters_app_through_worker_dispatch(monkeypatch):
+    from autoraffkat.server.app import AppState
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", "/Applications/autoraffkat")
+
+    assert AppState(xml_path="")._mix_command() == [
+        "/Applications/autoraffkat", "--audio-worker",
+    ]
 
 
 def test_adopt_takes_the_processed_files_already_on_disk(

@@ -76,8 +76,8 @@ elif sys.platform.startswith("win"):
 
 hiddenimports += collect_submodules("uvicorn")
 hiddenimports += collect_submodules("autoraffkat")
-# Jaettu kirjasto kokonaisuudessaan, samasta syystä kuin autoraffkat itse:
-# lapsiprosessit käynnistetään ``-m``:llä, eikä sitä reittiä näy tuontigraafissa.
+# Jaettu kirjasto kokonaisuudessaan: lähdeajon ``-m``-lapsi ei näy
+# tuontigraafissa, ja pakattu lapsi käynnistyy sisäisen komentotilan kautta.
 # ``speechmix.editor`` on nyt yksi niistä.
 hiddenimports += collect_submodules("speechmix")
 

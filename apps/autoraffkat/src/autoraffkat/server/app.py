@@ -1168,6 +1168,10 @@ class AppState:
                 self.mix_result.skipped += 1
 
     def _mix_command(self) -> list[str]:
+        if getattr(sys, "frozen", False):
+            # Pakattu binääri ei ole Python-tulkki: anna sen käynnistää
+            # työntekijä erillisenä sisäisenä komentona.
+            return [sys.executable, "--audio-worker"]
         return [sys.executable, "-m", "autoraffkat.audio.worker"]
 
     def stop_mix(self) -> bool:

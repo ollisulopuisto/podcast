@@ -122,6 +122,12 @@ reports progress as line-delimited JSON, so a plug-in that crashes takes
 nothing else with it, and the child builds its own envelopes — which is why
 ducking can no longer be skipped for lack of them.
 
+In source runs, the child is `python -m autoraffkat.audio.worker`. In a
+PyInstaller app `sys.executable` is the app binary, not Python; the parent
+re-enters that binary with the private `--audio-worker` dispatch flag. The
+windowed child also restores stdin/stdout/stderr from the pipes created by
+`Popen`, because PyInstaller may leave Python's stream objects unset.
+
 Ducking must never fail quietly. It depends on the envelopes, which are
 computed in a background thread on load, and pressing the button first left
 the grid unbuilt and the masks empty with nothing said. The setting read

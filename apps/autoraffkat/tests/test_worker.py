@@ -21,6 +21,20 @@ def _tracks():
     }
 
 
+def test_worker_reconnects_missing_windowed_stdio_to_subprocess_pipes(monkeypatch):
+    streams = {0: io.StringIO(), 1: io.StringIO(), 2: io.StringIO()}
+    monkeypatch.setattr(worker.sys, "stdin", None)
+    monkeypatch.setattr(worker.sys, "stdout", None)
+    monkeypatch.setattr(worker.sys, "stderr", None)
+    monkeypatch.setattr(worker.os, "fdopen", lambda fd, *args, **kwargs: streams[fd])
+
+    worker._restore_stdio()
+
+    assert worker.sys.stdin is streams[0]
+    assert worker.sys.stdout is streams[1]
+    assert worker.sys.stderr is streams[2]
+
+
 @needs_ffmpeg
 def test_debleed_alone_still_builds_the_grid(scratch_xml, monkeypatch):
     """Vaimennus pois, ristivuodon vähennys päällä: ruudukko on silti tehtävä.
