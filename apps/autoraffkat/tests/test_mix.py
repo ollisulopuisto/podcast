@@ -210,7 +210,11 @@ def test_fingerprint_covers_every_setting():
     # Masteroinnin luvut tehdään katon yhteydessä ja mitataan joka ajolla
     # uudestaan, joten niiden muuttaminen ei vanhenna yhtäkään stemiä.
     delivery = {n for n in fields if n.startswith("program_") and n != "program_target"}
-    outside = {"enabled", "room_track"} | ducking | delivery
+    # Hiljaisuuden vaimennus kirjoitetaan FCPXML:n äänenvoimakkuuskäyränä,
+    # ei käsiteltyihin äänitiedostoihin, joten se ei muuta niiden sormenjälkeä.
+    silence = {n for n in fields if n.startswith("silence_")}
+    assert silence == {"silence_pass", "silence_min_gap", "silence_db", "silence_fade"}
+    outside = {"enabled", "room_track"} | ducking | delivery | silence
     assert fields - outside == set(mix.FINGERPRINT_FIELDS)
     assert not ducking & set(mix.FINGERPRINT_FIELDS)
 
