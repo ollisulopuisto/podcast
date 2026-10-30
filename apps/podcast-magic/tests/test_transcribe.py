@@ -117,6 +117,17 @@ def test_non_whisper_backend_is_part_of_the_transcript_fingerprint():
     assert whisper.fingerprint() != Options(backend="parakeet-ultra").fingerprint()
 
 
+def test_transcript_cache_path_uses_the_resolved_backend(tmp_path):
+    options = Options(backend="auto")
+    mlx = runner.cache_path(tmp_path, "/audio/episode.wav", options, backend_key="mlx")
+    faster = runner.cache_path(
+        tmp_path, "/audio/episode.wav", options, backend_key="faster-whisper"
+    )
+    assert mlx != faster
+    assert mlx.name.startswith("episode.mlx-")
+    assert faster.name.startswith("episode.faster-whisper-")
+
+
 def test_orukeet_requires_word_alignment_before_opening_the_session(monkeypatch):
     from podcastmagic.transcribe.backends.base import BackendInfo
 

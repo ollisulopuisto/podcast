@@ -62,7 +62,7 @@ class Options:
     def to_dict(self) -> dict:
         return asdict(self)
 
-    def fingerprint(self) -> str:
+    def fingerprint(self, backend_key: str | None = None) -> str:
         """Tunniste, joka erottaa eri asetuksilla tehdyt litteroinnit.
 
         Välimuisti ohittaa jo litteroidun tiedoston. Ilman tunnistetta mallin
@@ -70,7 +70,11 @@ class Options:
         """
         return "-".join(
             [
-                self.backend if self.backend in {"orukeet", "parakeet-ultra"} else "whisper",
+                backend_key or (
+                    self.backend
+                    if self.backend in {"mlx", "faster-whisper", "orukeet", "parakeet-ultra"}
+                    else "whisper"
+                ),
                 self.model,
                 self.language or "auto",
                 "fill" if self.fillers else "clean",
