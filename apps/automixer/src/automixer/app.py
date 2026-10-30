@@ -43,6 +43,7 @@ from automixer.cli_mix import (
     parse_track_params,
 )
 from automixer.keys import KEYS_BINDINGS, KeysHelp
+from automixer.roles import ROLE_BINDINGS, TrackRoleActions
 from speechmix import chain, editor
 
 #: Liitännäisen oma tila (dxReviven malli) jakson kansiossa, jotta seuraava
@@ -86,7 +87,7 @@ class LogScreen(ModalScreen):
     ]
 
 
-class AutomixerApp(KeysHelp, App):
+class AutomixerApp(TrackRoleActions, KeysHelp, App):
     """
     The main Automixer Textual application.
 
@@ -121,6 +122,7 @@ class AutomixerApp(KeysHelp, App):
         # Ensimmäisenä: 80 sarakkeen päätteessä alarivi loppuu kesken
         # («space Play»), ja ? on se merkintä joka johtaa kaikkiin muihin.
         *KEYS_BINDINGS,
+        *ROLE_BINDINGS,
         Binding("q", "quit", "Quit"),
         Binding("ctrl+s", "save", "Save Config"),
         Binding("r", "refresh", "Refresh Files"),
@@ -418,15 +420,10 @@ class AutomixerApp(KeysHelp, App):
         Handles global button press events.
         """
         if event.button.id in ("mark_speech_btn", "mark_music_btn"):
-            role = "speech" if event.button.id == "mark_speech_btn" else "music"
-            for f in self.query_one("#track_selection_list", SelectionList).selected:
-                self.config["tracks"] = [
-                    t for t in self.config["tracks"] if t["path"] != f
-                ]
-                self.config["tracks"].append(
-                    {"name": os.path.basename(f), "path": f, "type": role}
-                )
-            self.update_track_roles_display()
+            if event.button.id == "mark_speech_btn":
+                self.action_mark_speech()
+            else:
+                self.action_mark_music()
         elif event.button.id == "analyze_btn":
             self.run_analysis()
         elif event.button.id == "mix_btn":
