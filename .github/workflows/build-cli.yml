@@ -74,6 +74,9 @@ jobs:
 
   build:
     needs: [select]
+    # GitHub evaluates the job condition before expanding its matrix.
+    # Unrelated PRs select no CLI apps; skip rather than expand an empty axis.
+    if: needs.select.outputs.apps != '[]'
     strategy:
       fail-fast: false
       matrix:
