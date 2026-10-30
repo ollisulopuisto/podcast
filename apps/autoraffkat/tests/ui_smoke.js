@@ -376,6 +376,19 @@ for (const lang of ['fi', 'en']) {
     });
     run(`${tag} renderRuler`, () => context.renderRuler());
     run(`${tag} drawBar`, () => context.drawBar());
+    run(`${tag} silence timeline lane`, () => {
+      vm.runInContext(`
+        state.audio.silence_pass = true;
+        latest.preview.silence = [{
+          start: latest.preview.view_start,
+          end: latest.preview.view_end,
+          fade: 0.4,
+        }];
+        drawBar();
+        renderLegend();
+        state.audio.silence_pass = false;
+      `, context);
+    });
     run(`${tag} payload`, () => {
       const body = context.payload();
       if (!body.tracks || !body.globals || !body.audio) {

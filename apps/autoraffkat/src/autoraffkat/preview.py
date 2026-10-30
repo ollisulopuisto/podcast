@@ -18,7 +18,8 @@ def _bucket_bounds(n: int, columns: int) -> np.ndarray:
 
 
 def build(grid: Grid, decision: Decision, columns: int = 1400,
-          reactions=None, window=None) -> dict:
+          reactions=None, window=None, silence_spans=None,
+          silence_fade: float = 0.4) -> dict:
     """Palauttaa palkin: kuka äänessä ja mikä kuva valittiin, sarakkeittain.
 
     ``reactions`` on lista ``(alku, loppu, puhujan indeksi)`` ohjelma-ajassa.
@@ -78,6 +79,15 @@ def build(grid: Grid, decision: Decision, columns: int = 1400,
             for column in range(max(0, low), min(columns, max(high, low + 1))):
                 lane[column] = int(index)
 
+    # Timestamps stay in programme time so the browser can draw the exact
+    # gaps (including their fade shoulders) at the same zoom as the cut.
+    silence = []
+    for start, end in silence_spans or ():
+        if end <= view_start or start >= view_end:
+            continue
+        silence.append({"start": float(start), "end": float(end),
+                        "fade": min(float(silence_fade), (end - start) / 2)})
+
     chosen = decision.chosen[mids] if n else np.zeros(0, dtype=np.int32)
     shots = getattr(grid, "shots", ())
     context_key = getattr(grid, "context_key", "")
@@ -90,6 +100,7 @@ def build(grid: Grid, decision: Decision, columns: int = 1400,
         ],
         "columns": columns,
         "reactions": lane,
+        "silence": silence,
         "duration": grid.duration,
         "program_start": grid.program_start,
         # Näkymän rajat: viivain piirtää näistä, ei ohjelman kokonaiskestosta.

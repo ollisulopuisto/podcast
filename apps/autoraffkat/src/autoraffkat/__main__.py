@@ -22,6 +22,13 @@ def main(argv: list[str] | None = None) -> int:
     näkyy heti terminaalissa. Verhokäyrät lasketaan taustasäikeessä, joten
     käyttöliittymä aukeaa odottamatta ffmpegiä.
     """
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv == ["--audio-worker"]:
+        from autoraffkat.audio.worker import main as audio_worker_main
+
+        return audio_worker_main()
+
     parser = argparse.ArgumentParser(
         prog="autoraffkat",
         description="Automaattinen monikameraleikkaus: FCPXML sisään, FCPXML ulos.",

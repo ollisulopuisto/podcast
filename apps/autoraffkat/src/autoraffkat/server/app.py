@@ -35,7 +35,7 @@ from ..analysis import (
     resolve_roles,
     singleton_shots,
 )
-from ..audio import mix
+from ..audio import mix, silence
 from ..decide import WIDE_LABEL, decide
 from ..finalcut.read import ReadError, Timeline, read_fcpxml
 from ..finalcut.write import (
@@ -1067,6 +1067,8 @@ class AppState:
             a.declick = bool(raw["declick"])
         if "duck" in raw:
             a.duck = bool(raw["duck"])
+        if "silence_pass" in raw:
+            a.silence_pass = bool(raw["silence_pass"])
         if "program_target" in raw:
             a.program_target = bool(raw["program_target"])
         if "plugin_workers" in raw:
@@ -1087,6 +1089,9 @@ class AppState:
             "duck_min_gap",
             "duck_dominance_db",
             "declick_sensitivity",
+            "silence_min_gap",
+            "silence_db",
+            "silence_fade",
         ):
             if name in raw:
                 a.__dict__[name] = float(raw[name])
@@ -1163,6 +1168,10 @@ class AppState:
                 self.mix_result.skipped += 1
 
     def _mix_command(self) -> list[str]:
+        if getattr(sys, "frozen", False):
+            # Pakattu binääri ei ole Python-tulkki: anna sen käynnistää
+            # työntekijä erillisenä sisäisenä komentona.
+            return [sys.executable, "--audio-worker"]
         return [sys.executable, "-m", "autoraffkat.audio.worker"]
 
     def stop_mix(self) -> bool:
@@ -1348,8 +1357,14 @@ class AppState:
             "wide_label": WIDE_LABEL,
             # Reaktiokuvat samaan palkkiin: niiden ajoitus suhteessa puheeseen
             # on koko kysymys, eikä sitä näe erillisestä listasta.
-            "preview": build_preview(grid, decision, reactions=lane,
-                                     window=self.preview_window),
+            "preview": build_preview(
+                grid, decision, reactions=lane,
+                window=self.preview_window,
+                silence_spans=(silence.dead_air_spans(
+                    grid, self.settings.audio.silence_min_gap
+                ) if self.settings.audio.silence_pass else ()),
+                silence_fade=self.settings.audio.silence_fade,
+            ),
             # Myös listaan: palkista näkee rytmin, listasta tarkan hetken.
             "reactions": [
                 {"speaker": WIDE_LABEL if index < 0 else names[index],
@@ -1953,6 +1968,15 @@ def create_app(state: AppState) -> FastAPI:
                 ducks = mix.duck_envelopes(
                     _grid, state.settings.audio, float(program_start)
                 )
+                silence_curves = silence.silence_envelopes(
+                    _grid, state.settings.audio
+                )
+                ducks = silence.merge_envelopes(ducks, silence_curves)
+                silence_spans = silence.dead_air_spans(
+                    _grid, state.settings.audio.silence_min_gap
+                ) if state.settings.audio.silence_pass else []
+                if state.settings.audio.silence_pass and not silence_spans:
+                    warnings.append(t("export.silence_none"))
                 if (state.settings.audio.duck
                         and state.settings.audio.duck_db < 0 and not ducks):
                     warnings.append(t("export.duck_none"))

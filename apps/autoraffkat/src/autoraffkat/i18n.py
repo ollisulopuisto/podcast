@@ -174,6 +174,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "en": "Ducking is on, but no microphone matched a mask: no ducking "
         "envelope was written into the export.",
     },
+    "export.silence_none": {
+        "fi": "Hiljaisuuspassi on päällä, mutta sisäisiä riittävän pitkiä taukoja ei löytynyt.",
+        "en": "The silence pass is on, but no long enough internal gaps were found.",
+    },
     "export.only_macos": {
         "fi": "Final Cut Pro on vain macOS:llä.",
         "en": "Final Cut Pro exists only on macOS.",

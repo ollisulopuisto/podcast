@@ -555,6 +555,17 @@ attached with the role `effects.Tilaääni` at a set level below speech. It is a
 connected clip rather than an angle, so it continues across cuts. It is never
 compressed: compressed room tone pumps.
 
+### Optional silence pass
+
+Enable **Silence pass** to fade all dialogue microphone roles during interior
+gaps where no speaker is active. The timeline preview adds an amber lane for
+each qualifying gap; lighter edges show the fade shoulders. Adjust the
+minimum gap, attenuation, and fade length while watching that lane. The
+default is off, a 2-second minimum, −60 dB, and a 0.4-second fade. The pass
+writes volume automation in FCPXML; it does not process audio files. Room-tone,
+music, and camera-audio roles are left alone, and programme head/tail fades
+remain controlled by the existing programme fade settings.
+
 ### Ducking the other microphone
 
 Optional. While one person talks, the other's microphone is attenuated —
