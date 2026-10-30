@@ -74,7 +74,7 @@ class RunOptions:
     bleed_filter: bool = True
     # Käsikirjoitus: lyhyet huomautukset kappaleen sisään, ei omille riveilleen.
     inline_remarks: bool = False
-    # ``model`` säilyy yhteensopivuusvalitsimena; Colab käyttää Orukeetia.
+    # Colabin ääni-ajossa ``model`` valitsee Orukeetin tai Faster-Whisperin.
     model: str = "orukeet"
     language: str = "fi"
     # Vain ``source="audio"``: sanojen alut kohdistetaan ääneen Colabissa

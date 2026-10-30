@@ -25,10 +25,13 @@ ORUKEET_TIMEOUT = 7200  # 2 h Orukeetin mallin lataukseen ja pitkiin tiedostoihi
 ORUKEET_REPO = "oruk/orukeet"
 ORUKEET_REVISION = "555136b50265a132d4cea0d35560c26fc4f657ab"
 ORUKEET_FILE = "orukeet-v0.1.0.nemo"
+WHISPER_MODEL = "large-v3-turbo"
+WHISPER_TIMING = "whisper"
 VAD_SAMPLE_RATE = 16000
 VAD_MAX_CHUNK_S = 20  # suunnitteluraja: VAD ei anna pitkän raidankaan mennä yhtenä lohkona
 _ORUKEET = None
 _SILERO_VAD = None
+_WHISPER = None
 
 AUDIO_EXTENSIONS = (".wav", ".aiff", ".flac", ".m4a", ".mp4", ".mp3")
 
@@ -112,14 +115,18 @@ def configure_cuda_libs():
 
 
 # 1. Asennetaan tarvittavat kirjastot pilviympäristössä
-def install_dependencies():
-    packages = [
-        "nemo_toolkit[asr]==3.0.0",
-        "silero-vad==6.2.2",
-        "av==18.1.0",
-        "lxml==6.1.3",
-        "pydub==0.25.1",
-    ]
+def install_dependencies(model="orukeet"):
+    packages = ["lxml==6.1.3", "pydub==0.25.1"]
+    if model == "whisper":
+        packages.append("faster-whisper==1.2.1")
+    else:
+        packages.extend(
+            [
+                "nemo_toolkit[asr]==3.0.0",
+                "silero-vad==6.2.2",
+                "av==18.1.0",
+            ]
+        )
     subprocess.run(["apt-get", "update", "-qq"], check=True, timeout=APT_TIMEOUT)
     subprocess.run(
         ["apt-get", "install", "-y", "-qq", "ffmpeg"], check=True, timeout=APT_TIMEOUT
@@ -1335,12 +1342,63 @@ def _orukeet_raw(hypothesis):
     }
 
 
-def transcribe_file(path, model=None, language="auto", initial_prompt=""):
-    """Jaa ääni VAD:lla, litteroi Orukeetilla ja siirrä ajat raidan kelloon.
+def _whisper_model():
+    """Lataa Faster-Whisperin large-v3-turbo-mallin Colabin GPU:lle kerran."""
+    global _WHISPER
+    if _WHISPER is None:
+        from faster_whisper import WhisperModel
 
-    ``model``, ``language`` ja ``initial_prompt`` säilyvät kutsurajapinnassa;
-    Orukeet käyttää kiinteää mallia eikä tue Whisperin promptia tai kielilippua.
+        _WHISPER = WhisperModel(
+            WHISPER_MODEL, device="cuda", compute_type="float16"
+        )
+    return _WHISPER
+
+
+def _whisper_raw(path, language, initial_prompt):
+    """Muunna Faster-Whisperin tulos putken sisäiseen sana-aikaesitykseen."""
+    recognizer = _whisper_model()
+    segments, _info = recognizer.transcribe(
+        path,
+        beam_size=5,
+        language=language if language and language != "auto" else None,
+        initial_prompt=initial_prompt or None,
+        word_timestamps=True,
+        condition_on_previous_text=False,
+    )
+    raw_segments = []
+    for segment in segments:
+        words = []
+        for word in segment.words or []:
+            text = (word.word or "").strip()
+            start, end = float(word.start), float(word.end)
+            if text and end > start:
+                words.append({"word": text, "start": start, "end": end})
+        raw_segments.append(
+            {
+                "start": float(segment.start),
+                "end": float(segment.end),
+                "text": (segment.text or "").strip(),
+                "words": words,
+            }
+        )
+    if not any(segment["words"] for segment in raw_segments):
+        raise RuntimeError(
+            f"Faster-Whisper ei palauttanut sanakohtaisia aikaleimoja tiedostolle {path}."
+        )
+    return {
+        "text": " ".join(segment["text"] for segment in raw_segments).strip(),
+        "segments": raw_segments,
+    }
+
+
+def transcribe_file(path, model=None, language="auto", initial_prompt=""):
+    """Litteroi valitulla Colab-moottorilla ja palauta sanakohtaiset ajat.
+
+    ``whisper`` käyttää Faster-Whisperiä suoraan alkuperäiselle äänelle.
+    Muut arvot säilyttävät Orukeetin VAD- ja NeMo-polun.
     """
+    if model == "whisper":
+        return _whisper_raw(path, language, initial_prompt)
     if initial_prompt:
         print("Huom: Orukeet ei tue Whisperin promptia; sanalista jätetään huomiotta.", flush=True)
     if model not in (None, "", "orukeet", "turbo"):
@@ -1501,6 +1559,7 @@ def run_audio(input_dir, output_dir, model, language, initial_prompt, align=Fals
         install_aligner()
         check_aligner()
     total = len(names)
+    timing = WHISPER_TIMING if model == "whisper" else "orukeet"
     transcribed = []
     for idx, filename in enumerate(names, 1):
         print(f"[ääni ({idx}/{total})] Litteroidaan: {filename}", flush=True)
@@ -1535,7 +1594,7 @@ def run_audio(input_dir, output_dir, model, language, initial_prompt, align=Fals
             for reason in aligned[filename]["rejected"][:10]:
                 print(f"    hylätty: {reason}", flush=True)
         else:
-            document = words_document(raw, language)
+            document = words_document(raw, language, timing=timing)
         output_path = os.path.join(output_dir, _swap_audio_ext(filename, ".words.json"))
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(document, f, ensure_ascii=False)
@@ -1592,7 +1651,11 @@ def main():
         help="downmix: koko miksaus litteroidaan kerran ilman puhujia; "
         "audio: pelkät äänitiedostot, sanat JSONina",
     )
-    parser.add_argument("--model", default="orukeet", help="yhteensopivuusvalitsin; käytössä aina Orukeet")
+    parser.add_argument(
+        "--model",
+        default="orukeet",
+        help="ASR-moottori audio-lähteelle (oletus: orukeet; whisper käyttää Faster-Whisperiä)",
+    )
     parser.add_argument("--language", default="fi", help="tulosteen kielimerkintä (malli tunnistaa kielen)")
     parser.add_argument(
         "--align",
@@ -1628,7 +1691,7 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     print("[vaihe 1/4] Asennetaan riippuvuudet (apt ja pip)...", flush=True)
-    install_dependencies()
+    install_dependencies(args.model if args.source == "audio" else "orukeet")
     print("[vaihe 1/4] Riippuvuudet asennettu.", flush=True)
     if args.source == "audio":
         run_audio(input_dir, output_dir, args.model, args.language, args.prompt, align=args.align)

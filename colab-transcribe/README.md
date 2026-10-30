@@ -101,23 +101,24 @@ Every `--audio` file goes up in the same Colab session and `words/<name>.words.j
 back: `{"version":1,"timing":"orukeet","language":"fi","rejected":0,"words":[{"w","s","e"}]}`,
 seconds from the start of that file, in time order with `s < e` (an overlap shortens the
 earlier word). No `.nhsx`, no Auto-Silence. The transfer is always direct: the audio goes to
-a Google Colab VM and not through Drive. Orukeet detects the language; `language` is
-output metadata and `--model` remains as a compatibility option for old callers.
-`--prompt` does not affect Orukeet decoding. `--progress` prints `PROGRESS <0-100> <message>`
+a Google Colab VM and not through Drive. Orukeet is the default; `--model whisper` selects
+Faster-Whisper's `large-v3-turbo` model instead. Whisper accepts `--language` and `--prompt`;
+Orukeet detects the language and ignores the prompt. `--progress` prints `PROGRESS <0-100> <message>`
 lines whose number never falls. A file that gets no words, or a missing result, makes the
 exit code 1 with the reason on stderr; old `*.words.json` of the same names are deleted
 before the run so they cannot pass for new ones. SIGTERM and Ctrl+C stop the Colab session
-(unless `--keep-session`) and exit 130. Word times come from Orukeet's NeMo word timestamps
-(`timing: "orukeet"`).
+(unless `--keep-session`) and exit 130. `timing` is `orukeet` for NeMo word times and
+`whisper` for Faster-Whisper word times.
 
-The cloud installs NeMo and Silero VAD, then downloads Orukeet's roughly 2.5 GB checkpoint on
-first use. Silero splits long recordings into speech chunks capped at 20 seconds; their word
-times are shifted back to the original recording clock. No post-processing removes fillers or
-repeated words. Orukeet does not currently accept the Whisper-style `--prompt` vocabulary.
+The cloud installs only the selected recognizer's dependencies. Orukeet installs NeMo and
+Silero VAD, then downloads its roughly 2.5 GB checkpoint on first use. Silero splits long
+recordings into speech chunks capped at 20 seconds; word times are shifted back to the original
+recording clock. Faster-Whisper uses CTranslate2 and downloads `large-v3-turbo` on first use.
+Neither path removes fillers or repeated words.
 
 `--align` (with `--audio`) corrects the word starts on the Colab VM with a forced aligner
 (`packages/wordalign`, torchaudio `MMS_FA`) and marks the file `"timing": "ctc-v1"`; `rejected` is the
-number of words that could not be placed (they keep Orukeet's time). It installs torch 2.8 into its
+number of words that could not be placed (they keep the selected recognizer's time). It installs torch 2.8 into its
 own folder on the VM and loads about 1.2 GB of weights, and it checks that **before** transcribing, so a
 broken aligner stops the run without spending GPU time. If no word at all gets aligned the run fails
 instead of writing a file marked as corrected. **Not run on a real Colab yet:** the install size and

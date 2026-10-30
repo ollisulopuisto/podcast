@@ -3,8 +3,9 @@
 Answer to the kuulas session's proposed plain-audio contract (`colab-transcribe --audio ... --json <folder>`).
 Written 2026-10-19 and updated 2026-10-26. The original plain-audio contract
 (`--audio`/`--json`, `--progress`, exit codes, SIGTERM) is implemented and tested against a fake
-Colab transport. The ASR backend is now Orukeet via NeMo; this model change has **not been run on a
-real Colab**.
+Colab transport. The default ASR backend is Orukeet via NeMo. `--model whisper` selects
+Faster-Whisper (`large-v3-turbo`) for CUDA GPUs including the T4 path used previously; the
+Faster-Whisper change has **not yet been run on a real Colab in this revision**.
 The owner has decided: the heavy calculation runs on Colab (option B), local later. Items (2) and (3b) are built on branch `feat/colab-align` (`--align`, `timing: "ctc-v1"`): the aligner is a single-file library, `packages/wordalign`, uploaded to the VM. Still **not run on a real Colab**: install size and time, and whether it coexists with the transcriber's CUDA libraries. Where I know a number I say so; where I do not, I say that.
 
 ## What exists today (verified in the code)
@@ -45,7 +46,8 @@ The owner has decided: the heavy calculation runs on Colab (option B), local lat
    Zero-length words get a 20 ms floor. `words` is therefore in time order with `s < e`.
 2. **`e` (word end) is not validated.** Orukeet provides word starts and ends; podcast accuracy has not been
    measured. When `timing` is `ctc-v1`, starts are corrected by the forced aligner. Treat `e` as approximate.
-3. **`timing` values.** `orukeet` (Orukeet's NeMo word timestamps) or `ctc-v1` (starts corrected by the forced
+3. **`timing` values.** `orukeet` (Orukeet's NeMo word timestamps), `whisper` (Faster-Whisper word
+   timestamps), or `ctc-v1` (starts corrected by the forced
    aligner, alignment version 1; the number changes if the rule or the model changes, so kuulas can tell an old
    correction from a new one). The `"rejected": <n>` field is the number of words the aligner could not place
    (they keep Orukeet's time), so
@@ -90,11 +92,12 @@ small one.
 
 ## Backend update (2026-10-26)
 
-The cloud recognizer is now the local multilingual Orukeet model through NeMo. Silero VAD prepares
+The default cloud recognizer is the local multilingual Orukeet model through NeMo. Silero VAD prepares
 mono 16 kHz audio and caps speech chunks at 20 seconds; NeMo word timestamps are offset back to the
-source file clock. The JSON timing values are now `orukeet` and `ctc-v1`. Orukeet does not expose
-Whisper's prompt or hotword biasing, so the legacy `--prompt` and `--model` flags are compatibility
-only. Fillers and repetitions are preserved by post-processing.
+source file clock. `--model whisper` selects Faster-Whisper large-v3-turbo through CTranslate2;
+it consumes the requested language and prompt and returns word timestamps. The selected recognizer's
+dependencies are installed for the audio run. `timing` is `orukeet`, `whisper`, or `ctc-v1` when
+alignment is enabled. Fillers and repetitions are preserved by post-processing.
 
 This change passed local unit tests but has not been run on a real Colab. The original 2026-10-19
 measurements below used Whisper and are historical; they do not describe Orukeet quality or speed.

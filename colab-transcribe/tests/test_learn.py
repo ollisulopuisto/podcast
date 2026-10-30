@@ -381,7 +381,7 @@ def test_the_learned_preset_is_offered_and_turns_the_flags_on():
 def test_the_script_accepts_the_learned_preset(monkeypatch, tmp_path):
     """``--preset learned`` laittaa RMS:n ja oppimisen päälle, häntä ja tauko 0,4."""
     seen = {}
-    monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
+    monkeypatch.setattr(pipeline, "install_dependencies", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline, "run_transcription", lambda *a, **k: None)
     monkeypatch.setattr(pipeline, "inject_transcriptions_to_nhsx",
                         lambda *a, **k: ["/x/jakso.nhsx"])

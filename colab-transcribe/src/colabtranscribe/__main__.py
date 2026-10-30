@@ -66,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--model", default=None,
-        help="vanha yhteensopivuusvalitsin (--audio); litterointi käyttää aina Orukeetia",
+        help="--audio: Orukeet (oletus) tai Whisper Faster-Whisperillä",
     )
     parser.add_argument("--language", default=None, help="kieli (--audio, oletus: fi)")
     parser.add_argument(
@@ -343,7 +343,7 @@ def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
         prompt=args.prompt if args.prompt != DEFAULT_PROMPT else env_opts.prompt,
         reset_session=args.reset_session or env_opts.reset_session,
         keep_session=args.keep_session or env_opts.keep_session,
-        model=args.model or "turbo",
+        model=args.model or "orukeet",
         language=args.language or "fi",
         align=args.align,
         backend=args.backend if args.backend is not None else env_opts.backend,
