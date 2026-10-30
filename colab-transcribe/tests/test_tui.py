@@ -12,8 +12,11 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import pytest
 from textual.widgets import Button, Input, Label, ProgressBar, Select
 
+from colabtranscribe.onboarding import OnboardingReport
+from colabtranscribe.options import RunOptions
 from colabtranscribe.tui import TranscribeApp
 
 
@@ -45,6 +48,84 @@ def test_collect_options_reads_the_fields(tmp_path: Path):
             await pilot.pause()
 
     run_scenario(scenario)
+
+
+@pytest.mark.parametrize("backend", ["colab", "orukeet", "parakeet"])
+def test_collect_options_preserves_settings_without_visible_controls(backend, tmp_path):
+    initial = RunOptions(
+        backend=backend, source="audio", model="whisper", language="en", align=True,
+        compress=False, reset_session=True, keep_session=True, bleed_filter=False,
+        allow_low_memory=True, parakeet_model="local/custom-parakeet",
+        output_dir=str(tmp_path / "out"),
+    )
+
+    async def scenario():
+        app = TranscribeApp(options=initial, runner=FakeRunner())
+        async with app.run_test():
+            assert app.collect_options() == initial
+            assert app.collect_options() is not initial
+
+    run_scenario(scenario)
+
+
+@pytest.mark.parametrize("model", ["whisper", "parakeet-ultra"])
+@pytest.mark.parametrize("source", ["tracks", "downmix"])
+def test_tui_selected_cloud_engine_and_source_reach_the_plan(model, source, tmp_path):
+    (tmp_path / "puhe.wav").write_bytes(b"")
+    fake = FakeRunner()
+    initial = RunOptions(model="whisper", source="downmix")
+
+    async def scenario():
+        app = TranscribeApp(options=initial, runner=fake)
+        async with app.run_test() as pilot:
+            assert app.query_one("#model", Select).value == initial.model
+            assert app.query_one("#source", Select).value == initial.source
+            app.query_one("#input", Input).value = str(tmp_path)
+            app.query_one("#output", Input).value = str(tmp_path / "out")
+            app.query_one("#model", Select).value = model
+            app.query_one("#source", Select).value = source
+            await pilot.press("r")
+            for _ in range(100):
+                await pilot.pause()
+                if fake.calls:
+                    break
+                await asyncio.sleep(0.02)
+
+    run_scenario(scenario)
+    assert fake.calls
+    command = next(c for c in fake.calls[0] if "/content/pipeline.py" in " ".join(c)
+                   and "--model" in " ".join(c))
+    assert f"--model {model}" in " ".join(command)
+    assert ("--source downmix" in " ".join(command)) == (source == "downmix")
+
+
+@pytest.mark.parametrize("backend", ["colab", "orukeet", "parakeet"])
+def test_tui_audio_settings_require_cli_before_cloud_onboarding(backend, tmp_path):
+    initial = RunOptions(backend=backend, source="audio", input_dir=str(tmp_path))
+    notices = []
+    fake = FakeRunner()
+    onboarding_calls = []
+
+    def unexpected_onboarding():
+        onboarding_calls.append(True)
+        return OnboardingReport(items=[])
+
+    async def scenario():
+        app = TranscribeApp(
+            options=initial, runner=fake, onboarding_checker=unexpected_onboarding,
+            auto_onboard=True,
+        )
+        app.notify = lambda message, **kwargs: notices.append(message)
+        async with app.run_test() as pilot:
+            await pilot.press("r")
+            await pilot.pause()
+            assert app.collect_options().backend == backend
+            assert app.collect_options().source == "audio"
+
+    run_scenario(scenario)
+    assert onboarding_calls == []
+    assert fake.calls == []
+    assert any("--audio" in message and "--json" in message for message in notices)
 
 
 def test_run_button_plans_and_logs(tmp_path: Path):

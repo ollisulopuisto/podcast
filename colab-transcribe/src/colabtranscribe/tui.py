@@ -35,7 +35,7 @@ from textual.widgets import (
 
 from . import driver, picker, session
 from .onboarding import OnboardingReport, check_environment
-from .options import GPUS, PRESETS, RunOptions
+from .options import CLOUD_MODELS, GPUS, PRESETS, RunOptions
 
 CommandLog = Callable[[str], None]
 Runner = Callable[[list[list[str]], CommandLog, float | None], int]
@@ -309,6 +309,9 @@ class TranscribeApp(App):
         self.title = "colab-transcribe"
         self.sub_title = "litterointi ja Auto-Silence Colabissa"
         self._initial = options or RunOptions.from_env()
+        self._session_form = (
+            self._initial.backend == "colab" and self._initial.source != "audio"
+        )
         # Välikäsitetyt testiä varten: oletus on se ajuri joka myös
         # komentorivillä ajaa.
         self._runner: Runner = runner or driver.run
@@ -348,6 +351,30 @@ class TranscribeApp(App):
                 with Horizontal(classes="path-row"):
                     yield Input(value=self._initial.output_dir, id="output")
                     yield Button("Valitse…", id="browse_output")
+
+                yield Label(
+                    "Paikallinen Orukeet ja MLX Parakeet (TDT, ei Ultra): "
+                    "käytä komentorivillä --audio ÄÄNI --json KANSIO "
+                    "--backend orukeet tai --backend parakeet."
+                )
+                if self._session_form:
+                    yield Label("Colabin puhemoottori")
+                    yield Select(
+                        [("Whisper large-v3-turbo" if model == "whisper"
+                          else "Parakeet Ultra", model) for model in CLOUD_MODELS],
+                        value=self._initial.model, id="model", allow_blank=False,
+                    )
+                    yield Label("Litteroitava ääni")
+                    yield Select(
+                        [("Raidat erikseen", "tracks"),
+                         ("Koko miksaus ilman puhujia", "downmix")],
+                        value=self._initial.source, id="source", allow_blank=False,
+                    )
+                else:
+                    yield Label(
+                        f"Valittu tausta: {self._initial.backend}. "
+                        "Pelkkä ääni litteroidaan komentorivillä --audio ÄÄNI --json KANSIO."
+                    )
 
                 yield Label("RMS-kynnys (dB)")
                 yield Input(value=str(self._initial.thr), id="thr")
@@ -399,7 +426,7 @@ class TranscribeApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        if self._auto_onboard:
+        if self._auto_onboard and self._session_form:
             report = self._onboarding_checker()
             if not report.is_ready:
                 self.push_screen(OnboardingModal(checker=self._onboarding_checker))
@@ -416,7 +443,8 @@ class TranscribeApp(App):
             value = text(widget_id, "")
             return float(value) if value else fallback
 
-        return RunOptions(
+        return replace(
+            initial,
             session=text("#session", initial.session),
             gpu=str(self.query_one("#gpu", Select).value),
             input_dir=text("#input", initial.input_dir),
@@ -430,6 +458,10 @@ class TranscribeApp(App):
             tail=number("#tail", initial.tail),
             gap=number("#gap", initial.gap),
             prompt=text("#prompt", initial.prompt),
+            model=(str(self.query_one("#model", Select).value)
+                   if self._session_form else initial.model),
+            source=(str(self.query_one("#source", Select).value)
+                    if self._session_form else initial.source),
         )
 
     def action_run(self) -> None:
@@ -578,6 +610,13 @@ class TranscribeApp(App):
             options = self.collect_options()
         except ValueError as error:
             self.notify(str(error), severity="error")
+            return
+        if options.backend != "colab" or options.source == "audio":
+            self.notify(
+                "TUI ajaa Colabin istuntotilan. Käytä pelkälle äänelle komentoriviä: "
+                f"colab-transcribe --audio ÄÄNI --json KANSIO --backend {options.backend}",
+                severity="error",
+            )
             return
         if not options.input_dir:
             self.notify("Syötekansio puuttuu.", severity="error")
