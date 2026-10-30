@@ -322,10 +322,9 @@ def _coverage_want(grid: Grid, g: Globals, active, levels) -> np.ndarray:
         ok = eligible & (~required[outside].any(axis=0) if outside else True)
         if shot.available is not None:
             ok &= shot.available
-        # Ympäristökuva on tavallisen valinnan varakuva. Näin kahden kuva
-        # voittaa koko huoneen kuvan myös kahden puhujan ohjelmassa.
-        context_cost = (len(grid.speakers) + 1
-                        if shot.context or shot.key == grid.context_key else 0)
+        # Erityisesti merkattu kontekstikuva on tavallisen valinnan varakuva.
+        # Peitosta päätelty laaja pysyy normaalina koko rosterin kuvana.
+        context_cost = len(grid.speakers) + 1 if shot.context else 0
         scores[index, ok] = len(shot.covers) + context_cost
     best = scores.min(axis=0)
     candidates = scores == best

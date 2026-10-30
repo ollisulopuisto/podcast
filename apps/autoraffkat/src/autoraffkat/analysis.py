@@ -460,7 +460,7 @@ def build_grid(
         shots.append(ShotLanes(
             key=shot.key, label=" & ".join(shot.covers),
             covers=tuple(index_of[name] for name in names),
-            context=shot.context or shot.key == roles.wide_key,
+            context=shot.context,
             available=availability(items, program_start, n) if items else None,
         ))
 

@@ -12,10 +12,17 @@ from conftest import needs_ffmpeg
 from fastapi.testclient import TestClient
 from make_fixture import SPEECH_A, SPEECH_B
 
-from autoraffkat.analysis import analyze, build_grid, resolve_roles
+from autoraffkat.analysis import Analysis, analyze, build_grid, resolve_roles
 from autoraffkat.decide import decide
 from autoraffkat.finalcut.read import read_fcpxml
-from autoraffkat.model import ROLE_CLOSE, ROLE_MIC, ROLE_WIDE, Globals, TrackConfig
+from autoraffkat.model import (
+    ROLE_CLOSE,
+    ROLE_MIC,
+    ROLE_SHOT,
+    ROLE_WIDE,
+    Globals,
+    TrackConfig,
+)
 from autoraffkat.server.app import AppState, create_app
 
 
@@ -91,6 +98,18 @@ def test_overlap_goes_wide(fixture_dir):
     )
     at = source_to_timeline(timeline)(13.8)
     assert angle_at(decision.segments, at) == "Laaja"
+
+
+def test_inferred_full_roster_shot_is_not_downgraded_to_context(fixture_dir):
+    timeline = read_fcpxml(str(fixture_dir / "sync.fcpxml"))
+    tracks = _tracks()
+    tracks["WIDE.mp4"] = TrackConfig(role=ROLE_SHOT, covers=["Host", "Guest"])
+    roles = resolve_roles(timeline, tracks)
+
+    grid, _, _ = build_grid(Analysis(timeline=timeline), tracks, roles)
+
+    assert grid.context_key == "WIDE.mp4"
+    assert next(shot for shot in grid.shots if shot.key == "WIDE.mp4").context is False
 
 
 @needs_ffmpeg
