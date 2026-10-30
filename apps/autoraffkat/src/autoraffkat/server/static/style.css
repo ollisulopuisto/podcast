@@ -33,14 +33,20 @@ header {
   position: sticky;
   top: 0;
   z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 16px;
+  display: grid;
+  gap: 10px;
   padding: 14px 0 12px;
   background: linear-gradient(var(--bg) 80%, transparent);
 }
+
+.header-top, .header-utilities, .toolbar, .toolbar-group {
+  display: flex;
+  align-items: center;
+}
+.header-top { justify-content: space-between; gap: 16px; }
+.header-utilities { gap: 10px; flex-shrink: 0; }
+.titles { min-width: 0; }
+.titles h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 h1 { font-size: 17px; margin: 0; font-weight: 600; }
 h2 { font-size: 12px; margin: 0 0 12px; text-transform: uppercase;
@@ -53,16 +59,44 @@ p { margin: 0; }
 .small { font-size: 12px; }
 .hidden { display: none !important; }
 
-/* Kapeassa ikkunassa painikkeet rivittyvät eivätkä valu ruudun ohi: vienti
-   ja pikanäppäinten painike jäivät 420 px:n ikkunassa näkymättömiin. */
-.actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-           justify-content: flex-end; }
+/* Työkalurivi on ryhmitelty tiedostoihin, historiaan ja tulosteisiin. Tila on
+   omalla rivillään, jotta valmis videotiedoston polku ei siirtele painikkeita. */
+.toolbar { gap: 10px; flex-wrap: wrap; }
+.toolbar-group { gap: 8px; min-width: 0; }
+#output-controls {
+  gap: 8px;
+  margin-left: auto;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+.render-controls { display: inline-flex; align-items: center; gap: 8px; }
+
+/* Historiahaara näyttää samalta kuin muu työkalurivi, myös macOS:n omalla
+   select-tyylillä. */
+#history-branches {
+  appearance: none;
+  min-height: 36px;
+  width: auto;
+  max-width: 11rem;
+  min-width: 7rem;
+  padding: 6px 28px 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--text);
+  background-color: var(--panel);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b93a1' d='m2 4 4 4 4-4z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  font: inherit;
+}
+#history-branches:focus-visible { outline: 1px solid var(--accent); }
 
 button {
   font: inherit;
   border-radius: 7px;
   border: 1px solid var(--line);
   padding: 7px 13px;
+  min-height: 36px;
   background: var(--panel);
   color: var(--text);
   cursor: pointer;
@@ -497,10 +531,16 @@ button.small:hover { opacity: 1; }
   flex-shrink: 0;
 }
 #status {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  min-width: 0;
+  margin: 0 0 10px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
+#status:empty { display: none; }
 #status .progress {
   width: 70px;
   height: 5px;
@@ -701,5 +741,21 @@ dialog.sheet::backdrop { background: rgba(8, 9, 11, .62); }
 }
 .sheet-row .gesture { color: var(--text); }
 
-/* Session branch navigation stays compact alongside the other header actions. */
-#history-branches { width: auto; max-width: 11rem; min-width: 7rem; }
+@media (max-width: 900px) {
+  #output-controls { margin-left: 0; padding-left: 0; border-left: 0; }
+}
+@media (max-width: 700px) {
+  header { gap: 8px; }
+  .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .toolbar-group { flex-wrap: wrap; }
+  #output-controls { grid-column: 1 / -1; }
+}
+@media (max-width: 480px) {
+  body { padding-right: 10px; padding-left: 10px; }
+  .header-top { align-items: flex-start; }
+  .header-utilities { gap: 6px; }
+  .toolbar { grid-template-columns: 1fr; }
+  #output-controls { grid-column: auto; }
+  .toolbar-group { gap: 6px; }
+  #history-branches { max-width: 100%; }
+}

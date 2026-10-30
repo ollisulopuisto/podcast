@@ -5,6 +5,9 @@
 
 const STRINGS = {
   fi: {
+    'toolbar.documents': 'Projektin tiedostot',
+    'toolbar.history': 'Muokkaushistoria',
+    'toolbar.output': 'Ääni ja vienti',
     'keys.group.history': 'Muokkaushistoria',
     'history.undo': 'Kumoa',
     'history.redo': 'Tee uudelleen',
@@ -458,6 +461,9 @@ const STRINGS = {
     'unit.hourMin': '{h} h {m} min',
   },
   en: {
+    'toolbar.documents': 'Project files',
+    'toolbar.history': 'Edit history',
+    'toolbar.output': 'Audio and export',
     'keys.group.history': 'Edit history',
     'history.undo': 'Undo',
     'history.redo': 'Redo',
