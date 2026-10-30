@@ -72,3 +72,12 @@ class WorkflowSelectionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_podcast_magic_workspace_version_matches_locked_editable_package():
+    import tomllib
+
+    project = tomllib.loads((ROOT / 'apps/podcast-magic/pyproject.toml').read_text())
+    lock = tomllib.loads((ROOT / 'uv.lock').read_text())
+    package = next(p for p in lock['package'] if p['name'] == 'podcast-magic')
+    assert package['version'] == project['project']['version']
