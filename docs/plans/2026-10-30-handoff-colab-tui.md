@@ -37,3 +37,6 @@ Scope agreed with the integrator: no new local-audio TUI execution flow.
 
 - Reviewed the implementation; it preserves hidden `RunOptions` fields with `dataclasses.replace`, exposes cloud model/source selectors, and directs audio-only local backends to the CLI.
 - TUI tests: 27 passed. Full Colab Transcribe suite and Ruff are being rerun by integrator.
+
+- Full Colab Transcribe suite: 406 passed. Ruff: clean.
+- Commit: `2133ec5` (`fix(colab): preserve TUI engine options`).
