@@ -24,11 +24,11 @@ PIP_TIMEOUT = 1800  # suunnitteluraja ASR-riippuvuuksien asennukselle, ei mitatt
 PIPELINE_TIMEOUT = 7200  # 2 h äänen dekoodaukseen ja pitkiin tiedostoihin
 ULTRA_REPO = "moondream/parakeet-ultra"
 WHISPER_REPO = "openai/whisper-large-v3-turbo"
+WHISPER_MODEL = "large-v3-turbo"
 PHOTON_SAMPLE_RATE = 16000
 _ULTRA = None
 _ULTRA_STACK = None
 _WHISPER = None
-_WHISPER_STACK = None
 
 AUDIO_EXTENSIONS = (".wav", ".aiff", ".flac", ".m4a", ".mp4", ".mp3")
 
@@ -112,12 +112,12 @@ def configure_cuda_libs():
 
 
 # 1. Asennetaan tarvittavat kirjastot pilviympäristössä
-def install_dependencies():
+def install_dependencies(model="parakeet-ultra"):
     packages = [
-        "moondream==2.6.1",
         "lxml==6.1.3",
         "pydub==0.25.1",
     ]
+    packages.append("faster-whisper==1.2.1" if _cloud_timing_model(model) == "whisper" else "moondream==2.6.1")
     subprocess.run(["apt-get", "update", "-qq"], check=True, timeout=APT_TIMEOUT)
     subprocess.run(
         ["apt-get", "install", "-y", "-qq", "ffmpeg"], check=True, timeout=APT_TIMEOUT
@@ -1246,20 +1246,52 @@ def _ultra_model():
 
 
 def _whisper_model():
-    """Lataa Whisper large-v3-turbon Colabin GPU:lle kerran."""
-    global _WHISPER, _WHISPER_STACK
+    """Lataa Faster-Whisperin large-v3-turbo-mallin Colabin GPU:lle kerran."""
+    global _WHISPER
     if _WHISPER is None:
-        import atexit
-        from contextlib import ExitStack
+        from faster_whisper import WhisperModel
 
-        import moondream as md
-
-        _WHISPER_STACK = ExitStack()
-        _WHISPER = _WHISPER_STACK.enter_context(
-            md.photon(WHISPER_REPO, device="cuda")
+        _WHISPER = WhisperModel(
+            WHISPER_MODEL, device="cuda", compute_type="float16"
         )
-        atexit.register(_WHISPER_STACK.close)
     return _WHISPER
+
+
+def _whisper_raw(path, language, initial_prompt):
+    """Muunna Faster-Whisperin tulos putken sisäiseen sana-aikaesitykseen."""
+    recognizer = _whisper_model()
+    segments, _info = recognizer.transcribe(
+        path,
+        beam_size=5,
+        language=language if language and language != "auto" else None,
+        initial_prompt=initial_prompt or None,
+        word_timestamps=True,
+        condition_on_previous_text=False,
+    )
+    raw_segments = []
+    for segment in segments:
+        words = []
+        for word in segment.words or []:
+            text = (word.word or "").strip()
+            start, end = float(word.start), float(word.end)
+            if text and end > start:
+                words.append({"word": text, "start": start, "end": end})
+        raw_segments.append(
+            {
+                "start": float(segment.start),
+                "end": float(segment.end),
+                "text": (segment.text or "").strip(),
+                "words": words,
+            }
+        )
+    if not any(segment["words"] for segment in raw_segments):
+        raise RuntimeError(
+            f"Faster-Whisper ei palauttanut sanakohtaisia aikaleimoja tiedostolle {path}."
+        )
+    return {
+        "text": " ".join(segment["text"] for segment in raw_segments).strip(),
+        "segments": raw_segments,
+    }
 
 
 def _cloud_timing_model(model):
@@ -1276,10 +1308,12 @@ def _cloud_timing_model(model):
 
 
 def transcribe_file(path, model=None, language="auto", initial_prompt=""):
-    """Litteroi tiedosto Photon Whisperillä tai Parakeet Ultralla."""
+    """Litteroi Faster-Whisperillä tai Photon Parakeet Ultralla."""
     timing = _cloud_timing_model(model)
     use_whisper = timing == "whisper"
-    engine = "Whisper" if use_whisper else "Parakeet Ultra"
+    if use_whisper:
+        return _whisper_raw(path, language, initial_prompt)
+    engine = "Parakeet Ultra"
     if initial_prompt:
         print(f"Huom: {engine} ei käytä litteroinnin promptia; sanalista jätetään huomiotta.", flush=True)
     _ = language  # Molemmat Photon-mallit tunnistavat kielen automaattisesti.
@@ -1299,7 +1333,7 @@ def transcribe_file(path, model=None, language="auto", initial_prompt=""):
                 timeout=PIPELINE_TIMEOUT,
                 capture_output=True,
             )
-        recognizer = _whisper_model() if use_whisper else _ultra_model()
+        recognizer = _ultra_model()
         result = recognizer.transcribe(audio=audio_path, timestamps="word")
     segments = result.get("segments", [])
     words = [word for segment in segments for word in segment.get("words", [])]
@@ -1566,7 +1600,7 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     print("[vaihe 1/4] Asennetaan riippuvuudet (apt ja pip)...", flush=True)
-    install_dependencies()
+    install_dependencies(args.model)
     print("[vaihe 1/4] Riippuvuudet asennettu.", flush=True)
     if args.source == "audio":
         run_audio(input_dir, output_dir, args.model, args.language, args.prompt, align=args.align)

@@ -70,7 +70,7 @@ class RunOptions:
     bleed_filter: bool = True
     # Käsikirjoitus: lyhyet huomautukset kappaleen sisään, ei omille riveilleen.
     inline_remarks: bool = False
-    # Photon-moottori Colabissa; paikalliset backendit valitsevat oman mallinsa.
+    # ASR-moottori Colabissa; paikalliset backendit valitsevat oman mallinsa.
     model: str = "parakeet-ultra"
     language: str = "fi"
     # Vain ``source="audio"``: sanojen alut kohdistetaan ääneen Colabissa

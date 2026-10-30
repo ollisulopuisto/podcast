@@ -43,9 +43,9 @@ The owner has decided: the heavy calculation runs on Colab (option B), local lat
    at Parakeet Ultra's time, so raw output can be out of order or overlapping. The writer sorts by start and shortens the
    *preceding* word on overlap (what `nhsx/write.py` does and why: moving the next word would push the error forward).
    Zero-length words get a 20 ms floor. `words` is therefore in time order with `s < e`.
-2. **`e` (word end) is not validated.** Both Photon models provide word starts and ends; podcast accuracy has not been
+2. **`e` (word end) is not validated.** Both cloud models provide word starts and ends; podcast accuracy has not been
    measured. When `timing` is `ctc-v1`, starts are corrected by the forced aligner. Treat `e` as approximate.
-3. **`timing` values.** `parakeet-ultra` (Parakeet Ultra's Photon word timestamps), `whisper` (Photon Whisper word timestamps), `ctc-v1` (Colab starts corrected by the forced
+3. **`timing` values.** `parakeet-ultra` (Parakeet Ultra's Photon word timestamps), `whisper` (Faster-Whisper word timestamps), `ctc-v1` (Colab starts corrected by the forced
    aligner), or `orukeet-ctc` (local Orukeet words aligned with the same CTC model). The alignment version changes if the rule or model changes, so kuulas can tell an old
    correction from a new one). The `"rejected": <n>` field is the number of words the aligner could not place
    (they keep the recognizer's time), so

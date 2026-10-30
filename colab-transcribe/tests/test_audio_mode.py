@@ -234,7 +234,8 @@ def test_main_audio_runs_only_the_audio_step(monkeypatch):
         ["pipeline.py", "--source", "audio", "--model", "whisper", "--language", "en"],
     )
     monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
-    monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
+    installed = []
+    monkeypatch.setattr(pipeline, "install_dependencies", lambda model: installed.append(model))
     monkeypatch.setattr(pipeline, "run_audio", lambda *a, **k: called.append((a, k)))
     for name in (
         "run_transcription",
@@ -245,6 +246,7 @@ def test_main_audio_runs_only_the_audio_step(monkeypatch):
     ):
         monkeypatch.setattr(pipeline, name, boom)
     pipeline.main()
+    assert installed == ["whisper"]
     assert called[0][0][:4] == ("/content/input", "/content/output", "whisper", "en")
     assert called[0][1] == {"align": False}
 
@@ -578,7 +580,7 @@ def test_main_passes_align_on(monkeypatch):
     called = []
     monkeypatch.setattr(sys, "argv", ["pipeline.py", "--source", "audio", "--align"])
     monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
-    monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
+    monkeypatch.setattr(pipeline, "install_dependencies", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline, "run_audio", lambda *a, **k: called.append(k))
     pipeline.main()
     assert called == [{"align": True}]

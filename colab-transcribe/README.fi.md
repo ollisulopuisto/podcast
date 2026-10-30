@@ -96,7 +96,7 @@ Kutsujalle, joka haluaa vain sanat (kuulas-editori kutsuu näin):
 
 ```bash
 colab-transcribe --audio "Olli 1.wav" --audio Panu.mp3 --json sanat/ --progress
-# Whisper Photonilla Ultran sijaan
+# Faster-Whisper Ultran sijaan
 colab-transcribe --audio "Olli 1.wav" --json sanat/ --model whisper
 # Paikallinen Orukeet, ilman Colab-istuntoa
 colab-transcribe --audio "Olli 1.wav" --json sanat/ --backend orukeet
@@ -106,9 +106,7 @@ Kaikki `--audio`-tiedostot menevät samaan Colab-istuntoon ja `sanat/<nimi>.word
 takaisin: `{"version":1,"timing":"parakeet-ultra","language":"fi","rejected":0,"words":[{"w","s","e"}]}`,
 sekunteja kyseisen tiedoston alusta, aikajärjestyksessä ja `s < e` (päällekkäisyys lyhentää
 aiempaa sanaa). Ei `.nhsx`:ää eikä Auto-Silencea. Siirto on aina suora: ääni menee Googlen
-Colab-koneelle eikä Driven kautta. Parakeet Ultra on oletus; `--model whisper` valitsee Photon
-Whisperin. Molemmat palauttavat sanakohtaiset ajat. `--prompt` ei vaikuta kumpaankaan
-Photon-malliin. `--backend orukeet` käyttää Orukeetin natiivia paikallisruntimea ilman Colabia;
+Colab-koneelle eikä Driven kautta. Parakeet Ultra on oletus; `--model whisper` valitsee Faster-Whisperin. Molemmat palauttavat sanakohtaiset ajat. `--prompt` välitetään Faster-Whisperille; Parakeet Ultra ohittaa sen. `--backend orukeet` käyttää Orukeetin natiivia paikallisruntimea ilman Colabia;
 se kohdistaa lauseiden sanat CTC:llä (`timing: "orukeet-ctc"`). `--progress` tulostaa rivit `PROGRESS <0-100> <viesti>`, joiden luku ei
 laske. Sanaton tiedosto tai puuttuva tulos antaa poistumiskoodin 1 ja syyn stderriin; samannimiset
 vanhat `*.words.json` poistetaan ennen ajoa, ettei vanha kelpaa uudeksi. SIGTERM ja Ctrl+C

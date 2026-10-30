@@ -95,7 +95,7 @@ For callers that want the words and nothing else (the kuulas editor calls it so)
 
 ```bash
 colab-transcribe --audio "Olli 1.wav" --audio Panu.mp3 --json words/ --progress
-# Photon Whisper instead of Parakeet Ultra
+# Faster-Whisper instead of Parakeet Ultra
 colab-transcribe --audio "Olli 1.wav" --json words/ --model whisper
 # Local Orukeet, without starting a Colab session
 colab-transcribe --audio "Olli 1.wav" --json words/ --backend orukeet
@@ -105,8 +105,8 @@ Every `--audio` file goes up in the same Colab session and `words/<name>.words.j
 back: `{"version":1,"timing":"parakeet-ultra","language":"fi","rejected":0,"words":[{"w","s","e"}]}`,
 seconds from the start of that file, in time order with `s < e` (an overlap shortens the
 earlier word). No `.nhsx`, no Auto-Silence. The transfer is always direct: the audio goes to
-a Google Colab VM and not through Drive. Parakeet Ultra is the default; choose Photon Whisper
-with `--model whisper`. Both return word timestamps. `--prompt` affects neither Photon model.
+a Google Colab VM and not through Drive. Parakeet Ultra is the default; choose Faster-Whisper
+with `--model whisper`. Both return word timestamps. `--prompt` is passed to Faster-Whisper; Parakeet Ultra ignores it.
 `--backend orukeet` uses Orukeet's native local runtime without a Colab session and aligns its
 segment text to word times with CTC (`timing: "orukeet-ctc"`). `--progress` prints `PROGRESS <0-100> <message>`
 lines whose number never falls. A file that gets no words, or a missing result, makes the

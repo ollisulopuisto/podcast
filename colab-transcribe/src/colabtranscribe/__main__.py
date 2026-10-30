@@ -68,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--model", choices=CLOUD_MODELS, default=None,
-        help="Colabin Photon-moottori: parakeet-ultra (oletus) tai whisper",
+        help="Colabin ASR-moottori: parakeet-ultra (oletus) tai whisper",
     )
     parser.add_argument("--language", default=None, help="kieli (--audio, oletus: fi)")
     parser.add_argument(

@@ -252,3 +252,5 @@ Raja ``BLEED_MARGIN_DB`` on mitattu yhdestä kahden mikin istunnosta.
 ``TURN_GAP_S`` on vain oletus kun ``write_script``ia kutsutaan ilman ajoa.
 podcast-magicin ``script/core.py`` ei voi tuoda sitä (työtilan raja) ja pitää
 oman 1 s:n kopionsa; testi pitää tulokset samoina oletusgapilla.
+
+Whisper-valinta käyttää Faster-Whisper 1.2.1:tä, large-v3-turbo CUDA float16:na; Photon jää Parakeet Ultralle. Tämä T4-yhteensopivuuskorjaus on yksikkötestattu valeajurilla, ei ajettu oikealla T4:llä.

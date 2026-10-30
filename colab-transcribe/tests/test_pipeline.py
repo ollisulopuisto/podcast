@@ -81,48 +81,56 @@ def test_transcribe_file_uses_photon_ultra_word_timestamps(monkeypatch, tmp_path
     }
 
 
-def test_transcribe_file_can_select_photon_whisper(monkeypatch, tmp_path):
+def test_transcribe_file_uses_faster_whisper_word_timestamps(monkeypatch, tmp_path):
     import sys
-    import types
+    from types import ModuleType, SimpleNamespace
 
     from colabtranscribe.colab import pipeline
 
-    calls = []
+    seen = {}
 
-    class FakeModel:
-        def __enter__(self):
-            return self
+    class FakeWhisperModel:
+        def __init__(self, name, **kwargs):
+            seen["init"] = (name, kwargs)
 
-        def __exit__(self, *_args):
-            return False
+        def transcribe(self, path, **kwargs):
+            seen["transcribe"] = (path, kwargs)
+            words = [
+                SimpleNamespace(word=" Terve", start=0.2, end=0.6),
+                SimpleNamespace(word=" maailma.", start=0.7, end=1.2),
+            ]
+            return iter([SimpleNamespace(start=0.2, end=1.2, text=" Terve maailma.", words=words)]), object()
 
-        def transcribe(self, **kwargs):
-            calls.append(kwargs)
-            return {
-                "text": "Hei",
-                "segments": [{
-                    "start": 0.0,
-                    "end": 1.0,
-                    "text": "Hei",
-                    "words": [{"word": "Hei", "start": 0.0, "end": 0.5}],
-                }],
-            }
+    fake_module = ModuleType("faster_whisper")
+    fake_module.WhisperModel = FakeWhisperModel
+    monkeypatch.setitem(sys.modules, "faster_whisper", fake_module)
+    monkeypatch.setattr(pipeline, "_WHISPER", None)
 
-    def photon(model_id, **kwargs):
-        calls.append({"model_id": model_id, **kwargs})
-        return FakeModel()
+    raw = pipeline.transcribe_file(str(tmp_path / "puhe.wav"), "whisper", "fi", "Kuulas")
 
-    monkeypatch.setitem(sys.modules, "moondream", types.SimpleNamespace(photon=photon))
-    monkeypatch.setattr(pipeline, "_WHISPER", None, raising=False)
-
-    result = pipeline.transcribe_file(str(tmp_path / "speech.wav"), model="whisper")
-
-    assert calls[0] == {
-        "model_id": "openai/whisper-large-v3-turbo",
-        "device": "cuda",
+    assert seen["init"] == ("large-v3-turbo", {"device": "cuda", "compute_type": "float16"})
+    assert seen["transcribe"] == (
+        str(tmp_path / "puhe.wav"),
+        {
+            "beam_size": 5,
+            "language": "fi",
+            "initial_prompt": "Kuulas",
+            "word_timestamps": True,
+            "condition_on_previous_text": False,
+        },
+    )
+    assert raw == {
+        "text": "Terve maailma.",
+        "segments": [{
+            "start": 0.2,
+            "end": 1.2,
+            "text": "Terve maailma.",
+            "words": [
+                {"word": "Terve", "start": 0.2, "end": 0.6},
+                {"word": "maailma.", "start": 0.7, "end": 1.2},
+            ],
+        }],
     }
-    assert calls[1] == {"audio": str(tmp_path / "speech.wav"), "timestamps": "word"}
-    assert result["segments"][0]["words"][0]["word"] == "Hei"
 
 
 def test_transcribe_file_refuses_an_unknown_engine_instead_of_using_ultra(
@@ -661,7 +669,7 @@ def test_no_silence_skips_auto_silence(monkeypatch, argv, silenced):
     ran = []
     monkeypatch.setattr(sys, "argv", ["pipeline.py", *argv])
     monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
-    monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
+    monkeypatch.setattr(pipeline, "install_dependencies", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline, "run_transcription", lambda *a: None)
     monkeypatch.setattr(pipeline, "inject_transcriptions_to_nhsx", lambda *a, **k: ["/c/x.nhsx"])
     monkeypatch.setattr(pipeline, "run_auto_silence", lambda *a: ran.append(a[0]))
@@ -801,7 +809,7 @@ def test_main_downmix_skips_the_track_chain(monkeypatch):
     called = []
     monkeypatch.setattr(sys, "argv", ["pipeline.py", "--source", "downmix"])
     monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
-    monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
+    monkeypatch.setattr(pipeline, "install_dependencies", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline, "run_downmix", lambda *a: called.append(a))
     for name in ("run_transcription", "inject_transcriptions_to_nhsx", "run_auto_silence", "write_script"):
         monkeypatch.setattr(pipeline, name, boom)
@@ -1169,7 +1177,7 @@ def test_the_script_flag_turns_the_injection_filter_off(monkeypatch):
     seen = []
     monkeypatch.setattr(sys, "argv", ["pipeline.py", "--no-bleed-filter"])
     monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
-    monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
+    monkeypatch.setattr(pipeline, "install_dependencies", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline, "run_transcription", lambda *a: None)
     monkeypatch.setattr(
         pipeline, "inject_transcriptions_to_nhsx",
@@ -1284,7 +1292,7 @@ def test_the_script_gets_the_runs_gap(monkeypatch, argv, gap):
     seen = []
     monkeypatch.setattr(sys, "argv", ["pipeline.py", *argv])
     monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
-    monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
+    monkeypatch.setattr(pipeline, "install_dependencies", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline, "run_transcription", lambda *a: None)
     monkeypatch.setattr(pipeline, "inject_transcriptions_to_nhsx", lambda *a, **k: ["/c/x.nhsx"])
     monkeypatch.setattr(pipeline, "run_auto_silence", lambda *a, **k: None)
@@ -1341,10 +1349,24 @@ def test_the_inline_remarks_flag_reaches_the_script_and_is_off_by_default(monkey
     for argv, want in (([], False), (["--inline-remarks"], True)):
         monkeypatch.setattr(sys, "argv", ["pipeline.py", *argv])
         monkeypatch.setattr(pipeline.os, "makedirs", lambda *a, **k: None)
-        monkeypatch.setattr(pipeline, "install_dependencies", lambda: None)
+        monkeypatch.setattr(pipeline, "install_dependencies", lambda *args, **kwargs: None)
         monkeypatch.setattr(pipeline, "run_transcription", lambda *a: None)
         monkeypatch.setattr(pipeline, "inject_transcriptions_to_nhsx", lambda *a, **k: ["/c/x.nhsx"])
         monkeypatch.setattr(pipeline, "run_auto_silence", lambda *a, **k: None)
         monkeypatch.setattr(pipeline, "write_script", lambda p, **k: seen.append(k.get("inline_remarks")))
         pipeline.main()
         assert seen[-1] is want
+
+
+def test_install_dependencies_uses_faster_whisper_without_nemo(monkeypatch):
+    from colabtranscribe.colab import pipeline
+
+    calls = []
+    monkeypatch.setattr(pipeline.subprocess, "run", lambda cmd, **kwargs: calls.append(cmd))
+    monkeypatch.setattr(pipeline, "configure_cuda_libs", lambda: None)
+
+    pipeline.install_dependencies("whisper")
+
+    pip = next(cmd for cmd in calls if cmd[:2] == ["pip", "install"])
+    assert "faster-whisper==1.2.1" in pip
+    assert not any(package.startswith("nemo_toolkit") for package in pip)
