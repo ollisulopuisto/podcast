@@ -182,12 +182,14 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v8
         with:
           path: apps/podcast-magic/dist
-          merge-multiple: true
+          name: podcast-magic-macos
 
-      - name: Publish release
+      - name: Publish macOS release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -202,6 +204,15 @@ jobs:
           `xattr -d com.apple.quarantine "Podcast Magic.app"`.
 
           ### Windows & Linux
+          Muiden alustojen paketit lisätään erikseen Mac-julkaisun jälkeen.
+          Jos arkisto on jaettu, lataa kaikki `.partNNNN`-osat, `.sha256` ja
+          `.reassemble.txt`. Noudata ohjetiedoston yhdistämis- ja tarkistuskomentoja.
+
+          Other platform packages are uploaded separately after the Mac release.
+          For a split archive, download every `.partNNNN` file, its `.sha256`,
+          and `.reassemble.txt`. Follow the exact reconstruction and checksum
+          commands in that text file before extracting the archive.
+
           Moottori on `faster-whisper` ja se ajaa suorittimella: sama tulos
           kuin Macilla, moninkertainen aika. Metal-kiihdytys (mlx) on Apple
           Siliconin asia. Linuxilla käyttöliittymä avautuu selaimeen, koska
@@ -212,8 +223,23 @@ jobs:
           is Apple Silicon only. On Linux the interface opens in a browser —
           a native window would need GTK and WebKit2 from the machine.
           NOTES
-          gh release create "$GITHUB_REF_NAME" dist/podcast-magic-* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$GITHUB_REF_NAME" \
-            --notes-file notes.md \
-            --generate-notes
+          python3 ../../scripts/publish_podcast_magic.py --stage macos \
+            --dist dist --notes notes.md \
+            --tag "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
+
+      # Mac on julkaistu ennen muiden latausta, jakamista tai siirtoa.
+      # Virhe pysäyttää ajon mutta ei poista jo saatavilla olevaa levykuvaa.
+      - uses: actions/download-artifact@v8
+        with:
+          path: apps/podcast-magic/dist
+          name: podcast-magic-windows
+      - uses: actions/download-artifact@v8
+        with:
+          path: apps/podcast-magic/dist
+          name: podcast-magic-linux
+      - name: Publish Windows and Linux assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 ../../scripts/publish_podcast_magic.py --stage others \
+            --dist dist --tag "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
