@@ -62,9 +62,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--parakeet-model",
+        "--orukeet-model",
         dest="parakeet_model",
         default=DEFAULT_PARAKEET_MODEL,
-        help=f"Paikallisen Parakeet MLX -mallin tunniste (oletus: {DEFAULT_PARAKEET_MODEL})",
+        help=f"Paikallisen Parakeet/Orukeet-mallin tunniste (oletus: {DEFAULT_PARAKEET_MODEL})",
     )
     parser.add_argument(
         "--model", choices=CLOUD_MODELS, default=None,
