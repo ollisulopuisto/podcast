@@ -64,14 +64,20 @@ def transcripts_dir(session_path: str, output_dir: str = "") -> Path:
     return base / TRANSCRIPTS_DIRNAME
 
 
-def cache_path(directory: Path, audio_path: str, options: Options) -> Path:
+def cache_path(
+    directory: Path,
+    audio_path: str,
+    options: Options,
+    *,
+    backend_key: str | None = None,
+) -> Path:
     """JSONin nimi: äänen nimi ja asetusten tunniste.
 
     Tunniste on nimessä, koska muuten mallin vaihtaminen ei tekisi mitään —
     vanha tulos löytyisi levyltä ja uusi malli jäisi ajamatta.
     """
     stem = Path(audio_path).stem
-    return directory / f"{stem}.{options.fingerprint()}.json"
+    return directory / f"{stem}.{options.fingerprint(backend_key)}.json"
 
 
 def plan(session_path: str, audio_dir: str = "", force: bool = False) -> Plan:
@@ -180,7 +186,7 @@ def run(
         progress.step(Path(path).name, done=index, total=total)
         progress.fraction(0.0)
 
-        cache = cache_path(directory, path, options)
+        cache = cache_path(directory, path, options, backend_key=backend.key)
         result_raw = None
         samples = None
         if cache.is_file() and not force:
