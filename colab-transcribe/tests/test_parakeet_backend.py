@@ -60,7 +60,7 @@ def test_orukeet_backend_dry_run_prints_local_commands(tmp_path, capsys):
 
     assert code == 0
     stdout = capsys.readouterr().out
-    assert "parakeet-mlx" in stdout
+    assert "orukeet transcribe" in stdout
     assert "haastattelu.wav" in stdout
     assert "haastattelu.words.json" in stdout
     assert "colab new" not in stdout

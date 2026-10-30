@@ -20,15 +20,15 @@ from lxml import etree
 # Oletusaikarajat (sekunteina) aliprosesseille. Colabissa asennus ja
 # litterointi voivat kestään kauan, joten rajat ovat ydinsä.
 APT_TIMEOUT = 600  # 10 min apt-get:lle
-PIP_TIMEOUT = 1800  # suunnitteluraja NeMon ja ASR-riippuvuuksien asennukselle, ei mitattu
-ORUKEET_TIMEOUT = 7200  # 2 h Orukeetin mallin lataukseen ja pitkiin tiedostoihin
-ORUKEET_REPO = "oruk/orukeet"
-ORUKEET_REVISION = "555136b50265a132d4cea0d35560c26fc4f657ab"
-ORUKEET_FILE = "orukeet-v0.1.0.nemo"
-VAD_SAMPLE_RATE = 16000
-VAD_MAX_CHUNK_S = 20  # suunnitteluraja: VAD ei anna pitkän raidankaan mennä yhtenä lohkona
-_ORUKEET = None
-_SILERO_VAD = None
+PIP_TIMEOUT = 1800  # suunnitteluraja ASR-riippuvuuksien asennukselle, ei mitattu
+PIPELINE_TIMEOUT = 7200  # 2 h äänen dekoodaukseen ja pitkiin tiedostoihin
+ULTRA_REPO = "moondream/parakeet-ultra"
+WHISPER_REPO = "openai/whisper-large-v3-turbo"
+PHOTON_SAMPLE_RATE = 16000
+_ULTRA = None
+_ULTRA_STACK = None
+_WHISPER = None
+_WHISPER_STACK = None
 
 AUDIO_EXTENSIONS = (".wav", ".aiff", ".flac", ".m4a", ".mp4", ".mp3")
 
@@ -114,9 +114,7 @@ def configure_cuda_libs():
 # 1. Asennetaan tarvittavat kirjastot pilviympäristössä
 def install_dependencies():
     packages = [
-        "nemo_toolkit[asr]==3.0.0",
-        "silero-vad==6.2.2",
-        "av==18.1.0",
+        "moondream==2.6.1",
         "lxml==6.1.3",
         "pydub==0.25.1",
     ]
@@ -201,11 +199,11 @@ def _duplicates_of(audio_items):
     return dupes
 
 
-# 3. Litterointi Orukeetilla
-def run_transcription(input_dir, output_dir, initial_prompt):
+# 3. Litterointi Parakeet Ultralla
+def run_transcription(input_dir, output_dir, initial_prompt, model="parakeet-ultra"):
     if initial_prompt:
         print(
-            "Huom: Orukeet ei tue Whisperin promptia; sanalista jätetään huomiotta.",
+            "Huom: Parakeet Ultra ei tue Whisperin promptia; sanalista jätetään huomiotta.",
             flush=True,
         )
     transcripts_dir = os.path.join(output_dir, "transcripts")
@@ -250,7 +248,7 @@ def run_transcription(input_dir, output_dir, initial_prompt):
         if not os.path.isfile(output_path):
             print(f"[vaihe 2/4 ({idx}/{total})] Litteroidaan: {filename}", flush=True)
             print(f"Litteroidaan tiedostoa: {full_path}", flush=True)
-            raw = transcribe_file(full_path, "orukeet", "auto", "")
+            raw = transcribe_file(full_path, model, "auto", "")
             with open(output_path, "w", encoding="utf-8") as f:
                 json.dump(raw, f, ensure_ascii=False)
             print(f"Litterointi luotu: {output_path}", flush=True)
@@ -389,7 +387,7 @@ def get_speech_intervals_for_track(
     """Raidan puhejaksot aikajanalla.
 
     ``learn``: käsin vaimennetun alueen sanat eivät avaa sitä (käyttäjän oma
-    vaimennus on tosi, eikä Orukeetin kuulema sana ole sitä vastaan), ja taso
+    vaimennus on tosi, eikä ASR:n kuulema sana ole sitä vastaan), ja taso
     mitataan samalla mittarilla jolla kynnys opittiin (``_Levels``), ei
     pydubilla. ``calibration.threshold`` korvaa ``threshold``in; ilman sitä
     (ei opittu) raita ajetaan kiinteällä kynnyksellä.
@@ -593,7 +591,7 @@ def _decode_pcm16(path):
         "-f", "s16le", "-ac", "1", "-acodec", "pcm_s16le",
         "-ar", str(LEARN_RATE), "-",
     ]
-    out = subprocess.run(cmd, check=True, capture_output=True, timeout=ORUKEET_TIMEOUT).stdout
+    out = subprocess.run(cmd, check=True, capture_output=True, timeout=PIPELINE_TIMEOUT).stdout
     return np.frombuffer(out, np.int16)
 
 
@@ -792,7 +790,7 @@ BLEED_MARGIN_MAX_DB = 12.0
 def _bleed_dropped(items, regions, levels):
     """Indeksit joiden sana on toisen mikin vuotoa.
 
-    Kaksi mikkiä kuulee molemmat puhujat, ja Orukeet litteroi vuodon kummallakin
+    Kaksi mikkiä kuulee molemmat puhujat, ja ASR litteroi vuodon kummallakin
     raidalla: sama puhe näkyisi jokaisen puhujan alla. ``items`` on
     ``(raita, tiedosto, tiedosto-alku, tiedosto-loppu, aikajana-alku,
     aikajana-loppu)``; taso mitataan sanan ajalta ja suhteutetaan raidan omaan
@@ -1075,7 +1073,7 @@ def decode_mono(path, offset, length, rate):
         "ffmpeg", "-v", "error", "-ss", f"{offset:.6f}", "-t", f"{length:.6f}",
         "-i", path, "-vn", "-ac", "1", "-ar", str(rate), "-f", "f32le", "-",
     ]
-    result = subprocess.run(cmd, check=True, capture_output=True, timeout=ORUKEET_TIMEOUT)
+    result = subprocess.run(cmd, check=True, capture_output=True, timeout=PIPELINE_TIMEOUT)
     return np.frombuffer(result.stdout, dtype="<f4")
 
 
@@ -1126,15 +1124,15 @@ def paragraph_lines(words):
     return "\n\n".join(lines) + "\n"
 
 
-def transcribe_samples(samples, rate, initial_prompt):
-    """Litteroi miksauksen Orukeetilla ja säilytä sanakohtaiset ajat."""
+def transcribe_samples(samples, rate, initial_prompt, model="parakeet-ultra"):
+    """Litteroi miksauksen valitulla Photon-moottorilla."""
     import tempfile
     import wave
 
     import numpy as np
 
     if initial_prompt:
-        print("Huom: Orukeet ei tue Whisperin promptia; sanalista jätetään huomiotta.", flush=True)
+        print(f"Huom: {model} ei käytä litteroinnin promptia; sanalista jätetään huomiotta.", flush=True)
     with tempfile.TemporaryDirectory() as tmp:
         wav_path = os.path.join(tmp, "downmix.wav")
         pcm = (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2")
@@ -1143,7 +1141,7 @@ def transcribe_samples(samples, rate, initial_prompt):
             wav.setsampwidth(2)
             wav.setframerate(rate)
             wav.writeframes(pcm.tobytes())
-        data = transcribe_file(wav_path, "orukeet", "auto", "")
+        data = transcribe_file(wav_path, model, "auto", "")
     words = []
     for segment in data.get("segments", []):
         for word in segment.get("words", []):
@@ -1157,7 +1155,7 @@ def transcribe_samples(samples, rate, initial_prompt):
     return words
 
 
-def run_downmix(input_dir, output_dir, initial_prompt):
+def run_downmix(input_dir, output_dir, initial_prompt, model="parakeet-ultra"):
     """Jokaisen ``.nhsx``:n miksaus kerran litteroituna: ``<nimi> downmix.md``."""
     found = sorted(f for f in os.listdir(input_dir) if f.lower().endswith(".nhsx"))
     # Alkuperäinen istunto ensin; vaimennettu vain jos muuta ei ole.
@@ -1179,7 +1177,7 @@ def run_downmix(input_dir, output_dir, initial_prompt):
         print(f"Miksaus: {duration / 60:.1f} min — kootaan gaineilla…", flush=True)
         samples = gain_mix(clips, duration)
         print("Litteroidaan miksaus…", flush=True)
-        words = transcribe_samples(samples, DOWNMIX_RATE, initial_prompt)
+        words = transcribe_samples(samples, DOWNMIX_RATE, initial_prompt, model)
         if not words:
             print(
                 "  VAROITUS: miksauksessa ei tunnistettu yhtään sanaa. "
@@ -1197,7 +1195,7 @@ WORDS_VERSION = 1
 WORD_FLOOR_S = 0.02  # lyhin sana, jonka loppu on alun jälkeen (kuulaksen sopimus)
 
 
-def words_document(raw, language, timing="orukeet", rejected=0):
+def words_document(raw, language, timing="parakeet-ultra", rejected=0):
     """ASR:n raakatulos kuulaksen sanatiedostoksi (``docs/KUULAS-COLAB.md``).
 
     Sanat ajan mukaan järjestyksessä ja ``s < e``. Päällekkäisyydessä
@@ -1232,154 +1230,88 @@ def words_document(raw, language, timing="orukeet", rejected=0):
     }
 
 
-def _orukeet_model():
-    """Lataa Orukeetin kerran Colabin GPU:lle."""
-    global _ORUKEET
-    if _ORUKEET is None:
-        import torch
-        from huggingface_hub import hf_hub_download
-        from nemo.collections.asr.models import ASRModel
+def _ultra_model():
+    """Lataa Parakeet Ultran kerran Colabin GPU:lle."""
+    global _ULTRA, _ULTRA_STACK
+    if _ULTRA is None:
+        import atexit
+        from contextlib import ExitStack
 
-        model_path = hf_hub_download(
-            repo_id=ORUKEET_REPO,
-            filename=ORUKEET_FILE,
-            revision=ORUKEET_REVISION,
+        import moondream as md
+
+        _ULTRA_STACK = ExitStack()
+        _ULTRA = _ULTRA_STACK.enter_context(md.photon(ULTRA_REPO, device="cuda"))
+        atexit.register(_ULTRA_STACK.close)
+    return _ULTRA
+
+
+def _whisper_model():
+    """Lataa Whisper large-v3-turbon Colabin GPU:lle kerran."""
+    global _WHISPER, _WHISPER_STACK
+    if _WHISPER is None:
+        import atexit
+        from contextlib import ExitStack
+
+        import moondream as md
+
+        _WHISPER_STACK = ExitStack()
+        _WHISPER = _WHISPER_STACK.enter_context(
+            md.photon(WHISPER_REPO, device="cuda")
         )
-        _ORUKEET = ASRModel.restore_from(model_path)
-        _ORUKEET.eval()
-        if torch.cuda.is_available():
-            _ORUKEET.to(torch.device("cuda"))
-        _configure_orukeet_timestamps(_ORUKEET)
-    return _ORUKEET
+        atexit.register(_WHISPER_STACK.close)
+    return _WHISPER
 
 
-def _silero_vad_model():
-    """Lataa VAD-verkon kerran ja käytä sitä peräkkäisille raidoille."""
-    global _SILERO_VAD
-    if _SILERO_VAD is None:
-        from silero_vad import load_silero_vad
-
-        _SILERO_VAD = load_silero_vad()
-    return _SILERO_VAD
-
-
-def _configure_orukeet_timestamps(model):
-    """Valitse TDT:n aikaleimoja tukeva, ei-batched greedy-dekoodaus."""
-    decoding = model.cfg.decoding
-    decoding.strategy = "greedy"
-    decoding.compute_timestamps = True
-    decoding.preserve_alignments = True
-    model.change_decoding_strategy(decoding)
-
-
-def _vad_audio(path, tmp):
-    """Muunna mono-16 kHz PCM:ksi ja palauta Silero VAD:n puheikkunat."""
-    import wave
-
-    import numpy as np
-    import torch
-    from silero_vad import get_speech_timestamps
-
-    wav_path = os.path.join(tmp, "vad-input.wav")
-    subprocess.run(
-        [
-            "ffmpeg", "-y", "-i", path, "-vn", "-ac", "1", "-ar",
-            str(VAD_SAMPLE_RATE), "-c:a", "pcm_s16le", wav_path,
-        ],
-        check=True,
-        timeout=ORUKEET_TIMEOUT,
-        capture_output=True,
+def _cloud_timing_model(model):
+    """Return the timing label for a supported cloud ASR choice."""
+    model = model or "parakeet-ultra"
+    if model in ("whisper", WHISPER_REPO, "turbo"):
+        return "whisper"
+    if model in ("parakeet-ultra", "ultra", ULTRA_REPO):
+        return "parakeet-ultra"
+    raise ValueError(
+        f"Tuntematon Colab-malli: {model}. Paikallinen Orukeet valitaan "
+        "valitsimella --backend orukeet."
     )
-    with wave.open(wav_path, "rb") as wav:
-        if wav.getnchannels() != 1 or wav.getframerate() != VAD_SAMPLE_RATE:
-            raise RuntimeError("ffmpeg ei tuottanut VAD:lle mono-16 kHz -ääntä")
-        pcm = np.frombuffer(wav.readframes(wav.getnframes()), dtype="<i2")
-    audio = torch.from_numpy(pcm.astype(np.float32) / 32768.0)
-    speech = get_speech_timestamps(
-        audio,
-        _silero_vad_model(),
-        sampling_rate=VAD_SAMPLE_RATE,
-        min_speech_duration_ms=80,
-        max_speech_duration_s=VAD_MAX_CHUNK_S,
-        min_silence_duration_ms=500,
-        speech_pad_ms=250,
-    )
-    return pcm, [(int(item["start"]), int(item["end"])) for item in speech]
-
-
-def _orukeet_raw(hypothesis):
-    """Orukeetin NeMo-hypoteesi sisäiseen sana-aikaesitykseen."""
-    timestamp = getattr(hypothesis, "timestamp", None) or {}
-    rows = timestamp.get("word", []) if isinstance(timestamp, dict) else []
-    words = []
-    for row in rows:
-        text = (row.get("word") or row.get("text") or "").strip()
-        try:
-            start, end = float(row["start"]), float(row["end"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if text and end > start:
-            words.append({"word": text, "start": start, "end": end})
-    if not words:
-        raise RuntimeError(
-            "Orukeet ei palauttanut sanakohtaisia aikaleimoja; litterointia ei kirjoitettu."
-        )
-    words.sort(key=lambda word: word["start"])
-    return {
-        "segments": [{
-            "start": words[0]["start"],
-            "end": words[-1]["end"],
-            "text": (getattr(hypothesis, "text", "") or "").strip(),
-            "words": words,
-        }]
-    }
 
 
 def transcribe_file(path, model=None, language="auto", initial_prompt=""):
-    """Jaa ääni VAD:lla, litteroi Orukeetilla ja siirrä ajat raidan kelloon.
-
-    ``model``, ``language`` ja ``initial_prompt`` säilyvät kutsurajapinnassa;
-    Orukeet käyttää kiinteää mallia eikä tue Whisperin promptia tai kielilippua.
-    """
+    """Litteroi tiedosto Photon Whisperillä tai Parakeet Ultralla."""
+    timing = _cloud_timing_model(model)
+    use_whisper = timing == "whisper"
+    engine = "Whisper" if use_whisper else "Parakeet Ultra"
     if initial_prompt:
-        print("Huom: Orukeet ei tue Whisperin promptia; sanalista jätetään huomiotta.", flush=True)
-    if model not in (None, "", "orukeet", "turbo"):
-        print("Huom: Orukeet käyttää kiinteää mallia; --model-arvo ohitetaan.", flush=True)
-    _ = language  # säilytetään vanha argumentti; Orukeet tunnistaa kielen automaattisesti.
+        print(f"Huom: {engine} ei käytä litteroinnin promptia; sanalista jätetään huomiotta.", flush=True)
+    _ = language  # Molemmat Photon-mallit tunnistavat kielen automaattisesti.
     import tempfile
-    import wave
 
-    raw = {"segments": []}
-    with tempfile.TemporaryDirectory() as tmp:
-        pcm, intervals = _vad_audio(path, tmp)
-        recognizer = _orukeet_model()
-        for index, (start, end) in enumerate(intervals):
-            chunk_path = os.path.join(tmp, f"speech-{index:05d}.wav")
-            with wave.open(chunk_path, "wb") as wav:
-                wav.setnchannels(1)
-                wav.setsampwidth(2)
-                wav.setframerate(VAD_SAMPLE_RATE)
-                wav.writeframes(pcm[start:end].astype("<i2", copy=False).tobytes())
-            result = recognizer.transcribe(
-                [chunk_path], timestamps=True, batch_size=1, num_workers=0, verbose=False
+    with tempfile.TemporaryDirectory(prefix="photon-asr-") as tmp:
+        audio_path = path
+        if os.path.splitext(path)[1].lower() == ".aiff":
+            audio_path = os.path.join(tmp, "audio.wav")
+            subprocess.run(
+                [
+                    "ffmpeg", "-nostdin", "-v", "error", "-i", path,
+                    "-vn", "-ac", "1", "-ar", str(PHOTON_SAMPLE_RATE),
+                    "-c:a", "pcm_s16le", audio_path,
+                ],
+                check=True,
+                timeout=PIPELINE_TIMEOUT,
+                capture_output=True,
             )
-            if not result:
-                raise RuntimeError(f"Orukeet ei palauttanut tulosta tiedostolle {path}.")
-            chunk_raw = _orukeet_raw(result[0])
-            offset = start / VAD_SAMPLE_RATE
-            for segment in chunk_raw["segments"]:
-                segment["start"] += offset
-                segment["end"] += offset
-                for word in segment["words"]:
-                    word["start"] += offset
-                    word["end"] += offset
-                raw["segments"].append(segment)
-    raw["segments"].sort(key=lambda segment: segment["start"])
-    return raw
+        recognizer = _whisper_model() if use_whisper else _ultra_model()
+        result = recognizer.transcribe(audio=audio_path, timestamps="word")
+    segments = result.get("segments", [])
+    words = [word for segment in segments for word in segment.get("words", [])]
+    if not words:
+        raise RuntimeError(
+            f"{engine} ei palauttanut sanakohtaisia aikaleimoja tiedostolle {path}."
+        )
+    return {"segments": segments, "text": result.get("text", "")}
 
 
 #: Kohdistimen torch asennetaan omaan kansioonsa eikä järjestelmän pythoniin:
-#: NeMo-ASR ja MMS_FA-kohdistin käyttävät eri torch-pinnejä. Erillään niiden
+#: Photon-ASR ja MMS_FA-kohdistin käyttävät eri torch-ympäristöjä. Erillään niiden
 #: riippuvuuksien ei tarvitse sopia samaan prosessiin.
 #: Ei kokeiltu oikealla Colabilla: kuinka suuri lataus ja kuinka kauan se kestää
 #: on mittaamatta.
@@ -1438,7 +1370,7 @@ def check_aligner():
 def align_files(jobs):
     """Kaikki tiedostot kerralla omassa prosessissaan; ``{nimi: {rows, rejected}}``.
 
-    Jokainen työ on ``{"name", "audio", "raw"}``, ``raw`` Orukeetin tulos.
+    Jokainen työ on ``{"name", "audio", "raw}``, ``raw`` Parakeet Ultran tulos.
     """
     import tempfile
 
@@ -1504,8 +1436,9 @@ def run_audio(input_dir, output_dir, model, language, initial_prompt, align=Fals
     transcribed = []
     for idx, filename in enumerate(names, 1):
         print(f"[ääni ({idx}/{total})] Litteroidaan: {filename}", flush=True)
+        timing = _cloud_timing_model(model)
         raw = transcribe_file(os.path.join(input_dir, filename), model, language, initial_prompt)
-        if not words_document(raw, language)["words"]:
+        if not words_document(raw, language, timing=timing)["words"]:
             print(
                 f"  VAROITUS: {filename}: ei tunnistettu yhtään sanaa. "
                 "Onko siinä puhetta, ja onko kieli oikein? Tiedostoa ei kirjoitettu.",
@@ -1535,7 +1468,7 @@ def run_audio(input_dir, output_dir, model, language, initial_prompt, align=Fals
             for reason in aligned[filename]["rejected"][:10]:
                 print(f"    hylätty: {reason}", flush=True)
         else:
-            document = words_document(raw, language)
+            document = words_document(raw, language, timing=timing)
         output_path = os.path.join(output_dir, _swap_audio_ext(filename, ".words.json"))
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(document, f, ensure_ascii=False)
@@ -1568,7 +1501,7 @@ def main():
         "--prompt",
         type=str,
         default="",
-        help="yhteensopivuusvalitsin; Orukeet ei tue promptia",
+        help="yhteensopivuusvalitsin; Parakeet Ultra ei tue promptia",
     )
     parser.add_argument(
         "--inline-remarks",
@@ -1592,7 +1525,12 @@ def main():
         help="downmix: koko miksaus litteroidaan kerran ilman puhujia; "
         "audio: pelkät äänitiedostot, sanat JSONina",
     )
-    parser.add_argument("--model", default="orukeet", help="yhteensopivuusvalitsin; käytössä aina Orukeet")
+    parser.add_argument(
+        "--model",
+        default="parakeet-ultra",
+        choices=("parakeet-ultra", "whisper"),
+        help="Colabissa ajettava moottori (oletus: parakeet-ultra; vaihtoehto: whisper)",
+    )
     parser.add_argument("--language", default="fi", help="tulosteen kielimerkintä (malli tunnistaa kielen)")
     parser.add_argument(
         "--align",
@@ -1635,10 +1573,10 @@ def main():
         print("\nKoko putki suoritettu onnistuneesti.", flush=True)
         return
     if args.source == "downmix":
-        run_downmix(input_dir, output_dir, args.prompt)
+        run_downmix(input_dir, output_dir, args.prompt, args.model)
         print("\nKoko putki suoritettu onnistuneesti.", flush=True)
         return
-    run_transcription(input_dir, output_dir, args.prompt)
+    run_transcription(input_dir, output_dir, args.prompt, args.model)
     print("[vaihe 3/4] Injektoidaan litteroinnit .nhsx-rakenteeseen...", flush=True)
     generated_files = inject_transcriptions_to_nhsx(
         input_dir, output_dir, bleed_filter=not args.no_bleed_filter

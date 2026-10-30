@@ -20,7 +20,7 @@ from colabtranscribe.colab.pipeline import (
 )
 
 
-def test_install_dependencies_uses_orukeet_not_whisper(monkeypatch):
+def test_install_dependencies_uses_photon_for_parakeet_ultra(monkeypatch):
     from colabtranscribe.colab import pipeline
 
     calls = []
@@ -30,86 +30,136 @@ def test_install_dependencies_uses_orukeet_not_whisper(monkeypatch):
     pipeline.install_dependencies()
 
     pip = next(cmd for cmd in calls if cmd[:2] == ["pip", "install"])
-    assert "nemo_toolkit[asr]==3.0.0" in pip
-    assert "silero-vad==6.2.2" in pip
-    assert not any("whisper" in package.lower() for package in pip)
+    assert "moondream==2.6.1" in pip
+    assert not any("nemo" in package.lower() for package in pip)
 
 
-def test_orukeet_hypothesis_becomes_word_timestamp_json():
-    from types import SimpleNamespace
-
-    from colabtranscribe.colab.pipeline import _orukeet_raw
-
-    raw = _orukeet_raw(SimpleNamespace(
-        text="Öö, tämä toimii.",
-        timestamp={"word": [
-            {"word": "Öö,", "start": 0.1, "end": 0.5},
-            {"word": "tämä", "start": 0.6, "end": 0.9},
-            {"word": "toimii.", "start": 1.0, "end": 1.5},
-        ]},
-    ))
-
-    assert raw == {
-        "segments": [{
-            "start": 0.1,
-            "end": 1.5,
-            "text": "Öö, tämä toimii.",
-            "words": [
-                {"word": "Öö,", "start": 0.1, "end": 0.5},
-                {"word": "tämä", "start": 0.6, "end": 0.9},
-                {"word": "toimii.", "start": 1.0, "end": 1.5},
-            ],
-        }]
-    }
-
-
-def test_orukeet_config_uses_timestamp_capable_greedy_decoder():
-    from types import SimpleNamespace
-
-    from colabtranscribe.colab.pipeline import _configure_orukeet_timestamps
-
-    cfg = SimpleNamespace(strategy="greedy_batch", compute_timestamps=False, preserve_alignments=False)
-    model = SimpleNamespace(
-        cfg=SimpleNamespace(decoding=cfg),
-        change_decoding_strategy=lambda config: setattr(model, "changed", config),
-    )
-
-    _configure_orukeet_timestamps(model)
-
-    assert cfg.strategy == "greedy"
-    assert cfg.compute_timestamps is True
-    assert cfg.preserve_alignments is True
-    assert model.changed is cfg
-
-
-def test_transcribe_file_uses_vad_chunks_and_restores_original_offsets(
-    monkeypatch, tmp_path
-):
-    import numpy as np
+def test_transcribe_file_uses_photon_ultra_word_timestamps(monkeypatch, tmp_path):
+    import sys
+    import types
 
     from colabtranscribe.colab import pipeline
 
-    audio = np.zeros(16000, dtype=np.float32)
-    monkeypatch.setattr(
-        pipeline, "_vad_audio", lambda path, tmp: (audio, [(1600, 4800), (8000, 11200)])
-    )
     seen = []
 
     class FakeModel:
-        def transcribe(self, paths, **kwargs):
-            seen.append((paths, kwargs))
-            return [type("Hypothesis", (), {
-                "text": "niinku",
-                "timestamp": {"word": [{"word": "niinku", "start": 0.1, "end": 0.3}]},
-            })()]
+        def __enter__(self):
+            return self
 
-    monkeypatch.setattr(pipeline, "_orukeet_model", lambda: FakeModel())
+        def __exit__(self, *exc):
+            return False
+
+        def transcribe(self, **kwargs):
+            seen.append(kwargs)
+            return {
+                "text": "Öö, tämä toimii.",
+                "language": None,
+                "segments": [{
+                    "start": 0.1,
+                    "end": 1.5,
+                    "text": "Öö, tämä toimii.",
+                    "words": [
+                        {"word": "Öö,", "start": 0.1, "end": 0.5},
+                        {"word": "tämä", "start": 0.6, "end": 0.9},
+                        {"word": "toimii.", "start": 1.0, "end": 1.5},
+                    ],
+                }],
+            }
+
+    def photon(model_id, **kwargs):
+        seen.append({"model_id": model_id, **kwargs})
+        return FakeModel()
+
+    monkeypatch.setitem(sys.modules, "moondream", types.SimpleNamespace(photon=photon))
+    monkeypatch.setattr(pipeline, "_ULTRA", None)
     raw = pipeline.transcribe_file(str(tmp_path / "puhe.wav"))
 
-    words = [word for segment in raw["segments"] for word in segment["words"]]
-    assert [(word["start"], word["end"]) for word in words] == [(0.2, 0.4), (0.6, 0.8)]
-    assert len(seen) == 2
-    assert all(call[1]["timestamps"] is True and call[1]["batch_size"] == 1 for call in seen)
+    assert seen[0] == {"model_id": "moondream/parakeet-ultra", "device": "cuda"}
+    assert seen[1] == {"audio": str(tmp_path / "puhe.wav"), "timestamps": "word"}
+    assert raw["segments"][0]["words"][1] == {
+        "word": "tämä", "start": 0.6, "end": 0.9,
+    }
+
+
+def test_transcribe_file_can_select_photon_whisper(monkeypatch, tmp_path):
+    import sys
+    import types
+
+    from colabtranscribe.colab import pipeline
+
+    calls = []
+
+    class Model:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def transcribe(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                "text": "Hei",
+                "segments": [{"start": 0.0, "end": 1.0, "text": "Hei",
+                              "words": [{"word": "Hei", "start": 0.0, "end": 0.5}]}],
+            }
+
+    def photon(model_id, **kwargs):
+        calls.append({"model_id": model_id, **kwargs})
+        return Model()
+
+    monkeypatch.setitem(sys.modules, "moondream", types.SimpleNamespace(photon=photon))
+    monkeypatch.setattr(pipeline, "_WHISPER", None)
+
+    result = pipeline.transcribe_file(str(tmp_path / "speech.wav"), model="whisper")
+
+    assert calls[0] == {"model_id": "openai/whisper-large-v3-turbo", "device": "cuda"}
+    assert calls[1] == {"audio": str(tmp_path / "speech.wav"), "timestamps": "word"}
+    assert result["segments"][0]["words"][0]["word"] == "Hei"
+
+
+def test_transcribe_file_converts_aiff_before_photon(monkeypatch, tmp_path):
+    import sys
+    import types
+
+    from colabtranscribe.colab import pipeline
+
+    source = tmp_path / "puhe.aiff"
+    source.write_bytes(b"AIFF")
+    seen = {}
+
+    def ffmpeg(command, **kwargs):
+        assert command[:5] == ["ffmpeg", "-nostdin", "-v", "error", "-i"]
+        Path(command[-1]).write_bytes(b"WAVE")
+
+    class FakeModel:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def transcribe(self, **kwargs):
+            seen.update(kwargs)
+            assert Path(kwargs["audio"]).suffix == ".wav"
+            assert Path(kwargs["audio"]).is_file()
+            return {"text": "Moi", "segments": [{
+                "words": [{"word": "Moi", "start": 0.0, "end": 0.4}],
+            }]}
+
+    monkeypatch.setattr(pipeline.subprocess, "run", ffmpeg)
+    monkeypatch.setitem(
+        sys.modules,
+        "moondream",
+        types.SimpleNamespace(photon=lambda *args, **kwargs: FakeModel()),
+    )
+    monkeypatch.setattr(pipeline, "_ULTRA", None)
+    monkeypatch.setattr(pipeline, "_ULTRA_STACK", None)
+
+    pipeline.transcribe_file(str(source))
+
+    assert seen["timestamps"] == "word"
+    assert seen["audio"] != str(source)
 
 
 def test_time_to_seconds_valid_formats():
@@ -409,8 +459,8 @@ def test_install_dependencies_pins_locked_versions(monkeypatch):
     assert pip_installs
     pip_cmd = pip_installs[0]
     assert "-U" not in pip_cmd
-    assert any("av==" in str(arg) or "av<19" in str(arg) for arg in pip_cmd)
-    assert "nemo_toolkit[asr]==3.0.0" in pip_cmd
+    assert "moondream==2.6.1" in pip_cmd
+    assert not any("nemo" in str(arg).lower() for arg in pip_cmd)
     assert not any("whisper" in str(arg).lower() for arg in pip_cmd)
 
 
@@ -840,7 +890,9 @@ def test_run_downmix_writes_text_and_marker(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(pipeline, "decode_mono", _ones)
     monkeypatch.setattr(
         pipeline, "transcribe_samples",
-        lambda samples, rate, prompt: [pipeline._Word("moi", 0.0, 0.3)],
+        lambda samples, rate, prompt, model="parakeet-ultra": [
+            pipeline._Word("moi", 0.0, 0.3)
+        ],
     )
     pipeline.run_downmix(str(tmp_path), str(out), "")
     assert (out / "jakso downmix.md").read_text(encoding="utf-8") == "[00:00] moi\n"

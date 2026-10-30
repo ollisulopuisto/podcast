@@ -74,8 +74,9 @@ class RunOptions:
     bleed_filter: bool = True
     # Käsikirjoitus: lyhyet huomautukset kappaleen sisään, ei omille riveilleen.
     inline_remarks: bool = False
-    # ``model`` säilyy yhteensopivuusvalitsimena; Colab käyttää Orukeetia.
-    model: str = "orukeet"
+    # Colab: parakeet-ultra tai Whisper Photonilla. Paikalliset backendit
+    # käyttävät omaa moottoriaan, mutta sama tulostemuotoa kuvaava valinta säilyy.
+    model: str = "parakeet-ultra"
     language: str = "fi"
     # Vain ``source="audio"``: sanojen alut kohdistetaan ääneen Colabissa
     # (``wordalign``), ja tiedoston ``timing`` on silloin ``ctc-v1``.
@@ -165,6 +166,7 @@ class RunOptions:
             "yes",
         )
         backend = os.environ.get("COLAB_BACKEND", "colab")
+        model = os.environ.get("COLAB_MODEL", "parakeet-ultra")
         parakeet_model = os.environ.get(
             "COLAB_ORUKEET_MODEL",
             os.environ.get("COLAB_PARAKEET_MODEL", DEFAULT_PARAKEET_MODEL),
@@ -187,6 +189,7 @@ class RunOptions:
             reset_session=reset_session,
             keep_session=keep_session,
             backend=backend,
+            model=model,
             parakeet_model=parakeet_model,
         )
 
@@ -211,8 +214,9 @@ def pipeline_args(options: RunOptions) -> list[str]:
     ]
     if options.source != "tracks":
         args += ["--source", options.source]
+    args += ["--model", options.model]
     if options.source == "audio":
-        args += ["--model", options.model, "--language", options.language]
+        args += ["--language", options.language]
         if options.align:
             args.append("--align")
     if options.rms:

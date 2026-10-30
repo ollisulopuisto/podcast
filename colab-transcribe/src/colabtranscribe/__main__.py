@@ -16,7 +16,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from . import __version__, driver, events, parakeet, session
+from . import __version__, driver, events, orukeet, parakeet, session
 from .onboarding import check_environment
 from .options import (
     BACKENDS,
@@ -65,8 +65,8 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Orukeet/Parakeet-mallin tunniste paikallisessa ajossa (oletus: {DEFAULT_PARAKEET_MODEL})",
     )
     parser.add_argument(
-        "--model", default=None,
-        help="vanha yhteensopivuusvalitsin (--audio); litterointi käyttää aina Orukeetia",
+        "--model", choices=("parakeet-ultra", "whisper"), default=None,
+        help="Colabin moottori: parakeet-ultra (oletus) tai whisper",
     )
     parser.add_argument("--language", default=None, help="kieli (--audio, oletus: fi)")
     parser.add_argument(
@@ -212,6 +212,7 @@ def options_from_args(args: argparse.Namespace) -> RunOptions:
         prompt=args.prompt if args.prompt != DEFAULT_PROMPT else env_opts.prompt,
         reset_session=args.reset_session or env_opts.reset_session,
         keep_session=args.keep_session or env_opts.keep_session,
+        model=args.model or env_opts.model,
         backend=args.backend if args.backend is not None else env_opts.backend,
         parakeet_model=args.parakeet_model or env_opts.parakeet_model,
     )
@@ -343,7 +344,7 @@ def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
         prompt=args.prompt if args.prompt != DEFAULT_PROMPT else env_opts.prompt,
         reset_session=args.reset_session or env_opts.reset_session,
         keep_session=args.keep_session or env_opts.keep_session,
-        model=args.model or "turbo",
+        model=args.model or env_opts.model,
         language=args.language or "fi",
         align=args.align,
         backend=args.backend if args.backend is not None else env_opts.backend,
@@ -354,7 +355,13 @@ def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
         printer = (
             _progress_printer(args.progress) if (args.progress or args.events) else None
         )
-        return parakeet.run_audio_mode_parakeet(
+        local_backend = orukeet if options.backend == "orukeet" else parakeet
+        runner = (
+            local_backend.run_audio_mode_orukeet
+            if options.backend == "orukeet"
+            else local_backend.run_audio_mode_parakeet
+        )
+        return runner(
             options=options,
             audio=audio,
             dry_run=dry_run,

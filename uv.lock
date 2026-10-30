@@ -593,7 +593,7 @@ wheels = [
 
 [[package]]
 name = "colab-transcribe"
-version = "2026.10.26.2"
+version = "2026.10.26.3"
 source = { editable = "colab-transcribe" }
 dependencies = [
     { name = "google-colab-cli" },
@@ -605,6 +605,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+orukeet = [
+    { name = "orukeet" },
+]
 parakeet = [
     { name = "parakeet-mlx" },
 ]
@@ -613,13 +616,14 @@ parakeet = [
 requires-dist = [
     { name = "google-colab-cli", git = "https://github.com/googlecolab/google-colab-cli?rev=930275e62970df10055f411c8e28ca61755dcfc7" },
     { name = "jupyter-kernel-client", git = "https://github.com/googlecolab/jupyter-kernel-client.git?rev=f18e982c3265df5e923aa9def101ab3fd737e139" },
+    { name = "orukeet", marker = "extra == 'orukeet'", url = "https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl" },
     { name = "parakeet-mlx", marker = "extra == 'parakeet'", specifier = ">=0.3.0" },
     { name = "silencelearn", editable = "packages/silencelearn" },
     { name = "soundfile", specifier = ">=0.13.1" },
     { name = "textual", specifier = ">=8.0.0" },
     { name = "wordalign", editable = "packages/wordalign" },
 ]
-provides-extras = ["parakeet"]
+provides-extras = ["parakeet", "orukeet"]
 
 [[package]]
 name = "colorama"
@@ -984,9 +988,9 @@ source = { editable = "packages/fcpxml" }
 name = "filelock"
 version = "4.2.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/d5/98/771d8ca889f220d7d7e352addf500666368f0fd081c6080a83767580c6e4/filelock-4.2.1.tar.gz", hash = "sha256:c4c937ccac2a813cee448e662a56366cfb374c0f8702e75f295c412cc1c5d5a3", size = 650997, upload-time = "2026-10-17T16:48:14.435351Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d5/98/771d8ca889f220d7d7e352addf500666368f0fd081c6080a83767580c6e4/filelock-4.2.1.tar.gz", hash = "sha256:c4c937ccac2a813cee448e662a56366cfb374c0f8702e75f295c412cc1c5d5a3", size = 650997, upload-time = "2026-10-17T16:48:14.435Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/28/00/db89d339bc4ecdc8087fa7b8607ba22ffc27bf96286f340c9620bea428b3/filelock-4.2.1-py3-none-any.whl", hash = "sha256:7be2662e9e826b9bba28afc0f843a123280d799a2ea44bb5d35ccec67905ae44", size = 162455, upload-time = "2026-10-17T16:48:12.937020Z" },
+    { url = "https://files.pythonhosted.org/packages/28/00/db89d339bc4ecdc8087fa7b8607ba22ffc27bf96286f340c9620bea428b3/filelock-4.2.1-py3-none-any.whl", hash = "sha256:7be2662e9e826b9bba28afc0f843a123280d799a2ea44bb5d35ccec67905ae44", size = 162455, upload-time = "2026-10-17T16:48:12.937Z" },
 ]
 
 [[package]]
@@ -2776,6 +2780,33 @@ sdist = { url = "https://files.pythonhosted.org/packages/27/6d/7bd33b5ed3a83f1c1
 wheels = [
     { url = "https://files.pythonhosted.org/packages/90/e5/7c5e8cdda8c9f0cd8aca0a376dee9cff6b8c30692cf614960d9e80f59689/optuna-5.0.0-py3-none-any.whl", hash = "sha256:5fff892ae6baf4948c810c5b8635ec67e08efb0709b41cb73b14e30391d44720", size = 442352, upload-time = "2026-09-07T05:16:19.943Z" },
 ]
+
+[[package]]
+name = "orukeet"
+version = "0.1.1"
+source = { url = "https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl" }
+dependencies = [
+    { name = "av" },
+    { name = "huggingface-hub" },
+    { name = "numpy" },
+]
+wheels = [
+    { url = "https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl", hash = "sha256:923a9bf13fa1ce98ff24f8647f7beed22b69388f3ce2b6e7fac71f0f9e7c8f27" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "av", specifier = ">=14,<19" },
+    { name = "build", marker = "extra == 'dev'", specifier = ">=1" },
+    { name = "huggingface-hub", specifier = ">=0.34,<2" },
+    { name = "markdown", marker = "extra == 'dev'", specifier = ">=3" },
+    { name = "matplotlib", marker = "extra == 'dev'", specifier = ">=3.9" },
+    { name = "numpy", specifier = ">=2,<3" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "rapidfuzz", marker = "extra == 'eval'", specifier = ">=3,<4" },
+    { name = "reportlab", marker = "extra == 'dev'", specifier = ">=4" },
+]
+provides-extras = ["eval", "dev"]
 
 [[package]]
 name = "packaging"
