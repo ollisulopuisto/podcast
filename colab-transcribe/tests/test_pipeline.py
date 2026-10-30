@@ -125,6 +125,21 @@ def test_transcribe_file_can_select_photon_whisper(monkeypatch, tmp_path):
     assert result["segments"][0]["words"][0]["word"] == "Hei"
 
 
+def test_transcribe_file_refuses_an_unknown_engine_instead_of_using_ultra(
+    monkeypatch, tmp_path
+):
+    from colabtranscribe.colab import pipeline
+
+    def unexpected_photon(*args, **kwargs):
+        raise AssertionError("unsupported model reached Photon")
+
+    monkeypatch.setattr(pipeline, "_ultra_model", unexpected_photon)
+    monkeypatch.setattr(pipeline, "_whisper_model", unexpected_photon)
+
+    with pytest.raises(ValueError, match="orukeet"):
+        pipeline.transcribe_file(str(tmp_path / "speech.wav"), model="orukeet")
+
+
 def test_transcribe_file_converts_aiff_before_photon(monkeypatch, tmp_path):
     import sys
     import types

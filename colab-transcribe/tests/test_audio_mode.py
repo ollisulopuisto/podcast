@@ -144,6 +144,23 @@ def test_run_audio_writes_one_words_file_per_audio_file(tmp_path, monkeypatch, c
     assert "Sanat luotu:" in capsys.readouterr().out
 
 
+def test_run_audio_marks_the_selected_whisper_timing_backend(tmp_path, monkeypatch):
+    (tmp_path / "in").mkdir()
+    (tmp_path / "in" / "puhe.wav").write_bytes(b"x")
+    monkeypatch.setattr(
+        pipeline,
+        "transcribe_file",
+        _fake_transcribe({"puhe.wav": [("moi", 1.0, 1.3)]}),
+    )
+
+    pipeline.run_audio(
+        str(tmp_path / "in"), str(tmp_path / "out"), "whisper", "fi", ""
+    )
+
+    doc = json.loads((tmp_path / "out" / "puhe.words.json").read_text(encoding="utf-8"))
+    assert doc["timing"] == "whisper"
+
+
 def test_run_audio_announces_each_file_with_its_position(tmp_path, monkeypatch, capsys):
     (tmp_path / "in").mkdir()
     for name in ("a.wav", "b.wav"):
@@ -703,7 +720,7 @@ def test_without_align_the_aligner_is_never_touched(tmp_path, monkeypatch):
     pipeline.run_audio(str(tmp_path / "in"), str(tmp_path / "out"), "turbo", "fi", "")
     assert order == ["whisper"]  # fake transcribe - oikea tausta-ajuri on Orukeet
     doc = json.loads((tmp_path / "out" / "puhe.words.json").read_text(encoding="utf-8"))
-    assert doc["timing"] == "parakeet-ultra"
+    assert doc["timing"] == "whisper"
 
 
 def test_the_aligned_file_is_in_time_order_even_when_a_word_moved_past_the_next(
