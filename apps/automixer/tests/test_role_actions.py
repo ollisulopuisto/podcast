@@ -85,3 +85,17 @@ def test_role_commands_are_listed_in_real_keys_panel():
             assert "Mark Speech" in text
             assert "Mark Music" in text
     asyncio.run(scenario())
+
+
+def test_other_selection_does_not_change_track_roles():
+    async def scenario():
+        app = RoleApp()
+        async with app.run_test() as pilot:
+            other = SelectionList(("plugin", "plugin", True), id="other_selection")
+            await app.mount(other)
+            other.focus()
+            before = list(app.config["tracks"])
+            await pilot.press("m", "s")
+            assert app.config["tracks"] == before
+            assert app.updates == 0
+    asyncio.run(scenario())
