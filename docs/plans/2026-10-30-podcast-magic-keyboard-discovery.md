@@ -42,3 +42,8 @@ vientiä tai äänen käsittelyä.
 Testit367läpi,1ohitettu. Ohjeen molemmat kielet ja Escape/F1 tarkistettu oikeassa
 selaimessa valepalvelimella. Tämä ei ole natiivi Mac -testi tai äänen kuuntelu.
 Ei versiopäivitystä, työnkulun muutosta, GitHub-kulua tai valmista DMG:tä.
+
+
+## 08:51 recovery after workspace loss
+
+The older local-only test additions were recovered from the exact original source-edit record and rerun, not substituted by the older pushed commit. Historical commit metadata was not recovered; this is a new reconstruction commit. Post's8P047entry-point/helpertests and cancellation regression pass headlessly; Podcast's extended keyboard Node regression passes. Original native validation remains unverified. Public PR publication permission was clarified by user08:48; the earlier blanket public artifact-storage blocker was based on mis-scoped private repository billing wording and is withdrawn. No billing settings or paid upgrades changed.
