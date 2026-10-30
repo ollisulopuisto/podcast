@@ -11,6 +11,11 @@ import pytest
 from colabtranscribe import __main__ as cli
 
 
+def test_orukeet_model_alias_selects_local_model():
+    args = cli.build_parser().parse_args(["--orukeet-model", "custom/model"])
+    assert args.parakeet_model == "custom/model"
+
+
 def test_version_exits_cleanly(capsys):
     with pytest.raises(SystemExit) as e:
         cli.main(["--version"])
