@@ -315,6 +315,13 @@ class AudioSettings:
     plugin_state: str = ""
     debleed: bool = True
     duck: bool = False
+    # Kytke dialogue-mikit alas vain pidemmässä yhteisessä hiljaisuudessa.
+    # Käyrä kirjoitetaan FCPXML:ään, ei raa'aksi äänitiedostoksi. Room tone ja
+    # musiikki ovat eri rooleja eikä niitä käsitellä tällä asetuksella.
+    silence_pass: bool = False
+    silence_min_gap: float = 2.0
+    silence_db: float = -60.0
+    silence_fade: float = 0.4
     # Vaimennuksen oletukset tulevat kirjastolta, ks. ``masks.DUCK_DB``: ne on
     # mitattu, ja toinen kuluttaja saa nyt saman numeron eikä omaansa.
     # Säädettävissä siltä varalta että mikit ovat lähempänä toisiaan tai huone

@@ -108,6 +108,15 @@ const DUCK_KNOBS = () => [
     unit: T('unit.seconds') },
 ];
 
+const SILENCE_KNOBS = () => [
+  { key: 'silence_min_gap', label: T('audio.silenceMinGap'), min: 0.5,
+    max: 10, step: 0.1, unit: T('unit.seconds') },
+  { key: 'silence_db', label: T('audio.silenceDepth'), min: -60,
+    max: -6, step: 1, unit: T('unit.db') },
+  { key: 'silence_fade', label: T('audio.silenceFade'), min: 0,
+    max: 2, step: 0.05, unit: T('unit.seconds') },
+];
+
 const ROOM_KNOBS = () => [
   { key: 'room_db', label: T('audio.roomDb'), min: -40, max: 0, step: 1,
     unit: T('audio.roomDbUnit') },
@@ -1403,6 +1412,23 @@ function renderAudio() {
     { textContent: T('audio.enable') }));
   host.append(toggle);
 
+  const silenceKeys = SILENCE_KNOBS().map((k) => k.key);
+  host.append(settingRow({
+    key: 'silence-pass',
+    label: T('audio.silenceRow'),
+    hint: T('audio.silenceHint'),
+    value: audio.silence_pass
+      ? `${audio.silence_db}${T('unit.db')}` : T('audio.off'),
+    keys: silenceKeys,
+    toggle: {
+      checked: audio.silence_pass,
+      onChange: (on) => { audio.silence_pass = on; renderAudio(); schedule(0); },
+    },
+    body: (body, mark) => {
+      SILENCE_KNOBS().forEach((spec) => whyKnob(body, spec, mark));
+    },
+  }).row);
+
   if (!audio.enabled) return;
 
   /* Rivit. Ensinäkymässä nimi, tila ja se yksi luku joka kertoo mitä rivi
@@ -2221,7 +2247,9 @@ function drawBar() {
   /* -1 = tyhjä, -2 = laaja, 0.. = puhuja. Reaktiokuva ei aina näytä sitä
      kasvoa joka mitattiin, joten «negatiivinen» ei enää tarkoita tyhjää. */
   const hasShots = shots.some((v) => v !== -1);
-  const rows = preview ? preview.speakers.length + 1 + (hasShots ? 1 : 0) : 1;
+  const hasSilence = !!(preview && state.audio && state.audio.silence_pass);
+  const rows = preview ? preview.speakers.length + 1 + (hasShots ? 1 : 0)
+    + (hasSilence ? 1 : 0) : 1;
   const rowHeight = 22, gap = 4, shotHeight = 10;
   const height = (rows - (hasShots ? 1 : 0)) * rowHeight
     + (hasShots ? shotHeight : 0) + (rows - 1) * gap + 8;
@@ -2261,11 +2289,33 @@ function drawBar() {
     if (preview.chosen[i] !== preview.chosen[i - 1]) ctx.fillRect(i * step, y, 1, rowHeight);
   }
 
+  let lowerY = y + rowHeight + gap;
+  if (hasSilence) {
+    ctx.fillStyle = '#191c22';
+    ctx.fillRect(0, lowerY, width, rowHeight);
+    const viewStart = preview.view_start;
+    const viewEnd = preview.view_end;
+    const viewDuration = Math.max(0.001, viewEnd - viewStart);
+    (preview.silence || []).forEach((span) => {
+      const left = Math.max(0, (span.start - viewStart) / viewDuration * width);
+      const right = Math.min(width, (span.end - viewStart) / viewDuration * width);
+      const fadePx = span.fade / viewDuration * width;
+      ctx.fillStyle = 'rgba(244, 174, 66, .25)';
+      ctx.fillRect(left, lowerY, Math.min(fadePx, right - left), rowHeight);
+      ctx.fillRect(Math.max(left, right - fadePx), lowerY,
+        Math.min(fadePx, right - left), rowHeight);
+      ctx.fillStyle = 'rgba(244, 174, 66, .82)';
+      ctx.fillRect(left + Math.min(fadePx, right - left), lowerY,
+        Math.max(0, right - left - 2 * fadePx), rowHeight);
+    });
+    lowerY += rowHeight + gap;
+  }
+
   /* Reaktiokuvat matalana rivinä leikkausrivin alla. Matalana, koska ne
      eivät ole yhtä painava kerros kuin leikkaus itse — ja leikkausrivin
      alla, koska ne tulevat sen päälle omalle lanelleen. */
   if (!hasShots) { cacheBar(canvas, preview); return; }
-  const shotY = y + rowHeight + gap;
+  const shotY = lowerY;
   ctx.fillStyle = '#191c22';
   ctx.fillRect(0, shotY, width, shotHeight);
   ctx.globalAlpha = state.globals.reactions ? 1 : 0.35;
@@ -2360,6 +2410,12 @@ function renderLegend() {
     entries.push([null, state.globals.reactions
       ? T('legend.reactions', { n: count })
       : T('legend.reactionsOff', { n: count })]);
+  }
+  if (state.audio && state.audio.silence_pass) {
+    const silence = latest.preview.silence || [];
+    entries.push(['#f4ae42', silence.length
+      ? T('legend.silence', { n: silence.length, db: state.audio.silence_db })
+      : T('legend.silenceNone')]);
   }
   entries.forEach(([color, text]) => {
     const item = document.createElement('span');
