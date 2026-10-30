@@ -267,7 +267,7 @@ def test_the_av_render_in_two_halves_joins_on_the_exact_frame(tmp_path):
 @needs_ffmpeg
 @pytest.mark.parametrize("backend", ["ffmpeg", "av"])
 @pytest.mark.parametrize("reverse", [False, True], ids=["sisään", "ulos"])
-def test_a_slow_zoom_moves_smoothly_without_wobble(tmp_path, backend, reverse):
+def test_a_slow_zoom_moves_smoothly_without_wobble(tmp_path, monkeypatch, backend, reverse):
     """Hidas mikroliike: kuva liukuu tasaisesti eikä nyi pikselin edestakaisin.
 
     Vanha ffmpeg-polku pyöristi sekä skaalatun koon että rajauksen kokonaisiin
@@ -279,6 +279,20 @@ def test_a_slow_zoom_moves_smoothly_without_wobble(tmp_path, backend, reverse):
     suunnanvaihtoa. Ks. CLAUDE.md, renderöinti.
     """
     draw = _backend(backend)
+    if backend == "ffmpeg":
+        # Testi mittaa kuvan geometrista liikettä (ks. CLAUDE.md,
+        # renderöinti), ei koodaajan tarkkuutta. Tuotannon libx264 crf 18
+        # lisää kvantisointikohinaa, joka kääntää 0,03 px:n ruutuaskeleen
+        # suunnan 8-bittisessä mittauksessa (Windows-CI: 4 ja 8
+        # suunnanvaihtoa, Linuxilla toistettuna 10) — macOS:n VideoToolbox
+        # 8 Mb/s on käytännössä häviötön, joten siellä testi on vihreä.
+        # Häviötön qp 0 -koodaus jättää mitattavaksi vain suodinketjun oman
+        # liikkeen: sama jäännös 0,033 px ja 1 suunnanvaihto ffmpeg 4.4:stä
+        # 9.0:aan. Alkuperäinen vika (rms 0,60 px, 82 suunnanvaihtoa)
+        # kaataisi tämän testin edelleen.
+        monkeypatch.setattr(render, "_ENCODER",
+                            ("libx264", ["-c:v", "libx264", "-preset", "veryfast",
+                                         "-qp", "0"]))
     source = tmp_path / "bar.mp4"
     _bar_source(source, x=1000, seconds=6)
     plan = reframe.plan_shot(1100 / 1920, 0.5, 1920, 1080, lead=-0.12, face_w=0.1)

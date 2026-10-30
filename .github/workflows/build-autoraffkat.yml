@@ -135,7 +135,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: apps/autoraffkat/bin
-          key: ffmpeg-windows-${{ runner.arch }}-${{ hashFiles('scripts/fetch_binaries.py') }}
+          key: ffmpeg-windows-${{ runner.arch }}-${{ hashFiles('apps/autoraffkat/scripts/fetch_binaries.py') }}
 
       - name: Fetch binaries
         run: uv run python scripts/fetch_binaries.py --os windows
