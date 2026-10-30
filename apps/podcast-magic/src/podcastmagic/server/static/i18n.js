@@ -5,6 +5,9 @@
 
 const STRINGS = {
   fi: {
+    'app.shortcuts': 'Näppäinoikotiet',
+    'app.shortcutsHint': 'Tekstikenttien omat näppäimet säilyvät. Sulje painamalla Esc.',
+    'app.close': 'Sulje',
     'app.session': 'Istunto',
     'app.browse': 'Selaa…',
     'app.change': 'Vaihda…',
@@ -125,6 +128,9 @@ const STRINGS = {
   },
 
   en: {
+    'app.shortcuts': 'Keyboard shortcuts',
+    'app.shortcutsHint': 'Text fields keep their own keys. Press Esc to close.',
+    'app.close': 'Close',
     'app.session': 'Session',
     'app.browse': 'Browse…',
     'app.change': 'Change…',

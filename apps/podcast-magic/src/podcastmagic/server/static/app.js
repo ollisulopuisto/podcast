@@ -299,6 +299,44 @@ const PM = {
     );
   },
 
+  // Yksi rekisteri ohjaa näppäimiä ja ohjetta. Ajoa ei käynnistetä
+  // globaalilla näppäimellä: sen vaikutus riippuu näkyvän lomakkeen arvoista.
+  shortcuts() {
+    return [
+      { key: '? / F1', label: 'app.shortcuts', matches: e => e.key === 'F1' || (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey), run: () => this.showShortcuts() },
+      { key: '⌘ / Ctrl + O', label: 'app.change', matches: e => (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'o', run: () => this.pick() },
+      ...(this.state?.modules || []).slice(0, 9).map((spec, index) => ({
+        key: `⌘ / Ctrl + ${index + 1}`,
+        label: spec.title ? (spec.title[I18N.lang] || spec.title.fi) : spec.key,
+        translated: false,
+        matches: e => (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key === String(index + 1),
+        run: () => this.selectModule(spec.key),
+      })),
+    ];
+  },
+
+  handleShortcut(event) {
+    if (event.defaultPrevented || event.isComposing || event.repeat) return;
+    const target = event.target;
+    if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) return;
+    const dialog = typeof document !== 'undefined' && document.getElementById('shortcuts-dialog');
+    if (dialog?.open) return; // Escape ja kohdistus jäävät selaimen dialogille.
+    const shortcut = this.shortcuts().find(item => item.matches(event));
+    if (!shortcut) return;
+    event.preventDefault();
+    shortcut.run();
+  },
+
+  showShortcuts() {
+    const dialog = document.getElementById('shortcuts-dialog');
+    const list = document.getElementById('shortcuts-list');
+    list.replaceChildren(...this.shortcuts().map(item => this.el('div', { class: 'shortcut-row' }, [
+      this.el('span', { text: item.translated === false ? item.label : this.t(item.label) }),
+      this.el('kbd', { text: item.key }),
+    ])));
+    if (!dialog.open) dialog.showModal();
+  },
+
   // ---- kuoren piirto -----------------------------------------------------
 
   selectModule(key) {
@@ -376,6 +414,8 @@ const PM = {
       if (!log.classList.contains('hidden')) log.scrollTop = log.scrollHeight;
     });
 
+    document.getElementById('shortcuts').addEventListener('click', () => this.showShortcuts());
+    document.addEventListener('keydown', event => this.handleShortcut(event));
     this.redraw();
     if (this.state.session) this.setSession(this.state.session);
     if (this.state.job) { this.showJob(this.state.job); if (this.state.job.running) this.startPolling(); }

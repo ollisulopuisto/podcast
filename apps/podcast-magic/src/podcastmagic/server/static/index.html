@@ -34,6 +34,7 @@
 
     <div class="rail-foot">
       <span id="language" class="langs"></span>
+      <button id="shortcuts" class="ghost" data-t="app.shortcuts">Näppäinoikotiet</button>
     </div>
   </aside>
 
@@ -59,6 +60,12 @@
 
 </div>
 
+<dialog id="shortcuts-dialog" aria-labelledby="shortcuts-title">
+  <h2 id="shortcuts-title" data-t="app.shortcuts">Näppäinoikotiet</h2>
+  <div id="shortcuts-list"></div>
+  <p class="muted small" data-t="app.shortcutsHint">Tekstikenttien omat näppäimet säilyvät. Sulje painamalla Esc.</p>
+  <form method="dialog"><button data-t="app.close">Sulje</button></form>
+</dialog>
 <script src="/static/i18n.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/mod_chain.js"></script>
