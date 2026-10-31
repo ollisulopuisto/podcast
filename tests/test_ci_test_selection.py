@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from scripts.ci_test_selection import select_suites
+import runpy
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+select_suites = runpy.run_path(str(ROOT / "scripts/ci_test_selection.py"))["select_suites"]
 
 
 def test_app_only_changes_run_that_app_on_supported_platforms():
