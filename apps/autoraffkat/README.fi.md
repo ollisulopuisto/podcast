@@ -121,6 +121,11 @@ uv sync            # tai: pip install -e .
 
 ### Työpöytäsovellus
 
+Pitkä projektiäänen analyysi, äänenkäsittely, videomittaukset ja videon
+renderöinti estävät tilapäisesti macOS:n App Napiä. Aktiviteetti päättyy työn
+mukana, ja Mac saa silti siirtyä järjestelmän joutokäyntilepoon. Erillinen
+äänenkäsittelyprosessi pitää oman aktiviteettinsa.
+
 ```
 uv run python scripts/build_app.py          # dist/autoraffkat.app
 uv run python scripts/build_app.py --dmg    # …ja dist/autoraffkat.dmg
