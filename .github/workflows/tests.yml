@@ -21,7 +21,32 @@ permissions:
   contents: read
 
 jobs:
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      macos: ${{ steps.suites.outputs.macos }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: suites
+        name: Select affected test suites
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            python scripts/ci_test_selection.py --all </dev/null
+          elif [ "$EVENT_NAME" = pull_request ]; then
+            git diff --name-only "$BASE_SHA...HEAD" | python scripts/ci_test_selection.py
+          else
+            git diff --name-only "$BEFORE_SHA" HEAD | python scripts/ci_test_selection.py
+          fi
+
   test:
+    needs: [select]
+    if: ${{ needs.select.outputs.macos != '[]' }}
     runs-on: macos-latest
     timeout-minutes: 30
     env:
@@ -71,20 +96,20 @@ jobs:
       # piilota seuraavien tulosta, joten yksi ajo kertoo kaiken. Ajo on silti
       # punainen — tämä ei ole `continue-on-error`.
       - name: speechmix
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.macos), 'all') || contains(fromJSON(needs.select.outputs.macos), 'speechmix')) }}
         run: uv run --directory packages/speechmix pytest -q
 
       # Linux runs the portable library suites once. This Mac job retains the
       # Apple-specific app, Metal, UI, and AVFoundation coverage below.
 
       - name: autoraffkat
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.macos), 'all') || contains(fromJSON(needs.select.outputs.macos), 'autoraffkat')) }}
         run: uv run --directory apps/autoraffkat pytest -q
 
       # Käyttöliittymän savutesti ja pikanäppäinten mittari ajavat noden, ja
       # ilman sitä ne ohittuvat vihreinä. Ohittunut testi on vihreä testi.
       - name: autoraffkat — interface tests ran
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.macos), 'all') || contains(fromJSON(needs.select.outputs.macos), 'autoraffkat')) }}
         run: |
           uv run --directory apps/autoraffkat \
             pytest tests/test_ui.py tests/test_shortcuts.py -q --no-header -rs | tee /tmp/araf-ui.log
@@ -95,14 +120,14 @@ jobs:
           grep -q " passed" /tmp/araf-ui.log
 
       - name: automixer
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.macos), 'all') || contains(fromJSON(needs.select.outputs.macos), 'automixer')) }}
         run: uv run --directory apps/automixer pytest -q
 
       # The Linux job (tests-linux.yml) leaves out the tests that need the real
       # mlx, so this is where they must run. A skipped test is a green test:
       # fail if one was skipped, or if none ran at all.
       - name: automixer — the mlx tests ran
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.macos), 'all') || contains(fromJSON(needs.select.outputs.macos), 'automixer')) }}
         run: |
           uv run --directory apps/automixer pytest -m mlx -q --no-header -rs | tee /tmp/mlx.log
           if grep -q "skipped" /tmp/mlx.log; then
@@ -112,14 +137,14 @@ jobs:
           grep -q " passed" /tmp/mlx.log
 
       - name: podcast-magic
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.macos), 'all') || contains(fromJSON(needs.select.outputs.macos), 'podcast-magic')) }}
         run: uv run --directory apps/podcast-magic pytest -q
 
       # Ohittunut testi on vihreä testi. Savutesti ohittuu jos ajurilta
       # puuttuu node, eikä siitä sanota mitään — joten sen ajaminen
       # tarkistetaan erikseen eikä luoteta yllä olevaan riviin.
       - name: podcast-magic — savutesti myös ajettiin
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.macos), 'all') || contains(fromJSON(needs.select.outputs.macos), 'podcast-magic')) }}
         run: |
           uv run --directory apps/podcast-magic \
             pytest tests/test_ui.py -q --no-header -rs | tee /tmp/ui.log
@@ -136,7 +161,7 @@ jobs:
       # `Report.peak` kertoi oikean huipun, koska se mitataan liukuluvuista
       # ennen pakkausta. Vasta oikea renderöinti näytti sen.
       - name: podcast-magic — renderöinti ajettiin oikealla ffmpegillä
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.macos), 'all') || contains(fromJSON(needs.select.outputs.macos), 'podcast-magic')) }}
         run: |
           uv run --directory apps/podcast-magic \
             pytest tests/test_render_endtoend.py -q --no-header -rs | tee /tmp/e2e.log
@@ -149,7 +174,7 @@ jobs:
       # läpi kummankin puuttuessa, koska ne käyttävät valemoottoria; tämä on
       # se kohta joka lukee oikean tilanteen ajurilta.
       - name: podcast-magic — molemmat moottorit tuotavissa
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.macos), 'all') || contains(fromJSON(needs.select.outputs.macos), 'podcast-magic')) }}
         run: |
           uv run --directory apps/podcast-magic python -c "
           from podcastmagic.transcribe.backends import resolve
