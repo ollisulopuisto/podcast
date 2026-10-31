@@ -77,6 +77,13 @@ macOS `tests.yml` repeats only the suites that need Apple frameworks, Metal,
 or macOS application behavior, alongside the workspace agreement check.
 This avoids spending macOS minutes on the same portable tests twice.
 
+Pull requests and pushes select member suites from changed paths. An app edit
+runs that app's suite on its supported runners; a shared-library edit runs the
+library suite and its consuming apps. The macOS job is skipped entirely when
+no macOS suite is selected. Workspace contracts and lint still run for every
+change. Documentation-only edits skip member suites. A manual test workflow
+dispatch still runs every suite.
+
 For an urgent installer check, `build-autoraffkat.yml` and
 `build-podcast-magic.yml` can be dispatched manually with **hotfix artifact**
 enabled. That skips only the build workflow's test suite and uploads an
