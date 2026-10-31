@@ -2946,6 +2946,9 @@ function renderStatic() {
   document.querySelectorAll('[data-t]').forEach((el) => {
     el.textContent = T(el.dataset.t);
   });
+  $('document-controls').setAttribute('aria-label', T('toolbar.documents'));
+  $('history-controls').setAttribute('aria-label', T('toolbar.history'));
+  $('output-controls').setAttribute('aria-label', T('toolbar.output'));
   $('reload').textContent = T('app.reload');
   const relinkBtn = $('relink');
   if (relinkBtn) relinkBtn.textContent = T('app.relink');

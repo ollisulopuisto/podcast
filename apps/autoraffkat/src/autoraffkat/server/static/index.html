@@ -12,27 +12,39 @@
 </head>
 <body>
 <header>
-  <div class="titles">
-    <h1 id="project-name">—</h1>
-    <p id="project-meta" class="muted"></p>
+  <div class="header-top">
+    <div class="titles">
+      <h1 id="project-name">—</h1>
+      <p id="project-meta" class="muted"></p>
+    </div>
+    <div class="header-utilities">
+      <span id="language" class="langs"></span>
+      <button id="shortcuts" type="button" class="ghost keys-open" aria-haspopup="dialog">Pikanäppäimet <kbd>?</kbd></button>
+    </div>
   </div>
-  <div class="actions">
-    <span id="status" class="muted"></span>
-    <button id="history-undo" class="ghost" data-t="history.undo">Kumoa</button>
-    <button id="history-redo" class="ghost" data-t="history.redo">Tee uudelleen</button>
-    <select id="history-branches" aria-label="Muokkaushaarat"></select>
-    <span id="language" class="langs"></span>
-    <button id="shortcuts" type="button" class="ghost keys-open" aria-haspopup="dialog">Pikanäppäimet <kbd>?</kbd></button>
-    <button id="open" class="ghost">Avaa XML…</button>
-    <button id="reload" class="ghost">Lue uudestaan</button>
-    <button id="relink" class="ghost hidden">Etsi tiedostot…</button>
-    <span id="mix-host"></span>
-    <button id="render" class="ghost">Renderöi video</button>
-    <button id="render-stop" class="ghost hidden">Pysäytä</button>
-    <button id="export" class="primary">Vie XML</button>
+  <div class="toolbar">
+    <div id="document-controls" class="toolbar-group" role="group">
+      <button id="open" class="ghost">Avaa XML…</button>
+      <button id="reload" class="ghost">Lue uudestaan</button>
+      <button id="relink" class="ghost hidden">Etsi tiedostot…</button>
+    </div>
+    <div id="history-controls" class="toolbar-group" role="group">
+      <button id="history-undo" class="ghost" data-t="history.undo">Kumoa</button>
+      <button id="history-redo" class="ghost" data-t="history.redo">Tee uudelleen</button>
+      <select id="history-branches" aria-label="Muokkaushaarat"></select>
+    </div>
+    <div id="output-controls" class="toolbar-group" role="group">
+      <span id="mix-host"></span>
+      <span class="render-controls">
+        <button id="render" class="ghost">Renderöi video</button>
+        <button id="render-stop" class="ghost hidden">Pysäytä</button>
+      </span>
+      <button id="export" class="primary">Vie XML</button>
+    </div>
   </div>
 </header>
 
+<div id="status" class="status-line muted" role="status" aria-live="polite"></div>
 <div id="banner" class="banner hidden"></div>
 <div id="exported" class="exported hidden"></div>
 
