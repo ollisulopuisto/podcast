@@ -125,6 +125,11 @@ Everything else is cross-platform.
 
 ### Desktop app
 
+Long-running project analysis, audio processing, video measurements and video
+rendering temporarily suppress macOS App Nap. The activity ends with the job,
+and the Mac is still allowed to enter system idle sleep. The audio worker
+holds its own activity because it runs as a separate process.
+
 ```
 uv run python scripts/build_app.py          # dist/autoraffkat.app
 uv run python scripts/build_app.py --dmg    # …and dist/autoraffkat.dmg
