@@ -343,9 +343,12 @@ const PM = {
     this.active = key;
     try { localStorage.setItem('pm.module', key); } catch { /* yksityinen ikkuna */ }
     document.querySelectorAll('#tabs button').forEach((button) => {
-      button.classList.toggle('on', button.dataset.key === key);
+      const isOn = button.dataset.key === key;
+      button.classList.toggle('on', isOn);
+      button.setAttribute('aria-selected', isOn ? 'true' : 'false');
     });
     const panels = document.getElementById('panels');
+    panels.setAttribute('aria-labelledby', `tab-${key}`);
     panels.replaceChildren();
     const module = this.modules.get(key);
     if (!module) return;
@@ -358,6 +361,9 @@ const PM = {
   renderTabs() {
     const tabs = document.getElementById('tabs');
     tabs.replaceChildren(...this.state.modules.map((spec) => this.el('button', {
+      id: `tab-${spec.key}`,
+      role: 'tab',
+      'aria-selected': spec.key === this.active ? 'true' : 'false',
       'data-key': spec.key,
       text: spec.title[I18N.lang] || spec.title.fi,
       title: spec.blurb[I18N.lang] || spec.blurb.fi,
