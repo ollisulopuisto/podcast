@@ -1,0 +1,3 @@
+## 2026-11-01 - Keyboard focus visibility in shared UI styling
+**Learning:** Shared design systems across paired companion apps (autoraffkat and Podcast Magic) often rely on custom `:focus-visible` styling (`var(--accent)` outline) to keep keyboard navigation accessible without adding unwanted focus rings for pointer clicks. When styling custom buttons (`.tabs button`, action buttons) on dark themes, native browser focus outlines can blend into dark backgrounds or be completely suppressed by default button resets unless `button:focus-visible` is explicitly declared.
+**Action:** When working on web interfaces in this repo, ensure `button:focus-visible` is styled consistently with inputs using `outline: 2px solid var(--accent); outline-offset: 1px;`.
