@@ -150,3 +150,14 @@ def test_keyboard_shortcuts_preserve_native_text_and_do_not_run_jobs():
     )
     assert done.returncode == 0, done.stderr or done.stdout
     assert "OK keyboard" in done.stdout
+
+
+def test_tab_navigation_and_session_have_aria_semantics():
+    """Välilehdillä on roolit ja valintatila ruudunlukijalle, ja istuntokentällä nimilappu."""
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert 'role="tablist"' in html
+    assert 'aria-labelledby="session-title"' in html
+    assert "role: 'tab'" in app
+    assert "'aria-selected': spec.key === this.active ? 'true' : 'false'" in app
+    assert "button.setAttribute('aria-selected', isOn ? 'true' : 'false');" in app
