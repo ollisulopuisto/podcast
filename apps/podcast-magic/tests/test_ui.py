@@ -130,6 +130,17 @@ def test_the_transcribe_panel_offers_alignment_and_disables_it_when_it_is_missin
     assert "state.info.aligner" in script and "tr.alignMissing" in script
 
 
+def test_button_focus_visible_styles_defined():
+    """Painikkeilla on oltava näppäimistökohdistuksen ilmaisin (:focus-visible).
+
+    Näppäimistöllä selattaessa painikkeiden kohdistuksen on erotuttava selvästi
+    ilman että hiirellä klikkaaminen jättää häiritsevää kehystä.
+    """
+    css = (STATIC / "style.css").read_text(encoding="utf-8")
+    assert "button:focus-visible" in css
+    assert "var(--accent)" in css
+
+
 @needs_node
 def test_keyboard_shortcuts_preserve_native_text_and_do_not_run_jobs():
     """Ohje ja välilehdet eivät saa käynnistää raskasta ajoa vahingossa."""
