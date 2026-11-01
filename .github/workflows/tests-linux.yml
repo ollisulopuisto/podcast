@@ -39,7 +39,32 @@ permissions:
   contents: read
 
 jobs:
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      linux: ${{ steps.suites.outputs.linux }}
+      macos: ${{ steps.suites.outputs.macos }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: suites
+        name: Select affected test suites
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            python scripts/ci_test_selection.py --all </dev/null
+          elif [ "$EVENT_NAME" = pull_request ]; then
+            git diff --name-only "$BASE_SHA...HEAD" | python scripts/ci_test_selection.py
+          else
+            git diff --name-only "$BEFORE_SHA" HEAD | python scripts/ci_test_selection.py
+          fi
+
   linux:
+    needs: [select]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -73,56 +98,56 @@ jobs:
         run: uv run pytest tests -q
 
       - name: speechmix
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.linux), 'all') || contains(fromJSON(needs.select.outputs.linux), 'speechmix')) }}
         run: >-
           uv run --directory packages/speechmix pytest -q
           --deselect tests/test_stems.py::test_a_stem_holds_few_copies_of_its_track
 
       - name: nhsx
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.linux), 'all') || contains(fromJSON(needs.select.outputs.linux), 'nhsx')) }}
         run: uv run --directory packages/nhsx pytest -q
 
       - name: silencelearn
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.linux), 'all') || contains(fromJSON(needs.select.outputs.linux), 'silencelearn')) }}
         run: uv run --directory packages/silencelearn pytest -q
 
       - name: wordalign
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.linux), 'all') || contains(fromJSON(needs.select.outputs.linux), 'wordalign')) }}
         run: uv run --directory packages/wordalign pytest -q
 
       - name: framescore
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.linux), 'all') || contains(fromJSON(needs.select.outputs.linux), 'framescore')) }}
         run: uv run --directory packages/framescore pytest -q
 
       # The FCPXML reader: standard library and XML fixtures, no media, so it
       # is the same suite on every platform. kuulas reads Final Cut exports
       # through it on whatever machine it runs on.
       - name: fcpxml
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.linux), 'all') || contains(fromJSON(needs.select.outputs.linux), 'fcpxml')) }}
         run: uv run --directory packages/fcpxml pytest -q
 
       # The point of this job. Modules that need mlx are not collected without
       # it (conftest.py says which in the report header); the tests marked mlx
       # are deselected here and run on macOS.
       - name: automixer
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.linux), 'all') || contains(fromJSON(needs.select.outputs.linux), 'automixer')) }}
         run: uv run --directory apps/automixer pytest -q -m "not mlx"
 
       - name: podcast-magic
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.linux), 'all') || contains(fromJSON(needs.select.outputs.linux), 'podcast-magic')) }}
         run: uv run --directory apps/podcast-magic pytest -q
 
       - name: colab-transcribe
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.linux), 'all') || contains(fromJSON(needs.select.outputs.linux), 'colab-transcribe')) }}
         run: uv run --directory colab-transcribe pytest -q
 
       - name: fcp-subs-whisper
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.linux), 'all') || contains(fromJSON(needs.select.outputs.linux), 'fcp-subs-whisper')) }}
         run: uv run --directory apps/fcp-subs-whisper pytest -q
 
       # Same two checks as on macOS: a skipped test is a green test.
       - name: podcast-magic — the interface smoke test ran
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.linux), 'all') || contains(fromJSON(needs.select.outputs.linux), 'podcast-magic')) }}
         run: |
           uv run --directory apps/podcast-magic \
             pytest tests/test_ui.py -q --no-header -rs | tee /tmp/ui.log
@@ -132,7 +157,7 @@ jobs:
           fi
 
       - name: podcast-magic — the render ran with the real ffmpeg
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.linux), 'all') || contains(fromJSON(needs.select.outputs.linux), 'podcast-magic')) }}
         run: |
           uv run --directory apps/podcast-magic \
             pytest tests/test_render_endtoend.py -q --no-header -rs | tee /tmp/e2e.log
@@ -142,7 +167,7 @@ jobs:
           fi
 
       - name: podcast-magic — the engine this machine uses can be imported
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.linux), 'all') || contains(fromJSON(needs.select.outputs.linux), 'podcast-magic')) }}
         run: |
           uv run --directory apps/podcast-magic python -c "
           from podcastmagic.transcribe.backends import resolve

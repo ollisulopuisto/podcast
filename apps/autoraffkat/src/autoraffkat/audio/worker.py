@@ -22,6 +22,8 @@ import os
 import sys
 import traceback
 
+from ..activity import app_activity
+
 
 def _restore_stdio() -> None:
     """Palauta lapsiprosessin putket pakatun windowed-sovelluksen stdoutille."""
@@ -36,6 +38,7 @@ def _restore_stdio() -> None:
             setattr(sys, name, stream)
 
 
+@app_activity("Process audio")
 def main() -> int:
     """Lukee tehtävän stdinistä, kirjoittaa edistymisen ja tuloksen stdoutiin."""
     _restore_stdio()

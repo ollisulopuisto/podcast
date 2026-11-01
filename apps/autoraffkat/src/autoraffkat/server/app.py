@@ -27,6 +27,7 @@ from speechmix import chain, editor
 from speechmix.chain import ChainError
 
 from .. import i18n, pick, probe, project, reactions, reframe, staging, thumbs
+from ..activity import app_activity
 from ..analysis import (
     Analysis,
     AnalysisError,
@@ -309,6 +310,7 @@ class AppState:
             ):
                 cfg.role = "wide"
 
+    @app_activity("Analyze project audio")
     def _analyze(self) -> None:
         """Taustasäie: purkaa äänet ja laskee verhokäyrät. Kerran per lataus."""
         assert self.timeline is not None
@@ -394,6 +396,7 @@ class AppState:
         threading.Thread(target=self.measure_speech, daemon=True).start()
         return True
 
+    @app_activity("Measure speech")
     def measure_speech(self) -> None:
         """Taustasäie: huulten liike lähikuvista puhujille joilla ei ole mikkiä.
 
@@ -451,6 +454,7 @@ class AppState:
         self.seating_running = True
         threading.Thread(target=self.measure_seating, daemon=True).start()
 
+    @app_activity("Measure seating")
     def measure_seating(self) -> None:
         """Taustasäie: kevyt otos pelkkää istumajärjestystä varten.
 
@@ -494,6 +498,7 @@ class AppState:
         threading.Thread(target=self.measure_audio_preview, daemon=True).start()
         return True
 
+    @app_activity("Prepare audio preview")
     def measure_audio_preview(self) -> None:
         """Taustasäie: arvioi debleedin, ohjelmatrimmin ja purkaa tilaäänen."""
         if self.timeline is None or self.analysis is None:
@@ -571,6 +576,7 @@ class AppState:
         threading.Thread(target=self.measure_video, daemon=True).start()
         return True
 
+    @app_activity("Measure video")
     def measure_video(self) -> None:
         """Taustasäie: mittaa lähikuvien avainruudut reaktiokuvia varten.
 
@@ -796,6 +802,7 @@ class AppState:
                 "frames": int(round((program_end - program_start) / frame)),
                 "path": movie}
 
+    @app_activity("Render video")
     def run_render(self, job: dict) -> None:
         """Taustasäie: renderöi MP4:n. Minuutteja; tila näkyy ``render_progress``issa."""
         from .. import render
@@ -1183,6 +1190,7 @@ class AppState:
         child.kill()
         return True
 
+    @app_activity("Process audio")
     def run_mix(self, force: bool = False) -> None:
         """Käsittelee äänet taustalla. Kestää minuutteja, ei kuulu silmukkaan.
 
