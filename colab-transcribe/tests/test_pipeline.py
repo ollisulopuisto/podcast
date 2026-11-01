@@ -1369,4 +1369,5 @@ def test_install_dependencies_uses_faster_whisper_without_nemo(monkeypatch):
 
     pip = next(cmd for cmd in calls if cmd[:2] == ["pip", "install"])
     assert "faster-whisper==1.2.1" in pip
+    assert "av==18.1.0" in pip
     assert not any(package.startswith("nemo_toolkit") for package in pip)
