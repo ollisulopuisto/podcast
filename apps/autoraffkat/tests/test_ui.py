@@ -184,6 +184,17 @@ def test_every_visible_string_is_translated_in_both_languages():
     assert not missing, f"i18n.js:stä puuttuu: {missing}"
 
 
+def test_button_focus_visible_styles_defined():
+    """Painikkeilla on oltava näppäimistökohdistuksen ilmaisin (:focus-visible).
+
+    Näppäimistöllä selattaessa painikkeiden kohdistuksen on erotuttava selvästi
+    ilman että hiirellä klikkaaminen jättää häiritsevää kehystä.
+    """
+    css = (STATIC / "style.css").read_text(encoding="utf-8")
+    assert "button:focus-visible" in css
+    assert "var(--accent)" in css
+
+
 def test_static_icon_files_exist():
     """Varmistaa että käyttöliittymän tarvitsemat kuvakkeet ovat olemassa."""
     for name in (
