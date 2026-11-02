@@ -568,6 +568,7 @@ def test_macos_runs_the_tests_that_need_mlx_and_notices_if_none_did():
 #: 0.9.16, 0.9.19, 0.9.21-0.9.23 and 0.9.26 import there). Without AVX-512 means
 #: most AMD Ryzen 5000 desktops and many Intel ones: kuulas runs everywhere.
 PEDALBOARD_FLOOR = (0, 9, 26)
+PYASN1_FLOOR = (0, 6, 5)
 
 
 def version_tuple(text: str) -> tuple[int, ...]:
@@ -593,3 +594,10 @@ def test_the_locked_pedalboard_is_not_one_of_them():
     found = re.search(r'name = "pedalboard"\nversion = "([\d.]+)"', lock)
     assert found, "pedalboard is not in uv.lock"
     assert version_tuple(found.group(1)) >= PEDALBOARD_FLOOR, found.group(1)
+
+
+def test_the_locked_pyasn1_includes_the_dos_fixes():
+    lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
+    found = re.search(r'name = "pyasn1"\nversion = "([\d.]+)"', lock)
+    assert found, "pyasn1 is not in uv.lock"
+    assert version_tuple(found.group(1)) >= PYASN1_FLOOR, found.group(1)
