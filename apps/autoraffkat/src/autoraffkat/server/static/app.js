@@ -156,6 +156,15 @@ const css = (name) => getComputedStyle(document.documentElement)
 
 /* Aika muotoon m:ss.ss tai h:mm:ss.ss. Sekunnin sadasosat ovat mukana, koska
    leikkauskohdan tarkkuus on se mitä listasta halutaan lukea. */
+/* innerHTML-mallineeseen menevä aineistosta tullut merkkijono pakotetaan
+   tekstiksi. Puhujanimet ovat käyttäjän kirjoittamia, mutta sama kenttä voi
+   tulla jaetusta projektitiedostosta, joten niiden ei saa antaa rakentaa
+   merkkausta. Käännösmerkkijonot ovat staattisia eivätkä tarvitse tätä. */
+function esc(teksti) {
+  return String(teksti).replace(/[&<>"']/g, (m) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+}
+
 function fmtTime(seconds) {
   const sign = seconds < 0 ? '-' : '';
   const s = Math.abs(seconds);
@@ -2464,7 +2473,7 @@ function renderCuts() {
         `<td>${fmtTime(line.shot.end - start)}</td>` +
         `<td>${(line.shot.end - line.shot.start).toFixed(2)} s</td>` +
         `<td><span class="swatch thin" style="background:${colorFor(index)}"></span>`
-        + `${T('cuts.reaction', { name: shotLabel(line.shot.speaker) })}</td>`;
+        + `${esc(T('cuts.reaction', { name: shotLabel(line.shot.speaker) }))}</td>`;
       body.append(row);
       return;
     }
@@ -2480,7 +2489,7 @@ function renderCuts() {
       `<td>${fmtTime(seg.end - start)}</td>` +
       `<td>${seg.duration.toFixed(2)} s</td>` +
       `<td><span class="swatch" style="background:${shotColor(index)}"></span>`
-      + `${shotLabel(seg.label)}</td>`;
+      + `${esc(shotLabel(seg.label))}</td>`;
     body.append(tr);
   });
   const counts = Object.entries(latest.counts)

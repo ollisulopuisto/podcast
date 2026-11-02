@@ -7,6 +7,14 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.1.1] - 2026-11-01
+
+### Fixed
+- Prevent macOS App Nap from pausing long-running audio processing, video rendering, and measurement jobs. Normal idle sleep remains available when no job is active.
+
+### Packaging
+- Build the DMG from the current main line, including the App Nap fix merged in PR #159. The tag-triggered workflow runs the full release tests before publishing.
+
 ## [2026.10.28.2] - 2026-10-28
 
 ### Added

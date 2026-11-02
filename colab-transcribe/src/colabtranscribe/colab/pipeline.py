@@ -117,7 +117,14 @@ def install_dependencies(model="parakeet-ultra"):
         "lxml==6.1.3",
         "pydub==0.25.1",
     ]
-    packages.append("faster-whisper==1.2.1" if _cloud_timing_model(model) == "whisper" else "moondream==2.6.1")
+    if _cloud_timing_model(model) == "whisper":
+        packages.extend([
+            "faster-whisper==1.2.1",
+            # faster-whisper 1.2.1 passes metadata_errors to av.open(); PyAV 19 removed it.
+            "av==18.1.0",
+        ])
+    else:
+        packages.append("moondream==2.6.1")
     subprocess.run(["apt-get", "update", "-qq"], check=True, timeout=APT_TIMEOUT)
     subprocess.run(
         ["apt-get", "install", "-y", "-qq", "ffmpeg"], check=True, timeout=APT_TIMEOUT

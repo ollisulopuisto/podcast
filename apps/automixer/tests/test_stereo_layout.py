@@ -71,3 +71,21 @@ def test_a_mono_stem_is_not_copied_into_a_pair(monkeypatch):
     monkeypatch.setattr(np, "stack", stacked)
     jobs, blocks = _pieces()
     stems_mix.stereo_layout(jobs[:3], blocks[:3])
+
+
+def test_a_single_channel_mono_stem_does_not_call_mean():
+    """A 1-channel mono stem is already mono; calling mean(axis=0) traverses
+    and copies the array unnecessarily. It should be indexed directly."""
+
+    class ForbidSingleChannelMean(np.ndarray):
+        def mean(self, *args, **kwargs):
+            if self.shape[0] == 1:
+                raise AssertionError("mean(axis=0) called on single-channel mono block")
+            return super().mean(*args, **kwargs)
+
+    jobs, blocks = _pieces()
+    tracked_blocks = [
+        np.atleast_2d(b).view(ForbidSingleChannelMean)
+        for b in blocks[:3]
+    ]
+    stems_mix.stereo_layout(jobs[:3], tracked_blocks)

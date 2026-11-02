@@ -20,27 +20,27 @@
     </div>
 
     <section class="source">
-      <h2 data-t="app.session">Istunto</h2>
+      <h2 id="session-title" data-t="app.session">Istunto</h2>
       <input id="session" type="text" spellcheck="false" autocomplete="off"
-             placeholder="…/jakso.nhsx">
+             aria-labelledby="session-title" placeholder="…/jakso.nhsx">
       <p id="session-note" class="muted small"></p>
       <button id="browse" class="ghost" data-t="app.change">Vaihda…</button>
     </section>
 
-    <h2 data-t="app.tools">Työkalut</h2>
-    <nav id="tabs" class="tabs"></nav>
+    <h2 id="tools-title" data-t="app.tools">Työkalut</h2>
+    <nav id="tabs" class="tabs" role="tablist" aria-labelledby="tools-title"></nav>
 
     <div id="browser" class="browser hidden"></div>
 
     <div class="rail-foot">
       <span id="language" class="langs"></span>
-      <button id="shortcuts" class="ghost" data-t="app.shortcuts">Näppäinoikotiet</button>
+      <button id="shortcuts" class="ghost" data-t="app.shortcuts" aria-haspopup="dialog">Näppäinoikotiet</button>
     </div>
   </aside>
 
   <div class="work">
-    <div id="banner" class="banner hidden"></div>
-    <main id="panels"></main>
+    <div id="banner" class="banner hidden" role="alert"></div>
+    <main id="panels" role="tabpanel"></main>
 
     <!-- Työn kulku alapalkkina: se on paikallaan myös ennen ajoa, joten
          mikään ei hyppää kun ajo alkaa. -->
