@@ -938,7 +938,9 @@ def _upload_as_flac(
             while len(block := src.read(1 << 20, dtype="int32")):
                 dst.write(block)
         log(f"{source.stat().st_size / 1e6:.0f} MB -> {flac.stat().st_size / 1e6:.0f} MB")
-        if flac.stat().st_size > CHUNK_ABOVE:
+        # 2026-11-02: Colab's single-file endpoint returned HTTP 400 for an
+        # observed 88 MB FLAC; use the already-tested 64 MiB chunk transport.
+        if flac.stat().st_size > CHUNK_BYTES:
             original = source.stat().st_size
 
             def packed(done: int, total: int) -> None:

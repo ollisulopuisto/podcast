@@ -931,6 +931,34 @@ def test_a_flac_upload_is_lossless_and_is_turned_back_into_the_same_wav(
     assert "'/content/input/x y/a.wav.flac'" in unpack and "rm" in unpack
 
 
+def test_a_large_compressed_flac_uses_chunked_upload(monkeypatch, tmp_path: Path):
+    """An 88 MB FLAC upload was rejected by Colab's single-file upload with HTTP 400;
+    compressed files larger than the existing chunk size must use chunked upload."""
+    src = _wav(tmp_path / "a.wav", "PCM_24")
+    monkeypatch.setattr(driver, "CHUNK_BYTES", 1)
+    chunked = []
+    commands = []
+
+    def upload_in_chunks(session, source, remote, log, timeout=None, on_bytes=None):
+        chunked.append((session, Path(source).suffix, remote))
+        return 0
+
+    def execute(command, _log, timeout=None, **_kwargs):
+        commands.append(command)
+        return 0
+
+    monkeypatch.setattr(driver, "_upload_in_chunks", upload_in_chunks)
+    monkeypatch.setattr(driver, "_execute_single", execute)
+
+    code = driver.run(
+        [["flac-upload", "s", str(src), "/content/input/a.wav"]], lambda _: None
+    )
+
+    assert code == 0
+    assert chunked == [("s", ".flac", "/content/input/a.wav.flac")]
+    assert commands[-1][:3] == ["colab", "exec", "-s"]
+
+
 def test_extensible_wavs_are_compressed_too(monkeypatch, tmp_path: Path):
     """ffmpegin ja monen äänittimen WAVit ovat WAVEX-muotoa (soundfile sanoo
     ``WAVEX``, ei ``WAV``): ne ovat ihan tavallista PCM:ää eikä niitä saa
