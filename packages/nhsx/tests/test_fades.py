@@ -214,3 +214,17 @@ def test_long_ramp_stays_inaudible_where_the_curve_is_silent(tmp_path):
     ramps = _read_back(tmp_path, segments)
     assert _db(level_at(ramps, 1.0)) < fades.AUDIBLE_DB
     assert abs(_db(level_at(ramps, 19.0)) - -6.0) < 0.01
+
+
+def test_long_segments_fuzz_monotonic_rises():
+    """Varmistaa että eripituiset ja -jyrkät nousut muodostavat kelvolliset luiskat."""
+    for length in (4.0, 8.0, 15.0):
+        for rise_db in (35.0, 50.0, 70.0):
+            pts = _points(lambda t: -80.0 + rise_db * (t / length) if t <= length else -80.0 + rise_db,
+                          length=length + 2.0)
+            segs = fades.long_segments(pts)
+            # Yli 30 dB nousu saa vähintään kaksi luiskaa
+            assert len(segs) >= 2
+            for a, b in pairwise(segs):
+                assert a.start + a.length <= b.start + 1e-9
+            assert all(np.isfinite(s.gain_db) for s in segs)
