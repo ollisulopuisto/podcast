@@ -44,12 +44,11 @@ LEARN_REMOTE = "/content/silencelearn.py"
 ALIGN_MODULE = Path(wordalign.__file__)
 ALIGN_REMOTE = "/content/wordalign.py"
 
-#: Suora siirto: tätä isommat syötteet lähetetään paloina. Mitattu: 409 667 072
-#: tavun WAV kaatui `colab upload`issa HTTP 500:een (Colabin tiedostorajapinta),
-#: neljän megan WAVit eivät ole kaatuneet. Rajat ovat arvauksia kunnes isompi
-#: tiedosto on mennyt läpi paloina; muuta tästä, ei kutsuista.
-CHUNK_ABOVE = 128 * 1024 * 1024
-CHUNK_BYTES = 64 * 1024 * 1024
+#: Suora siirto: tätä isommat syötteet lähetetään paloina. 88,1 MB:n FLAC
+#: kaatui `colab upload`issa HTTP 400:een; 4 MB:n WAV on mennyt läpi. Raja ja
+#: palakoko ovat varovaisia oletuksia, kunnes iso siirto on varmistettu Colabissa.
+CHUNK_ABOVE = 16 * 1024 * 1024
+CHUNK_BYTES = 8 * 1024 * 1024
 #: Yhden palan uudelleenyritykset (`colab upload` itse yrittää kahdesti vain
 #: yhteyskatkoihin, ei 500:aan).
 CHUNK_RETRIES = 3
