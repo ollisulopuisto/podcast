@@ -29,6 +29,12 @@ def main(argv: list[str] | None = None) -> int:
 
         return audio_worker_main()
 
+    argv = list(argv)
+    if argv[:1] == ["render-clips"]:
+        from autoraffkat.cli_clips import main as render_clips_main
+
+        return render_clips_main(argv[1:])
+
     parser = argparse.ArgumentParser(
         prog="autoraffkat",
         description="Automaattinen monikameraleikkaus: FCPXML sisään, FCPXML ulos.",
