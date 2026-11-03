@@ -112,7 +112,7 @@ def configure_cuda_libs():
 
 
 # 1. Asennetaan tarvittavat kirjastot pilviympäristössä
-def install_dependencies(model="parakeet-ultra"):
+def install_dependencies(model="whisper"):
     packages = [
         "lxml==6.1.3",
         "pydub==0.25.1",
@@ -200,7 +200,7 @@ def _duplicates_of(audio_items):
 
 
 # 3. Litterointi Parakeet Ultralla
-def run_transcription(input_dir, output_dir, initial_prompt, model="parakeet-ultra"):
+def run_transcription(input_dir, output_dir, initial_prompt, model="whisper"):
     if initial_prompt:
         print(
             "Huom: Parakeet Ultra ei tue Whisperin promptia; sanalista jätetään huomiotta.",
@@ -1124,7 +1124,7 @@ def paragraph_lines(words):
     return "\n\n".join(lines) + "\n"
 
 
-def transcribe_samples(samples, rate, initial_prompt, model="parakeet-ultra"):
+def transcribe_samples(samples, rate, initial_prompt, model="whisper"):
     """Litteroi miksauksen valitulla Photon-moottorilla."""
     import tempfile
     import wave
@@ -1155,7 +1155,7 @@ def transcribe_samples(samples, rate, initial_prompt, model="parakeet-ultra"):
     return words
 
 
-def run_downmix(input_dir, output_dir, initial_prompt, model="parakeet-ultra"):
+def run_downmix(input_dir, output_dir, initial_prompt, model="whisper"):
     """Jokaisen ``.nhsx``:n miksaus kerran litteroituna: ``<nimi> downmix.md``."""
     found = sorted(f for f in os.listdir(input_dir) if f.lower().endswith(".nhsx"))
     # Alkuperäinen istunto ensin; vaimennettu vain jos muuta ei ole.
@@ -1296,7 +1296,7 @@ def _whisper_raw(path, language, initial_prompt):
 
 def _cloud_timing_model(model):
     """Moottorin ja sanakellon tunniste, ei hiljaista vaihtoa tuntemattomaan."""
-    model = model or "parakeet-ultra"
+    model = model or "whisper"
     if model in ("whisper", WHISPER_REPO, "turbo"):
         return "whisper"
     if model in ("parakeet-ultra", "ultra", ULTRA_REPO):
@@ -1562,8 +1562,8 @@ def main():
     parser.add_argument(
         "--model",
         choices=("parakeet-ultra", "whisper"),
-        default="parakeet-ultra",
-        help="Colabissa ajettava Photon-malli (oletus: parakeet-ultra)",
+        default="whisper",
+        help="Colabissa ajettava ASR-malli (oletus: Whisper large-v3-turbo)",
     )
     parser.add_argument("--language", default="fi", help="tulosteen kielimerkintä (malli tunnistaa kielen)")
     parser.add_argument(

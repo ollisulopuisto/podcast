@@ -27,7 +27,7 @@ def test_install_dependencies_uses_photon_for_parakeet_ultra(monkeypatch):
     monkeypatch.setattr(pipeline.subprocess, "run", lambda cmd, **kwargs: calls.append(cmd))
     monkeypatch.setattr(pipeline, "configure_cuda_libs", lambda: None)
 
-    pipeline.install_dependencies()
+    pipeline.install_dependencies("parakeet-ultra")
 
     pip = next(cmd for cmd in calls if cmd[:2] == ["pip", "install"])
     assert "moondream==2.6.1" in pip
@@ -72,7 +72,9 @@ def test_transcribe_file_uses_photon_ultra_word_timestamps(monkeypatch, tmp_path
 
     monkeypatch.setitem(sys.modules, "moondream", types.SimpleNamespace(photon=photon))
     monkeypatch.setattr(pipeline, "_ULTRA", None)
-    raw = pipeline.transcribe_file(str(tmp_path / "puhe.wav"))
+    raw = pipeline.transcribe_file(
+        str(tmp_path / "puhe.wav"), model="parakeet-ultra"
+    )
 
     assert seen[0] == {"model_id": "moondream/parakeet-ultra", "device": "cuda"}
     assert seen[1] == {"audio": str(tmp_path / "puhe.wav"), "timestamps": "word"}
@@ -186,7 +188,7 @@ def test_transcribe_file_converts_aiff_before_photon(monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline, "_ULTRA", None)
     monkeypatch.setattr(pipeline, "_ULTRA_STACK", None)
 
-    pipeline.transcribe_file(str(source))
+    pipeline.transcribe_file(str(source), model="parakeet-ultra")
 
     assert seen["timestamps"] == "word"
     assert seen["audio"] != str(source)
@@ -463,7 +465,7 @@ def test_install_dependencies_does_not_require_libcublas11(monkeypatch):
         commands.append(cmd)
 
     monkeypatch.setattr("subprocess.run", mock_run)
-    install_dependencies()
+    install_dependencies("parakeet-ultra")
 
     assert any(cmd[:2] == ["apt-get", "update"] for cmd in commands)
     apt_installs = [cmd for cmd in commands if cmd[:2] == ["apt-get", "install"]]
@@ -483,7 +485,7 @@ def test_install_dependencies_pins_locked_versions(monkeypatch):
         commands.append(cmd)
 
     monkeypatch.setattr("subprocess.run", mock_run)
-    install_dependencies()
+    install_dependencies("parakeet-ultra")
 
     pip_installs = [cmd for cmd in commands if cmd[:2] == ["pip", "install"]]
     assert pip_installs
