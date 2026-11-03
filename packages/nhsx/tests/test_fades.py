@@ -228,3 +228,25 @@ def test_long_segments_fuzz_monotonic_rises():
             for a, b in pairwise(segs):
                 assert a.start + a.length <= b.start + 1e-9
             assert all(np.isfinite(s.gain_db) for s in segs)
+
+
+def test_fit_two_large_rise_preserves_fit_and_runtime():
+    """A representative long rise keeps the two-ramp fit and runtime bounded."""
+    import time
+
+    import pytest
+
+    pts = _points(lambda t: -68.0 + (60.0 / 8.5) * t, length=8.5)
+    times = np.array([t for t, _ in pts])
+    wants = np.array([fades._clean(db) for _, db in pts])
+
+    start_time = time.perf_counter()
+    segs = fades._fit_two(times, wants, 0, len(pts) - 1)
+    duration = time.perf_counter() - start_time
+
+    assert len(segs) == 2
+    assert segs[0].gain_db == pytest.approx(-24.94, abs=0.01)
+    assert segs[1].gain_db == pytest.approx(-8.0, abs=0.01)
+    # The prior implementation took ~3.88 s; current vectorized fitting is
+    # expected below 1 s on the measured development machine.
+    assert duration < 1.0, f"_fit_two took too long: {duration:.3f} s (expected < 1.0 s)"
