@@ -14,9 +14,10 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 from xml.etree import ElementTree as ET
 
-from . import probe, render, reframe
-from .finalcut.read import read_fcpxml
 from speechmix.binaries import get_binary_path
+
+from . import probe, reframe, render
+from .finalcut.read import read_fcpxml
 
 
 @dataclass(frozen=True)
