@@ -1,0 +1,5 @@
+# Bolt's Journal
+
+## 2026-11-04 - Vectorizing Grid Search in nhsx.fades
+**Learning:** `nhsx.fades.long_segments()` performs grid search (`_fit_two` and `_fit_run`) to find optimal raised-cosine `<Fade>` ramp parameters matching volume curves. The inner search originally looped over combinations of candidate start, middle (junction), and end times in Python, executing individual NumPy ufuncs (`clip`, `cos`, `log10`, `max`) per combination (~90,000 inner iterations in `_fit_two` for a typical 8-second rise). Because the error calculation on the second segment depends only on the junction step `m` and endpoint step `e`, all candidate endpoints `e` can be evaluated simultaneously in a 2D broadcasted array across time points. This reduces the number of NumPy array evaluations from ~90,000 to $O(S)$ vectorized operations without altering the search space or math.
+**Action:** When performing 1D parameter grid search over interval endpoints, check if inner segments decouple from earlier loop variables. Vectorizing the candidate bounds in 2D array slices eliminates Python loop interpretation and function dispatch overhead.
