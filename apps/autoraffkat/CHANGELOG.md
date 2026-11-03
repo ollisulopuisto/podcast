@@ -7,6 +7,11 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.4.1] - 2026-11-04
+
+### Packaging
+- Build the DMG from the current main line, including the guarded vectorized two-ramp fade fitting in the shared audio packages (PR #172). The tag-triggered workflow runs the full release tests before publishing.
+
 ## [2026.11.1.1] - 2026-11-01
 
 ### Fixed
