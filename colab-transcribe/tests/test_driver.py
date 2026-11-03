@@ -812,6 +812,19 @@ def test_the_plan_chunks_only_big_direct_uploads(monkeypatch, tmp_path: Path):
     assert not any(c[:2] == ["colab", "upload"] and c[-1].endswith("iso.wav") for c in plan)
 
 
+def test_an_88_mb_flac_does_not_use_one_direct_upload(tmp_path: Path):
+    """Colabin tiedostorajapinta palautti HTTP 400:n 88,1 MB:n FLACille."""
+    source = tmp_path / "panu.flac"
+    with source.open("wb") as f:
+        f.truncate(89 * 1024 * 1024)
+    options = RunOptions(input_dir=str(tmp_path), transfer="direct", session="iiris")
+
+    plan = driver.plan_commands(options, [source.name], reuse_session=True)
+
+    assert any(c[0] == "chunked-upload" and c[2] == str(source) for c in plan)
+    assert not any(c[:2] == ["colab", "upload"] and c[4] == str(source) for c in plan)
+
+
 def _session(tmp_path: Path, pool_path="rec Files", names=("a.wav", "b.wav")) -> None:
     files = "".join(f'<File Id="{i}" Name="{n}"/>' for i, n in enumerate(names, 1))
     (tmp_path / "jakso.nhsx").write_text(
