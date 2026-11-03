@@ -161,3 +161,15 @@ def test_tab_navigation_and_session_have_aria_semantics():
     assert "role: 'tab'" in app
     assert "'aria-selected': spec.key === this.active ? 'true' : 'false'" in app
     assert "button.setAttribute('aria-selected', isOn ? 'true' : 'false');" in app
+
+
+def test_shortcut_controls_have_aria_keyshortcuts_and_dialog_handling():
+    """Näppäinoikoteiden painikkeilla on aria-keyshortcuts ja ohjeikkunalla palautus ja sulku."""
+    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    css = (STATIC / "style.css").read_text(encoding="utf-8")
+    assert "browse.setAttribute('aria-keyshortcuts', 'Meta+O Control+O');" in app
+    assert "shortcuts.setAttribute('aria-keyshortcuts', '? F1');" in app
+    assert "dialog.addEventListener('click', (e) => {" in app
+    assert "e.target === dialog" in app
+    assert "this.shortcutReturn" in app
+    assert "kbd {" in css

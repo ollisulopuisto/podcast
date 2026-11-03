@@ -330,6 +330,7 @@ const PM = {
   showShortcuts() {
     const dialog = document.getElementById('shortcuts-dialog');
     const list = document.getElementById('shortcuts-list');
+    this.shortcutReturn = document.activeElement || null;
     list.replaceChildren(...this.shortcuts().map(item => this.el('div', { class: 'shortcut-row' }, [
       this.el('span', { text: item.translated === false ? item.label : this.t(item.label) }),
       this.el('kbd', { text: item.key }),
@@ -380,10 +381,24 @@ const PM = {
     })));
   },
 
+  paintShortcutControls() {
+    const browse = document.getElementById('browse');
+    if (browse) {
+      browse.setAttribute('aria-keyshortcuts', 'Meta+O Control+O');
+      browse.title = `${this.t('app.change')} (⌘ / Ctrl + O)`;
+    }
+    const shortcuts = document.getElementById('shortcuts');
+    if (shortcuts) {
+      shortcuts.setAttribute('aria-keyshortcuts', '? F1');
+      shortcuts.title = `${this.t('app.shortcuts')} (? / F1)`;
+    }
+  },
+
   redraw() {
     I18N.apply(document);
     this.renderLanguages();
     this.renderTabs();
+    this.paintShortcutControls();
     this.selectModule(this.active);
     this.noteSession();
   },
@@ -420,7 +435,18 @@ const PM = {
       if (!log.classList.contains('hidden')) log.scrollTop = log.scrollHeight;
     });
 
-    document.getElementById('shortcuts').addEventListener('click', () => this.showShortcuts());
+    const shortcutsBtn = document.getElementById('shortcuts');
+    shortcutsBtn.addEventListener('click', () => this.showShortcuts());
+    const dialog = document.getElementById('shortcuts-dialog');
+    dialog.addEventListener('close', () => {
+      if (this.shortcutReturn && this.shortcutReturn.focus) {
+        this.shortcutReturn.focus();
+        this.shortcutReturn = null;
+      }
+    });
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) dialog.close();
+    });
     document.addEventListener('keydown', event => this.handleShortcut(event));
     this.redraw();
     if (this.state.session) this.setSession(this.state.session);
