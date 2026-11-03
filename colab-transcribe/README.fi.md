@@ -7,8 +7,8 @@ tekee. (In English: [README.md](README.md).)
 ## Mitä se tekee
 
 Osoita kansioon jossa on Hindenburgin `.nhsx`-istuntoja ja niiden äänet.
-Se käynnistää Colab-istunnon, lähettää kaiken, litteroi siellä Parakeet Ultralla
-(Photon NVIDIA-näytönohjaimella), kirjoittaa sanat istuntoon,
+Se käynnistää Colab-istunnon, lähettää kaiken, litteroi siellä Whisper large-v3-turbolla
+(Faster-Whisper NVIDIA-näytönohjaimella), kirjoittaa sanat istuntoon,
 vaimentaa jokaisen kohdan jossa kukaan ei puhu (Auto-Silence) ja lataa
 tulokset takaisin: `<jakso> litteroitu.nhsx` ja `<jakso>_processed.nhsx`.
 Pelkkä litterointi ilman Auto-Silencea: `--transcribe-only` (tai TUI:ssa
@@ -96,22 +96,22 @@ Kutsujalle, joka haluaa vain sanat (kuulas-editori kutsuu näin):
 
 ```bash
 colab-transcribe --audio "Olli 1.wav" --audio Panu.mp3 --json sanat/ --progress
-# Faster-Whisper Ultran sijaan
-colab-transcribe --audio "Olli 1.wav" --json sanat/ --model whisper
+# Parakeet Ultra oletusarvoisen Whisper large-v3-turbon sijaan
+colab-transcribe --audio "Olli 1.wav" --json sanat/ --model parakeet-ultra
 # Paikallinen Orukeet, ilman Colab-istuntoa
 colab-transcribe --audio "Olli 1.wav" --json sanat/ --backend orukeet
 ```
 
 Kaikki `--audio`-tiedostot menevät samaan Colab-istuntoon ja `sanat/<nimi>.words.json` tulee
-takaisin: `{"version":1,"timing":"parakeet-ultra","language":"fi","rejected":0,"words":[{"w","s","e"}]}`,
+takaisin: `{"version":1,"timing":"whisper","language":"fi","rejected":0,"words":[{"w","s","e"}]}`,
 sekunteja kyseisen tiedoston alusta, aikajärjestyksessä ja `s < e` (päällekkäisyys lyhentää
 aiempaa sanaa). Ei `.nhsx`:ää eikä Auto-Silencea. Siirto on aina suora: ääni menee Googlen
-Colab-koneelle eikä Driven kautta. Parakeet Ultra on oletus; `--model whisper` valitsee Faster-Whisperin. Molemmat palauttavat sanakohtaiset ajat. `--prompt` välitetään Faster-Whisperille; Parakeet Ultra ohittaa sen. `--backend orukeet` käyttää Orukeetin natiivia paikallisruntimea ilman Colabia;
+Colab-koneelle eikä Driven kautta. Whisper large-v3-turbo on oletus; `--model parakeet-ultra` valitsee Parakeet Ultran. Molemmat palauttavat sanakohtaiset ajat. `--prompt` välitetään Faster-Whisperille; Parakeet Ultra ohittaa sen. `--backend orukeet` käyttää Orukeetin natiivia paikallisruntimea ilman Colabia;
 se kohdistaa lauseiden sanat CTC:llä (`timing: "orukeet-ctc"`). `--progress` tulostaa rivit `PROGRESS <0-100> <viesti>`, joiden luku ei
 laske. Sanaton tiedosto tai puuttuva tulos antaa poistumiskoodin 1 ja syyn stderriin; samannimiset
 vanhat `*.words.json` poistetaan ennen ajoa, ettei vanha kelpaa uudeksi. SIGTERM ja Ctrl+C
 sulkevat Colab-istunnon (ellei `--keep-session`) ja palauttavat 130. Sanojen ajat tulevat
-Parakeet Ultran sanakohtaisista aikaleimoista (`timing: "parakeet-ultra"`).
+valitun mallin sanakohtaisista aikaleimoista (`timing: "whisper"` tai `timing: "parakeet-ultra"`).
 
 Asenna Orukeetin paikallinen runtime sekä kohdistimen Torch-riippuvuudet näin:
 

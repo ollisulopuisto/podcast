@@ -25,7 +25,7 @@ from colabtranscribe.options import RunOptions, pipeline_args
 def test_audio_is_a_source_and_its_arguments_reach_the_script():
     args = pipeline_args(RunOptions(source="audio"))
     assert args[args.index("--source") + 1] == "audio"
-    assert args[args.index("--model") + 1] == "parakeet-ultra"
+    assert args[args.index("--model") + 1] == "whisper"
     assert args[args.index("--language") + 1] == "fi"
 
 
@@ -36,7 +36,7 @@ def test_model_and_language_are_passed_on():
 
 
 def test_session_modes_get_the_selected_model():
-    assert pipeline_args(RunOptions())[pipeline_args(RunOptions()).index("--model") + 1] == "parakeet-ultra"
+    assert pipeline_args(RunOptions())[pipeline_args(RunOptions()).index("--model") + 1] == "whisper"
     assert "--model" in pipeline_args(RunOptions(source="downmix"))
     assert "--language" not in pipeline_args(RunOptions(source="downmix"))
 

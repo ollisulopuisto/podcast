@@ -105,9 +105,9 @@ tarkistetaan ennen litterointia (`check_aligner`), ja jos mikään sana ei
 kohdistu, ajo kaatuu: korjatuksi merkitty tiedosto, jossa on ASR:n aika, olisi
 juuri se hiljainen vika. `ALIGN_TIMING` seuraa `wordalign.VERSION`ia testillä.
 
-## Parakeet Ultra ja podcastin puheajat
+## Colabin Whisper Turbo ja Parakeet Ultra
 
-Pilven ASR on Moondreamin Parakeet Ultra Photon-ajurilla (`moondream/parakeet-ultra`). Photon tukee
+Pilven oletus-ASR on Faster-Whisper large-v3-turbo CUDA float16:na; `--model parakeet-ultra` valitsee Moondreamin Photon-ajurin (`moondream/parakeet-ultra`). Photon tukee
 25 kieltä, niiden joukossa suomi, ja hoitaa pitkän äänen segmentoinnin sekä sanakohtaiset
 aikaleimat. Mallin painot ladataan ensimmäisellä ajolla. Polku ajettiin oikealla T4-Colabilla
 2026-10-27 synteettisellä suomenkielisellä äänellä: Photon latasi 1,26 Gt mallitiedostoja ja
@@ -253,4 +253,4 @@ Raja ``BLEED_MARGIN_DB`` on mitattu yhdestä kahden mikin istunnosta.
 podcast-magicin ``script/core.py`` ei voi tuoda sitä (työtilan raja) ja pitää
 oman 1 s:n kopionsa; testi pitää tulokset samoina oletusgapilla.
 
-Whisper-valinta käyttää Faster-Whisper 1.2.1:tä, large-v3-turbo CUDA float16:na; Photon jää Parakeet Ultralle. Tämä T4-yhteensopivuuskorjaus on yksikkötestattu valeajurilla, ei ajettu oikealla T4:llä.
+Whisper large-v3-turbo on Colabin oletus Faster-Whisper 1.2.1:n kautta CUDA float16:na; Parakeet Ultra on vaihtoehto Photonilla. Tämä T4-yhteensopivuuskorjaus on yksikkötestattu valeajurilla, ei ajettu oikealla T4:llä.

@@ -3,7 +3,7 @@
 Answer to the kuulas session's proposed plain-audio contract (`colab-transcribe --audio ... --json <folder>`).
 Written 2026-10-19 and updated 2026-10-27. The original plain-audio contract
 (`--audio`/`--json`, `--progress`, exit codes, SIGTERM) is implemented and tested against a fake
-Colab transport. The cloud ASR backend is now Parakeet Ultra via Photon; this model change has **not been run on a
+Colab transport. The cloud ASR default is now Whisper large-v3-turbo via Faster-Whisper; Parakeet Ultra remains selectable via Photon; this model change has **not been run on a
 real Colab**.
 The owner has decided: the heavy calculation runs on Colab (option B), local later. Items (2) and (3b) are built on branch `feat/colab-align` (`--align`, `timing: "ctc-v1"`): the aligner is a single-file library, `packages/wordalign`, uploaded to the VM. Still **not run on a real Colab**: install size and time, and whether it coexists with the transcriber's CUDA libraries. Where I know a number I say so; where I do not, I say that.
 
@@ -18,7 +18,7 @@ The owner has decided: the heavy calculation runs on Colab (option B), local lat
   cached in the session by content hash.
 - The cloud pipeline already has modes that skip the `.nhsx` steps: `--source downmix`
   (`run_downmix`, returns before any session handling). A plain-audio mode is the same shape.
-- `run_transcription` writes Parakeet Ultra's word-timestamp JSON per audio file (`transcripts/`) and the driver downloads those
+- `run_transcription` writes the selected recognizer's word-timestamp JSON per audio file (`transcripts/`) and the driver downloads those
   (`parse_generated_transcripts`). Steps 3-4 (inject into `.nhsx`, Auto-Silence) are what a plain mode would
   skip.
 - Cancel: `KeyboardInterrupt` (SIGINT) is handled and stops the Colab session unless `--keep-session`.
@@ -89,11 +89,8 @@ small one.
 
 ## Backend update (2026-10-27)
 
-The cloud recognizer is now Parakeet Ultra through Photon. Photon handles long-form segmentation and
-returns native word timestamps on the source file clock. The JSON timing values are now
-`parakeet-ultra` and `ctc-v1`. Parakeet Ultra does not expose Whisper's prompt or hotword biasing,
-so the legacy `--prompt` and `--model` flags are compatibility only. Fillers and repetitions are
-preserved by post-processing.
+The cloud recognizer defaults to Whisper large-v3-turbo through Faster-Whisper; Parakeet Ultra remains selectable through Photon. Both return native word timestamps on the source file clock. The JSON timing values include
+`whisper`, `parakeet-ultra` and `ctc-v1`. Whisper accepts the initial prompt; Parakeet Ultra does not. Fillers and repetitions are preserved by post-processing.
 
 The new path passed the local tests and a real Colab T4 smoke test on 2026-10-27. It has not been
 measured for podcast accuracy or throughput. The original 2026-10-19 measurements below used
