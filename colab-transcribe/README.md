@@ -7,8 +7,8 @@ a pipeline that runs in the cloud — this machine uploads, the GPU works.
 ## What it does
 
 Point it at a folder holding Hindenburg `.nhsx` sessions and their audio.
-It starts a Colab VM, uploads everything, transcribes there with Parakeet Ultra
-(Photon on an NVIDIA GPU), writes the words into the session, mutes
+It starts a Colab VM, uploads everything, transcribes there with Whisper large-v3-turbo
+(Faster-Whisper on an NVIDIA GPU), writes the words into the session, mutes
 every region where nobody speaks (Auto-Silence), and downloads the results:
 `<jakso> litteroitu.nhsx` and `<jakso>_processed.nhsx`.
 To transcribe without Auto-Silence, use `--transcribe-only` (or switch
@@ -95,25 +95,25 @@ For callers that want the words and nothing else (the kuulas editor calls it so)
 
 ```bash
 colab-transcribe --audio "Olli 1.wav" --audio Panu.mp3 --json words/ --progress
-# Faster-Whisper instead of Parakeet Ultra
-colab-transcribe --audio "Olli 1.wav" --json words/ --model whisper
+# Parakeet Ultra instead of Whisper large-v3-turbo
+colab-transcribe --audio "Olli 1.wav" --json words/ --model parakeet-ultra
 # Local Orukeet, without starting a Colab session
 colab-transcribe --audio "Olli 1.wav" --json words/ --backend orukeet
 ```
 
 Every `--audio` file goes up in the same Colab session and `words/<name>.words.json` comes
-back: `{"version":1,"timing":"parakeet-ultra","language":"fi","rejected":0,"words":[{"w","s","e"}]}`,
+back: `{"version":1,"timing":"whisper","language":"fi","rejected":0,"words":[{"w","s","e"}]}`,
 seconds from the start of that file, in time order with `s < e` (an overlap shortens the
 earlier word). No `.nhsx`, no Auto-Silence. The transfer is always direct: the audio goes to
-a Google Colab VM and not through Drive. Parakeet Ultra is the default; choose Faster-Whisper
-with `--model whisper`. Both return word timestamps. `--prompt` is passed to Faster-Whisper; Parakeet Ultra ignores it.
+a Google Colab VM and not through Drive. Whisper large-v3-turbo is the default through Faster-Whisper; choose Parakeet Ultra
+with `--model parakeet-ultra`. Both return word timestamps. `--prompt` is passed to Faster-Whisper; Parakeet Ultra ignores it.
 `--backend orukeet` uses Orukeet's native local runtime without a Colab session and aligns its
 segment text to word times with CTC (`timing: "orukeet-ctc"`). `--progress` prints `PROGRESS <0-100> <message>`
 lines whose number never falls. A file that gets no words, or a missing result, makes the
 exit code 1 with the reason on stderr; old `*.words.json` of the same names are deleted
 before the run so they cannot pass for new ones. SIGTERM and Ctrl+C stop the Colab session
-(unless `--keep-session`) and exit 130. Word times come from Parakeet Ultra's native word timestamps
-(`timing: "parakeet-ultra"`).
+(unless `--keep-session`) and exit 130. Word times come from the selected model's native word timestamps
+(`timing: "whisper"` or `timing: "parakeet-ultra"`).
 
 Install Orukeet's local runtime and the CTC alignment dependencies with the commands in the
 Finnish README, then run `orukeet install` to create the model receipt.

@@ -6,8 +6,9 @@
 > [`README.md`](README.md), ja se päivittyy ensin.
 
 Automaattinen monikameraleikkaus. Final Cutista viety FCPXML sisään, uusi
-FCPXML ulos, jossa kuva vaihtuu sen mukaan kuka puhuu. Ei renderöintiä
-missään vaiheessa.
+FCPXML ulos, jossa kuva vaihtuu sen mukaan kuka puhuu. Tavallinen työnkulku
+kirjoittaa muokattavan Final Cut -aikajanan; **Renderöi video** tekee lisäksi
+MP4:n samasta leikkauksesta avaamatta Final Cutia.
 
 ![Aiempi käyttöliittymänäkymä: vanha raitojen asettelutapa, esikatselupalkki ja leikkauslista.](screenshot.png)
 
@@ -45,6 +46,30 @@ hakemistosta avautuu Finderin valintaikkuna. Polun voi silti antaa, ja
 uv run autoraffkat "episode 12.fcpxmld"
 uv run autoraffkat --pick            # suoraan valintaikkuna
 ```
+
+Yhdestä pitkästä videosta voi renderöidä käsin valitut kohdat omiksi
+pystyvideoikseen komentoriviltä:
+
+```csv
+name,start,end
+intro,00:03:20.000,00:03:48.200
+paras-tarina,00:17:05.500,00:17:42.000
+```
+
+```bash
+uv run autoraffkat render-clips interview.mp4 \
+  --cuts moments.csv --output-dir shorts/
+```
+
+Komento kirjoittaa väliaikaisen, yhden videon FCPXML-projektin jokaiselle
+välille ja käyttää nykyistä 9:16-renderöijää. Kasvontunnistus kehystää kuvan
+kasvoihin; jos se ei ole käytettävissä, käytetään keskitettyä rajausta.
+`--center-crop` ohittaa kasvontunnistuksen ja `--overwrite` sallii olemassa
+olevien tiedostojen korvaamisen. `start` ja `end` ovat lähdevideon aikoja
+muodossa `HH:MM:SS.mmm`, `MM:SS.mmm` tai sekunteina. Valinnainen `name`
+määrää tiedostonimen; ilman sitä nimet ovat `clip-001`, `clip-002` ja niin
+edelleen. Jokaisen valmiin tiedoston polku tulostuu `OUTPUT`-rivillä, josta
+sen voi siirtää suoraan PyCapSlapille.
 
 Valmiit `-cut`-viennit eivät päädy tarjolle: silmukassa palataan aina
 alkuperäiseen lähteeseen.

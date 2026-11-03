@@ -214,3 +214,39 @@ def test_long_ramp_stays_inaudible_where_the_curve_is_silent(tmp_path):
     ramps = _read_back(tmp_path, segments)
     assert _db(level_at(ramps, 1.0)) < fades.AUDIBLE_DB
     assert abs(_db(level_at(ramps, 19.0)) - -6.0) < 0.01
+
+
+def test_long_segments_fuzz_monotonic_rises():
+    """Varmistaa että eripituiset ja -jyrkät nousut muodostavat kelvolliset luiskat."""
+    for length in (4.0, 8.0, 15.0):
+        for rise_db in (35.0, 50.0, 70.0):
+            pts = _points(lambda t: -80.0 + rise_db * (t / length) if t <= length else -80.0 + rise_db,
+                          length=length + 2.0)
+            segs = fades.long_segments(pts)
+            # Yli 30 dB nousu saa vähintään kaksi luiskaa
+            assert len(segs) >= 2
+            for a, b in pairwise(segs):
+                assert a.start + a.length <= b.start + 1e-9
+            assert all(np.isfinite(s.gain_db) for s in segs)
+
+
+def test_fit_two_large_rise_preserves_fit_and_runtime():
+    """A representative long rise keeps the two-ramp fit and runtime bounded."""
+    import time
+
+    import pytest
+
+    pts = _points(lambda t: -68.0 + (60.0 / 8.5) * t, length=8.5)
+    times = np.array([t for t, _ in pts])
+    wants = np.array([fades._clean(db) for _, db in pts])
+
+    start_time = time.perf_counter()
+    segs = fades._fit_two(times, wants, 0, len(pts) - 1)
+    duration = time.perf_counter() - start_time
+
+    assert len(segs) == 2
+    assert segs[0].gain_db == pytest.approx(-24.94, abs=0.01)
+    assert segs[1].gain_db == pytest.approx(-8.0, abs=0.01)
+    # The prior implementation took ~3.88 s; current vectorized fitting is
+    # expected below 1 s on the measured development machine.
+    assert duration < 1.0, f"_fit_two took too long: {duration:.3f} s (expected < 1.0 s)"

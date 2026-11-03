@@ -16,6 +16,7 @@ from colabtranscribe.options import GPUS, PRESETS, RunOptions, pipeline_args
 def test_defaults_are_the_remote_preset():
     options = RunOptions()
     assert options.preset == "remote"
+    assert options.model == "whisper"
     assert options.gpu == "T4"
     assert options.rms is False
     assert options.thr == -35
@@ -75,6 +76,11 @@ def test_tail_and_gap_must_be_positive():
 def test_transfer_default_is_direct():
     options = RunOptions()
     assert options.transfer == "direct"
+
+
+def test_colab_model_environment_defaults_to_turbo_whisper(monkeypatch):
+    monkeypatch.delenv("COLAB_MODEL", raising=False)
+    assert RunOptions.from_env().model == "whisper"
 
 
 def test_transfer_choices():

@@ -2,9 +2,9 @@
 
 Automatic multicam editing for interview and podcast video on macOS. Export an
 FCPXML from Final Cut Pro and get a new FCPXML back, where the picture cuts to
-whoever is talking. The cut is decided from the microphone tracks. Nothing is
-ever rendered, and the result opens in Final Cut Pro as an ordinary multicam
-timeline you can keep editing by hand.
+whoever is talking. The cut is decided from the microphone tracks. The normal
+workflow writes an editable Final Cut timeline; **Render video** also renders
+an MP4 of that edit without opening Final Cut Pro.
 
 *[Suomenkielinen README](README.fi.md) · [Design notes](DESIGN.md) · [Roadmap](ROADMAP.md)*
 
@@ -45,6 +45,30 @@ path, and a `.fcpxmld` bundle works as-is:
 uv run autoraffkat "episode 12.fcpxmld"
 uv run autoraffkat --pick            # go straight to the file dialog
 ```
+
+For a single long video with manually chosen moments, render each range as a
+separate vertical clip from the command line:
+
+```csv
+name,start,end
+intro,00:03:20.000,00:03:48.200
+best-story,00:17:05.500,00:17:42.000
+```
+
+```bash
+uv run autoraffkat render-clips interview.mp4 \
+  --cuts moments.csv --output-dir shorts/
+```
+
+The command writes a temporary one-video FCPXML project for each range, then
+uses autoraffkat's existing 9:16 renderer. Face tracking frames each clip on
+the detected face; if face tracking is unavailable, the clip uses a centered
+crop. `--center-crop` skips face measurement, and `--overwrite` permits replacing
+existing output files. `start` and `end` are source-video times in
+`HH:MM:SS.mmm`, `MM:SS.mmm`, or seconds. The optional `name` column supplies
+the output filename; otherwise clips are named `clip-001`, `clip-002`, and so
+on. The command prints an `OUTPUT` line for each rendered file so another CLI
+can pass the results directly to PyCapSlap.
 
 Existing `-cut` exports are never offered as a source: the loop always
 returns to the original.

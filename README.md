@@ -10,7 +10,7 @@ Whether you need to automatically cut multicam video to the speaker, transcribe 
 
 | If you want to... | Use | Interface | What it works with |
 |---|---|---|---|
-| **Cut multicam video** automatically to whoever is talking | [autoraffkat](#autoraffkat) | **Web GUI / Desktop GUI** | Final Cut Pro (`.fcpxml` / `.fcpxmld`) |
+| **Cut multicam video** automatically to whoever is talking, or render timecoded vertical clips | [autoraffkat](#autoraffkat) | **Web GUI / Desktop GUI / CLI** | Final Cut XML or a video file |
 | **Generate subtitles & captions** using Whisper | [fcp-subs-whisper](#fcp-subs-whisper) | **CLI** | Video / Audio → Final Cut Pro (`.srt` / `.ssa`) |
 | **Transcribe & silence bleed** locally on your Mac | [podcast-magic](#podcast-magic) | **Web GUI / Desktop GUI** | Hindenburg (`.nhsx`) |
 | **Mix & master** multi-track speech and music to -16 LUFS | [automixer](#automixer) | **Interactive TUI / CLI** | WAV / AIFF audio files |
@@ -101,7 +101,12 @@ Then run whichever tool you need with `uv run <tool>`.
   uv run autoraffkat --gui                # opens native desktop window GUI
   uv run autoraffkat "episode.fcpxmld"    # open a specific export
   uv run autoraffkat --pick               # open Finder file dialog
+  uv run autoraffkat render-clips interview.mp4 --cuts moments.csv --output-dir shorts/
   ```
+
+  The `render-clips` command writes one face-aware 9:16 MP4 per CSV range.
+  PyCapSlap can run the renderer and open all outputs with
+  `pycapslap clips interview.mp4 --cuts moments.csv`.
 
 📖 Details: [apps/autoraffkat/README.md](apps/autoraffkat/README.md) · [Suomeksi](apps/autoraffkat/README.fi.md)
 

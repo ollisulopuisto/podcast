@@ -71,7 +71,7 @@ class RunOptions:
     # Käsikirjoitus: lyhyet huomautukset kappaleen sisään, ei omille riveilleen.
     inline_remarks: bool = False
     # ASR-moottori Colabissa; paikalliset backendit valitsevat oman mallinsa.
-    model: str = "parakeet-ultra"
+    model: str = "whisper"
     language: str = "fi"
     # Vain ``source="audio"``: sanojen alut kohdistetaan ääneen Colabissa
     # (``wordalign``), ja tiedoston ``timing`` on silloin ``ctc-v1``.
@@ -167,7 +167,7 @@ class RunOptions:
             "yes",
         )
         backend = os.environ.get("COLAB_BACKEND", "colab")
-        model = os.environ.get("COLAB_MODEL", "parakeet-ultra")
+        model = os.environ.get("COLAB_MODEL", "whisper")
         parakeet_model = os.environ.get(
             "COLAB_ORUKEET_MODEL",
             os.environ.get("COLAB_PARAKEET_MODEL", DEFAULT_PARAKEET_MODEL),
