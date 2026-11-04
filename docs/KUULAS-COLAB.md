@@ -16,6 +16,23 @@ The owner has decided: the heavy calculation runs on Colab (option B), local lat
   not go through Drive unless asked.
 - One Colab VM per run: every file in the input goes up and is processed in the same session; uploads are
   cached in the session by content hash.
+- Kuulas sends all recordings selected for one transcription job in one
+  `colab-transcribe` invocation (`--audio` once per file), so they share one VM
+  and one pipeline run. The pipeline processes the files sequentially and loads
+  the selected ASR model once for that run.
+- Reuse across separate Kuulas jobs is supported too: add `--keep-session` to
+  Kuulas Colab settings' extra arguments. The VM then stays open after a
+  successful run; the next invocation detects and reuses it instead of issuing
+  `colab new`. It clears the run's input/output folders and reuses cached
+  uploads when content hashes match. Model weights remain cached on the VM, but
+  each invocation starts a new pipeline process and reloads the ASR model into
+  memory. With this flag, cancellation also leaves the VM running; stop it with
+  `colab-transcribe --stop` or Kuulas' stop-session action.
+- Colab jobs that use the same session must run one at a time. Concurrent
+  invocations can clear each other's remote input/output folders; they are not
+  automatically merged into one batch. Kuulas should submit one job with all
+  desired recordings, or serialize separate jobs. Without `--keep-session`,
+  the session is stopped at the end, so a later job starts a fresh VM.
 - The cloud pipeline already has modes that skip the `.nhsx` steps: `--source downmix`
   (`run_downmix`, returns before any session handling). A plain-audio mode is the same shape.
 - `run_transcription` writes Parakeet Ultra's word-timestamp JSON per audio file (`transcripts/`) and the driver downloads those
