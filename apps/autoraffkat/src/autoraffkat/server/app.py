@@ -2200,5 +2200,103 @@ def create_app(state: AppState) -> FastAPI:
             subprocess.run(["xdg-open", os.path.dirname(path) or "."], check=False)
         return {"ok": True}
 
+    # --------------------------------------------------------------------------
+    # Versioned v1 REST API for Automation and LLM Agents
+    # --------------------------------------------------------------------------
+
+    def _v1_error(status_code: int, code: str, message: str, details: dict | None = None) -> JSONResponse:
+        return JSONResponse(
+            status_code=status_code,
+            content={"error": {"code": code, "message": message, "details": details or {}}},
+        )
+
+    @app.get("/api/v1/status")
+    def api_v1_status():
+        """Palvelimen ja ajetun projektin yleistila automaatiolle."""
+        loaded = state.timeline is not None
+        analysis_ready = bool(state.progress.get("ready"))
+        video_measured = bool(state.video_tables)
+        return {
+            "service": "autoraffkat",
+            "version": "1.0",
+            "platform": sys.platform,
+            "loaded": loaded,
+            "xml_path": state.xml_path,
+            "analysis_ready": analysis_ready,
+            "video_measured": video_measured,
+        }
+
+    @app.get("/api/v1/project/inspect")
+    def api_v1_inspect():
+        """Tarkastele aikajanaa, raitoja ja asetuksia."""
+        if state.timeline is None:
+            return _v1_error(409, "PROJECT_NOT_LOADED", state.load_error or t("export.not_loaded"))
+        tracks = [_track_json(state, tr) for tr in state.timeline.tracks]
+        return {
+            "xml_path": state.xml_path,
+            "name": state.timeline.name,
+            "kind": state.timeline.kind,
+            "fps": round(float(1 / state.timeline.frame_duration), 3) if state.timeline.frame_duration else None,
+            "tracks": tracks,
+            "settings": {
+                "globals": state.settings.globals.to_json(),
+                "audio": state.settings.audio.to_json(),
+                "tracks": {k: v.to_json() for k, v in state.settings.tracks.items()},
+            },
+        }
+
+    @app.post("/api/v1/project/settings")
+    def api_v1_settings(payload: dict):
+        """Päivitä asetukset ja palauta leikkauspäätöksen tila."""
+        if state.timeline is None or state.analysis is None:
+            return _v1_error(409, "PROJECT_NOT_LOADED", state.load_error or t("export.not_loaded"))
+        with state.lock:
+            state.apply(payload)
+            res = state.compute()
+            res.pop("_grid", None)
+            res["output_path"] = project.next_output_path(
+                state.xml_path, project.name_tag(state.settings)
+            )
+            try:
+                project.save(state.xml_path, state.settings)
+            except OSError as exc:
+                res.setdefault("problems", []).append(t("export.settings_failed", error=exc))
+        return {
+            "ok": res.get("ok", False),
+            "problems": res.get("problems", []),
+            "cuts_count": len(res.get("segments", [])),
+            "output_path": res.get("output_path", ""),
+        }
+
+    @app.post("/api/v1/project/cut")
+    def api_v1_cut(payload: dict | None = None):
+        """Laske ja palauta leikkaukset ja leikkauslistat."""
+        if state.timeline is None or state.analysis is None:
+            return _v1_error(409, "PROJECT_NOT_LOADED", state.load_error or t("export.not_loaded"))
+        with state.lock:
+            if payload:
+                state.apply(payload)
+            res = state.compute()
+            res.pop("_grid", None)
+        return {
+            "ok": res.get("ok", False),
+            "segments": res.get("segments", []),
+            "counts": res.get("counts", {}),
+            "problems": res.get("problems", []),
+        }
+
+    @app.post("/api/v1/project/export")
+    def api_v1_export(payload: dict | None = None):
+        """Vie leikattu FCPXML levylle automaatiosta."""
+        if state.timeline is None or state.analysis is None:
+            return _v1_error(409, "PROJECT_NOT_LOADED", state.load_error or t("export.not_loaded"))
+        try:
+            exp_res = export(payload)
+            if isinstance(exp_res, JSONResponse):
+                return exp_res
+            return exp_res
+        except HTTPException as exc:
+            return _v1_error(exc.status_code, "EXPORT_ERROR", exc.detail)
+
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app

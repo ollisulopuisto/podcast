@@ -101,3 +101,25 @@ keyframe (`video/`); a motion measure there could move a speaker change to
 the nearest movement within a short reach, the same way a long-take break
 moves to a measured reaction (`decide.REACTION_REACH`). Wanted after the
 turn-taking fixes of 2026-09-23 have been listened to.
+
+## Agent and command-line automation
+
+Autoraffkat can already be launched with an FCPXML path and exposes internal
+HTTP endpoints for state, settings, export, audio processing, and rendering.
+Those endpoints are not yet a documented, stable automation interface, and
+the CLI does not expose the full editing workflow. Make the app reliably
+drivable by command-line tools and LLM agents:
+
+1. Document a versioned API with explicit request and response schemas for
+   supported actions, including validation and error cases.
+2. Add headless CLI commands for the complete supported workflow, so agents
+   can load a project, inspect and change settings, export, and run or stop
+   processing without native dialogs or GUI interaction.
+3. Emit structured progress and error output suitable for scripts, while
+   keeping existing human-readable CLI output usable.
+4. Keep the HTTP API and CLI behavior aligned, and document which actions
+   require macOS or Final Cut Pro.
+
+Treat the current web routes as implementation details until this contract
+and its schemas are documented and supported. The existing local HTTP API and
+the `autoraffkat` launcher are starting points, not complete agent interfaces.
