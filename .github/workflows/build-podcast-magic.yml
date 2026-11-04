@@ -103,6 +103,29 @@ jobs:
         run: >-
           echo "HOTFIX BUILD ONLY: tests were skipped; this run cannot publish a release."
 
+      - name: Import Developer ID certificate (macOS)
+        if: matrix.platform == 'macos'
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$BUILD_CERTIFICATE_BASE64"
+          test -n "$P12_PASSWORD"
+          test -n "$KEYCHAIN_PASSWORD"
+          KEYCHAIN_PATH="$RUNNER_TEMP/podcast-signing.keychain-db"
+          CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
+          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 -D -o "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -T /usr/bin/codesign -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          rm -f "$CERTIFICATE_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -F 'Developer ID Application: Olli Sulopuisto (LWSR8T5392)'
+
       # Niputettavat ffmpeg-binäärit ovat iso lataus ulkopuoliselta
       # palvelimelta. Välimuisti pitää käännöksen pystyssä silloinkin kun se
       # palvelin on nurin.
@@ -118,6 +141,7 @@ jobs:
       - name: Build
         env:
           PM_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          APPLE_SIGNING_IDENTITY: "Developer ID Application: Olli Sulopuisto (LWSR8T5392)"
         run: |
           if [ -n "$PM_VERSION" ]; then
             export PM_VERSION="${PM_VERSION#podcast-magic-v}"
@@ -129,6 +153,16 @@ jobs:
           else
             uv run python scripts/build_app.py
           fi
+
+      - name: Verify macOS app and sign DMG
+        if: matrix.platform == 'macos'
+        env:
+          APPLE_SIGNING_IDENTITY: "Developer ID Application: Olli Sulopuisto (LWSR8T5392)"
+        run: |
+          codesign --verify --deep --strict --verbose=2 "dist/Podcast Magic.app"
+          test -f "dist/Podcast Magic.dmg"
+          codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "dist/Podcast Magic.dmg"
+          codesign --verify --verbose=2 "dist/Podcast Magic.dmg"
 
       # Mitä pakettiin oikeasti päätyi. Niputettu ffmpeg tulee ulkopuolelta ja
       # allekirjoitus voi rikkoutua kopioinnissa; kumpikin selviäisi ilman tätä
@@ -171,6 +205,10 @@ jobs:
             apps/podcast-magic/dist/podcast-magic-*.tar.gz
           if-no-files-found: error
 
+      - name: Remove signing keychain
+        if: always() && matrix.platform == 'macos'
+        run: security delete-keychain "$RUNNER_TEMP/podcast-signing.keychain-db" || true
+
   release:
     # Vain tagista. Käsin ajettu käännös jää artefaktiksi, ei julkaisuksi.
     if: startsWith(github.ref, 'refs/tags/podcast-magic-v')
@@ -195,13 +233,12 @@ jobs:
         run: |
           cat > notes.md <<'NOTES'
           ### macOS
-          Levykuva ei ole Applen notarisoima, koska siihen tarvitaan Developer
-          ID. Ensimmäisellä avauksella: oikea klikkaus paketin päällä ja
-          «Avaa», tai `xattr -d com.apple.quarantine "Podcast Magic.app"`.
+          Sovellus ja levykuva on allekirjoitettu Developer ID:llä, mutta
+          niitä ei ole notarisoitu. Ensimmäisellä avauksella voi tarvita
+          oikean klikkauksen ja «Avaa».
 
-          The disk image is not notarised by Apple — that needs a Developer ID.
-          On first launch: right-click the app and choose "Open", or run
-          `xattr -d com.apple.quarantine "Podcast Magic.app"`.
+          The app and disk image are Developer ID signed, but not notarised.
+          The first launch may still require right-clicking the app and choosing "Open".
 
           ### Windows & Linux
           Muiden alustojen paketit lisätään erikseen Mac-julkaisun jälkeen.

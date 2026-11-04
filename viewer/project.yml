@@ -50,9 +50,10 @@ targets:
       # hylkää binäärin joka kantaa sitä. Löytyi käännöslokista, ei
       # lukemalla: käännös oli vihreä.
       CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
-      # Ad-hoc allekirjoitus. Developer ID:tä ei ole, joten notarisointia ei
-      # ole; allekirjoittamaton laajennus taas ei rekisteröidy lainkaan.
-      # Ks. README: ensimmäisellä avauksella tarvitaan «Avaa silti».
+      # Paikallinen oletus on ad-hoc. build-viewer.yml ohittaa tämän
+      # Developer ID:llä julkaisuja varten. Notarisointi odottaa, että
+      # laajennuksen tilapäinen kansio-oikeus korvataan käyttäjän myöntämällä
+      # käyttöoikeudella; ks. README.
       CODE_SIGN_IDENTITY: "-"
       CODE_SIGNING_REQUIRED: YES
       CODE_SIGNING_ALLOWED: YES
@@ -91,6 +92,7 @@ targets:
       # hylkää binäärin joka kantaa sitä. Löytyi käännöslokista, ei
       # lukemalla: käännös oli vihreä.
       CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+      # Paikallinen oletus on ad-hoc; julkaisuputki käyttää Developer ID:tä.
       CODE_SIGN_IDENTITY: "-"
       CODE_SIGNING_REQUIRED: YES
       CODE_SIGNING_ALLOWED: YES

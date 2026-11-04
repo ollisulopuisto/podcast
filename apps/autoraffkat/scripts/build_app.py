@@ -78,6 +78,9 @@ def build(clean: bool = False, fetch_bins: bool = True, dmg: bool = False) -> in
     cmd = [sys.executable, "-m", "PyInstaller"]
     if clean:
         cmd.append("--clean")
+    identity = os.environ.get("APPLE_SIGNING_IDENTITY")
+    if sys.platform == "darwin" and identity:
+        cmd.extend(["--codesign-identity", identity])
     cmd.extend(["-y", str(spec_file)])
 
     print(f"Käännetään PyInstallerilla: {' '.join(cmd)}")
