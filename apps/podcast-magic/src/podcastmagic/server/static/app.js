@@ -215,7 +215,14 @@ const PM = {
     }
     const unknown = job.running && ratio === null;
     fill.classList.toggle('indeterminate', unknown);
-    fill.style.width = unknown ? '' : `${Math.round((ratio || (job.running ? 0 : 1)) * 100)}%`;
+    if (unknown) {
+      fill.removeAttribute('aria-valuenow');
+      fill.style.width = '';
+    } else {
+      const percent = Math.round((ratio || (job.running ? 0 : 1)) * 100);
+      fill.setAttribute('aria-valuenow', String(percent));
+      fill.style.width = `${percent}%`;
+    }
 
     /* Kaksi arviota, erikseen: tämä tiedosto ja koko työ. Odottaja kysyy
        kumpaakin eri hetkinä — «ehdinkö hakea kahvin» on tämä tiedosto,
@@ -429,9 +436,12 @@ const PM = {
     /* Loki on kiinni kunnes sitä pyydetään. Se on ajon lokia eikä ajon
        tilaa: tila mahtuu yhdelle riville, ja auki oleva loki vie sen
        tilan jossa kerrotaan mitä tehdään. */
-    document.getElementById('job-log-toggle').addEventListener('click', () => {
+    const jobLogToggle = document.getElementById('job-log-toggle');
+    jobLogToggle.addEventListener('click', () => {
       const log = document.getElementById('job-log');
+      const willOpen = log.classList.contains('hidden');
       log.classList.toggle('hidden');
+      jobLogToggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
       if (!log.classList.contains('hidden')) log.scrollTop = log.scrollHeight;
     });
 

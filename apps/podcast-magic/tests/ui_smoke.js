@@ -74,6 +74,9 @@ function makeElement(tag) {
       if (name === 'disabled') this.disabled = true;
       if (name.startsWith('data-')) this.dataset[name.slice(5)] = String(value);
     },
+    removeAttribute(name) {
+      delete this.attributes[name];
+    },
     getAttribute(name) { return this.attributes[name] ?? null; },
     addEventListener(name, fn) { (this._handlers[name] ||= []).push(fn); },
     dispatchEvent(event) {

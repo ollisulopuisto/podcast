@@ -280,8 +280,12 @@ const I18N = {
   },
 
   apply(root) {
-    (root || document).querySelectorAll('[data-t]').forEach((el) => {
+    const scope = root || document;
+    scope.querySelectorAll('[data-t]').forEach((el) => {
       el.textContent = this.t(el.dataset.t);
+    });
+    scope.querySelectorAll('[data-t-aria-label]').forEach((el) => {
+      el.setAttribute('aria-label', this.t(el.dataset.tAriaLabel));
     });
   },
 };
