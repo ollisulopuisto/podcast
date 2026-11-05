@@ -106,3 +106,46 @@ def test_different_shapes_are_an_error_not_a_silent_crop():
         mixlaw.mix_blend(
             np.zeros((1, 10), np.float32), np.zeros((2, 10), np.float32), 0.5
         )
+
+
+def test_mix_blend_fuzz_precision_and_invariants():
+    """Fuzz across random audio arrays, channel counts, and mix values."""
+    for seed in range(10):
+        rng = np.random.default_rng(seed + 2026)
+        channels = (seed % 2) + 1
+        length = 1000 + seed * 100
+        raw = (rng.standard_normal((channels, length)) * 0.4).astype(np.float32)
+        wet = (rng.standard_normal((channels, length)) * 0.4).astype(np.float32)
+        for mix in (0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0):
+            for lag in (-2, 0, 3):
+                out = mixlaw.mix_blend(raw, wet, mix, wet_lag=lag)
+                assert out.dtype == np.float32
+                assert out.shape == raw.shape
+                # Verify identity at endpoints
+                if mix == 0.0:
+                    assert np.array_equal(out, raw)
+                elif mix == 1.0:
+                    assert np.array_equal(out, mixlaw._shift_back(wet, lag))
+
+
+def test_mix_blend_avoids_allocating_float64_temporaries():
+    """Verify that mix_blend operates without allocating large float64 buffers.
+
+    For 30 seconds of stereo audio (float32 = 11.52 MB), a float64 upcast
+    allocates 23 MB per array (raw + aligned + sum = >46 MB peak).
+    Direct float32 blending keeps memory under 24 MB.
+    """
+    import tracemalloc
+
+    rate = 48000
+    duration = 30
+    rng = np.random.default_rng(42)
+    raw = rng.standard_normal((2, rate * duration)).astype(np.float32)
+    wet = rng.standard_normal((2, rate * duration)).astype(np.float32)
+
+    tracemalloc.start()
+    mixlaw.mix_blend(raw, wet, 0.4, wet_lag=0)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert peak < 25 * 1024 * 1024, f"Peak memory was too high: {peak / 1024 / 1024:.2f} MB"
