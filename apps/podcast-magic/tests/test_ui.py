@@ -173,3 +173,17 @@ def test_shortcut_controls_have_aria_keyshortcuts_and_dialog_handling():
     assert "e.target === dialog" in app
     assert "this.shortcutReturn" in app
     assert "kbd {" in css
+
+
+def test_job_progress_and_log_toggle_have_accessibility_semantics():
+    """Työpalkin edistymisellä on progressbar-semantiikka ja lokinapilla aria-expanded."""
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert 'id="job-fill"' in html
+    assert 'role="progressbar"' in html
+    assert 'aria-valuemin="0"' in html
+    assert 'aria-valuemax="100"' in html
+    assert 'aria-controls="job-log"' in html
+    assert 'aria-expanded="false"' in html
+    assert "fill.setAttribute('aria-valuenow'" in app
+    assert "jobLogToggle.setAttribute('aria-expanded'" in app

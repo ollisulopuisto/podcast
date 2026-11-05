@@ -49,10 +49,10 @@
         <span id="job-step"></span>
         <span id="job-file" class="muted"></span>
         <span id="job-all" class="muted"></span>
-        <button id="job-log-toggle" class="ghost" data-t="app.log">Loki</button>
+        <button id="job-log-toggle" class="ghost" data-t="app.log" aria-expanded="false" aria-controls="job-log">Loki</button>
         <button id="cancel" class="ghost" data-t="app.cancel">Keskeytä</button>
       </div>
-      <div class="progress"><div id="job-fill" class="progress-fill"></div></div>
+      <div class="progress"><div id="job-fill" class="progress-fill" role="progressbar" aria-valuemin="0" aria-valuemax="100" data-t-aria-label="app.progress"></div></div>
       <pre id="job-log" class="log hidden"></pre>
       <div id="job-result" class="exported hidden"></div>
     </section>

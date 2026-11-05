@@ -228,9 +228,11 @@ xattr -d com.apple.quarantine nhsx-render
 
 ### Ensimmäinen avaus, ja miksi se on hankala
 
-Kumpikaan ei ole Applen notarisoima: siihen tarvitaan Developer ID, jota
-tällä repositoriolla ei ole. Sama koskee `autoraffkat`ia ja Podcast Magicia,
-eli tämä ei ole tässä uutta.
+Viewer-sovellus ja sen levykuva allekirjoitetaan Developer ID:llä, mutta
+niitä ei notarisoida. Quick Look -laajennuksen nykyiset tilapäiset
+kansio-oikeudet eivät ole Applen notarisoitavissa. `nhsx-render`-komentorivityökalu
+on edelleen allekirjoittamaton; se tarvitsee karanteenimerkinnän poiston.
+Sama allekirjoitusmalli on `autoraffkat`illa ja Podcast Magicilla.
 
 Sovellus: oikea klikkaus ja «Avaa», tai Järjestelmäasetukset → Tietosuoja ja
 turvallisuus → «Avaa silti». Komentorivityökalu:
@@ -279,9 +281,9 @@ huomaamatta jäänyt asetus.
 Puhdas vaihtoehto on App Group ja käyttäjän myöntämä kansio-oikeus
 (`bookmarkData(options: .withSecurityScope)`): pääsy rajautuisi niihin
 kansioihin jotka käyttäjä itse antaa. App Group -tunnus vaatii Team ID:n
-eli maksullisen Apple-kehittäjätilin. Kun sellainen on, tämä poikkeus
-poistetaan ja korvataan sillä — ja se on samalla se päivä jolloin
-notarisointi tulee mahdolliseksi, sillä notarisointi hylkää
+eli maksullisen Apple-kehittäjätilin. Developer ID -sertifikaatti on nyt
+käytössä julkaisuissa. Tämä poikkeus pitää silti poistaa ja korvata käyttäjän
+myöntämällä käyttöoikeudella ennen notarisointia, sillä notarisointi hylkää
 temporary-exception-oikeudet.
 
 Käännös tarkistaa, että oikeus on molemmissa paketeissa. Ilman sitä

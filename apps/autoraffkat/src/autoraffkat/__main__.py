@@ -34,6 +34,14 @@ def main(argv: list[str] | None = None) -> int:
         from autoraffkat.cli_clips import main as render_clips_main
 
         return render_clips_main(argv[1:])
+    if argv[:1] == ["inspect"]:
+        from autoraffkat.cli_edit import run_inspect
+
+        return run_inspect(argv[1:])
+    if argv[:1] == ["edit"]:
+        from autoraffkat.cli_edit import run_edit
+
+        return run_edit(argv[1:])
 
     parser = argparse.ArgumentParser(
         prog="autoraffkat",

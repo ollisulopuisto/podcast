@@ -7,6 +7,14 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.4.2] - 2026-11-04
+
+### Added
+- Add a versioned HTTP API and headless `autoraffkat inspect` and `edit` commands for scripted project inspection, configuration, cut decisions, and FCPXML export, with JSON and progress output. See [AUTORAFFKAT-API.md](../../docs/AUTORAFFKAT-API.md).
+
+### Packaging
+- Build a fresh DMG from the latest main line, including the automation API and CLI. The tag-triggered workflow runs the full release tests before publishing.
+
 ## [2026.11.4.1] - 2026-11-04
 
 ### Packaging

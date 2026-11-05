@@ -128,9 +128,10 @@ episode's own settings always win.
 ### Download
 
 [Releases](../../releases) carries a disk image for Apple Silicon, built and
-published by CI from a `v*` tag. It is not notarised — that needs a paid Apple
-Developer ID — so the first launch takes a right-click on the app and "Open",
-or `xattr -d com.apple.quarantine autoraffkat.app`.
+published by CI from an `autoraffkat-v*` tag. The app and disk image are
+Developer ID signed but not notarised, so the first launch may need a
+right-click on the app and "Open", or
+`xattr -d com.apple.quarantine autoraffkat.app`.
 
 Everything in the package is arm64, ffmpeg included, so there is no Rosetta
 step. Intel Macs need a package of their own: GitHub no longer offers free
