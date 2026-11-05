@@ -41,6 +41,32 @@ def test_runs_finds_the_spans():
     assert masks.runs(np.array([], dtype=np.int8)) == []
 
 
+def test_runs_fuzz_various_lengths_and_types():
+    """Verify runs extraction on arbitrary patterns and verify integer types."""
+    rng = np.random.default_rng(2026)
+    for length in (0, 1, 2, 3, 10, 100, 1000):
+        if length == 0:
+            arr = np.array([], dtype=np.int8)
+        else:
+            arr = rng.integers(0, 3, size=length, dtype=np.int8)
+        result = masks.runs(arr)
+        if length == 0:
+            assert result == []
+            continue
+
+        # Check reconstructed array matches original
+        reconstructed = np.empty(length, dtype=np.int8)
+        for s, e, v in result:
+            assert isinstance(s, int) and isinstance(e, int) and isinstance(v, int)
+            assert s < e
+            reconstructed[s:e] = v
+        assert np.array_equal(arr, reconstructed)
+        # Check adjacent runs have differing values
+        for i in range(len(result) - 1):
+            assert result[i][1] == result[i + 1][0]
+            assert result[i][2] != result[i + 1][2]
+
+
 def test_a_cough_does_not_open_the_gate():
     """``min_open`` pudottaa liian lyhyet jaksot."""
     on = np.zeros(200, dtype=bool)
