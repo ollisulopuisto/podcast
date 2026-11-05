@@ -78,9 +78,9 @@ def build(clean: bool = False, fetch_bins: bool = True, dmg: bool = False) -> in
     cmd = [sys.executable, "-m", "PyInstaller"]
     if clean:
         cmd.append("--clean")
-    identity = os.environ.get("APPLE_SIGNING_IDENTITY")
-    if sys.platform == "darwin" and identity:
-        cmd.extend(["--codesign-identity", identity])
+    # PyInstaller does not accept makespec options such as
+    # `--codesign-identity` when building from a spec file. The spec reads the
+    # signing identity from the environment instead.
     cmd.extend(["-y", str(spec_file)])
 
     print(f"Käännetään PyInstallerilla: {' '.join(cmd)}")
