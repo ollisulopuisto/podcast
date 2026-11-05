@@ -133,6 +133,38 @@ jobs:
           codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$DMG_PATH"
           codesign --verify --verbose=2 "$DMG_PATH"
 
+      # Notarisointi Applen tunnuksilla. Tagista ilman tunnuksia käännös
+      # kaatuu, koska julkaisu lupaa notarisoidun levykuvan; käsin ajettu
+      # käännös varoittaa ja jää pelkäksi allekirjoitetuksi artefaktiksi.
+      - name: Notarise and staple DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: LWSR8T5392
+        run: |
+          set -euo pipefail
+          DMG_PATH="dist/autoraffkat-${{ steps.inside.outputs.arch }}.dmg"
+          if [ -z "$APPLE_ID" ] || [ -z "$APPLE_APP_PASSWORD" ]; then
+            if [ "$GITHUB_REF_TYPE" = tag ]; then
+              echo "::error::APPLE_ID / APPLE_APP_PASSWORD puuttuvat; julkaisun pitää olla notarisoitu."
+              exit 1
+            fi
+            echo "::warning::Ei notarisointitunnuksia: artefakti on allekirjoitettu mutta ei notarisoitu."
+            exit 0
+          fi
+          result=$(xcrun notarytool submit "$DMG_PATH" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" --wait --timeout 45m --output-format json) || true
+          echo "$result"
+          id=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          status=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+          if [ "$status" != Accepted ]; then
+            xcrun notarytool log "$id" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+            exit 1
+          fi
+          xcrun stapler staple "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG_PATH"
+
       - uses: actions/upload-artifact@v7
         with:
           name: autoraffkat-${{ steps.inside.outputs.arch }}
@@ -230,12 +262,11 @@ jobs:
         run: |
           cat > notes.md <<'NOTES'
           ### macOS
-          Sovellus ja levykuva on allekirjoitettu Developer ID:llä, mutta
-          niitä ei ole notarisoitu. Ensimmäisellä avauksella voi tarvita
-          oikean klikkauksen ja «Avaa».
+          Sovellus ja levykuva on allekirjoitettu Developer ID:llä ja
+          notarisoitu. Vain Apple Silicon.
 
-          The app and disk image are Developer ID signed, but not notarised.
-          The first launch may still require right-clicking the app and choosing "Open".
+          The app and disk image are Developer ID signed and notarised.
+          Apple silicon only.
 
           ### Windows
           Pura zip-paketti ja käynnistä `autoraffkat.exe`.
