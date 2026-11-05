@@ -1841,9 +1841,15 @@ function progressBar(fraction) {
   const wrap = document.createElement('div');
   wrap.className = 'progress';
   const fill = document.createElement('div');
+  fill.setAttribute('role', 'progressbar');
+  fill.setAttribute('aria-label', T('app.progress'));
+  fill.setAttribute('aria-valuemin', '0');
+  fill.setAttribute('aria-valuemax', '100');
   if (typeof fraction === 'number' && fraction >= 0) {
+    const percent = Math.min(100, Math.max(0, Math.round(fraction * 100)));
     fill.className = 'progress-fill';
-    fill.style.width = `${Math.min(100, Math.max(1, fraction * 100))}%`;
+    fill.setAttribute('aria-valuenow', String(percent));
+    fill.style.width = `${Math.min(100, Math.max(1, percent))}%`;
   } else {
     fill.className = 'progress-fill indeterminate';
   }

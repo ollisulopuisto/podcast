@@ -195,6 +195,18 @@ def test_button_focus_visible_styles_defined():
     assert "var(--accent)" in css
 
 
+def test_banner_and_progressbar_accessibility_semantics():
+    """Ilmoituspalkilla on role="alert" ja edistymispalkilla progressbar-semantiikka."""
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert '<div id="banner" class="banner hidden" role="alert"></div>' in html
+    assert "fill.setAttribute('role', 'progressbar');" in app
+    assert "fill.setAttribute('aria-label', T('app.progress'));" in app
+    assert "fill.setAttribute('aria-valuemin', '0');" in app
+    assert "fill.setAttribute('aria-valuemax', '100');" in app
+    assert "fill.setAttribute('aria-valuenow', String(percent));" in app
+
+
 def test_static_icon_files_exist():
     """Varmistaa että käyttöliittymän tarvitsemat kuvakkeet ovat olemassa."""
     for name in (
