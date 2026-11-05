@@ -127,10 +127,9 @@ Jakson omat asetukset ohittavat perinnän aina.
 ### Lataus
 
 [Releasesissa](../../releases) on levykuva Apple Siliconille. CI kääntää ja
-julkaisee sen `v*`-tagista. Se ei ole notarisoitu — siihen tarvittaisiin
-maksullinen Apple Developer ID — joten ensimmäisellä avauksella tarvitaan oikea
-klikkaus paketin päällä ja «Avaa», tai `xattr -d com.apple.quarantine
-autoraffkat.app`.
+julkaisee sen `autoraffkat-v*`-tagista. Sovellus ja levykuva on allekirjoitettu
+Developer ID:llä. Levykuva notarisoidaan, ja Applen notarisaatiolippu liitetään
+siihen.
 
 Paketissa kaikki on arm64:ää, myös ffmpeg, joten Rosettaa ei tarvita.
 Intel-Macille tarvitaan oma paketti: GitHubilla ei ole enää ilmaisia
