@@ -350,8 +350,9 @@ xattr -d com.apple.quarantine nhsx-render
 ```
 
 It ships alongside **NHSX Viewer.app**, which opens the same sessions — and
-puts the same view in Finder's preview. Both are unsigned — see
-`viewer/README.md` for the first-launch steps.
+puts the same view in Finder's preview. The release workflow signs both apps
+with Developer ID, but does not notarise them. See `viewer/README.md` for
+the Viewer app's first-launch steps.
 
 ### One caveat worth knowing
 

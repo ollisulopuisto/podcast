@@ -30,6 +30,28 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Import Developer ID certificate
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$BUILD_CERTIFICATE_BASE64"
+          test -n "$P12_PASSWORD"
+          test -n "$KEYCHAIN_PASSWORD"
+          KEYCHAIN_PATH="$RUNNER_TEMP/viewer-signing.keychain-db"
+          CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
+          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 -D -o "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -T /usr/bin/codesign -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          rm -f "$CERTIFICATE_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -F 'Developer ID Application: Olli Sulopuisto (LWSR8T5392)'
+
       # Versio tagista eikä `project.yml`istä. Kolmas paikka, jossa numeroa
       # pidetään, on kolmas paikka joka jää jälkeen — ja macOS päättää
       # päivitystarpeen `CFBundleVersion`istä, joten vanhentunut numero
@@ -64,11 +86,14 @@ jobs:
 
       - name: Build
         working-directory: viewer
+        env:
+          APPLE_SIGNING_IDENTITY: "Developer ID Application: Olli Sulopuisto (LWSR8T5392)"
         run: |
           xcodebuild -project NhsxViewer.xcodeproj \
             -scheme NhsxViewerApp -configuration Release \
             -derivedDataPath build \
-            CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=YES CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGN_IDENTITY="$APPLE_SIGNING_IDENTITY" DEVELOPMENT_TEAM=LWSR8T5392 \
+            CODE_SIGNING_REQUIRED=YES CODE_SIGNING_ALLOWED=YES \
             build
 
       # Mitä pakettiin oikeasti päätyi. Laajennus on paketti sovelluksen
@@ -188,6 +213,18 @@ jobs:
           hdiutil create -volname "NHSX Viewer" -srcfolder staging \
             -ov -format UDZO "dist/NHSX-Viewer.dmg"
 
+      - name: Sign and verify disk image
+        working-directory: viewer
+        env:
+          APPLE_SIGNING_IDENTITY: "Developer ID Application: Olli Sulopuisto (LWSR8T5392)"
+        run: |
+          codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" dist/NHSX-Viewer.dmg
+          codesign --verify --verbose=2 dist/NHSX-Viewer.dmg
+
+      - name: Remove signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/viewer-signing.keychain-db" || true
+
       - uses: actions/upload-artifact@v7
         with:
           name: viewer-app
@@ -305,8 +342,9 @@ jobs:
 
           ### Ensimmäinen avaus
 
-          Kumpikaan ei ole Applen notarisoima, koska siihen tarvitaan
-          Developer ID. Sovellus: oikea klikkaus ja «Avaa», tai
+          Sovellus ja levykuva on allekirjoitettu Developer ID:llä, mutta
+          niitä ei ole notarisoitu. Quick Look -laajennuksen tilapäiset
+          kansio-oikeudet eivät ole notarisoitavissa. Sovellus: oikea klikkaus ja «Avaa», tai
           Järjestelmäasetukset → Tietosuoja ja turvallisuus → «Avaa silti».
           Komentorivityökalu: `xattr -d com.apple.quarantine nhsx-render`.
 
@@ -315,8 +353,9 @@ jobs:
 
           ---
 
-          Neither is notarised by Apple — that needs a Developer ID. For the
-          app: right-click and choose "Open", or System Settings → Privacy &
+          The app and disk image are Developer ID signed, but not notarised.
+          The Quick Look extension's temporary folder-access entitlements are
+          incompatible with notarization. For the app: right-click and choose "Open", or System Settings → Privacy &
           Security → "Open Anyway". For the CLI:
           `xattr -d com.apple.quarantine nhsx-render`. Open the app **once**
           to register the preview; `qlmanage -r` if it does not appear.

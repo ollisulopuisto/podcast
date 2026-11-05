@@ -79,6 +79,9 @@ def build(clean: bool = False, fetch: bool = True, dmg: bool = False) -> int:
     cmd = [sys.executable, "-m", "PyInstaller"]
     if clean:
         cmd.append("--clean")
+    identity = os.environ.get("APPLE_SIGNING_IDENTITY")
+    if sys.platform == "darwin" and identity:
+        cmd.extend(["--codesign-identity", identity])
     cmd += ["-y", str(spec)]
     print(f"Käännetään: {' '.join(cmd)}")
     done = subprocess.run(cmd)
