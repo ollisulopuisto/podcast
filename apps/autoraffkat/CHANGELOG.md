@@ -7,6 +7,11 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.5.1] - 2026-11-05
+
+### Packaging
+- Publish a fresh Developer ID signed Autoraffkat DMG after Apple notarization, stapling, and ticket validation.
+
 ## [2026.11.4.2] - 2026-11-04
 
 ### Added
