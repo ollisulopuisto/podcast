@@ -129,7 +129,7 @@ exe = EXE(
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
-    codesign_identity=None,
+    codesign_identity=os.environ.get("APPLE_SIGNING_IDENTITY"),
     entitlements_file=None,
     icon=icon_path,
 )
@@ -150,7 +150,7 @@ if sys.platform == "darwin":
     # `tests/test_workspace_agrees.py` vahtii että ne pysyvät samana. macOS päättää
     # `CFBundleVersion`ista tarjoaako se päivitystä, joten jälkeen jäänyt luku
     # ei kaada mitään — se vain jättää päivityksen tarjoamatta.
-    version = os.environ.get("AR_VERSION", "2026.11.5.1")
+    version = os.environ.get("AR_VERSION", "2026.11.5.2")
     bundle_icon_file = os.path.basename(darwin_icon) if darwin_icon else "autoraffkat.icns"
     app = BUNDLE(
         coll,

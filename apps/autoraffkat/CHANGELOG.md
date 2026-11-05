@@ -7,10 +7,10 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
-## [2026.11.5.1] - 2026-11-05
+## [2026.11.5.2] - 2026-11-05
 
 ### Packaging
-- Publish a fresh Developer ID signed Autoraffkat DMG after Apple notarization, stapling, and ticket validation.
+- Fix PyInstaller's Developer ID signing configuration when building from the spec file, then publish the notarized and stapled DMG.
 
 ## [2026.11.4.2] - 2026-11-04
 
