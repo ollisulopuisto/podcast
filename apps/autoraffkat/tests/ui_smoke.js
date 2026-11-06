@@ -61,6 +61,7 @@ function makeElement(tag) {
       nodes.forEach((n) => { if (n && typeof n === 'object') n._parent = this;
                              this.children.push(n); });
     },
+    replaceChildren(...nodes) { this.children = nodes; },
     appendChild(node) {
       if (node && typeof node === 'object') node._parent = this;
       this.children.push(node);
@@ -216,6 +217,9 @@ const routes = {
      loputtomiin — testi ajaa sen kerran ja se riittää. */
   '/api/video': () => state,
   '/api/pick': () => ({ path: '/x/valittu.fcpxml' }),
+  '/api/media/estimate': () => ({ accepted: true }),
+  '/api/media/import': () => ({ path: '/x/autoraffkat-source.fcpxml' }),
+  '/api/state': () => ({ ...state, video: { progress: { running: false } }, media_sync: { running: false, ready: true, fraction: 1, current: '', error: '', result: { tracks: [{ path: '/x/mic.wav', name: 'Mic', shift_seconds: 0.25, correlation: 0.91 }] } } }),
   '/api/open': () => state,
   '/api/pan-auto': () => state,
   '/api/final-cut': () => ({ ok: true }),
@@ -244,6 +248,7 @@ const context = {
   setInterval: () => 0,
   clearInterval: () => {},
   AbortController: function () { this.abort = () => {}; this.signal = null; },
+  routes,
   console,
   JSON,
   Math,
@@ -553,9 +558,27 @@ async function asyncPaths() {
   await step('exportXml', () => context.exportXml());
   /* Renderöinti: vienti renderöintipyynnöllä ja edistymisen seuranta. */
   await step('renderVideo', () => context.renderVideo());
+  await step('watchVideo', () => context.watchVideo());
   await step('openXml', () => context.openXml('/x/test.fcpxml'));
   /* Ilman polkua: selaimen haara, jossa valitsin on palvelimella. */
   await step('openXml (valitsin)', () => context.openXml());
+  run('renderMediaSync', () => {
+    vm.runInContext(`mediaImport = {
+      paths: ['/x/camera.mp4', '/x/mic.wav'],
+      sources: [
+        { path: '/x/camera.mp4', name: 'Camera', has_video: true, has_audio: true },
+        { path: '/x/mic.wav', name: 'Mic', has_video: false, has_audio: true },
+      ], references: ['/x/camera.mp4'], reference: '/x/camera.mp4', result: null,
+    };`, context);
+    context.renderMediaSync();
+  });
+  await step('estimateMediaSync', async () => {
+    const originalTimeout = context.setTimeout;
+    context.setTimeout = (fn) => { fn(); return 0; };
+    try { await context.estimateMediaSync(); }
+    finally { context.setTimeout = originalTimeout; }
+  });
+  await step('importSyncedMedia', () => context.importSyncedMedia());
   await step('runMix', () => context.runMix());
   await step('resetSection(globals)', () => context.resetSection('globals'));
   await step('resetSection(audio)', () => context.resetSection('audio'));

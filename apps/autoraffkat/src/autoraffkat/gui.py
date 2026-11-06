@@ -86,6 +86,23 @@ class DesktopApi:
     def __init__(self, window: Any = None):
         self.window = window
 
+    def open_media_dialog(self) -> list[str]:
+        """Avaa natiivin monivalinnan kameratiedostoille ja mikrofoneille."""
+        if not self.window:
+            return []
+        import webview
+
+        file_types = (
+            "Media (*.mp4;*.mov;*.m4v;*.wav;*.aif;*.aiff;*.flac;*.m4a)",
+            "All files (*.*)",
+        )
+        result = self.window.create_file_dialog(
+            webview.FileDialog.OPEN,
+            allow_multiple=True,
+            file_types=file_types,
+        )
+        return list(result) if result else []
+
     def open_file_dialog(self) -> str | None:
         """Avaa natiivin tiedostonvalintadialogin."""
         if not self.window:

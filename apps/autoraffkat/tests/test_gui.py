@@ -123,3 +123,15 @@ def test_file_dialog_uses_the_current_pywebview_constant():
 
     assert DesktopApi(Window()).open_file_dialog() == "/tmp/x.fcpxml"
     assert seen[0] is webview.FileDialog.OPEN
+
+
+def test_desktop_media_picker_allows_multiple_files():
+    """Lähdetuonti saa valita kamerat ja mikrofonit samassa dialogissa."""
+    window = MagicMock()
+    window.create_file_dialog.return_value = ["/media/camera.mp4", "/media/mic.wav"]
+    selected = gui.DesktopApi(window).open_media_dialog()
+
+    assert selected == ["/media/camera.mp4", "/media/mic.wav"]
+    _, options = window.create_file_dialog.call_args
+    assert options["allow_multiple"] is True
+    assert options["file_types"]

@@ -138,6 +138,7 @@ const VERTICAL_LAYOUTS = () => [
 ];
 
 let state = null;               // /api/state
+let mediaImport = null;          // valitut kamerat, mikrofonit ja synkka-arviot
 let latest = null;              // viimeisin laskettu tulos
 let lastSeats = '{}';           // viimeksi piirretyt istujat
 let pending = null;             // ajastin
@@ -2965,6 +2966,7 @@ function renderStatic() {
   $('history-controls').setAttribute('aria-label', T('toolbar.history'));
   $('output-controls').setAttribute('aria-label', T('toolbar.output'));
   $('reload').textContent = T('app.reload');
+  $('open-media').textContent = T('app.openMedia');
   const relinkBtn = $('relink');
   if (relinkBtn) relinkBtn.textContent = T('app.relink');
   $('render').textContent = T('app.render');
@@ -3310,6 +3312,153 @@ async function openXml(path) {
   if (state.progress && state.progress.ready) send();
 }
 
+async function openMedia(paths) {
+  if (!paths && window.pywebview && window.pywebview.api) {
+    try { paths = await window.pywebview.api.open_media_dialog(); }
+    catch (err) { console.error(err); }
+  }
+  if (!paths || paths.length === 0) {
+    try {
+      const response = await fetch('/api/pick-media', { method: 'POST' });
+      const data = await response.json();
+      if (data.unavailable) { banner(T('sync.noPicker'), true); return; }
+      paths = data.paths || [];
+    } catch (err) {
+      banner(T('app.readFailed', { error: err.message }), true);
+      return;
+    }
+  }
+  if (!paths || paths.length === 0) return;
+  try {
+    const response = await fetch('/api/media/inspect', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Could not inspect media.');
+    mediaImport = { paths, sources: data.sources, references: data.references,
+                    reference: data.references[0], result: null };
+    $('media-sync').classList.remove('hidden');
+    banner('');
+    renderMediaSync();
+  } catch (err) {
+    banner(err.message || T('app.readFailed', { error: err.message }), true);
+  }
+}
+
+function renderMediaSync() {
+  if (!mediaImport) return;
+  const reference = $('media-sync-reference');
+  reference.replaceChildren();
+  mediaImport.references.forEach((path) => {
+    const source = mediaImport.sources.find((item) => item.path === path);
+    const option = document.createElement('option');
+    option.value = path;
+    option.textContent = source.name;
+    option.selected = path === mediaImport.reference;
+    reference.append(option);
+  });
+  const list = $('media-sync-sources');
+  list.replaceChildren();
+  mediaImport.sources.filter((item) => item.path !== mediaImport.reference).forEach((source) => {
+    const row = document.createElement('div');
+    row.className = 'sync-source';
+    const name = document.createElement('strong');
+    name.textContent = source.name;
+    const hint = document.createElement('small');
+    const estimate = mediaImport.result && mediaImport.result.tracks.find((item) => item.path === source.path);
+    if (estimate && estimate.shift_seconds !== null) {
+      const score = Number(estimate.correlation);
+      hint.textContent = `r=${Number.isFinite(score) ? score.toFixed(2) : '—'}`;
+    } else {
+      hint.textContent = source.has_audio ? T('sync.noEstimate') : T('sync.noEstimate');
+    }
+    name.append(hint);
+    const shiftLabel = document.createElement('label');
+    shiftLabel.textContent = T('sync.offset');
+    const input = document.createElement('input');
+    input.type = 'number'; input.step = '0.01'; input.dataset.mediaPath = source.path;
+    input.value = estimate && estimate.shift_seconds !== null
+      ? Number(estimate.shift_seconds).toFixed(2) : '0';
+    shiftLabel.append(input);
+    const kind = document.createElement('span');
+    kind.className = 'muted';
+    kind.textContent = source.has_video ? T('sync.camera') : source.name;
+    row.append(name, shiftLabel, kind);
+    list.append(row);
+  });
+  $('media-sync-progress').textContent = '';
+}
+
+async function estimateMediaSync() {
+  if (!mediaImport) return;
+  const button = $('media-sync-estimate');
+  setBusy(button, true, T('sync.estimating'));
+  $('media-sync-reference').disabled = true;
+  try {
+    const response = await fetch('/api/media/estimate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths: mediaImport.paths, reference: mediaImport.reference }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Estimate failed.');
+    while (true) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      const status = await (await fetch('/api/state')).json();
+      const job = status.media_sync;
+      if (job.current) {
+        $('media-sync-progress').textContent = T('sync.progress', {
+          name: job.current, percent: Math.round(job.fraction * 100),
+        });
+      }
+      if (job.error) throw new Error(job.error);
+      if (job.ready) {
+        mediaImport.result = job.result;
+        renderMediaSync();
+        break;
+      }
+    }
+  } catch (err) {
+    $('media-sync-progress').textContent = T('sync.estimateFailed', { error: err.message });
+  } finally {
+    $('media-sync-reference').disabled = false;
+    setBusy(button, false);
+  }
+}
+
+async function importSyncedMedia() {
+  if (!mediaImport) return;
+  const button = $('media-sync-import');
+  setBusy(button, true, T('sync.importing'));
+  const shifts = {};
+  let invalid = false;
+  $('media-sync-sources').querySelectorAll('input[data-media-path]').forEach((input) => {
+    const value = Number(input.value);
+    if (!Number.isFinite(value)) invalid = true;
+    else shifts[input.dataset.mediaPath] = value;
+  });
+  if (invalid) {
+    $('media-sync-progress').textContent = T('sync.importFailed', { error: 'Offsets must be numbers.' });
+    setBusy(button, false);
+    return;
+  }
+  try {
+    const response = await fetch('/api/media/import', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths: mediaImport.paths, shifts }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Import failed.');
+    $('media-sync').classList.add('hidden');
+    mediaImport = null;
+    await openXml(data.path);
+  } catch (err) {
+    $('media-sync-progress').textContent = T('sync.importFailed', { error: err.message });
+  } finally {
+    setBusy(button, false);
+  }
+}
+
 async function relinkFiles(searchDir) {
   const button = $('relink');
   if (!searchDir && typeof window !== 'undefined' && window.pywebview && window.pywebview.api) {
@@ -3377,6 +3526,17 @@ async function boot() {
 }
 
 $('open').addEventListener('click', () => openXml());
+$('open-media').addEventListener('click', () => openMedia());
+$('media-sync-close').addEventListener('click', () => $('media-sync').classList.add('hidden'));
+$('media-sync-reference').addEventListener('change', (event) => {
+  if (mediaImport) {
+    mediaImport.reference = event.target.value;
+    mediaImport.result = null;
+    renderMediaSync();
+  }
+});
+$('media-sync-estimate').addEventListener('click', estimateMediaSync);
+$('media-sync-import').addEventListener('click', importSyncedMedia);
 $('export').addEventListener('click', exportXml);
 $('render').addEventListener('click', renderVideo);
 $('render-stop').addEventListener('click', () => stopJob('/api/render/stop', $('render-stop')));
