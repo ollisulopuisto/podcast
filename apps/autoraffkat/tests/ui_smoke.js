@@ -579,6 +579,16 @@ async function asyncPaths() {
     finally { context.setTimeout = originalTimeout; }
   });
   await step('importSyncedMedia', () => context.importSyncedMedia());
+  run('program range fields and marks', () => {
+    vm.runInContext(`latest = { program: { start: 100, end: 120, duration: 20,
+      range_start: 100, range_end: 120, range_marked: false }, preview: {} };
+      programRange = [null, null];`, context);
+    registry.get('range-in').value = '2.00';
+    registry.get('range-out').value = '17.00';
+    context.readProgramRangeFields();
+    context.setProgramMark('in', 104);
+    context.renderProgramRange();
+  });
   await step('runMix', () => context.runMix());
   await step('resetSection(globals)', () => context.resetSection('globals'));
   await step('resetSection(audio)', () => context.resetSection('audio'));

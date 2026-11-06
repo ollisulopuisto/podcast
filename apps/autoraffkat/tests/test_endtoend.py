@@ -2036,3 +2036,42 @@ def test_the_multicam_export_follows_the_shots_the_preview_chose(scratch_xml, na
         shown.append(keys.pop())
     print(name, "kuvat:", sorted(set(shown)))
     assert _collapsed(shown) == chosen
+
+
+@needs_ffmpeg
+def test_program_in_out_range_reaches_xml_and_video_render(scratch_xml):
+    """Rajaus toimii samalla kehysvälillä sekä XML-viennissä että renderissä."""
+    from autoraffkat.program_range import resolve_range
+
+    state = AppState(xml_path=str(scratch_xml("sync.fcpxml")))
+    state.load()
+    while not state.progress.get("ready"):
+        time.sleep(0.05)
+    state.settings.tracks = _tracks()
+    full = state.compute()
+    full_start, full_end = full["_grid"][1:3]
+    frame = state.timeline.frame_duration
+    requested_start = full_start + 10 * frame
+    requested_end = full_end - 15 * frame
+    expected = resolve_range(
+        str(requested_start), str(requested_end), full_start, full_end, frame
+    )
+    jobs = []
+    state.run_render = jobs.append
+    client = TestClient(create_app(state))
+    payload = {
+        "tracks": {key: config.to_json() for key, config in _tracks().items()},
+        "globals": state.settings.globals.to_json(),
+        "program_range": {"start": float(requested_start), "end": float(requested_end)},
+        "render": True,
+    }
+
+    exported = client.post("/api/export", json=payload).json()
+
+    assert exported["ok"], exported
+    assert jobs
+    assert jobs[0]["program_start"] == float(expected[0])
+    assert jobs[0]["frames"] == int((expected[1] - expected[0]) / frame)
+    root = ET.parse(exported["path"]).getroot()
+    sequence = root.find(".//sequence")
+    assert sequence.get("duration") == f"{expected[1] - expected[0]}s"
