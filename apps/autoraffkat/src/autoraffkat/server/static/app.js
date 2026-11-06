@@ -139,6 +139,8 @@ const VERTICAL_LAYOUTS = () => [
 
 let state = null;               // /api/state
 let mediaImport = null;          // valitut kamerat, mikrofonit ja synkka-arviot
+let programRange = [null, null]; // absoluuttiset ohjelman alku- ja loppuajat
+let rangeMode = 'in';
 let latest = null;              // viimeisin laskettu tulos
 let lastSeats = '{}';           // viimeksi piirretyt istujat
 let pending = null;             // ajastin
@@ -2168,6 +2170,65 @@ let barCache = null;
 
 const MIN_WINDOW = 4.0;     // lyhin katseltava jakso, s
 
+function renderProgramRange() {
+  const inField = $('range-in'), outField = $('range-out');
+  const full = latest && latest.program;
+  if (!full) return;
+  const active = document.activeElement;
+  if (active !== inField) {
+    inField.value = programRange[0] == null ? '' : Math.max(0, programRange[0] - full.start).toFixed(2);
+  }
+  if (active !== outField) {
+    outField.value = programRange[1] == null ? '' : Math.max(0, programRange[1] - full.start).toFixed(2);
+  }
+  $('mark-in').classList.toggle('active', rangeMode === 'in');
+  $('mark-out').classList.toggle('active', rangeMode === 'out');
+  const overlay = $('range-overlay');
+  if (programRange[0] == null && programRange[1] == null) {
+    overlay.classList.add('hidden');
+    return;
+  }
+  overlay.classList.remove('hidden');
+  const viewStart = latest.preview && latest.preview.view_start != null
+    ? latest.preview.view_start : (previewWindow ? previewWindow[0] : full.start);
+  const viewEnd = latest.preview && latest.preview.view_end != null
+    ? latest.preview.view_end : (previewWindow ? previewWindow[1] : full.end);
+  const span = Math.max(0.001, viewEnd - viewStart);
+  const left = Math.max(0, Math.min(100, ((programRange[0] ?? full.start) - viewStart) / span * 100));
+  const right = Math.max(left, Math.min(100, ((programRange[1] ?? (full.start + full.duration)) - viewStart) / span * 100));
+  $('range-shade').style.left = `${left}%`;
+  $('range-shade').style.width = `${right - left}%`;
+  $('range-in-handle').style.left = `${left}%`;
+  $('range-out-handle').style.left = `${right}%`;
+}
+
+function setProgramMark(which, at) {
+  const full = latest && latest.program;
+  if (!full) return;
+  if (which === 'in') {
+    programRange[0] = Math.max(full.start, Math.min(at, full.start + full.duration));
+    if (programRange[1] != null && programRange[0] >= programRange[1]) programRange[1] = null;
+  } else {
+    programRange[1] = Math.max(full.start, Math.min(at, full.start + full.duration));
+    if (programRange[0] != null && programRange[1] <= programRange[0]) programRange[0] = null;
+  }
+  renderProgramRange();
+  schedule(0);
+}
+
+function readProgramRangeFields() {
+  const full = latest && latest.program;
+  if (!full) return;
+  const inValue = $('range-in').value.trim();
+  const outValue = $('range-out').value.trim();
+  programRange = [
+    inValue === '' ? null : full.start + Number(inValue),
+    outValue === '' ? null : full.start + Number(outValue),
+  ];
+  renderProgramRange();
+  schedule(0);
+}
+
 function setPreviewWindow(next) {
   const full = latest && latest.program;
   if (!full) return;
@@ -2393,6 +2454,7 @@ function renderRuler() {
       ? T('preview.zoomed', { span: fmtTime(span) }) : '';
     badge.className = previewWindow ? 'zoomed' : 'zoomed hidden';
   }
+  renderProgramRange();
 }
 
 function renderLegend() {
@@ -2523,7 +2585,8 @@ function payload() {
   const tracks = {};
   state.tracks.forEach((m) => { tracks[m.key] = m.config; });
   return { tracks, globals: state.globals, audio: state.audio,
-           preview_window: previewWindow };
+           preview_window: previewWindow,
+           program_range: { start: programRange[0], end: programRange[1] } };
 }
 
 /* Session-only tree, one snapshot per accepted settings change. No pruning.
@@ -2632,6 +2695,11 @@ async function sendSettings(body, revision, projectPath) {
     const data = await response.json();
     if (revision !== settingsRevision || state.xml_path !== projectPath) return;
     latest = data;
+    if (data.program && data.program.range_marked) {
+      programRange = [data.program.range_start, data.program.range_end];
+    } else {
+      programRange = [null, null];
+    }
     noteSpeech(data.speech);
     /* Istujat muuttuvat mittauksen valmistuttua tai kun järjestystä
        korjataan; kortit piirretään uudestaan vain silloin, ettei kesken
@@ -2657,7 +2725,7 @@ async function sendSettings(body, revision, projectPath) {
     }
     if (data.ok) {
       banner('');
-      drawBar(); renderRuler(); renderLegend(); renderCuts();
+      drawBar(); renderRuler(); renderLegend(); renderCuts(); renderProgramRange();
       refreshReactionCount();
     } else {
       banner((data.problems || [T('app.unknownError')]).join('\n'));
@@ -2963,6 +3031,9 @@ function renderStatic() {
     el.textContent = T(el.dataset.t);
   });
   $('document-controls').setAttribute('aria-label', T('toolbar.documents'));
+  $('mark-in').textContent = T('range.markIn');
+  $('mark-out').textContent = T('range.markOut');
+  $('range-clear').textContent = T('range.clear');
   $('history-controls').setAttribute('aria-label', T('toolbar.history'));
   $('output-controls').setAttribute('aria-label', T('toolbar.output'));
   $('reload').textContent = T('app.reload');
@@ -3294,6 +3365,8 @@ async function openXml(path) {
       return;
     }
     state = data;
+    programRange = [data.program_range && data.program_range.start,
+                    data.program_range && data.program_range.end];
   } catch (err) {
     setBusy(button, false);
     banner(T('app.readFailed', { error: err.message }), true);
@@ -3513,6 +3586,8 @@ async function relinkFiles(searchDir) {
 
 async function boot() {
   state = await (await fetch('/api/state')).json();
+  programRange = [state.program_range && state.program_range.start,
+                  state.program_range && state.program_range.end];
   setLang(state.language || 'fi');
   renderStatic();
   renderLanguage();
@@ -3525,6 +3600,23 @@ async function boot() {
   if (state.progress && state.progress.ready) send();
 }
 
+$('mark-in').addEventListener('click', () => { rangeMode = 'in'; renderProgramRange(); });
+$('mark-out').addEventListener('click', () => { rangeMode = 'out'; renderProgramRange(); });
+$('range-in').addEventListener('change', readProgramRangeFields);
+$('range-out').addEventListener('change', readProgramRangeFields);
+$('range-clear').addEventListener('click', () => {
+  programRange = [null, null]; renderProgramRange(); schedule(0);
+});
+$('bar').addEventListener('click', (event) => {
+  if (!latest || !latest.program) return;
+  const rect = $('bar').getBoundingClientRect();
+  const viewStart = latest.preview && latest.preview.view_start != null
+    ? latest.preview.view_start : (previewWindow ? previewWindow[0] : latest.program.start);
+  const viewEnd = latest.preview && latest.preview.view_end != null
+    ? latest.preview.view_end : (previewWindow ? previewWindow[1] : latest.program.end);
+  const at = viewStart + (viewEnd - viewStart) * ((event.clientX - rect.left) / rect.width);
+  setProgramMark(rangeMode, at);
+});
 $('open').addEventListener('click', () => openXml());
 $('open-media').addEventListener('click', () => openMedia());
 $('media-sync-close').addEventListener('click', () => $('media-sync').classList.add('hidden'));
@@ -3554,6 +3646,8 @@ $('reload').addEventListener('click', async () => {
     clearTimeout(pending);
     await send();
     state = await (await fetch('/api/reload', { method: 'POST' })).json();
+    programRange = [state.program_range && state.program_range.start,
+                    state.program_range && state.program_range.end];
   } catch (err) {
     setBusy(button, false);
     banner(T('app.readFailed', { error: err.message }), true);

@@ -18,6 +18,7 @@ import time
 import traceback
 from dataclasses import dataclass, field
 from dataclasses import replace as dataclasses_replace
+from fractions import Fraction
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -31,6 +32,7 @@ from .. import (
     media_import,
     pick,
     probe,
+    program_range,
     project,
     reactions,
     reframe,
@@ -894,6 +896,16 @@ class AppState:
 
     # ---------------------------------------------------------- päätös
 
+    def resolve_program_range(self, lower: Fraction, upper: Fraction):
+        """Palauttaa projektin in/out-rajat kuvan kehykseen sovitettuina."""
+        return program_range.resolve_range(
+            self.settings.range_start,
+            self.settings.range_end,
+            lower,
+            upper,
+            self.timeline.frame_duration if self.timeline else Fraction(1, 25),
+        )
+
     def apply(self, payload: dict) -> None:
         """Ottaa käyttöliittymän arvot vastaan ja tallentaa ne."""
         # Esikatselun ikkuna ei ole asetus eikä mene tiedostoon: se on
@@ -905,6 +917,13 @@ class AppState:
                     (float(window[0]), float(window[1])) if window else None)
             except (TypeError, ValueError, IndexError):
                 self.preview_window = None
+        if "program_range" in payload:
+            marks = payload.get("program_range") or {}
+            try:
+                self.settings.range_start = program_range.encode_time(marks.get("start"))
+                self.settings.range_end = program_range.encode_time(marks.get("end"))
+            except (TypeError, ValueError, ZeroDivisionError):
+                pass
         tracks = payload.get("tracks") or {}
         speakers = []
 
@@ -1361,6 +1380,9 @@ class AppState:
                 "start": float(program_start),
                 "end": float(program_end),
                 "duration": float(program_end - program_start),
+                "range_start": float(self.resolve_program_range(program_start, program_end)[0]),
+                "range_end": float(self.resolve_program_range(program_start, program_end)[1]),
+                "range_marked": bool(self.settings.range_start or self.settings.range_end),
             },
             "segments": [
                 {
@@ -1608,6 +1630,10 @@ def _state_json(state: AppState) -> dict:
         "globals": state.settings.globals.to_json(),
         "progress": state.progress,
         "media_sync": dict(state.media_sync),
+        "program_range": {
+            "start": float(Fraction(state.settings.range_start)) if state.settings.range_start else None,
+            "end": float(Fraction(state.settings.range_end)) if state.settings.range_end else None,
+        },
         "inherited_from": state.inherited_from,
         "language": state.language,
         "languages": list(LANGUAGES),
@@ -2030,6 +2056,7 @@ def create_app(state: AppState) -> FastAPI:
                     status_code=400,
                 )
             _grid, program_start, program_end, decision = result["_grid"]
+            program_start, program_end = state.resolve_program_range(program_start, program_end)
             assert state.timeline is not None
             roles = state._roles()
             mic_tracks: list[tuple[str, str]] = []

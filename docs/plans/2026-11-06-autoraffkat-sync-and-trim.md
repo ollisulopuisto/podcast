@@ -26,13 +26,13 @@ Added `audio/sync.py` with bounded FFT cross-correlation, source-shift sign sema
 
 Added multi-file camera/microphone selection, source inspection, background envelope decoding with progress, and an estimate against a selected camera reference. Other audible camera tracks and standalone microphones receive proposed shifts. Estimates remain editable; when there is no clear estimate the editor can enter a manual shift. Accepting the review writes a new source FCPXML beside the media and opens it in the existing editor. Camera scratch audio is disabled in the edit while remaining the sync reference. Synthetic and API/UI smoke tests cover shift direction, progress, camera-to-camera and camera-to-mic offsets, import, and status. The correlation score still needs validation on representative real recordings before it can be treated as an accuracy guarantee.
 
-### 3. Programme in/out controls
+### 3. Programme in/out controls — implementation complete
 
-Add persistent range state and draggable in/out handles to the timeline. Show the selected region clearly, allow keyboard-numeric edits, validate non-empty ranges, and include undo/redo and reload behavior.
+Added timeline click marking with explicit in/out mode buttons, visible selection overlay, numeric seconds fields, clear action, undo/redo snapshots, and project-settings persistence. The selected range is clamped and quantized to the nearest sequence frame; an empty or reversed range safely falls back to the full programme.
 
-### 4. Range-aware output
+### 4. Range-aware output — implementation complete, real-project review pending
 
-Apply the exact same frame-quantized range to the FCPXML writer and on-demand video renderer. Add boundary tests for clips crossing either edge, attached audio, multicam parts, and ranges at sequence ends. Update English/Finnish UI strings and workflow documentation.
+The same quantized bounds now reach both FCPXML writers and the on-demand renderer. An end-to-end test checks the FCPXML sequence duration and render start/frame count. The preview remains the full programme and shades the selected output region. Boundary behavior for real multi-part projects still needs owner review.
 
 ## Task 1: Correlation primitive
 
@@ -57,3 +57,5 @@ Apply the exact same frame-quantized range to the FCPXML writer and on-demand vi
 **Task 1 check-in (2026-11-06):** `ruff check .` passed. Focused sync tests passed (5). The full Autoraffkat suite passed (665 passed, 18 skipped) when run with access to its normal macOS cache directory; the sandboxed run could not write that cache and aborted in an unrelated native audio test.
 
 **Task 2 check-in (2026-11-06):** media import, API, and UI smoke tests pass. Source clips are aligned to the selected camera reference, and the editor must accept the editable offsets before a source project is written. No real episode recording has been measured yet.
+
+**Tasks 3–4 check-in (2026-11-06):** frame-quantized in/out marks persist in project settings and constrain both XML export and render. A fixture-driven end-to-end test passes; the owner should review a real multicamera project before relying on sync estimates in a production export.

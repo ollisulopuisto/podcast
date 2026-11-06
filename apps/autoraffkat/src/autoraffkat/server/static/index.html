@@ -103,11 +103,26 @@
 
 <section class="panel preview">
   <div class="preview-head">
-    <h2 data-t="app.preview">Esikatselu</h2>
+    <h2 id="preview-title" data-t="app.preview">Esikatselu</h2>
     <span id="zoom-note" class="zoomed hidden"></span>
     <span id="counts" class="muted"></span>
   </div>
-  <canvas id="bar" height="120"></canvas>
+  <div class="range-controls" role="group" aria-labelledby="preview-title">
+    <button id="mark-in" type="button" class="ghost" data-t="range.markIn">Merkitse alku</button>
+    <button id="mark-out" type="button" class="ghost" data-t="range.markOut">Merkitse loppu</button>
+    <label class="range-number"><span data-t="range.in">Alku (s)</span><input id="range-in" type="number" step="0.04"></label>
+    <label class="range-number"><span data-t="range.out">Loppu (s)</span><input id="range-out" type="number" step="0.04"></label>
+    <button id="range-clear" type="button" class="ghost" data-t="range.clear">Tyhjennä rajaus</button>
+    <span class="muted small" data-t="range.instruction">Valitse alku tai loppu ja napsauta aikajanaa.</span>
+  </div>
+  <div class="timeline-wrap">
+    <canvas id="bar" height="120"></canvas>
+    <div id="range-overlay" class="range-overlay hidden" aria-hidden="true">
+      <div id="range-shade" class="range-shade"></div>
+      <i id="range-in-handle" class="range-handle"></i>
+      <i id="range-out-handle" class="range-handle"></i>
+    </div>
+  </div>
   <div id="ruler" class="ruler"></div>
   <div id="legend" class="legend"></div>
 </section>

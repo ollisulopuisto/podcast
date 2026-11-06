@@ -772,3 +772,14 @@ dialog.sheet::backdrop { background: rgba(8, 9, 11, .62); }
 .sync-source small { display: block; color: var(--muted); }
 .sync-actions { justify-content: flex-end; }
 @media (max-width: 720px) { .sync-source { grid-template-columns: 1fr; gap: 6px; } }
+
+.range-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
+.range-number { display: grid; gap: 3px; color: var(--muted); font-size: 12px; }
+.range-number input { width: 104px; }
+.range-controls button.active { border-color: var(--accent); color: var(--text); }
+.timeline-wrap { position: relative; }
+.range-overlay { position: absolute; inset: 0; pointer-events: none; }
+.range-shade { position: absolute; top: 0; bottom: 0; background: #ffffff12; border-left: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+.range-handle { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); }
+.range-handle::before { content: ''; position: absolute; top: 0; left: -5px; width: 12px; height: 12px; border-radius: 3px; background: var(--accent); }
+#bar { cursor: crosshair; }
