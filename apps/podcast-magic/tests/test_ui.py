@@ -187,3 +187,16 @@ def test_job_progress_and_log_toggle_have_accessibility_semantics():
     assert 'aria-expanded="false"' in html
     assert "fill.setAttribute('aria-valuenow'" in app
     assert "jobLogToggle.setAttribute('aria-expanded'" in app
+
+
+def test_language_controls_have_group_and_pressed_accessibility_semantics():
+    """Kielivalitsimella on role="group", nimilappu ja valintatila ruudunlukijalle."""
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    i18n = (STATIC / "i18n.js").read_text(encoding="utf-8")
+    assert '<span id="language" class="langs" role="group" data-t-aria-label="app.languages"></span>' in html
+    assert "'app.languages': 'Kieli'" in i18n
+    assert "'app.languages': 'Language'" in i18n
+    assert "'lang.fi': 'Suomi'" in i18n
+    assert "'lang.en': 'English'" in i18n
+    assert "aria-label" in app and "aria-pressed" in app
