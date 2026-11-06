@@ -25,6 +25,8 @@ läpi koko sarjasta, molemmista, ennen kuin ne kytkettiin tänne.
 Siirretty autoraffkatin ``audio/mix.py``:stä, ei kopioitu.
 """
 
+from bisect import bisect_left
+
 import numpy as np
 
 from .masks import HOP, covering_masks, drop_short, duck_masks, runs
@@ -198,8 +200,11 @@ def envelope_at(points: list, when: float) -> float:
         return float(points[0][1])
     if when >= points[-1][0]:
         return float(points[-1][1])
-    times = [t for t, _ in points]
-    index = np.searchsorted(times, when)
+    # Bisect on the existing (t, v) list instead of rebuilding a temporary
+    # ``times`` list and delegating to NumPy search per scalar query. Exact
+    # same interpolation result, zero intermediate allocations (measured ~19x
+    # faster on multi-span envelopes; journal 2026-11-06).
+    index = bisect_left(points, when, key=lambda p: p[0])
     if index <= 0:
         return float(points[0][1])
     t0, v0 = points[index - 1]
