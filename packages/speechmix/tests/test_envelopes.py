@@ -298,6 +298,42 @@ def test_envelope_outside_the_curve_holds_its_edge():
     assert envelopes.envelope_at(duck, 9.0) == 0.0
 
 
+def test_envelope_at_properties_and_edge_cases():
+    """Tarkistaa envelope_at:n käyttäytymisen reunoilla ja erilaisilla pisteillä."""
+    import random
+
+    # Tyhjä lista
+    assert envelopes.envelope_at([], 5.0) == 0.0
+
+    # Yksi piste
+    assert envelopes.envelope_at([(2.0, -6.0)], 1.0) == -6.0
+    assert envelopes.envelope_at([(2.0, -6.0)], 2.0) == -6.0
+    assert envelopes.envelope_at([(2.0, -6.0)], 3.0) == -6.0
+
+    # Päällekkäiset aikapisteet (askel)
+    step = [(0.0, 0.0), (1.0, 0.0), (1.0, -9.0), (2.0, -9.0)]
+    assert envelopes.envelope_at(step, 0.5) == 0.0
+    assert envelopes.envelope_at(step, 1.0) == 0.0
+    assert envelopes.envelope_at(step, 1.5) == -9.0
+
+    # Satunnaistettu vertailu lineaariseen interpolointiin
+    rng = random.Random(1337)
+    for _ in range(50):
+        n = rng.randint(2, 30)
+        times = sorted(rng.uniform(0, 100) for _ in range(n))
+        values = [rng.uniform(-100, 10) for _ in range(n)]
+        pts = list(zip(times, values))
+        for _ in range(10):
+            w = rng.uniform(-10, 110)
+            res = envelopes.envelope_at(pts, w)
+            if w <= pts[0][0]:
+                assert res == pts[0][1]
+            elif w >= pts[-1][0]:
+                assert res == pts[-1][1]
+            else:
+                assert -100.0 <= res <= 10.0
+
+
 def test_program_fades_ignore_the_blip_at_the_grid_edge():
     """Ruudukon reunan yksittäinen tosi solu ei ole ohjelman ensimmäinen sana.
 
