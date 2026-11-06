@@ -381,11 +381,16 @@ const PM = {
 
   renderLanguages() {
     const box = document.getElementById('language');
-    box.replaceChildren(...['fi', 'en'].map((lang) => this.el('button', {
-      class: lang === I18N.lang ? 'on' : '',
-      text: lang.toUpperCase(),
-      onclick: () => { I18N.set(lang); this.redraw(); },
-    })));
+    box.replaceChildren(...['fi', 'en'].map((lang) => {
+      const isOn = lang === I18N.lang;
+      return this.el('button', {
+        class: isOn ? 'on' : '',
+        text: lang.toUpperCase(),
+        'aria-label': this.t(`lang.${lang}`),
+        'aria-pressed': isOn ? 'true' : 'false',
+        onclick: () => { I18N.set(lang); this.redraw(); },
+      });
+    }));
   },
 
   paintShortcutControls() {
