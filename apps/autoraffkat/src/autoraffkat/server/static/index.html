@@ -24,6 +24,7 @@
   </div>
   <div class="toolbar">
     <div id="document-controls" class="toolbar-group" role="group">
+      <button id="open-media" class="ghost">Tuo media…</button>
       <button id="open" class="ghost">Avaa XML…</button>
       <button id="reload" class="ghost">Lue uudestaan</button>
       <button id="relink" class="ghost hidden">Etsi tiedostot…</button>
@@ -47,6 +48,22 @@
 <div id="status" class="status-line muted" role="status" aria-live="polite"></div>
 <div id="banner" class="banner hidden" role="alert"></div>
 <div id="exported" class="exported hidden"></div>
+<section id="media-sync" class="panel sync-panel hidden" aria-labelledby="media-sync-title">
+  <div class="sync-head">
+    <div>
+      <h2 id="media-sync-title" data-t="sync.title">Tuo kamera- ja mikrofonitiedostot</h2>
+      <p class="muted" data-t="sync.help">Valitse kameran ääni vertailuksi. Tarkista arvioidut siirrot ennen aikajanan luontia.</p>
+    </div>
+    <button id="media-sync-close" type="button" class="ghost" data-t="sync.close">Sulje</button>
+  </div>
+  <label class="field"><span data-t="sync.reference">Synkan vertailukamera</span><select id="media-sync-reference"></select></label>
+  <div id="media-sync-sources" class="sync-sources"></div>
+  <p id="media-sync-progress" class="muted" role="status" aria-live="polite"></p>
+  <div class="sync-actions">
+    <button id="media-sync-estimate" type="button" class="ghost" data-t="sync.estimate">Arvioi synkka</button>
+    <button id="media-sync-import" type="button" class="primary" data-t="sync.import">Käytä siirtoja ja jatka</button>
+  </div>
+</section>
 
 <main>
   <section class="panel tracks">

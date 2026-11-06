@@ -18,13 +18,13 @@
 
 ## Milestones
 
-### 1. Audio offset measurement core — started
+### 1. Audio offset measurement core — complete
 
-Added `audio/sync.py` with bounded FFT cross-correlation, source-shift sign semantics, a normalized correlation score, and a no-result outcome for flat/insufficient data. Five synthetic tests cover both shift directions, bounded search, silence, and invalid dimensions. The primitive has not yet been connected to FFmpeg or the UI, and its score is not yet a calibrated accept/reject confidence threshold.
+Added `audio/sync.py` with bounded FFT cross-correlation, source-shift sign semantics, a normalized correlation score, and a no-result outcome for flat/insufficient data. Five synthetic tests cover both shift directions, bounded search, silence, and invalid dimensions. The score is a review aid, not a calibrated accept/reject threshold.
 
-### 2. Media import and sync review
+### 2. Media import and sync review — implementation complete, real-media validation pending
 
-Add a media-selection flow for camera and microphone files, read embedded camera audio and external audio through FFmpeg, estimate microphone offsets against the camera reference, and show the measured shift and confidence per track. Let the user accept or adjust the result. Build the initial timeline from those placements and continue through the existing speaker/shot workflow.
+Added multi-file camera/microphone selection, source inspection, background envelope decoding with progress, and an estimate against a selected camera reference. Other audible camera tracks and standalone microphones receive proposed shifts. Estimates remain editable; when there is no clear estimate the editor can enter a manual shift. Accepting the review writes a new source FCPXML beside the media and opens it in the existing editor. Camera scratch audio is disabled in the edit while remaining the sync reference. Synthetic and API/UI smoke tests cover shift direction, progress, camera-to-camera and camera-to-mic offsets, import, and status. The correlation score still needs validation on representative real recordings before it can be treated as an accuracy guarantee.
 
 ### 3. Programme in/out controls
 
@@ -55,3 +55,5 @@ Apply the exact same frame-quantized range to the FCPXML writer and on-demand vi
 - Run `uv run ruff check .` and `uv run --directory apps/autoraffkat pytest -q` per `CONTRIBUTING.md`; when `uv run` stalls, use the repository virtualenv's Python as documented by the task owner.
 
 **Task 1 check-in (2026-11-06):** `ruff check .` passed. Focused sync tests passed (5). The full Autoraffkat suite passed (665 passed, 18 skipped) when run with access to its normal macOS cache directory; the sandboxed run could not write that cache and aborted in an unrelated native audio test.
+
+**Task 2 check-in (2026-11-06):** media import, API, and UI smoke tests pass. Source clips are aligned to the selected camera reference, and the editor must accept the editable offsets before a source project is written. No real episode recording has been measured yet.

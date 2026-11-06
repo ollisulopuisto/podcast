@@ -760,3 +760,15 @@ dialog.sheet::backdrop { background: rgba(8, 9, 11, .62); }
   .toolbar-group { gap: 6px; }
   #history-branches { max-width: 100%; }
 }
+
+.sync-panel { margin: 0 0 14px; }
+.sync-head, .sync-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sync-head h2 { margin-top: 0; }
+.sync-head p { margin: 4px 0 12px; }
+.sync-panel > .field { max-width: 520px; }
+.sync-sources { display: grid; gap: 8px; margin: 12px 0; }
+.sync-source { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, .75fr) minmax(180px, 1fr); gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 7px; }
+.sync-source input { width: 100%; }
+.sync-source small { display: block; color: var(--muted); }
+.sync-actions { justify-content: flex-end; }
+@media (max-width: 720px) { .sync-source { grid-template-columns: 1fr; gap: 6px; } }
