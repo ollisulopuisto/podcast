@@ -261,6 +261,50 @@ def test_duck_gain_without_a_curve_is_unity(mic):
     assert envelopes.duck_gain(mic, [], 0, 8 * RATE, RATE).tolist() == [1.0]
 
 
+def test_duck_gain_piecewise_segments_and_boundaries(mic):
+    """Moniosainen käyrä: reunat, tasanteet, luiska ja useampi pala aikajanalla.
+
+    Tarkistaa että duck_gain säilyttää tarkan arvon reunojen ulkopuolella,
+    tasanteilla ja luiskan sisällä kahden erillisen aikajanan paikan yli
+    (AWKWARD: base -2 ja +1).
+    """
+    points = [
+        (4.0, -96.0),
+        (5.0, 0.0),
+        (6.0, -9.0),
+        (7.0, -9.0),
+        (8.0, 0.0),
+        (22.0, -6.0),
+        (24.0, -6.0),
+        (25.0, -96.0),
+    ]
+    # span 1: programme 5-9s, file 3-7s (base -2)
+    # span 2: programme 20-26s, file 21-27s (base +1)
+    gain = envelopes.duck_gain(mic, points, 0, 30 * RATE, RATE)
+
+    # span 1 tiedostoajassa:
+    # file 3.0s -> programme 5.0s: arvo 0.0 dB -> 1.0
+    assert gain[int(3.0 * RATE)] == pytest.approx(1.0, rel=1e-5)
+    # file 4.0s -> programme 6.0s: arvo -9.0 dB -> 10^(-9/20)
+    assert gain[int(4.0 * RATE)] == pytest.approx(10.0 ** (-9.0 / 20.0), rel=1e-5)
+    # file 4.5s -> programme 6.5s: tasanteella -9.0 dB
+    assert gain[int(4.5 * RATE)] == pytest.approx(10.0 ** (-9.0 / 20.0), rel=1e-5)
+    # file 5.5s -> programme 7.5s: puoliväli nousua -9 -> 0 eli -4.5 dB
+    assert gain[int(5.5 * RATE)] == pytest.approx(10.0 ** (-4.5 / 20.0), rel=1e-4)
+    # file 6.0s -> programme 8.0s: nousu päättynyt 0.0 dB
+    assert gain[int(6.0 * RATE)] == pytest.approx(1.0, rel=1e-5)
+
+    # span 2 tiedostoajassa (base +1, file t -> programme t - 1):
+    # file 23.0s -> programme 22.0s: -6.0 dB
+    assert gain[int(23.0 * RATE)] == pytest.approx(10.0 ** (-6.0 / 20.0), rel=1e-5)
+    # file 24.5s -> programme 23.5s: tasanteella -6.0 dB
+    assert gain[int(24.5 * RATE)] == pytest.approx(10.0 ** (-6.0 / 20.0), rel=1e-5)
+    # file 26.0s -> programme 25.0s: -96.0 dB
+    assert gain[int(26.0 * RATE)] == pytest.approx(10.0 ** (-96.0 / 20.0), rel=1e-5)
+    # file 26.5s -> programme 25.5s: reunan jälkeen pitää reuna-arvon -96 dB
+    assert gain[int(26.5 * RATE)] == pytest.approx(10.0 ** (-96.0 / 20.0), rel=1e-5)
+
+
 def test_geometry_is_the_spans_and_the_frame_count(mic):
     """Summa lasketaan näyte näytteeltä, joten sijainnin pitää täsmätä."""
     assert envelopes.geometry(mic, 12345) == (
