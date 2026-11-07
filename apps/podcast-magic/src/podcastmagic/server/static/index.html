@@ -24,13 +24,13 @@
       <input id="session" type="text" spellcheck="false" autocomplete="off"
              aria-labelledby="session-title" placeholder="…/jakso.nhsx">
       <p id="session-note" class="muted small"></p>
-      <button id="browse" class="ghost" data-t="app.change">Vaihda…</button>
+      <button id="browse" class="ghost" data-t="app.change" aria-haspopup="dialog" aria-expanded="false" aria-controls="browser">Vaihda…</button>
     </section>
 
     <h2 id="tools-title" data-t="app.tools">Työkalut</h2>
     <nav id="tabs" class="tabs" role="tablist" aria-labelledby="tools-title"></nav>
 
-    <div id="browser" class="browser hidden"></div>
+    <div id="browser" class="browser hidden" role="dialog" aria-modal="false" data-t-aria-label="app.browser"></div>
 
     <div class="rail-foot">
       <span id="language" class="langs" role="group" data-t-aria-label="app.languages"></span>
