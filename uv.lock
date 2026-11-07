@@ -30,7 +30,6 @@ members = [
     "speechmix",
     "wordalign",
 ]
-overrides = [{ name = "jupyter-kernel-client", url = "https://files.pythonhosted.org/packages/7a/68/287315ba355aa93bda2e344de5febc45e6de1b47d8f4a5b69400b24cfdfd/jupyter_kernel_client-0.9.0-py3-none-any.whl" }]
 
 [manifest.dependency-groups]
 dev = [
@@ -604,7 +603,6 @@ version = "2026.10.27.1"
 source = { editable = "colab-transcribe" }
 dependencies = [
     { name = "google-colab-cli" },
-    { name = "jupyter-kernel-client" },
     { name = "lxml" },
     { name = "silencelearn" },
     { name = "soundfile" },
@@ -622,8 +620,7 @@ parakeet = [
 
 [package.metadata]
 requires-dist = [
-    { name = "google-colab-cli", git = "https://github.com/googlecolab/google-colab-cli?rev=930275e62970df10055f411c8e28ca61755dcfc7" },
-    { name = "jupyter-kernel-client", url = "https://files.pythonhosted.org/packages/7a/68/287315ba355aa93bda2e344de5febc45e6de1b47d8f4a5b69400b24cfdfd/jupyter_kernel_client-0.9.0-py3-none-any.whl" },
+    { name = "google-colab-cli", specifier = "==0.7.5" },
     { name = "lxml", specifier = ">=6.1.3" },
     { name = "orukeet", marker = "extra == 'orukeet'", url = "https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl" },
     { name = "parakeet-mlx", marker = "extra == 'parakeet'", specifier = ">=0.3.0" },
@@ -1190,8 +1187,8 @@ wheels = [
 
 [[package]]
 name = "google-colab-cli"
-version = "0.7.5.dev3+g930275e62"
-source = { git = "https://github.com/googlecolab/google-colab-cli?rev=930275e62970df10055f411c8e28ca61755dcfc7#930275e62970df10055f411c8e28ca61755dcfc7" }
+version = "0.7.5"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "filelock" },
@@ -1209,6 +1206,10 @@ dependencies = [
     { name = "typer" },
     { name = "typing-extensions" },
     { name = "websocket-client" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/72/89/3800ff8e76042ec2c0111b64f3800c7bbef827ffb6118614c8a24557b8bc/google_colab_cli-0.7.5.tar.gz", hash = "sha256:dce3ee61d957b1a955133a071f626270796d4f828299c513183b2ad374edb275", size = 1196217, upload-time = "2026-10-20T18:58:15.015Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a9/3e/c3024eaae819a089f73ae01dcfa8581a81f13f3b1423409b763e92cc4d84/google_colab_cli-0.7.5-py3-none-any.whl", hash = "sha256:2b303ed21ebd6da829f80d506224a6cd4f0e62d506fb373166d06a0532e516a9", size = 83521, upload-time = "2026-10-20T18:58:13.32Z" },
 ]
 
 [[package]]
@@ -1544,7 +1545,7 @@ wheels = [
 [[package]]
 name = "jupyter-kernel-client"
 version = "0.9.0"
-source = { url = "https://files.pythonhosted.org/packages/7a/68/287315ba355aa93bda2e344de5febc45e6de1b47d8f4a5b69400b24cfdfd/jupyter_kernel_client-0.9.0-py3-none-any.whl" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jupyter-client" },
     { name = "jupyter-core" },
@@ -1555,34 +1556,8 @@ dependencies = [
     { name = "websocket-client" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7a/68/287315ba355aa93bda2e344de5febc45e6de1b47d8f4a5b69400b24cfdfd/jupyter_kernel_client-0.9.0-py3-none-any.whl", hash = "sha256:77acb8f2f738d97625d6bd01ee8cf21c4d59790b7ba464108712db3870416f20" },
+    { url = "https://files.pythonhosted.org/packages/7a/68/287315ba355aa93bda2e344de5febc45e6de1b47d8f4a5b69400b24cfdfd/jupyter_kernel_client-0.9.0-py3-none-any.whl", hash = "sha256:77acb8f2f738d97625d6bd01ee8cf21c4d59790b7ba464108712db3870416f20", size = 40097, upload-time = "2026-02-11T06:42:05.133Z" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "ipykernel", marker = "extra == 'test'" },
-    { name = "jupyter-client", specifier = ">=8.6.3" },
-    { name = "jupyter-console", marker = "extra == 'konsole'" },
-    { name = "jupyter-core" },
-    { name = "jupyter-mimetypes" },
-    { name = "jupyter-server", marker = "extra == 'test'", specifier = ">=2.10,<3" },
-    { name = "mdformat", marker = "extra == 'lint'", specifier = ">0.7" },
-    { name = "mdformat-gfm", marker = "extra == 'lint'", specifier = ">=0.3.5" },
-    { name = "mypy", marker = "extra == 'typing'", specifier = ">=0.990" },
-    { name = "numpy", marker = "extra == 'test'" },
-    { name = "pandas", marker = "extra == 'test'" },
-    { name = "pre-commit", marker = "extra == 'lint'" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=7.0" },
-    { name = "pytest-asyncio", marker = "extra == 'test'" },
-    { name = "pytest-cov", marker = "extra == 'test'" },
-    { name = "pytest-timeout", marker = "extra == 'test'" },
-    { name = "requests" },
-    { name = "ruff", marker = "extra == 'lint'" },
-    { name = "traitlets", specifier = ">=5.3" },
-    { name = "typing-extensions" },
-    { name = "websocket-client" },
-]
-provides-extras = ["konsole", "lint", "test", "typing"]
 
 [[package]]
 name = "jupyter-mimetypes"

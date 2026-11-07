@@ -15,16 +15,15 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_colab_pins_the_kernel_client_version_required_by_its_cli():
+def test_colab_uses_the_published_cli_and_its_pinned_kernel_client():
     project = tomllib.loads((ROOT / "colab-transcribe/pyproject.toml").read_text())
-    # The pinned Google CLI requires 0.9.0. The former Google fork is 0.8.0;
-    # uv's direct URL resolution accepted it but a fresh `uv pip check` failed.
-    dependency = next(d for d in project["project"]["dependencies"]
-                      if d.startswith("jupyter-kernel-client"))
-    assert "jupyter_kernel_client-0.9.0-py3-none-any.whl#sha256=" in dependency
-    assert dependency.startswith("jupyter-kernel-client @ https://files.pythonhosted.org/")
     workspace = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert dependency in workspace["tool"]["uv"].get("override-dependencies", [])
+    dependencies = project["project"]["dependencies"]
+    assert "google-colab-cli==0.7.5" in dependencies
+    assert not any(d.startswith("jupyter-kernel-client") for d in dependencies)
+    assert "jupyter-kernel-client" not in workspace["tool"]["uv"].get(
+        "override-dependencies", []
+    )
 
 
 def test_colab_declares_the_xml_parser_imported_at_cli_startup():
