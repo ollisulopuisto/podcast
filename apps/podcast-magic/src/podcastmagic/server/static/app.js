@@ -65,10 +65,21 @@ const PM = {
 
   // ---- istunto -----------------------------------------------------------
 
+  closeBrowser() {
+    const box = typeof document !== 'undefined' && document.getElementById?.('browser');
+    if (!box?.classList?.contains || box.classList.contains('hidden')) return;
+    box.classList.add('hidden');
+    const browse = document.getElementById?.('browse');
+    if (browse?.setAttribute) {
+      browse.setAttribute('aria-expanded', 'false');
+      browse.focus?.();
+    }
+  },
+
   setSession(path) {
     this.session = path || '';
     document.getElementById('session').value = this.session;
-    document.getElementById('browser').classList.add('hidden');
+    this.closeBrowser();
     this.noteSession();
     const module = this.modules.get(this.active);
     if (module && module.onSession) module.onSession(this.session);
@@ -125,7 +136,14 @@ const PM = {
       ]));
     }
     box.replaceChildren(
-      this.el('div', { class: 'here', text: listing.dir }),
+      this.el('div', { class: 'here' }, [
+        this.el('span', { class: 'path', text: listing.dir }),
+        this.el('button', {
+          class: 'ghost', type: 'button', text: this.t('app.close'),
+          'aria-label': `${this.t('app.close')} (${this.t('app.browser')})`,
+          onclick: () => this.closeBrowser(),
+        }),
+      ]),
       list,
     );
   },
@@ -141,7 +159,8 @@ const PM = {
       return;
     }
     const box = document.getElementById('browser');
-    if (!box.classList.contains('hidden')) { box.classList.add('hidden'); return; }
+    if (!box.classList.contains('hidden')) { this.closeBrowser(); return; }
+    document.getElementById('browse')?.setAttribute('aria-expanded', 'true');
     const here = this.session
       ? this.session.replace(/\/[^/]*$/, '')
       : (this.state && this.state.startDir) || '';
@@ -328,6 +347,14 @@ const PM = {
     if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) return;
     const dialog = typeof document !== 'undefined' && document.getElementById('shortcuts-dialog');
     if (dialog?.open) return; // Escape ja kohdistus jäävät selaimen dialogille.
+    if (event.key === 'Escape') {
+      const box = typeof document !== 'undefined' && document.getElementById?.('browser');
+      if (box?.classList?.contains && !box.classList.contains('hidden')) {
+        event.preventDefault();
+        this.closeBrowser();
+        return;
+      }
+    }
     const shortcut = this.shortcuts().find(item => item.matches(event));
     if (!shortcut) return;
     event.preventDefault();
@@ -437,6 +464,14 @@ const PM = {
     });
     document.getElementById('cancel').addEventListener('click', () => {
       this.api('/api/job/cancel', {}).catch(() => {});
+    });
+    document.addEventListener('click', (e) => {
+      const box = document.getElementById('browser');
+      const browse = document.getElementById('browse');
+      const contains = (p, c) => p && (p.contains ? p.contains(c) : p === c);
+      if (box && !box.classList.contains('hidden') && !contains(box, e.target) && !contains(browse, e.target)) {
+        this.closeBrowser();
+      }
     });
     /* Loki on kiinni kunnes sitä pyydetään. Se on ajon lokia eikä ajon
        tilaa: tila mahtuu yhdelle riville, ja auki oleva loki vie sen
