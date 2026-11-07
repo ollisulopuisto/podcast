@@ -1099,15 +1099,28 @@ def ride(audio: np.ndarray, rate: int,
     if not len(gain_db) or not np.any(gain_db):
         return audio
     gain = (10.0 ** (gain_db / 20.0)).astype(np.float32)
-    previous = gain[0]
-    for index, value in enumerate(gain):
-        low = index * block
-        high = min(low + block, audio.shape[1])
-        if high <= low:
-            break
-        audio[:, low:high] *= np.linspace(
-            previous, value, high - low, dtype=np.float32)
-        previous = value
+    count = gain_db.size                      # lohkoja = audio.shape[1] // block
+    # Lohkon i vahvistus liukuu edellisen lohkon arvosta tämän arvoon;
+    # ensimmäisen lohkon alussa ei ole edellistä, joten se alkaa omasta
+    # arvostaan (aina jatkuva, ei hyppyjä lohkon rajoilla).
+    starts = np.empty(count, dtype=np.float32)
+    starts[0] = gain[0]
+    starts[1:] = gain[:-1]
+    ends = gain
+    # Koko tiedoston kattava vahvistustaulukko vältetään tarkoituksella
+    # (tunnin mikillä se olisi satoja megatavuja): käydään lohkot läpi
+    # paloissa ja rakennetaan jokaiselle palalle lineaarinen ramppi
+    # kerrallaan vektorisesti, yhden np.linspace-kutsun sijaan lohkoa kohden.
+    chunk_blocks = 4096
+    j = np.arange(block, dtype=np.float32) / max(block - 1, 1)
+    for c0 in range(0, count, chunk_blocks):
+        c1 = min(c0 + chunk_blocks, count)
+        s = starts[c0:c1, None]
+        e = ends[c0:c1, None]
+        ramp = (s + (e - s) * j).reshape(-1)  # (c1-c0) * block, float32
+        lo = c0 * block
+        hi = c1 * block
+        audio[:, lo:hi] *= ramp[None, :].astype(np.float32)
     # Viimeinen vajaa lohko jää kuljettamatta: se on alle kymmenesosasekunti
     # tiedoston lopussa, eikä sinne kannata tehdä hyppyä.
     return audio
