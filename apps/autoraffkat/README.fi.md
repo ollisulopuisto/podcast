@@ -76,12 +76,41 @@ alkuperäiseen lähteeseen.
 
 Selain avautuu osoitteeseen `http://127.0.0.1:8731/`.
 
+### Aloita kamera- ja mikrofonitiedostoista
+
+Voit aloittaa ennen synkatun Final Cut -projektin luomista. Valitse
+**Tuo media…**, valitse kameravideot (joissa on vertailuääni) ja erilliset
+mikrofonitallenteet sekä valitse kamera, jonka ääntä käytetään synkan
+vertailuna. Autoraffkat arvioi ääniraitojen siirrot ja näyttää ne tarkistusta
+varten. Arvoja voi muuttaa sekunteina; myös epäonnistuneen arvion voi korjata
+käsin. Positiivinen siirto siirtää lähdettä myöhemmäksi.
+
+Hyväksyminen luo median viereen uuden `autoraffkat-source.fcpxml`-tiedoston
+(tai seuraavan numeroidun nimen, jos sellainen on jo olemassa) ja avaa sen
+editorissa. Alkuperäisiä tallenteita ei muuteta. Kameran vertailuääni
+mykistetään luodussa editissä synkan mittaamisen jälkeen. Jos käytössä on jo
+synkattu FCPXML-projekti, sen voi avata suoraan kuten ennenkin.
+
+Suora median tuonti luo projektiaikajanan, ei Final Cutin monikameraklippiä.
+Leikkaus ja renderöity video ovat valmiina Autoraffkatissa, ja viety FCPXML
+on litteä leikkaus. Jos kuvakulmia pitää vaihtaa myöhemmin Final Cutissa,
+tee siellä ensin monikameraklippi ja avaa sen FCPXML.
+
 Silmukka:
 
-1. Synkkaa kuvat ja äänet Final Cutissa, vie XML.
-2. Avaa XML sovelluksessa, nimeä raidat, säädä liukusäätimiä.
-3. Vie XML (`⌘E`, Windowsissa `Ctrl+E`), tuo Final Cutiin, katso.
-4. Jos ei kelpaa, takaisin kohtaan 2.
+1. Tuo kamera- ja mikrofonitiedostot ja tarkista synkka-arviot tai avaa
+   olemassa oleva FCPXML-projekti.
+2. Nimeä raidat ja säädä leikkausasetuksia.
+3. Valitse halutessasi **Merkitse alku** tai **Merkitse loppu** ja napsauta
+   aikajanaa, tai kirjoita ajat kenttiin. Merkit pyöristyvät projektin
+   kuvakehyksiin ja rajaavat sekä FCPXML-vientiä että videorenderöintiä;
+   **Tyhjennä rajaus** palauttaa koko ohjelman.
+4. Valitse **Renderöi video**, niin valittu alue renderöidään MP4-tiedostoksi
+   tarvittaessa. Edistyminen näkyy, ja työn voi pysäyttää. Katso syntynyt
+   tiedosto läpi ennen kuin viet FCPXML:n (`⌘E`, Windowsissa `Ctrl+E`) Final
+   Cutiin.
+5. Jos lopputulos ei kelpaa, säädä synkkasiirtoja tai muita asetuksia ja
+   toista.
 
 Kaikki pikanäppäimet ovat sovelluksessa: paina `?` tai otsikon
 **Pikanäppäimet**-painiketta.
@@ -192,7 +221,7 @@ jälkikäteen viemättä uudelleen. **Synkronoitu klippi** tai käsin aseteltu
 littana: yksi raita, yksi assetti per kuva, ei kulmaa jota vaihtaa. Jos
 näin käy viedessä, paneeli sanoo sen ja nimeää korjauksen — ks. alla.
 
-### Monikameraklipin rakentaminen kameroista ja mikeistä
+### Final Cutin monikameraklipin rakentaminen kameroista ja mikeistä
 
 Kolmella kameralla ja kahdella erillisellä mikillä, Final Cut Prossa:
 

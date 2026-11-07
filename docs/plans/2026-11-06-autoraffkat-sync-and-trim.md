@@ -2,7 +2,7 @@
 
 **Goal:** Let an editor bring camera scratch audio and separate microphone recordings into Autoraffkat, align them automatically, set programme in/out points, and render/export only the chosen range.
 
-**Architecture:** Keep audio measurement out of the fast decision loop. Decode low-rate audio envelopes in a background task, estimate each microphone's timeline shift against camera reference audio, and require a reviewable confidence result before changing placements. Store the selected programme range as rational timeline times and pass the same range to preview, FCPXML export, and video rendering.
+**Architecture:** Keep audio measurement out of the fast decision loop. Decode low-rate audio envelopes in a background task, estimate each microphone's timeline shift against camera reference audio, and require a reviewable estimate before changing placements. Store the selected programme range as rational timeline times and pass the same range to the timeline preview, FCPXML export, and on-demand video render.
 
 **Tech Stack:** Python 3.13, NumPy/FFmpeg, shared `fcpxml` timeline types, FastAPI server state, browser canvas UI, existing AVFoundation video renderer.
 
@@ -59,3 +59,5 @@ The same quantized bounds now reach both FCPXML writers and the on-demand render
 **Task 2 check-in (2026-11-06):** media import, API, and UI smoke tests pass. Source clips are aligned to the selected camera reference, and the editor must accept the editable offsets before a source project is written. No real episode recording has been measured yet.
 
 **Tasks 3–4 check-in (2026-11-06):** frame-quantized in/out marks persist in project settings and constrain both XML export and render. A fixture-driven end-to-end test passes; the owner should review a real multicamera project before relying on sync estimates in a production export.
+
+**Integration check-in (2026-11-07):** rebased the three feature commits onto current `main`; documented raw-media sync, reviewable offsets, frame-snapped in/out marks, and range rendering in both READMEs. Focused sync/import/range tests passed (20), and UI plus XML/render integration tests passed (8). Accuracy on real camera/microphone recordings and review in Final Cut remain owner validation items; the synthetic score is not presented as an accuracy guarantee.

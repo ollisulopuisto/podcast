@@ -75,12 +75,40 @@ returns to the original.
 
 The browser opens at `http://127.0.0.1:8731/`.
 
+### Start from camera and microphone files
+
+You can start before creating a synced Final Cut project. Choose **Import
+media…**, select the camera videos (with their scratch audio) and separate
+microphone recordings, then choose the camera whose audio should be the sync
+reference. Autoraffkat estimates each audio offset and shows it for review;
+you can edit any value in seconds, including estimates that need a manual
+correction. A positive offset moves that source later.
+
+Confirming creates a new `autoraffkat-source.fcpxml` beside the media (or the
+next numbered name if one already exists) and opens it in the editor. The
+original recordings are not changed, and camera scratch audio is disabled in
+the generated edit after it has served as the sync reference. If you already
+have a synced FCPXML project, open it directly as before.
+
+Direct media import creates a project timeline, not a Final Cut multicam
+clip. The cut and rendered video are ready in Autoraffkat, and the exported
+FCPXML is a flat edit. If you need to switch camera angles later inside Final
+Cut, build a multicam clip there first and open its FCPXML instead.
+
 The loop:
 
-1. Sync picture and sound in Final Cut, export the XML.
-2. Open the XML here, name the tracks, move the sliders.
-3. Export the XML (`⌘E`, `Ctrl+E` on Windows), import into Final Cut, watch.
-4. If it isn't right, back to step 2.
+1. Import camera and microphone files and review the sync estimates, or open
+   an existing FCPXML project.
+2. Name the tracks and adjust the cut settings.
+3. Optionally choose **Mark in** or **Mark out** and click the timeline, or
+   enter the times directly. Marks snap to project frames and constrain both
+   the FCPXML export and the video render; **Clear range** restores the full
+   programme.
+4. Choose **Render video** to render the selected output range to an MP4 on
+   demand. Rendering reports progress and can be stopped; use the resulting
+   file to review the cut before exporting the FCPXML (`⌘E`, `Ctrl+E` on
+   Windows) to Final Cut Pro.
+5. If it isn't right, adjust the sync offsets or settings and repeat.
 
 Every keyboard shortcut is listed in the app: press `?` or the **Shortcuts**
 button in the header.
@@ -192,7 +220,7 @@ correctly, but the export is flat: one track, one asset per shot, no angle
 to switch afterwards. If that happens on export, the panel says so and
 names the fix; see below.
 
-### Building the multicam clip, from cameras and mics
+### Building a Final Cut multicam clip, from cameras and mics
 
 For three cameras and two separate microphones, in Final Cut Pro:
 
