@@ -27,6 +27,7 @@ from .model import (
     Globals,
     TrackConfig,
 )
+from .program_range import encode_time
 
 FORMAT_VERSION = 2
 
@@ -206,6 +207,16 @@ def next_output_path(xml_path: str, tag: str = "") -> str:
     return f"{base} v{number}.fcpxml"
 
 
+def _range_value(value) -> str | None:
+    """Tarkistaa asetustiedoston kehysrajan; virheellinen vanha arvo ohitetaan."""
+    if value in (None, ""):
+        return None
+    try:
+        return encode_time(str(value))
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
 @dataclass
 class ProjectSettings:
     """Yhden lähde-XML:n asetukset: raitakohtaiset roolit ja globaalit säätimet."""
@@ -214,6 +225,8 @@ class ProjectSettings:
     globals: Globals = field(default_factory=Globals)
     audio: AudioSettings = field(default_factory=AudioSettings)
     language: str = ""  # "" = järjestelmän mukaan
+    range_start: str | None = None
+    range_end: str | None = None
 
     def config_for(self, key: str) -> TrackConfig:
         """Raidan asetukset, oletuksilla luotuna jos raitaa ei ole ennen nähty."""
@@ -229,6 +242,7 @@ class ProjectSettings:
             "globals": self.globals.to_json(),
             "audio": self.audio.to_json(),
             "language": self.language,
+            "program_range": {"start": self.range_start, "end": self.range_end},
             "tracks": {k: v.to_json() for k, v in self.tracks.items()},
         }
 
@@ -263,6 +277,8 @@ class ProjectSettings:
             globals=Globals.from_json(data.get("globals") or {}),
             audio=AudioSettings.from_json(data.get("audio") or {}),
             language=str(data.get("language") or ""),
+            range_start=_range_value((data.get("program_range") or {}).get("start")),
+            range_end=_range_value((data.get("program_range") or {}).get("end")),
         )
 
 

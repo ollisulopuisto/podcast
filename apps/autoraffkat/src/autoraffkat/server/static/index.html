@@ -24,6 +24,7 @@
   </div>
   <div class="toolbar">
     <div id="document-controls" class="toolbar-group" role="group">
+      <button id="open-media" class="ghost">Tuo media…</button>
       <button id="open" class="ghost">Avaa XML…</button>
       <button id="reload" class="ghost">Lue uudestaan</button>
       <button id="relink" class="ghost hidden">Etsi tiedostot…</button>
@@ -47,6 +48,22 @@
 <div id="status" class="status-line muted" role="status" aria-live="polite"></div>
 <div id="banner" class="banner hidden" role="alert"></div>
 <div id="exported" class="exported hidden"></div>
+<section id="media-sync" class="panel sync-panel hidden" aria-labelledby="media-sync-title">
+  <div class="sync-head">
+    <div>
+      <h2 id="media-sync-title" data-t="sync.title">Tuo kamera- ja mikrofonitiedostot</h2>
+      <p class="muted" data-t="sync.help">Valitse kameran ääni vertailuksi. Tarkista arvioidut siirrot ennen aikajanan luontia.</p>
+    </div>
+    <button id="media-sync-close" type="button" class="ghost" data-t="sync.close">Sulje</button>
+  </div>
+  <label class="field"><span data-t="sync.reference">Synkan vertailukamera</span><select id="media-sync-reference"></select></label>
+  <div id="media-sync-sources" class="sync-sources"></div>
+  <p id="media-sync-progress" class="muted" role="status" aria-live="polite"></p>
+  <div class="sync-actions">
+    <button id="media-sync-estimate" type="button" class="ghost" data-t="sync.estimate">Arvioi synkka</button>
+    <button id="media-sync-import" type="button" class="primary" data-t="sync.import">Käytä siirtoja ja jatka</button>
+  </div>
+</section>
 
 <main>
   <section class="panel tracks">
@@ -86,11 +103,26 @@
 
 <section class="panel preview">
   <div class="preview-head">
-    <h2 data-t="app.preview">Esikatselu</h2>
+    <h2 id="preview-title" data-t="app.preview">Esikatselu</h2>
     <span id="zoom-note" class="zoomed hidden"></span>
     <span id="counts" class="muted"></span>
   </div>
-  <canvas id="bar" height="120"></canvas>
+  <div class="range-controls" role="group" aria-labelledby="preview-title">
+    <button id="mark-in" type="button" class="ghost" data-t="range.markIn">Merkitse alku</button>
+    <button id="mark-out" type="button" class="ghost" data-t="range.markOut">Merkitse loppu</button>
+    <label class="range-number"><span data-t="range.in">Alku (s)</span><input id="range-in" type="number" step="0.04"></label>
+    <label class="range-number"><span data-t="range.out">Loppu (s)</span><input id="range-out" type="number" step="0.04"></label>
+    <button id="range-clear" type="button" class="ghost" data-t="range.clear">Tyhjennä rajaus</button>
+    <span class="muted small" data-t="range.instruction">Valitse alku tai loppu ja napsauta aikajanaa.</span>
+  </div>
+  <div class="timeline-wrap">
+    <canvas id="bar" height="120"></canvas>
+    <div id="range-overlay" class="range-overlay hidden" aria-hidden="true">
+      <div id="range-shade" class="range-shade"></div>
+      <i id="range-in-handle" class="range-handle"></i>
+      <i id="range-out-handle" class="range-handle"></i>
+    </div>
+  </div>
   <div id="ruler" class="ruler"></div>
   <div id="legend" class="legend"></div>
 </section>

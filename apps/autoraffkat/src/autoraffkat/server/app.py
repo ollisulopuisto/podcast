@@ -18,6 +18,7 @@ import time
 import traceback
 from dataclasses import dataclass, field
 from dataclasses import replace as dataclasses_replace
+from fractions import Fraction
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -26,7 +27,18 @@ from fastapi.staticfiles import StaticFiles
 from speechmix import chain, editor
 from speechmix.chain import ChainError
 
-from .. import i18n, pick, probe, project, reactions, reframe, staging, thumbs
+from .. import (
+    i18n,
+    media_import,
+    pick,
+    probe,
+    program_range,
+    project,
+    reactions,
+    reframe,
+    staging,
+    thumbs,
+)
 from ..activity import app_activity
 from ..analysis import (
     Analysis,
@@ -136,6 +148,10 @@ class AppState:
         default_factory=lambda: {"done": 0, "total": 0, "current": "", "ready": False}
     )
     load_error: str = ""
+    media_sync: dict = field(default_factory=lambda: {
+        "running": False, "fraction": 0.0, "current": "", "ready": False,
+        "error": "", "result": None,
+    })
     language: str = field(default_factory=i18n.detect)
     inherited_from: str = ""  # mistä roolit perittiin, "" jos ei mistään
     # Kuvan mittaukset media-avaimittain, ja mitä jäi mittaamatta. Erillään
@@ -880,6 +896,16 @@ class AppState:
 
     # ---------------------------------------------------------- päätös
 
+    def resolve_program_range(self, lower: Fraction, upper: Fraction):
+        """Palauttaa projektin in/out-rajat kuvan kehykseen sovitettuina."""
+        return program_range.resolve_range(
+            self.settings.range_start,
+            self.settings.range_end,
+            lower,
+            upper,
+            self.timeline.frame_duration if self.timeline else Fraction(1, 25),
+        )
+
     def apply(self, payload: dict) -> None:
         """Ottaa käyttöliittymän arvot vastaan ja tallentaa ne."""
         # Esikatselun ikkuna ei ole asetus eikä mene tiedostoon: se on
@@ -891,6 +917,13 @@ class AppState:
                     (float(window[0]), float(window[1])) if window else None)
             except (TypeError, ValueError, IndexError):
                 self.preview_window = None
+        if "program_range" in payload:
+            marks = payload.get("program_range") or {}
+            try:
+                self.settings.range_start = program_range.encode_time(marks.get("start"))
+                self.settings.range_end = program_range.encode_time(marks.get("end"))
+            except (TypeError, ValueError, ZeroDivisionError):
+                pass
         tracks = payload.get("tracks") or {}
         speakers = []
 
@@ -1347,6 +1380,9 @@ class AppState:
                 "start": float(program_start),
                 "end": float(program_end),
                 "duration": float(program_end - program_start),
+                "range_start": float(self.resolve_program_range(program_start, program_end)[0]),
+                "range_end": float(self.resolve_program_range(program_start, program_end)[1]),
+                "range_marked": bool(self.settings.range_start or self.settings.range_end),
             },
             "segments": [
                 {
@@ -1593,6 +1629,11 @@ def _state_json(state: AppState) -> dict:
         "tracks": tracks,
         "globals": state.settings.globals.to_json(),
         "progress": state.progress,
+        "media_sync": dict(state.media_sync),
+        "program_range": {
+            "start": float(Fraction(state.settings.range_start)) if state.settings.range_start else None,
+            "end": float(Fraction(state.settings.range_end)) if state.settings.range_end else None,
+        },
         "inherited_from": state.inherited_from,
         "language": state.language,
         "languages": list(LANGUAGES),
@@ -1805,6 +1846,89 @@ def create_app(state: AppState) -> FastAPI:
         """Koko tila. Käyttöliittymä kysyy tämän avatessa ja edistymistä pollatessa."""
         return _state_json(state)
 
+    @app.post("/api/media/inspect")
+    def inspect_media(payload: dict):
+        """Tarkistaa lähdemediat ja palauttaa kameraäänet synkan viitteiksi."""
+        paths = (payload or {}).get("paths")
+        if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
+            raise HTTPException(400, "Choose media files first.")
+        try:
+            sources = media_import.inspect_media(paths)
+        except media_import.MediaImportError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {
+            "sources": [
+                {
+                    "path": source.path, "name": source.name,
+                    "duration": float(source.duration),
+                    "has_video": source.has_video, "has_audio": source.has_audio,
+                    "width": source.width, "height": source.height,
+                }
+                for source in sources
+            ],
+            "references": [
+                source.path for source in sources if source.has_video and source.has_audio
+            ],
+        }
+
+    @app.post("/api/media/estimate", status_code=202)
+    def estimate_media(payload: dict):
+        """Käynnistää ääniverhojen purun taustalla ja palauttaa heti."""
+        body = payload or {}
+        paths = body.get("paths")
+        reference = body.get("reference")
+        if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
+            raise HTTPException(400, "Choose media files first.")
+        try:
+            sources = media_import.inspect_media(paths)
+        except media_import.MediaImportError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        valid_references = {source.path for source in sources if source.has_video and source.has_audio}
+        if reference not in valid_references:
+            raise HTTPException(400, "Choose a camera with reference audio.")
+        with state.lock:
+            if state.media_sync["running"]:
+                raise HTTPException(409, "A sync estimate is already running.")
+            state.media_sync = {
+                "running": True, "fraction": 0.0, "current": "", "ready": False,
+                "error": "", "result": None,
+            }
+
+        def report(current, fraction):
+            with state.lock:
+                state.media_sync.update(current=current, fraction=max(0.0, min(1.0, fraction)))
+
+        def work():
+            try:
+                result = media_import.estimate_sync(
+                    paths, reference_path=reference, progress=report
+                )
+                with state.lock:
+                    state.media_sync.update(
+                        running=False, fraction=1.0, current="", ready=True, result=result
+                    )
+            except Exception as exc:
+                with state.lock:
+                    state.media_sync.update(running=False, error=str(exc), current="")
+
+        threading.Thread(target=work, name="media-sync-estimate", daemon=True).start()
+        return {"accepted": True}
+
+    @app.post("/api/media/import")
+    def import_media(payload: dict):
+        """Kirjoittaa käyttäjän tarkistamilla siirroilla lähde-FCPXML:n."""
+        body = payload or {}
+        paths, shifts = body.get("paths"), body.get("shifts")
+        if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
+            raise HTTPException(400, "Choose media files first.")
+        if not isinstance(shifts, dict):
+            raise HTTPException(400, "Review the sync offsets before importing.")
+        try:
+            path = media_import.write_source_project(paths, shifts)
+        except (media_import.MediaImportError, TypeError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"path": path}
+
     @app.post("/api/reload")
     def reload_xml():
         """Lukee lähde-XML:n uudestaan levyltä, esimerkiksi uuden viennin jälkeen."""
@@ -1844,6 +1968,14 @@ def create_app(state: AppState) -> FastAPI:
             return {"path": "", "unavailable": True}
         start = os.path.dirname(state.xml_path) if state.xml_path else ""
         return {"path": pick.native(start, force=True) or ""}
+
+    @app.post("/api/pick-media")
+    def pick_media():
+        """Avaa kamerat ja mikrofonit yhtä aikaa valitsevan dialogin."""
+        if not pick.has_native_picker():
+            return {"paths": [], "unavailable": True}
+        start = os.path.dirname(state.xml_path) if state.xml_path else ""
+        return {"paths": pick.native_many(start, force=True)}
 
     @app.post("/api/pick-folder")
     def pick_folder():
@@ -1924,6 +2056,7 @@ def create_app(state: AppState) -> FastAPI:
                     status_code=400,
                 )
             _grid, program_start, program_end, decision = result["_grid"]
+            program_start, program_end = state.resolve_program_range(program_start, program_end)
             assert state.timeline is not None
             roles = state._roles()
             mic_tracks: list[tuple[str, str]] = []

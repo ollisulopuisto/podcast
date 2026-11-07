@@ -149,6 +149,20 @@ on error number -128
 end try
 """
 
+_CHOOSE_FILES = """
+try
+    set chosenFiles to choose file with prompt "Valitse kamerat ja mikrofonit" {start} with multiple selections allowed
+    set outputText to ""
+    repeat with chosenFile in chosenFiles
+        if outputText is not "" then set outputText to outputText & linefeed
+        set outputText to outputText & POSIX path of chosenFile
+    end repeat
+    return outputText
+on error number -128
+    return ""
+end try
+"""
+
 _CHOOSE_FOLDER = """
 try
     set f to choose folder with prompt {prompt} {start}
@@ -170,6 +184,77 @@ def _osascript(script: str) -> str | None:
     if done.returncode != 0:
         return None
     return done.stdout.strip()
+
+
+
+
+def _pick_many_tk(directory: str = "") -> list[str]:
+    """Monivalinnan varavalitsin tkinterillä."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        with contextlib.suppress(Exception):
+            root.attributes("-topmost", True)
+            root.focus_force()
+        result = filedialog.askopenfilenames(
+            initialdir=directory or None,
+            title="Valitse kamerat ja mikrofonit",
+            filetypes=[("Media", "*.mp4 *.mov *.m4v *.wav *.aif *.aiff *.flac *.m4a"),
+                       ("All files", "*.*")],
+        )
+        root.destroy()
+        return list(result)
+    except Exception:
+        return []
+
+
+def native_many(directory: str = "", force: bool = False) -> list[str]:
+    """Avaa monivalinnan ja palauttaa kaikki valitut polut."""
+    if not force and not interactive():
+        return []
+    if sys.platform == "darwin":
+        _ensure_foreground()
+        start = f'default location POSIX file "{directory}"' if directory else ""
+        output = _osascript(_CHOOSE_FILES.format(start=start))
+        paths = output.splitlines() if output else []
+    elif sys.platform.startswith("linux") and shutil.which("zenity"):
+        cmd = ["zenity", "--file-selection", "--multiple", "--separator=\n",
+               "--title=Valitse kamerat ja mikrofonit"]
+        if directory and os.path.exists(directory):
+            cmd.append(f"--filename={os.path.abspath(directory)}/")
+        try:
+            done = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            paths = done.stdout.strip().splitlines() if done.returncode == 0 else []
+        except (OSError, subprocess.TimeoutExpired):
+            paths = []
+    elif sys.platform == "win32":
+        paths = _pick_windows_many(directory)
+    else:
+        paths = _pick_many_tk(directory)
+    return [os.path.abspath(os.path.expanduser(path)) for path in paths if path]
+
+
+def _pick_windows_many(directory: str = "") -> list[str]:
+    """Windowsin monivalinta PowerShellillä."""
+    escaped = directory.replace("'", "''") if directory and os.path.exists(directory) else ""
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms;"
+        "$f=New-Object System.Windows.Forms.OpenFileDialog;"
+        "$f.Multiselect=$true;"
+        f"$f.InitialDirectory='{escaped}';"
+        "if($f.ShowDialog() -eq 'OK'){$f.FileNames}"
+    )
+    try:
+        done = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, timeout=300,
+        )
+        return done.stdout.splitlines() if done.returncode == 0 else []
+    except (OSError, subprocess.TimeoutExpired):
+        return []
 
 
 def _load_appkit():

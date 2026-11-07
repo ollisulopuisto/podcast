@@ -138,6 +138,9 @@ const VERTICAL_LAYOUTS = () => [
 ];
 
 let state = null;               // /api/state
+let mediaImport = null;          // valitut kamerat, mikrofonit ja synkka-arviot
+let programRange = [null, null]; // absoluuttiset ohjelman alku- ja loppuajat
+let rangeMode = 'in';
 let latest = null;              // viimeisin laskettu tulos
 let lastSeats = '{}';           // viimeksi piirretyt istujat
 let pending = null;             // ajastin
@@ -2167,6 +2170,65 @@ let barCache = null;
 
 const MIN_WINDOW = 4.0;     // lyhin katseltava jakso, s
 
+function renderProgramRange() {
+  const inField = $('range-in'), outField = $('range-out');
+  const full = latest && latest.program;
+  if (!full) return;
+  const active = document.activeElement;
+  if (active !== inField) {
+    inField.value = programRange[0] == null ? '' : Math.max(0, programRange[0] - full.start).toFixed(2);
+  }
+  if (active !== outField) {
+    outField.value = programRange[1] == null ? '' : Math.max(0, programRange[1] - full.start).toFixed(2);
+  }
+  $('mark-in').classList.toggle('active', rangeMode === 'in');
+  $('mark-out').classList.toggle('active', rangeMode === 'out');
+  const overlay = $('range-overlay');
+  if (programRange[0] == null && programRange[1] == null) {
+    overlay.classList.add('hidden');
+    return;
+  }
+  overlay.classList.remove('hidden');
+  const viewStart = latest.preview && latest.preview.view_start != null
+    ? latest.preview.view_start : (previewWindow ? previewWindow[0] : full.start);
+  const viewEnd = latest.preview && latest.preview.view_end != null
+    ? latest.preview.view_end : (previewWindow ? previewWindow[1] : full.end);
+  const span = Math.max(0.001, viewEnd - viewStart);
+  const left = Math.max(0, Math.min(100, ((programRange[0] ?? full.start) - viewStart) / span * 100));
+  const right = Math.max(left, Math.min(100, ((programRange[1] ?? (full.start + full.duration)) - viewStart) / span * 100));
+  $('range-shade').style.left = `${left}%`;
+  $('range-shade').style.width = `${right - left}%`;
+  $('range-in-handle').style.left = `${left}%`;
+  $('range-out-handle').style.left = `${right}%`;
+}
+
+function setProgramMark(which, at) {
+  const full = latest && latest.program;
+  if (!full) return;
+  if (which === 'in') {
+    programRange[0] = Math.max(full.start, Math.min(at, full.start + full.duration));
+    if (programRange[1] != null && programRange[0] >= programRange[1]) programRange[1] = null;
+  } else {
+    programRange[1] = Math.max(full.start, Math.min(at, full.start + full.duration));
+    if (programRange[0] != null && programRange[1] <= programRange[0]) programRange[0] = null;
+  }
+  renderProgramRange();
+  schedule(0);
+}
+
+function readProgramRangeFields() {
+  const full = latest && latest.program;
+  if (!full) return;
+  const inValue = $('range-in').value.trim();
+  const outValue = $('range-out').value.trim();
+  programRange = [
+    inValue === '' ? null : full.start + Number(inValue),
+    outValue === '' ? null : full.start + Number(outValue),
+  ];
+  renderProgramRange();
+  schedule(0);
+}
+
 function setPreviewWindow(next) {
   const full = latest && latest.program;
   if (!full) return;
@@ -2392,6 +2454,7 @@ function renderRuler() {
       ? T('preview.zoomed', { span: fmtTime(span) }) : '';
     badge.className = previewWindow ? 'zoomed' : 'zoomed hidden';
   }
+  renderProgramRange();
 }
 
 function renderLegend() {
@@ -2522,7 +2585,8 @@ function payload() {
   const tracks = {};
   state.tracks.forEach((m) => { tracks[m.key] = m.config; });
   return { tracks, globals: state.globals, audio: state.audio,
-           preview_window: previewWindow };
+           preview_window: previewWindow,
+           program_range: { start: programRange[0], end: programRange[1] } };
 }
 
 /* Session-only tree, one snapshot per accepted settings change. No pruning.
@@ -2631,6 +2695,11 @@ async function sendSettings(body, revision, projectPath) {
     const data = await response.json();
     if (revision !== settingsRevision || state.xml_path !== projectPath) return;
     latest = data;
+    if (data.program && data.program.range_marked) {
+      programRange = [data.program.range_start, data.program.range_end];
+    } else {
+      programRange = [null, null];
+    }
     noteSpeech(data.speech);
     /* Istujat muuttuvat mittauksen valmistuttua tai kun järjestystä
        korjataan; kortit piirretään uudestaan vain silloin, ettei kesken
@@ -2656,7 +2725,7 @@ async function sendSettings(body, revision, projectPath) {
     }
     if (data.ok) {
       banner('');
-      drawBar(); renderRuler(); renderLegend(); renderCuts();
+      drawBar(); renderRuler(); renderLegend(); renderCuts(); renderProgramRange();
       refreshReactionCount();
     } else {
       banner((data.problems || [T('app.unknownError')]).join('\n'));
@@ -2962,9 +3031,13 @@ function renderStatic() {
     el.textContent = T(el.dataset.t);
   });
   $('document-controls').setAttribute('aria-label', T('toolbar.documents'));
+  $('mark-in').textContent = T('range.markIn');
+  $('mark-out').textContent = T('range.markOut');
+  $('range-clear').textContent = T('range.clear');
   $('history-controls').setAttribute('aria-label', T('toolbar.history'));
   $('output-controls').setAttribute('aria-label', T('toolbar.output'));
   $('reload').textContent = T('app.reload');
+  $('open-media').textContent = T('app.openMedia');
   const relinkBtn = $('relink');
   if (relinkBtn) relinkBtn.textContent = T('app.relink');
   $('render').textContent = T('app.render');
@@ -3292,6 +3365,8 @@ async function openXml(path) {
       return;
     }
     state = data;
+    programRange = [data.program_range && data.program_range.start,
+                    data.program_range && data.program_range.end];
   } catch (err) {
     setBusy(button, false);
     banner(T('app.readFailed', { error: err.message }), true);
@@ -3308,6 +3383,153 @@ async function openXml(path) {
   watchProgress();
   watchMixIfRunning();
   if (state.progress && state.progress.ready) send();
+}
+
+async function openMedia(paths) {
+  if (!paths && window.pywebview && window.pywebview.api) {
+    try { paths = await window.pywebview.api.open_media_dialog(); }
+    catch (err) { console.error(err); }
+  }
+  if (!paths || paths.length === 0) {
+    try {
+      const response = await fetch('/api/pick-media', { method: 'POST' });
+      const data = await response.json();
+      if (data.unavailable) { banner(T('sync.noPicker'), true); return; }
+      paths = data.paths || [];
+    } catch (err) {
+      banner(T('app.readFailed', { error: err.message }), true);
+      return;
+    }
+  }
+  if (!paths || paths.length === 0) return;
+  try {
+    const response = await fetch('/api/media/inspect', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Could not inspect media.');
+    mediaImport = { paths, sources: data.sources, references: data.references,
+                    reference: data.references[0], result: null };
+    $('media-sync').classList.remove('hidden');
+    banner('');
+    renderMediaSync();
+  } catch (err) {
+    banner(err.message || T('app.readFailed', { error: err.message }), true);
+  }
+}
+
+function renderMediaSync() {
+  if (!mediaImport) return;
+  const reference = $('media-sync-reference');
+  reference.replaceChildren();
+  mediaImport.references.forEach((path) => {
+    const source = mediaImport.sources.find((item) => item.path === path);
+    const option = document.createElement('option');
+    option.value = path;
+    option.textContent = source.name;
+    option.selected = path === mediaImport.reference;
+    reference.append(option);
+  });
+  const list = $('media-sync-sources');
+  list.replaceChildren();
+  mediaImport.sources.filter((item) => item.path !== mediaImport.reference).forEach((source) => {
+    const row = document.createElement('div');
+    row.className = 'sync-source';
+    const name = document.createElement('strong');
+    name.textContent = source.name;
+    const hint = document.createElement('small');
+    const estimate = mediaImport.result && mediaImport.result.tracks.find((item) => item.path === source.path);
+    if (estimate && estimate.shift_seconds !== null) {
+      const score = Number(estimate.correlation);
+      hint.textContent = `r=${Number.isFinite(score) ? score.toFixed(2) : '—'}`;
+    } else {
+      hint.textContent = source.has_audio ? T('sync.noEstimate') : T('sync.noEstimate');
+    }
+    name.append(hint);
+    const shiftLabel = document.createElement('label');
+    shiftLabel.textContent = T('sync.offset');
+    const input = document.createElement('input');
+    input.type = 'number'; input.step = '0.01'; input.dataset.mediaPath = source.path;
+    input.value = estimate && estimate.shift_seconds !== null
+      ? Number(estimate.shift_seconds).toFixed(2) : '0';
+    shiftLabel.append(input);
+    const kind = document.createElement('span');
+    kind.className = 'muted';
+    kind.textContent = source.has_video ? T('sync.camera') : source.name;
+    row.append(name, shiftLabel, kind);
+    list.append(row);
+  });
+  $('media-sync-progress').textContent = '';
+}
+
+async function estimateMediaSync() {
+  if (!mediaImport) return;
+  const button = $('media-sync-estimate');
+  setBusy(button, true, T('sync.estimating'));
+  $('media-sync-reference').disabled = true;
+  try {
+    const response = await fetch('/api/media/estimate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths: mediaImport.paths, reference: mediaImport.reference }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Estimate failed.');
+    while (true) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      const status = await (await fetch('/api/state')).json();
+      const job = status.media_sync;
+      if (job.current) {
+        $('media-sync-progress').textContent = T('sync.progress', {
+          name: job.current, percent: Math.round(job.fraction * 100),
+        });
+      }
+      if (job.error) throw new Error(job.error);
+      if (job.ready) {
+        mediaImport.result = job.result;
+        renderMediaSync();
+        break;
+      }
+    }
+  } catch (err) {
+    $('media-sync-progress').textContent = T('sync.estimateFailed', { error: err.message });
+  } finally {
+    $('media-sync-reference').disabled = false;
+    setBusy(button, false);
+  }
+}
+
+async function importSyncedMedia() {
+  if (!mediaImport) return;
+  const button = $('media-sync-import');
+  setBusy(button, true, T('sync.importing'));
+  const shifts = {};
+  let invalid = false;
+  $('media-sync-sources').querySelectorAll('input[data-media-path]').forEach((input) => {
+    const value = Number(input.value);
+    if (!Number.isFinite(value)) invalid = true;
+    else shifts[input.dataset.mediaPath] = value;
+  });
+  if (invalid) {
+    $('media-sync-progress').textContent = T('sync.importFailed', { error: 'Offsets must be numbers.' });
+    setBusy(button, false);
+    return;
+  }
+  try {
+    const response = await fetch('/api/media/import', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths: mediaImport.paths, shifts }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Import failed.');
+    $('media-sync').classList.add('hidden');
+    mediaImport = null;
+    await openXml(data.path);
+  } catch (err) {
+    $('media-sync-progress').textContent = T('sync.importFailed', { error: err.message });
+  } finally {
+    setBusy(button, false);
+  }
 }
 
 async function relinkFiles(searchDir) {
@@ -3364,6 +3586,8 @@ async function relinkFiles(searchDir) {
 
 async function boot() {
   state = await (await fetch('/api/state')).json();
+  programRange = [state.program_range && state.program_range.start,
+                  state.program_range && state.program_range.end];
   setLang(state.language || 'fi');
   renderStatic();
   renderLanguage();
@@ -3376,7 +3600,35 @@ async function boot() {
   if (state.progress && state.progress.ready) send();
 }
 
+$('mark-in').addEventListener('click', () => { rangeMode = 'in'; renderProgramRange(); });
+$('mark-out').addEventListener('click', () => { rangeMode = 'out'; renderProgramRange(); });
+$('range-in').addEventListener('change', readProgramRangeFields);
+$('range-out').addEventListener('change', readProgramRangeFields);
+$('range-clear').addEventListener('click', () => {
+  programRange = [null, null]; renderProgramRange(); schedule(0);
+});
+$('bar').addEventListener('click', (event) => {
+  if (!latest || !latest.program) return;
+  const rect = $('bar').getBoundingClientRect();
+  const viewStart = latest.preview && latest.preview.view_start != null
+    ? latest.preview.view_start : (previewWindow ? previewWindow[0] : latest.program.start);
+  const viewEnd = latest.preview && latest.preview.view_end != null
+    ? latest.preview.view_end : (previewWindow ? previewWindow[1] : latest.program.end);
+  const at = viewStart + (viewEnd - viewStart) * ((event.clientX - rect.left) / rect.width);
+  setProgramMark(rangeMode, at);
+});
 $('open').addEventListener('click', () => openXml());
+$('open-media').addEventListener('click', () => openMedia());
+$('media-sync-close').addEventListener('click', () => $('media-sync').classList.add('hidden'));
+$('media-sync-reference').addEventListener('change', (event) => {
+  if (mediaImport) {
+    mediaImport.reference = event.target.value;
+    mediaImport.result = null;
+    renderMediaSync();
+  }
+});
+$('media-sync-estimate').addEventListener('click', estimateMediaSync);
+$('media-sync-import').addEventListener('click', importSyncedMedia);
 $('export').addEventListener('click', exportXml);
 $('render').addEventListener('click', renderVideo);
 $('render-stop').addEventListener('click', () => stopJob('/api/render/stop', $('render-stop')));
@@ -3394,6 +3646,8 @@ $('reload').addEventListener('click', async () => {
     clearTimeout(pending);
     await send();
     state = await (await fetch('/api/reload', { method: 'POST' })).json();
+    programRange = [state.program_range && state.program_range.start,
+                    state.program_range && state.program_range.end];
   } catch (err) {
     setBusy(button, false);
     banner(T('app.readFailed', { error: err.message }), true);
