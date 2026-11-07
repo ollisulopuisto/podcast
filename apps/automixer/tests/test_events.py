@@ -155,8 +155,16 @@ def test_every_line_with_the_prefix_is_json_with_a_schema_and_an_event(with_bed)
 def test_the_text_lines_are_all_still_there(with_bed, without_events):
     def plain(text):
         # Not the same between two runs: the paths, the free disk space and,
-        # with the tracks on threads, which track's line comes first.
+        # with the tracks on threads, which track's line comes first. Available
+        # memory can also choose one or two stems per batch; retain and check
+        # that diagnostic, but compare the stable text around it.
         lines = [x for x in text.splitlines() if not x.startswith(PREFIX)]
+        parallel = [x for x in lines
+                    if re.match(r"\[automixer\] \d+ stems? at a time:", x)]
+        assert len(parallel) == 1
+        assert re.search(r"\d+ stems? at a time: .+ GB free$", parallel[0])
+        lines = [x for x in lines if x not in parallel]
+        lines.append("[automixer] <memory-dependent stem parallelism>")
         lines = [re.sub(r"→ .*$", "→ PATH", x) for x in lines]
         return sorted(re.sub(r"[\d.]+ GB free", "N GB free", x) for x in lines)
 
