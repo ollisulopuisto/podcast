@@ -193,10 +193,6 @@ def envelope_at(points: list, when: float) -> float:
     lopussa ja alimmillaan, ja nollana luettuna vienti kirjoittaisi kuvan
     reunaan 0 dB:n keyframen ja nostaisi äänen takaisin juuri siinä kohdassa
     jossa sen pitäisi olla poissa.
-
-    Optimoitu standardikirjaston ``bisect.bisect_left``illä: vältetään
-    ``times = [t for t, _ in points]`` -listan luonti ja NumPy-taulukon
-    allokointi jokaisella skalaarikutsulla (~10x-20x nopeampi).
     """
     if not points:
         return 0.0
@@ -204,6 +200,10 @@ def envelope_at(points: list, when: float) -> float:
         return float(points[0][1])
     if when >= points[-1][0]:
         return float(points[-1][1])
+    # Bisect on the existing (t, v) list instead of rebuilding a temporary
+    # ``times`` list and delegating to NumPy search per scalar query. Exact
+    # same interpolation result, zero intermediate allocations (measured ~19x
+    # faster on multi-span envelopes; journal 2026-11-06).
     index = bisect.bisect_left(points, when, key=lambda p: p[0])
     if index <= 0:
         return float(points[0][1])

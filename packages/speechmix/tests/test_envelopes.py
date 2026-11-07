@@ -127,6 +127,46 @@ def test_the_value_between_points_is_linear_and_zero_outside():
     assert envelopes.envelope_at([], 1.0) == 0.0
 
 
+def test_envelope_at_matches_reference_over_random_points():
+    """Bisect-based lookup must be bit-for-bit equal to linear search.
+
+    Pins the contract the optimisation must preserve: edge values outside the
+    curve, the previous point before the first inside point, the clamped
+    point at/after the last, and the tie-break when two points share a time.
+    """
+    import random
+
+    random.seed(7)
+    for _ in range(200):
+        n = random.randint(1, 12)
+        points = sorted(
+            (round(random.uniform(0.0, 10.0), 3), round(random.uniform(-96.0, 0.0), 3))
+            for _ in range(n)
+        )
+        when = round(random.uniform(-1.0, 11.0), 3)
+        got = envelopes.envelope_at(points, when)
+
+        # Reference: linear scan identical in every branch.
+        if not points:
+            want = 0.0
+        elif when <= points[0][0]:
+            want = float(points[0][1])
+        elif when >= points[-1][0]:
+            want = float(points[-1][1])
+        else:
+            index = next(i for i, (t, _v) in enumerate(points) if t >= when)
+            if index <= 0:
+                want = float(points[0][1])
+            else:
+                t0, v0 = points[index - 1]
+                t1, v1 = points[min(index, len(points) - 1)]
+                if t1 <= t0:
+                    want = float(v1)
+                else:
+                    want = float(v0 + (v1 - v0) * (when - t0) / (t1 - t0))
+        assert got == want, (points, when, got, want)
+
+
 def test_programme_time_becomes_file_time_per_span():
     """Ruudukko on aikajanan aikaa, tiedosto omaansa."""
     closed = np.zeros(200, dtype=bool)
