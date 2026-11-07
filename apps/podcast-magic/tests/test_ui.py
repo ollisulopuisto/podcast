@@ -200,3 +200,17 @@ def test_language_controls_have_group_and_pressed_accessibility_semantics():
     assert "'lang.fi': 'Suomi'" in i18n
     assert "'lang.en': 'English'" in i18n
     assert "aria-label" in app and "aria-pressed" in app
+
+
+def test_file_browser_has_dialog_semantics_and_dismiss_controls():
+    """Tiedostoselaimella on dialogirooli, aria-expanded ja sulkemismahdollisuudet."""
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    i18n = (STATIC / "i18n.js").read_text(encoding="utf-8")
+    assert 'aria-haspopup="dialog"' in html
+    assert 'aria-controls="browser"' in html
+    assert 'role="dialog"' in html
+    assert 'data-t-aria-label="app.browser"' in html
+    assert "'app.browser': 'Tiedostoselain'" in i18n
+    assert "'app.browser': 'File browser'" in i18n
+    assert "closeBrowser" in app
