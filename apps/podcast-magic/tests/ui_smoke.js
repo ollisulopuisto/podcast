@@ -14,6 +14,7 @@
  * Käyttö: node ui_smoke.js <static-hakemisto> <vastaukset.json>
  */
 
+const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -87,7 +88,7 @@ function makeElement(tag) {
     querySelector(selector) { return descend(this).find((n) => matches(n, selector)) || null; },
     querySelectorAll(selector) { return descend(this).filter((n) => matches(n, selector)); },
     select() {},
-    focus() {},
+    focus() { document.activeElement = this; },
   };
   created.push(el);
   return el;
@@ -187,6 +188,41 @@ async function settle() {
 (async () => {
   await vm.runInContext('PM.start()', sandbox);
   await settle();
+
+  /* Avaaminen kohdistaa sulkuun, siirtyminen uuden kansion sisältöön.
+     Tyhjän kansion varakohde on ylös-painike tai juuressa sulku. */
+  const savedListing = answers['/api/browse'];
+  const box = byId.get('browser');
+  const listing = (dirs = [], files = [], parent = '/tmp') => ({
+    dir: '/tmp/kansio', parent, dirs, files,
+  });
+  answers['/api/browse'] = listing([{ name: 'lapsi', path: '/tmp/kansio/lapsi' }]);
+  await vm.runInContext('PM.pick()', sandbox);
+  await settle();
+  assert.equal(document.activeElement, box.querySelector('.ghost'));
+  box.querySelector('.dir').focus();
+  // Kansion painallus korvaa vanhan listan; Enter ei saa sulkea selainta.
+  const child = box.querySelectorAll('.dir')[1];
+  child.dispatchEvent({ type: 'click' });
+  await settle();
+  assert.equal(document.activeElement.textContent, 'lapsi');
+  assert.ok(!box.classList.contains('hidden'));
+  document.activeElement.dispatchEvent({ type: 'click' });
+  await settle();
+  assert.ok(!box.classList.contains('hidden'));
+  assert.equal(document.activeElement.textContent, 'lapsi');
+  answers['/api/browse'] = listing([], [{ name: 'jakso.nhsx', path: '/tmp/jakso.nhsx', mtime: 0 }]);
+  await vm.runInContext('PM.browse("/tmp/kansio")', sandbox);
+  assert.ok(document.activeElement.classList.contains('file'));
+  answers['/api/browse'] = listing();
+  await vm.runInContext('PM.browse("/tmp/kansio")', sandbox);
+  assert.ok(document.activeElement.classList.contains('dir'));
+  answers['/api/browse'] = listing([], [], null);
+  await vm.runInContext('PM.browse("/")', sandbox);
+  assert.equal(document.activeElement, box.querySelector('.ghost'));
+  vm.runInContext('PM.closeBrowser()', sandbox);
+  assert.equal(document.activeElement, byId.get('browse'));
+  answers['/api/browse'] = savedListing;
 
   /* Moduulilista tulee palvelimelta, ei tästä: uusi moduuli jättää itsensä
      testamatta huomaamatta vain jos tämä lista on käsin kopioitu. */
