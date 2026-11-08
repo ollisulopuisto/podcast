@@ -214,3 +214,6 @@ def test_file_browser_has_dialog_semantics_and_dismiss_controls():
     assert "'app.browser': 'Tiedostoselain'" in i18n
     assert "'app.browser': 'File browser'" in i18n
     assert "closeBrowser" in app
+    css = (STATIC / "style.css").read_text(encoding="utf-8")
+    assert ".browser li button:focus-visible" in css
+    assert ".browser .here button:focus-visible" in css

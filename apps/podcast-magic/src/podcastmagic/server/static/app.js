@@ -96,7 +96,7 @@ const PM = {
     }
   },
 
-  async browse(dir) {
+  async browse(dir, initial = false) {
     const box = document.getElementById('browser');
     box.classList.remove('hidden');
     let listing;
@@ -107,6 +107,7 @@ const PM = {
       return;
     }
     const list = this.el('ul', {}, []);
+    let firstEntry = null;
     if (listing.parent) {
       list.appendChild(this.el('li', {}, [
         this.el('button', { class: 'dir', text: this.t('app.up'),
@@ -114,10 +115,10 @@ const PM = {
       ]));
     }
     for (const entry of listing.dirs) {
-      list.appendChild(this.el('li', {}, [
-        this.el('button', { class: 'dir', text: entry.name,
-                            onclick: () => this.browse(entry.path) }),
-      ]));
+      const button = this.el('button', { class: 'dir', text: entry.name,
+                                         onclick: () => this.browse(entry.path) });
+      firstEntry ??= button;
+      list.appendChild(this.el('li', {}, [button]));
     }
     for (const entry of listing.files) {
       const when = new Date(entry.mtime * 1000);
@@ -128,6 +129,7 @@ const PM = {
         this.el('span', { class: 'when', text: when.toLocaleDateString() }),
         this.el('span', { text: entry.name }),
       ]);
+      firstEntry ??= button;
       list.appendChild(this.el('li', {}, [button]));
     }
     if (!listing.dirs.length && !listing.files.length) {
@@ -135,17 +137,22 @@ const PM = {
         this.el('button', { class: 'muted', text: this.t('app.noSessions'), disabled: true }),
       ]));
     }
+    const closeBtn = this.el('button', {
+      class: 'ghost', type: 'button', text: this.t('app.close'),
+      'aria-label': `${this.t('app.close')} (${this.t('app.browser')})`,
+      onclick: () => this.closeBrowser(),
+    });
     box.replaceChildren(
       this.el('div', { class: 'here' }, [
         this.el('span', { class: 'path', text: listing.dir }),
-        this.el('button', {
-          class: 'ghost', type: 'button', text: this.t('app.close'),
-          'aria-label': `${this.t('app.close')} (${this.t('app.browser')})`,
-          onclick: () => this.closeBrowser(),
-        }),
+        closeBtn,
       ]),
       list,
     );
+    // Selain on ei-modaalinen. Vain avaus kohdistaa sulkuun; siirtymisen
+    // jälkeen Enter jatkaa sisältöön eikä sulje valitsinta.
+    const target = initial ? closeBtn : firstEntry || list.querySelector('.dir') || closeBtn;
+    target.focus?.({ focusVisible: true });
   },
 
   /* Natiivi valintaikkuna, kun ohjelma ajetaan omana sovelluksenaan.
@@ -164,7 +171,7 @@ const PM = {
     const here = this.session
       ? this.session.replace(/\/[^/]*$/, '')
       : (this.state && this.state.startDir) || '';
-    this.browse(here);
+    await this.browse(here, true);
   },
 
   // ---- työ ---------------------------------------------------------------
