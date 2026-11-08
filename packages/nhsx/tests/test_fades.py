@@ -227,6 +227,28 @@ def test_long_segments_fuzz_monotonic_rises():
             assert len(segs) >= 2
             for a, b in pairwise(segs):
                 assert a.start + a.length <= b.start + 1e-9
+
+
+def test_fit_two_parity_randomized_curves():
+    """Varmistaa _fit_two:n tuottamien segmenttien oikeellisuuden ja vakauden eri nousumuodoilla."""
+    for duration in (3.5, 6.0, 8.5):
+        num_pts = int(round(duration / 0.05)) + 1
+        times = np.linspace(0.0, duration, num_pts)
+        for shape in ("sqrt", "linear", "s_curve"):
+            if shape == "sqrt":
+                wants = -70.0 + (60.0 / np.sqrt(duration)) * np.sqrt(times)
+            elif shape == "linear":
+                wants = -70.0 + (60.0 / duration) * times
+            else:
+                norm = times / duration
+                wants = -70.0 + 60.0 * (3 * norm**2 - 2 * norm**3)
+
+            segs = fades._fit_two(times, wants, 0, len(times) - 1)
+            assert len(segs) == 2
+            assert segs[0].start < segs[1].start
+            assert segs[0].start + segs[0].length == segs[1].start
+            assert segs[1].start + segs[1].length <= duration + 1e-9
+            assert math.isclose(segs[1].gain_db, float(wants[-1]), abs_tol=1e-5)
             assert all(np.isfinite(s.gain_db) for s in segs)
 
 

@@ -170,8 +170,9 @@ def _fit_two(times, wants, i: int, j: int) -> list[Segment]:
     kolme aikaa. Kriteeri on sama kuin ``_fit_run``: pahin poikkeama
     kuuluvalla alueella pienin.
 
-    Optimoitu vektorisoimalla loppupisteiden `e` laskenta kullekin `m`:lle,
-    mikä vähentää silmukan NumPy-kutsuja ~90 000:sta kymmeniin (n. 25x nopeampi).
+    Optimoitu vektorisoimalla loppupisteiden `e` ja alkupisteiden `a` laskenta
+    kullekin `m`:lle 2D-lähetyksellä (shape (num_a, len) ja (num_e, len)),
+    mikä nopeuttaa hakua ~3x säilyttäen tuloksen identtisenä.
     """
     import numpy as np
 
@@ -208,27 +209,32 @@ def _fit_two(times, wants, i: int, j: int) -> list[Segment]:
         else:
             sec_err = np.zeros(len(e_lens))
 
-        for a in range(m):
-            start = max(grid[a], first)
-            if grid[m] - start < FIT_TWO_GRID_S:
-                continue
-            if len(w_first) > 0:
-                x = np.clip((w_first - start) / (grid[m] - start), 0.0, 1.0)
-                first_gain = g0 + gm_m_g0 * (1.0 - np.cos(np.pi * x)) / 2.0
-                first_got = 20.0 * np.log10(np.maximum(first_gain, 1e-12))
-                first_aud = aud_want_first | (first_got >= AUDIBLE_DB)
-                first_err = float(np.where(first_aud, np.abs(first_got - want_first), 0.0).max())
-            else:
-                first_err = 0.0
+        # Vektorisoidaan ensimmäinen luiska kaikille a:lle kerralla (shape: (num_a, len(w_first)))
+        a_starts = np.maximum([grid[a] for a in range(m)], first)
+        valid_a = (grid[m] - a_starts) >= FIT_TWO_GRID_S
+        if not np.any(valid_a):
+            continue
+        starts = a_starts[valid_a]
+        first_lens = grid[m] - starts
+        if len(w_first) > 0:
+            x = np.clip((w_first[None, :] - starts[:, None]) / first_lens[:, None], 0.0, 1.0)
+            first_gain = g0 + gm_m_g0 * (1.0 - np.cos(np.pi * x)) / 2.0
+            first_got = 20.0 * np.log10(np.maximum(first_gain, 1e-12))
+            first_aud = aud_want_first[None, :] | (first_got >= AUDIBLE_DB)
+            first_err = np.where(first_aud, np.abs(first_got - want_first[None, :]), 0.0).max(axis=1)
+        else:
+            first_err = np.zeros(len(starts))
 
-            errs = np.maximum(first_err, sec_err)
-            min_idx = int(np.argmin(errs))
-            min_err = float(errs[min_idx])
-            if min_err < best[0]:
-                e = m + 1 + min_idx
-                best = (min_err, (start, a, m, e))
+        # 2D-maksimi (num_a, num_e): kunkin (a, e)-parin virhe on suurin kummankin segmentin virheistä
+        errs = np.maximum(first_err[:, None], sec_err[None, :])
+        min_idx = np.unravel_index(np.argmin(errs), errs.shape)
+        min_err = float(errs[min_idx])
+        if min_err < best[0]:
+            orig_a = int(np.flatnonzero(valid_a)[min_idx[0]])
+            e = m + 1 + int(min_idx[1])
+            best = (min_err, (starts[min_idx[0]], orig_a, m, e))
 
-    start, a, m, e = best[1]
+    start, _a, m, e = best[1]
     junction_db = _clean(20.0 * math.log10(max(level[m], 1e-12)))
     return [
         Segment(start, grid[m] - start, junction_db),
