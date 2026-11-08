@@ -135,17 +135,19 @@ const PM = {
         this.el('button', { class: 'muted', text: this.t('app.noSessions'), disabled: true }),
       ]));
     }
+    const closeBtn = this.el('button', {
+      class: 'ghost', type: 'button', text: this.t('app.close'),
+      'aria-label': `${this.t('app.close')} (${this.t('app.browser')})`,
+      onclick: () => this.closeBrowser(),
+    });
     box.replaceChildren(
       this.el('div', { class: 'here' }, [
         this.el('span', { class: 'path', text: listing.dir }),
-        this.el('button', {
-          class: 'ghost', type: 'button', text: this.t('app.close'),
-          'aria-label': `${this.t('app.close')} (${this.t('app.browser')})`,
-          onclick: () => this.closeBrowser(),
-        }),
+        closeBtn,
       ]),
       list,
     );
+    closeBtn.focus?.({ focusVisible: true });
   },
 
   /* Natiivi valintaikkuna, kun ohjelma ajetaan omana sovelluksenaan.

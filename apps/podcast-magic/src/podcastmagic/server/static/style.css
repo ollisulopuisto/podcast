@@ -163,6 +163,8 @@ input[type=checkbox]:focus-visible, input[type=range]:focus-visible {
   background: transparent; padding: 7px 12px;
 }
 .browser li button:hover { background: #262a32; }
+.browser li button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.browser .here button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .browser .dir::before { content: "📁 "; opacity: .8; }
 .browser .file::before { content: "📄 "; opacity: .8; }
 .browser .derived { color: var(--muted); }
