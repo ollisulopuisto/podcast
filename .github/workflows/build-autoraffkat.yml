@@ -75,11 +75,9 @@ jobs:
           KEYCHAIN_PATH="$RUNNER_TEMP/podcast-signing.keychain-db"
           CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
           printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 -D -o "$CERTIFICATE_PATH"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -T /usr/bin/codesign -k "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          export KEYCHAIN_PATH="$KEYCHAIN_PATH" CERTIFICATE_PATH="$CERTIFICATE_PATH"
+          export KEYCHAIN_PASSWORD="$KEYCHAIN_PASSWORD" P12_PASSWORD="$P12_PASSWORD"
+          python3 "$GITHUB_WORKSPACE/scripts/macos_ci_credentials.py" import-certificate
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           rm -f "$CERTIFICATE_PATH"
           security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -F 'Developer ID Application: Olli Sulopuisto (LWSR8T5392)'
@@ -152,13 +150,15 @@ jobs:
             echo "::warning::Ei notarisointitunnuksia: artefakti on allekirjoitettu mutta ei notarisoitu."
             exit 0
           fi
-          result=$(xcrun notarytool submit "$DMG_PATH" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_APP_PASSWORD" --wait --timeout 45m --output-format json) || true
+          export KEYCHAIN_PATH="$RUNNER_TEMP/podcast-signing.keychain-db"
+          export APPLE_TEAM_ID="${APPLE_TEAM_ID:-LWSR8T5392}"
+          python3 "$GITHUB_WORKSPACE/scripts/macos_ci_credentials.py" store-notary-credentials
+          result=$(xcrun notarytool submit "$DMG_PATH" --keychain-profile ci-notary --keychain "$KEYCHAIN_PATH" --wait --timeout 45m --output-format json) || true
           echo "$result"
           id=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
           status=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
           if [ "$status" != Accepted ]; then
-            xcrun notarytool log "$id" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+            xcrun notarytool log "$id" --keychain-profile ci-notary --keychain "$KEYCHAIN_PATH"
             exit 1
           fi
           xcrun stapler staple "$DMG_PATH"
