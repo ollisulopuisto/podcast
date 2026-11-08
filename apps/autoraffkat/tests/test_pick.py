@@ -3,6 +3,8 @@
 import os
 import sys
 
+import pytest
+
 from autoraffkat import pick
 
 
@@ -18,6 +20,33 @@ def test_bundle_resolves_to_its_xml(tmp_path):
     assert pick.resolve(str(tmp_path / "jakso.fcpxmld")) == inner
     # Suora polku kelpaa sellaisenaan.
     assert pick.resolve(inner) == inner
+
+
+def test_resolve_rejects_upward_traversal(tmp_path):
+    """Käyttäjän antama polku ei saa viitata hakemistoon ylöspäin (..)."""
+    xml = tmp_path / "jakso.fcpxml"
+    xml.write_text("<fcpxml/>")
+    clean = str(xml)
+    # Suora, puhdas polku kelpaa.
+    assert pick.resolve(clean) == clean
+    # Yloskantaiset osat hylataan: polku ei saa karata tiedoston omasta
+    # hakemistosta ylos päin.
+    for bad in (
+        str(tmp_path / ".." / "jakso.fcpxml"),
+        str(tmp_path / "sisainen" / ".." / "jakso.fcpxml"),
+        str(tmp_path / ".." / ".." / "jakso.fcpxml"),
+    ):
+        with pytest.raises(ValueError, match=r"\.\."):
+            pick.resolve(bad)
+
+
+def test_resolve_rejects_bundle_traversal(tmp_path):
+    inner = _touch(str(tmp_path / "jakso.fcpxmld" / "Info.fcpxml"))
+    bad = str(tmp_path / ".." / "jakso.fcpxmld" / "Info.fcpxml")
+    with pytest.raises(ValueError, match=r"\.\."):
+        pick.resolve(bad)
+    # Puhdas paketin polku yha toimii.
+    assert pick.resolve(str(tmp_path / "jakso.fcpxmld")) == inner
 
 
 def test_candidates_finds_both_muodot(tmp_path):

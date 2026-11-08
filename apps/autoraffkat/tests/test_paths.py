@@ -233,6 +233,31 @@ def test_open_is_not_limited_to_the_working_directory(tmp_path, monkeypatch):
     assert state.xml_path == str(xml)
 
 
+def test_open_rejects_upward_traversal(tmp_path):
+    """Käyttäjän antama polku ei saa karata hakemistoon ylöspäin (..).
+
+    Tiedosto voi olla olemassa, mutta ylös suuntaava polku hylataan jo
+    ennen kuin se valitaan xml_path:ksi ja käytetaan projekti-operaatioissa.
+    """
+    source = tmp_path / "a.fcpxml"
+    source.write_text("<x/>", encoding="utf-8")
+    target = tmp_path / "toinen.fcpxml"
+    target.write_text("<x/>", encoding="utf-8")
+    # Välivihakemiston on oltava olemassa, jotta os.path.exists läpäisee
+    # polun ennen trapoinnintarkistusta.
+    (tmp_path / "sub").mkdir()
+    from fastapi.testclient import TestClient
+
+    from autoraffkat.server.app import AppState, create_app
+    state = AppState(xml_path=str(source))
+    client = TestClient(create_app(state))
+
+    # Tiedosto on olemassa, mutta polku kiertää kansion kautta ylös ja takaisin.
+    bad = str(tmp_path / "sub" / ".." / "toinen.fcpxml")
+    response = client.post("/api/open", json={"path": bad})
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == i18n.t("read.path_forbidden", path=bad)
+
 def test_the_lookup_is_exact_and_answers_with_the_servers_own_string(tmp_path):
     """Pyynnön polkua ei käytetä polkuna: vain täsmälleen kirjattu merkkijono kelpaa.
 

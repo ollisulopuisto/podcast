@@ -34,8 +34,16 @@ def resolve(path: str) -> str:
 
     ``.fcpxmld``-paketti on hakemisto, joten sen sisältä otetaan XML. Näin
     työkalulle voi antaa sen mitä Finderissa näkyy.
+
+    Polussa ei saa olla hakemistoon ylöspäin osoittavaa osaa (``..``), koska
+    se tulee käyttäjän antamasta HTTP-pyynnöstä ja voi ohjata tiedoston
+    käsittelyn muualle kuin aiotun lähteen hakemistoon.
     """
     path = os.path.expanduser(path)
+    if _has_upward_component(path):
+        raise ValueError(
+            f"polku ei saa sisaltaa hakemistoon ylospain suuntaavaa osaa: {path!r}"
+        )
     if not re.match(r"^[a-zA-Z]:[\\/]", path):
         path = os.path.abspath(path)
     if os.path.isdir(path):
@@ -43,6 +51,11 @@ def resolve(path: str) -> str:
         if os.path.exists(inner):
             return inner
     return path
+
+
+def _has_upward_component(path: str) -> bool:
+    """Palauttaa True, jos polussa on hakemistoon ylos osoittava osa (..)."""
+    return ".." in path.replace("\\", "/").split("/")
 
 
 # Nimeen kirjoitettavat säätimet. Lista on tarkka eikä «mitä tahansa sanoja»:

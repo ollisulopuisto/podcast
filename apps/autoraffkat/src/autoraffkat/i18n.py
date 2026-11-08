@@ -38,6 +38,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "fi": "Tiedostoa ei löydy: {path}",
         "en": "The file was not found: {path}",
     },
+    "read.path_forbidden": {
+        "fi": "Polkua ei saa käyttää: {path}",
+        "en": "The path is not allowed: {path}",
+    },
     "read.bad_xml": {
         "fi": "XML ei jäsenny: {error}",
         "en": "The XML does not parse: {error}",
