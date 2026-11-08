@@ -3,6 +3,7 @@
 import importlib.util
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,6 +23,9 @@ def checked(condition):
         raise AssertionError("Native keychain smoke check failed")
 
 
+@unittest.skipUnless(
+    sys.platform == "darwin", "requires macOS keychain; CI has a dedicated native job"
+)
 class NativeKeychainTransportTests(unittest.TestCase):
     def test_command_failure_is_not_success(self):
         with tempfile.TemporaryDirectory(prefix="missing keychain ") as directory:
