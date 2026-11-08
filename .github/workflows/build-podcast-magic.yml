@@ -119,7 +119,7 @@ jobs:
           printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 -D -o "$CERTIFICATE_PATH"
           export KEYCHAIN_PATH="$KEYCHAIN_PATH" CERTIFICATE_PATH="$CERTIFICATE_PATH"
           export KEYCHAIN_PASSWORD="$KEYCHAIN_PASSWORD" P12_PASSWORD="$P12_PASSWORD"
-          python3 scripts/macos_ci_credentials.py import-certificate
+          python3 "$GITHUB_WORKSPACE/scripts/macos_ci_credentials.py" import-certificate
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           rm -f "$CERTIFICATE_PATH"
           security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -F 'Developer ID Application: Olli Sulopuisto (LWSR8T5392)'

@@ -19,6 +19,11 @@ class CredentialTests(unittest.TestCase):
         self.assertNotIn(value, str(run.call_args.args))
         self.assertNotIn("P12_PASSWORD", run.call_args.kwargs["env"])
         self.assertIn('\\"quotes\\"', run.call_args.kwargs["input"])
+    def test_interactive_status_failure_is_rejected(self):
+        with patch.object(HELPER.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "unlock-keychain: returned -25291")):
+            with self.assertRaisesRegex(RuntimeError, "output withheld"):
+                HELPER.security("unlock-keychain", "-p", "dummy", "missing")
+
     def test_refuse_line_separators(self):
         for value in ["a\nb", "a\rb", "a\0b"]:
             with self.assertRaises(ValueError): HELPER.quote(value)
@@ -46,7 +51,7 @@ class CredentialTests(unittest.TestCase):
         text = "\n".join(p.read_text() for p in workflows)
         for bad in ['security create-keychain -p', 'security import $', 'security import "$', '--password "$APPLE_APP_PASSWORD"']:
             self.assertNotIn(bad, text)
-        self.assertIn("macos_ci_credentials.py import-certificate", text)
+        self.assertRegex(text, r'macos_ci_credentials\.py[" ]+import-certificate')
         self.assertIn("Native dummy-keychain transport smoke check", text)
         helper = (ROOT / "scripts/macos_ci_credentials.py").read_text()
         self.assertIn('"/usr/bin/security", "-i"', helper)
