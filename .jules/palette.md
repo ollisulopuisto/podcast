@@ -5,3 +5,7 @@
 ## 2026-11-01 - Keyboard focus visibility in shared UI styling
 **Learning:** Shared design systems across paired companion apps (autoraffkat and Podcast Magic) often rely on custom `:focus-visible` styling (`var(--accent)` outline) to keep keyboard navigation accessible without adding unwanted focus rings for pointer clicks. When styling custom buttons (`.tabs button`, action buttons) on dark themes, native browser focus outlines can blend into dark backgrounds or be completely suppressed by default button resets unless `button:focus-visible` is explicitly declared.
 **Action:** When working on web interfaces in this repo, ensure `button:focus-visible` is styled consistently with inputs using `outline: 2px solid var(--accent); outline-offset: 1px;`.
+
+## 2026-11-08 - ARIA semantics for tab navigation
+**Learning:** Custom navigation tabs need semantic `role="tablist"` and `role="tab"` attributes, plus an `aria-selected` value that tracks the active tab. Without them, screen readers cannot reliably identify the tab set or announce which tab is selected.
+**Action:** When implementing tab navigation, assign `role="tablist"` to the tab container, `role="tab"` to each tab, and update `aria-selected` whenever selection changes.
