@@ -10,7 +10,8 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
-    "macos_ci_credentials", ROOT / "scripts/macos_ci_credentials.py",
+    "macos_ci_credentials",
+    ROOT / "scripts/macos_ci_credentials.py",
 )
 HELPER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(HELPER)
@@ -39,27 +40,63 @@ class NativeKeychainTransportTests(unittest.TestCase):
             value = 'dummy "quotes" \\ backslash $value'
             password_file.write_text(value)
             password_file.chmod(0o600)
-            env = {"KEYCHAIN_PATH": str(keychain), "CERTIFICATE_PATH": str(bundle),
-                   "KEYCHAIN_PASSWORD": value, "P12_PASSWORD": value}
+            env = {
+                "KEYCHAIN_PATH": str(keychain),
+                "CERTIFICATE_PATH": str(bundle),
+                "KEYCHAIN_PASSWORD": value,
+                "P12_PASSWORD": value,
+            }
             # Only a throwaway, self-signed identity. Its passphrase is dummy data.
-            subprocess.run(  # noqa: S603 - fixed executable, generated fixture paths only
-                ["/usr/bin/openssl", "req", "-x509", "-newkey", "rsa:2048",
-                 "-nodes", "-keyout", str(key), "-out", str(cert), "-days", "1",
-                 "-subj", "/CN=podcast transport smoke test"],
-                capture_output=True, check=True,
+            subprocess.run(
+                [
+                    "/usr/bin/openssl",
+                    "req",
+                    "-x509",
+                    "-newkey",
+                    "rsa:2048",
+                    "-nodes",
+                    "-keyout",
+                    str(key),
+                    "-out",
+                    str(cert),
+                    "-days",
+                    "1",
+                    "-subj",
+                    "/CN=podcast transport smoke test",
+                ],
+                capture_output=True,
+                check=True,
             )
-            subprocess.run(  # noqa: S603 - fixed executable, generated fixture paths only
-                ["/usr/bin/openssl", "pkcs12", "-export", "-inkey", str(key),
-                 "-in", str(cert), "-out", str(bundle), "-passout",
-                 "file:" + str(password_file)], capture_output=True, check=True,
+            subprocess.run(
+                [
+                    "/usr/bin/openssl",
+                    "pkcs12",
+                    "-export",
+                    "-inkey",
+                    str(key),
+                    "-in",
+                    str(cert),
+                    "-out",
+                    str(bundle),
+                    "-passout",
+                    "file:" + str(password_file),
+                ],
+                capture_output=True,
+                check=True,
             )
             try:
                 with patch.dict(os.environ, env):
                     HELPER.import_certificate()
-                result = subprocess.run(  # noqa: S603 - fixed certificate lookup
-                    ["/usr/bin/security", "find-certificate", "-c",
-                     "podcast transport smoke test", str(keychain)],
-                    capture_output=True, check=True,
+                result = subprocess.run(
+                    [
+                        "/usr/bin/security",
+                        "find-certificate",
+                        "-c",
+                        "podcast transport smoke test",
+                        str(keychain),
+                    ],
+                    capture_output=True,
+                    check=True,
                 )
                 checked(b"podcast transport smoke test" in result.stdout)
                 # Prove the password was not silently truncated by -i quoting.
