@@ -34,6 +34,12 @@ def resolve(path: str) -> str:
 
     ``.fcpxmld``-paketti on hakemisto, joten sen sisältä otetaan XML. Näin
     työkalulle voi antaa sen mitä Finderissa näkyy.
+
+    Resolverin sopimus on tarkoituksellisen väljä: vanhempihakuiset ja
+    absoluuttiset polut käyvät, jotta pääkomento, inspect ja edit saavat
+    toimia annetulla polulla sellaisenaan. HTTP-rajassa polun sijainti
+    tarkistetaan erikseen ``is_within``-avulla, jotta asetuksia ei kirjoiteta
+    lähdehakemiston ulkopuolelle.
     """
     path = os.path.expanduser(path)
     if not re.match(r"^[a-zA-Z]:[\\/]", path):
@@ -43,6 +49,20 @@ def resolve(path: str) -> str:
         if os.path.exists(inner):
             return inner
     return path
+
+
+def is_within(path: str, root: str) -> bool:
+    """Onko ``path`` juuren ``root`` alla tai juuri itse.
+
+    Käytetään HTTP-rajassa: avattava XML on sallittu vain nykyisen lähteen
+    hakemistossa tai sen alla, jotteivät asetukset kirjoitu minne tahansa
+    levyllä (CWE-22). Polkuja ei pureta symbolisista linkeistä, koska
+    palvelin palaa omalla merkkijonollaan eikä pyynnön arvolla kosketa
+    tiedostojärjestelmää.
+    """
+    path = os.path.abspath(path)
+    root = os.path.abspath(root)
+    return os.path.commonpath([path, root]) == root
 
 
 # Nimeen kirjoitettavat säätimet. Lista on tarkka eikä «mitä tahansa sanoja»:

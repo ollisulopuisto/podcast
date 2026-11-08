@@ -20,6 +20,32 @@ def test_bundle_resolves_to_its_xml(tmp_path):
     assert pick.resolve(inner) == inner
 
 
+def test_resolve_accepts_parent_relative_cli_source(tmp_path, monkeypatch):
+    """Vanhempihakuisuus on CLI-sopimuksen osa: ``../`` polku ratkaistaan.
+
+    Resolveriä ei saa muuttaa hylkäämään ``..``-osia, sillä pääkomento,
+    inspect ja edit käyttävät sitä suoraan. HTTP-rajassa tarkistetaan erikseen
+    ettei polku karkaa lähdehakemiston ulkopuolelle.
+    """
+    target = _touch(str(tmp_path / "episode.fcpxml"))
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    monkeypatch.chdir(sub)
+    assert pick.resolve("../episode.fcpxml") == target
+    # Absoluuttinen polku käy edelleen sellaisenaan.
+    assert pick.resolve(target) == target
+
+
+def test_is_within_pitaa_polun_lahdehakemiston_sisalla(tmp_path):
+    """HTTP-rajan apuri: polku on sallittu vain lähdehakemiston alla."""
+    inside = _touch(str(tmp_path / "a.fcpxml"))
+    outside = tmp_path.parent / "ulkopuolinen.fcpxml"
+    outside.write_text("<fcpxml/>", encoding="utf-8")
+    assert pick.is_within(str(inside), str(tmp_path))
+    assert pick.is_within(str(tmp_path), str(tmp_path))
+    assert not pick.is_within(str(outside), str(tmp_path))
+
+
 def test_candidates_finds_both_muodot(tmp_path):
     plain = _touch(str(tmp_path / "kasin.fcpxml"))
     inner = _touch(str(tmp_path / "jakso.fcpxmld" / "Info.fcpxml"))

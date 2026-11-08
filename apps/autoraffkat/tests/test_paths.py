@@ -233,6 +233,35 @@ def test_open_is_not_limited_to_the_working_directory(tmp_path, monkeypatch):
     assert state.xml_path == str(xml)
 
 
+def test_open_rejects_an_absolute_path_outside_the_source_directory(tmp_path):
+    """Lähdehakemiston ulkopuolinen absoluuttinen polku hylätään (CWE-22).
+
+    ``pick.resolve`` hyväksyy sen yhä — CLI-sopimus säilyy — mutta
+    /api/open hylkää sen HTTP-rajassa, joten asetuksia ei kirjoiteta
+    valitun polun viereen minne tahansa levyllä.
+    """
+    from fastapi.testclient import TestClient
+
+    from autoraffkat.server.app import AppState, create_app
+
+    source = tmp_path / "a.fcpxml"
+    source.write_text("<x/>", encoding="utf-8")
+    state = AppState(xml_path=str(source))
+    client = TestClient(create_app(state))
+
+    inside = tmp_path / "b.fcpxml"
+    inside.write_text("<x/>", encoding="utf-8")
+    assert client.post("/api/open", json={"path": str(inside)}).status_code == 200
+    assert state.xml_path == str(inside)
+
+    outside = tmp_path.parent / "ulkopuolinen.fcpxml"
+    outside.write_text("<x/>", encoding="utf-8")
+    before = state.xml_path
+    response = client.post("/api/open", json={"path": str(outside)})
+    assert response.status_code == 400
+    assert state.xml_path == before
+
+
 def test_the_lookup_is_exact_and_answers_with_the_servers_own_string(tmp_path):
     """Pyynnön polkua ei käytetä polkuna: vain täsmälleen kirjattu merkkijono kelpaa.
 
