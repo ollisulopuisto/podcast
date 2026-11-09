@@ -226,3 +226,57 @@ def test_the_grid_feeds_the_masks_that_already_existed():
     assert closed, "vuorottelevilla puhujilla pitäisi syntyä vaimennusta"
     points = envelopes.duck_envelopes(speech, Settings(), 0.0)
     assert points, "ja siitä pitäisi syntyä käyrä"
+
+
+def test_speech_grid_subsampled_frame_eval_matches_dense_moving_rms(monkeypatch):
+    """Subsampled frame RMS in speech_grid must match full dense moving_rms."""
+    rate = 44100
+    rng = np.random.default_rng(42)
+    # Different stem lengths
+    n1 = int(rate * 10.0)
+    n2 = int(rate * 8.5)
+    mic_a = (rng.standard_normal(n1) * 0.01).astype(np.float32)
+    mic_b = (rng.standard_normal(n2) * 0.01).astype(np.float32)
+    # Speech burst
+    mic_a[int(rate * 2.0) : int(rate * 5.0)] *= 30.0
+    mic_b[int(rate * 4.0) : int(rate * 7.0)] *= 30.0
+
+    stems = {"a": mic_a, "b": mic_b}
+
+    # Baseline reference computation
+    from speechmix import dsp
+
+    hop = max(1, int(grid.HOP_SEC * rate))
+    frame = max(hop, int(grid.FRAME_SEC * rate))
+    n_samples = max(mic_a.size, mic_b.size)
+    n_frames = max(1, n_samples // hop)
+    idx = np.minimum(np.arange(n_frames) * hop + hop // 2, n_samples - 1)
+
+    ref_levels = {}
+    for name, arr in stems.items():
+        padded = np.zeros(n_samples)
+        padded[: arr.size] = arr
+        env = dsp.moving_rms(padded, frame)
+        raw_db = dsp.lin_to_db(env[idx])
+        ref_levels[name] = grid.smooth(raw_db, hop_sec=grid.HOP_SEC)
+
+    # Now speech_grid call:
+    result = grid.speech_grid(stems, rate)
+    for name in stems:
+        np.testing.assert_allclose(result.levels[name], ref_levels[name], atol=1e-5)
+    assert getattr(grid, "_SUBSAMPLED_RMS", False), "speech_grid must use subsampled RMS evaluation"
+
+
+def test_speech_grid_preserves_quiet_tail_after_long_loud_passage():
+    """A long prefix must not swallow quiet-window energy in a global sum."""
+    from speechmix import dsp
+
+    rate = 48000
+    audio = np.full(7_500_000, 1e-5)
+    audio[:5_000_000] = 0.5
+    result = grid.speech_grid({"mic": audio}, rate)
+    # Compare fully quiet frames to the analytical RMS, not a second rolling
+    # accumulator that can also lose precision at the loud-to-quiet boundary.
+    expected_db = float(dsp.lin_to_db(1e-5))
+    np.testing.assert_allclose(result.levels["mic"][-100:], expected_db, atol=1e-4)
+    assert abs(grid.noise_floor(result.levels["mic"]) - expected_db) < 1e-4

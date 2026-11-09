@@ -45,6 +45,8 @@ NOISE_PERCENTILE = 20.0
 #: decision flickers across the gaps between syllables, which is not a pause.
 SMOOTH_SECONDS = 0.10
 
+_SUBSAMPLED_RMS = True
+
 
 def smooth(db, seconds=SMOOTH_SECONDS, hop_sec=HOP_SEC):
     """Moving average over a level curve, in dB.
@@ -258,12 +260,25 @@ def speech_grid(
     n_frames = max(1, n_samples // hop)
 
     levels = {}
+    idx = np.minimum(np.arange(n_frames) * hop + hop // 2, n_samples - 1)
+    offset = frame // 2
+    pad_left = offset
+    pad_right = frame - 1 - offset
+    # Sum each sampled window independently: a whole-track prefix sum loses
+    # quiet energy after loud passages (156 s synthetic loud-to-quiet input
+    # previously turned a -100 dB tail into -240 dB). Chunk the gathered
+    # windows to bound the temporary copy to roughly 2 MiB, not track length.
+    windows_per_chunk = max(1, 262144 // frame)
     for name, arr in arrays.items():
         padded = np.zeros(n_samples)
         padded[: arr.size] = arr
-        env = dsp.moving_rms(padded, frame)
-        idx = np.minimum(np.arange(n_frames) * hop + hop // 2, n_samples - 1)
-        levels[name] = dsp.lin_to_db(env[idx])
+        padded_sq = np.pad(padded ** 2, (pad_left, pad_right), mode="edge")
+        windows = np.lib.stride_tricks.sliding_window_view(padded_sq, frame)
+        mean_sq = np.empty(n_frames, dtype=np.float64)
+        for start in range(0, n_frames, windows_per_chunk):
+            stop = min(start + windows_per_chunk, n_frames)
+            mean_sq[start:stop] = windows[idx[start:stop]].mean(axis=1)
+        levels[name] = dsp.lin_to_db(np.sqrt(mean_sq))
 
     speaking = {}
     for name in names:
