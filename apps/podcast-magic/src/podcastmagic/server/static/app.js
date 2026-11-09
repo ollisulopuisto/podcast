@@ -331,16 +331,21 @@ const PM = {
     const copyBtn = this.el('button', {
       class: 'ghost', type: 'button', text: this.t('app.copy'),
       onclick: async () => {
+        let ok = false;
         try {
           if (navigator.clipboard?.writeText) {
             await navigator.clipboard.writeText(written);
-          } else {
+            ok = true;
+          } else if (document.execCommand) {
             field.select();
-            document.execCommand('copy');
+            ok = !!document.execCommand('copy');
           }
-          copyBtn.textContent = this.t('app.copied');
-          setTimeout(() => { copyBtn.textContent = this.t('app.copy'); }, 1500);
-        } catch { field.select(); }
+        } catch {
+          ok = false;
+        }
+        field.select();
+        copyBtn.textContent = this.t(ok ? 'app.copied' : 'app.copyFailed');
+        setTimeout(() => { copyBtn.textContent = this.t('app.copy'); }, 1500);
       },
     });
     box.replaceChildren(

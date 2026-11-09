@@ -230,6 +230,9 @@ def test_job_result_has_status_live_region_accessible_label_and_copy_button():
     assert "'app.copy': 'Copy path'" in i18n
     assert "'app.copied': 'Kopioitu!'" in i18n
     assert "'app.copied': 'Copied!'" in i18n
+    assert "'app.copyFailed': 'Kopiointi epäonnistui'" in i18n
+    assert "'app.copyFailed': 'Copy failed'" in i18n
     assert "'aria-label': this.t('app.done')" in app
     assert "onfocus: (event) => event.target.select()" in app
     assert "navigator.clipboard?.writeText" in app
+    assert "app.copyFailed" in app
