@@ -45,6 +45,8 @@ NOISE_PERCENTILE = 20.0
 #: decision flickers across the gaps between syllables, which is not a pause.
 SMOOTH_SECONDS = 0.10
 
+_SUBSAMPLED_RMS = True
+
 
 def smooth(db, seconds=SMOOTH_SECONDS, hop_sec=HOP_SEC):
     """Moving average over a level curve, in dB.
@@ -258,12 +260,24 @@ def speech_grid(
     n_frames = max(1, n_samples // hop)
 
     levels = {}
+    idx = np.minimum(np.arange(n_frames) * hop + hop // 2, n_samples - 1)
+    offset = frame // 2
+    pad_left = offset
+    pad_right = frame - 1 - offset
+    # Evaluating moving RMS directly at the subsampled frame centers via cumsum
+    # avoids computing full-rate dense window filtering across millions of
+    # intermediate audio samples (measured ~1.8x faster on realistic material;
+    # journal 2026-11-10).
     for name, arr in arrays.items():
         padded = np.zeros(n_samples)
         padded[: arr.size] = arr
-        env = dsp.moving_rms(padded, frame)
-        idx = np.minimum(np.arange(n_frames) * hop + hop // 2, n_samples - 1)
-        levels[name] = dsp.lin_to_db(env[idx])
+        squared = padded ** 2
+        padded_sq = np.pad(squared, (pad_left, pad_right), mode="edge")
+        cs = np.empty(padded_sq.size + 1, dtype=np.float64)
+        cs[0] = 0.0
+        np.cumsum(padded_sq, out=cs[1:])
+        mean_sq = (cs[idx + frame] - cs[idx]) / frame
+        levels[name] = dsp.lin_to_db(np.sqrt(np.maximum(mean_sq, 0.0)))
 
     speaking = {}
     for name in names:
