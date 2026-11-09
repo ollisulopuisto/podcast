@@ -153,7 +153,7 @@ const sandbox = {
   navigator: { language: 'fi-FI' },
   localStorage: { getItem: () => null, setItem: () => {}, },
   fetch: fetchStub,
-  setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms || 0, 5)),
+  setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms || 0, 1)),
   clearTimeout: (id) => clearTimeout(id),
   setInterval: () => 0,
   clearInterval: () => {},
@@ -181,8 +181,9 @@ for (const file of ['i18n.js', 'app.js', 'mod_chain.js', 'mod_transcribe.js',
    tikki riittää, koska hakuja on ketjussa korkeintaan kaksi. */
 async function settle() {
   for (let i = 0; i < 8; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await new Promise((resolve) => setImmediate(resolve));
   }
+  await new Promise((resolve) => setTimeout(resolve, 5));
 }
 
 (async () => {
