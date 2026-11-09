@@ -1,6 +1,8 @@
 import json
 import os
 
+import pytest
+
 from autoraffkat import project
 from autoraffkat.model import Globals, TrackConfig
 from autoraffkat.project import ProjectSettings
@@ -357,3 +359,80 @@ def test_name_tag_mentions_the_layout_only_when_it_is_not_the_default(tmp_path):
     # Asettelu ilman pystyvientiä ei vaikuta mihinkään.
     flat = ProjectSettings(globals=Globals(vertical=False, vertical_layout="wide_top"))
     assert project.name_tag(flat) == "broadcast"
+
+
+# ------------------------------------------------- polun turvallisuus
+
+_BAD_PATHS = (
+    "sub/../jakso.fcpxml",
+    "../toinen.fcpxml",
+    "a/../..//jakso.fcpxml",
+)
+
+
+def _bad_abs_paths(tmp_path):
+    return [str(tmp_path / p) for p in _BAD_PATHS]
+
+
+def test_project_path_functions_reject_upward_traversal(tmp_path):
+    """next_output_path, settings_path, default_output_path ja derived_base
+    hylkaavat kayttajan antaman polun jossa on hakemistoon ylos osoittava
+    osa (..), ennen kuin se osuu millekaan tiedostojarjestelmaoperaatiolle.
+
+    next_output_pathissa osuu CodeQL py/path-injection (project.py:205):
+    kayttajan syotteesta tullut xml_path virtasi suoraan os.path.exists-kutsuun.
+    """
+    xml = tmp_path / "jakso.fcpxml"
+    xml.write_text("<fcpxml/>")
+    clean = str(xml)
+    for bad in _bad_abs_paths(tmp_path):
+        for func in (
+            project.next_output_path,
+            project.settings_path,
+            project.default_output_path,
+            project.derived_base,
+        ):
+            with pytest.raises(ValueError, match=r"\.\."):
+                func(bad)
+    # Puhdas polku kayy sellaisenaan.
+    assert project.settings_path(clean) == str(tmp_path / "jakso.autoraffkat.json")
+    assert project.default_output_path(clean) == str(tmp_path / "jakso-cut.fcpxml")
+
+
+def test_legacy_settings_path_rejects_upward_traversal(tmp_path):
+    xml = tmp_path / "jakso.fcpxml"
+    xml.write_text("<fcpxml/>")
+    for bad in _bad_abs_paths(tmp_path):
+        with pytest.raises(ValueError, match=r"\.\."):
+            project.legacy_settings_path(bad)
+
+
+def test_read_rejects_upward_traversal(tmp_path):
+    for bad in _bad_abs_paths(tmp_path):
+        with pytest.raises(ValueError, match=r"\.\."):
+            project.read(bad)
+
+
+def test_save_rejects_upward_traversal(tmp_path):
+    xml = tmp_path / "jakso.fcpxml"
+    xml.write_text("<fcpxml/>")
+    settings = project.ProjectSettings()
+    for bad in _bad_abs_paths(tmp_path):
+        with pytest.raises(ValueError, match=r"\.\."):
+            project.save(bad, settings)
+
+
+def test_load_rejects_upward_traversal(tmp_path):
+    xml = tmp_path / "jakso.fcpxml"
+    xml.write_text("<fcpxml/>")
+    for bad in _bad_abs_paths(tmp_path):
+        with pytest.raises(ValueError, match=r"\.\."):
+            project.load(bad)
+
+
+def test_find_previous_rejects_upward_traversal(tmp_path):
+    xml = tmp_path / "jakso.fcpxml"
+    xml.write_text("<fcpxml/>")
+    for bad in _bad_abs_paths(tmp_path):
+        with pytest.raises(ValueError, match=r"\.\."):
+            project.find_previous(bad)
