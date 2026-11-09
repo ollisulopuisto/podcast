@@ -46,6 +46,18 @@ BUNDLE_EXT = ".fcpxmld"
 BUNDLE_INNER = "Info.fcpxml"
 
 
+def _has_upward_component(path: str) -> bool:
+    """Palauttaa True, jos polussa on hakemistoon ylospain suuntaava osa (..).
+
+    Kayttajan antama polku (HTTP-pyynnosta tullut xml_path) ei saa karata
+    aiotusta kohteesta hakemistoon ylospain suuntaavan osan avulla. Sama
+    tarkistus on pick.py:_has_upward_component; se toistetaan tamaankin
+    moduuliin, jotta project.py on itsessaan turvallinen riippumatta
+    kutsuvan puolen siistimisesta (CodeQL py/path-injection, project.py:205).
+    """
+    return ".." in path.replace("\\", "/").split("/")
+
+
 def derived_base(xml_path: str) -> str:
     """Tähän lähteeseen kuuluvien tiedostojen kantanimi ilman päätettä.
 
@@ -54,6 +66,10 @@ def derived_base(xml_path: str) -> str:
     Johdetut tiedostot menevät paketin **viereen** ja saavat paketin nimen,
     joka on muutenkin luettavampi kuin ``Info``.
     """
+    if _has_upward_component(xml_path):
+        raise ValueError(
+            f"polku ei saa sisaltaa hakemistoon ylospain suuntaavaa osaa: {xml_path!r}"
+        )
     path = os.path.abspath(xml_path)
     folder = os.path.dirname(path)
     if os.path.basename(path) == BUNDLE_INNER and folder.endswith(BUNDLE_EXT):
@@ -68,6 +84,10 @@ def settings_path(xml_path: str) -> str:
 
 def legacy_settings_path(xml_path: str) -> str:
     """Vanha sijainti paketin sisällä. Luetaan, ei kirjoiteta."""
+    if _has_upward_component(xml_path):
+        raise ValueError(
+            f"polku ei saa sisaltaa hakemistoon ylospain suuntaavaa osaa: {xml_path!r}"
+        )
     return f"{os.path.splitext(os.path.abspath(xml_path))[0]}{SETTINGS_SUFFIX}"
 
 
@@ -293,6 +313,10 @@ def find_previous(xml_path: str) -> str | None:
     Etsintä ei mene syvälle: XML:n oma hakemisto, sen yläpuoli ja yläpuolen
     ``.fcpxmld``-paketit. Kauempaa löytyvä tiedosto olisi arvaus.
     """
+    if _has_upward_component(xml_path):
+        raise ValueError(
+            f"polku ei saa sisaltaa hakemistoon ylospain suuntaavaa osaa: {xml_path!r}"
+        )
     own = settings_path(xml_path)
     here = os.path.dirname(own)
     above = os.path.dirname(here)
@@ -327,6 +351,10 @@ def load(xml_path: str) -> ProjectSettings:
 
 def read(path: str) -> ProjectSettings | None:
     """Lukee yhden asetustiedoston. ``None`` jos sitä ei ole tai se on rikki."""
+    if _has_upward_component(path):
+        raise ValueError(
+            f"polku ei saa sisaltaa hakemistoon ylospain suuntaavaa osaa: {path!r}"
+        )
     if not os.path.exists(path):
         return None
     try:
