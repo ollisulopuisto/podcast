@@ -9,3 +9,7 @@
 ## 2026-11-08 - ARIA semantics for tab navigation
 **Learning:** Custom navigation tabs need semantic `role="tablist"` and `role="tab"` attributes, plus an `aria-selected` value that tracks the active tab. Without them, screen readers cannot reliably identify the tab set or announce which tab is selected.
 **Action:** When implementing tab navigation, assign `role="tablist"` to the tab container, `role="tab"` to each tab, and update `aria-selected` whenever selection changes.
+
+## 2026-11-09 - Async export result live-region status, input labeling, and copy affordance
+**Learning:** In async-heavy processing apps (like Podcast Magic and autoraffkat), completion states render into initially hidden containers without live-region semantics (`role="status"`, `aria-live="polite"`). Screen reader users receive no auditory announcement that lengthy async tasks finished, and the resulting readonly path input lacked an accessible name and required mouse clicking to select text. Relying solely on "Show in Finder" also breaks workflows where users need to paste the result path directly into terminals or other tools without native OS file manager interaction.
+**Action:** Always mark async completion rows with `role="status"` and `aria-live="polite"`, ensure generated path inputs provide `aria-label` and `onfocus` auto-selection, and pair "Show in Finder" with an inline "Copy path" button providing transient confirmation feedback.

@@ -322,11 +322,31 @@ const PM = {
     const written = job.result && job.result.written;
     if (!written) { box.classList.add('hidden'); return; }
     box.classList.remove('hidden');
-    const field = this.el('input', { type: 'text', readonly: true, value: written,
-                                     onclick: (event) => event.target.select() });
+    const field = this.el('input', {
+      type: 'text', readonly: true, value: written,
+      'aria-label': this.t('app.done'),
+      onclick: (event) => event.target.select(),
+      onfocus: (event) => event.target.select(),
+    });
+    const copyBtn = this.el('button', {
+      class: 'ghost', type: 'button', text: this.t('app.copy'),
+      onclick: async () => {
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(written);
+          } else {
+            field.select();
+            document.execCommand('copy');
+          }
+          copyBtn.textContent = this.t('app.copied');
+          setTimeout(() => { copyBtn.textContent = this.t('app.copy'); }, 1500);
+        } catch { field.select(); }
+      },
+    });
     box.replaceChildren(
       this.el('span', { class: 'said', text: this.t('app.done') }),
       field,
+      copyBtn,
       this.el('button', { class: 'ghost', text: this.t('app.reveal'),
                           onclick: () => this.api('/api/reveal', { path: written }).catch(() => {}) }),
     );
