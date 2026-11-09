@@ -265,3 +265,18 @@ def test_speech_grid_subsampled_frame_eval_matches_dense_moving_rms(monkeypatch)
     for name in stems:
         np.testing.assert_allclose(result.levels[name], ref_levels[name], atol=1e-5)
     assert getattr(grid, "_SUBSAMPLED_RMS", False), "speech_grid must use subsampled RMS evaluation"
+
+
+def test_speech_grid_preserves_quiet_tail_after_long_loud_passage():
+    """A long prefix must not swallow quiet-window energy in a global sum."""
+    from speechmix import dsp
+
+    rate = 48000
+    audio = np.full(7_500_000, 1e-5)
+    audio[:5_000_000] = 0.5
+    result = grid.speech_grid({"mic": audio}, rate)
+    # Compare fully quiet frames to the analytical RMS, not a second rolling
+    # accumulator that can also lose precision at the loud-to-quiet boundary.
+    expected_db = float(dsp.lin_to_db(1e-5))
+    np.testing.assert_allclose(result.levels["mic"][-100:], expected_db, atol=1e-4)
+    assert abs(grid.noise_floor(result.levels["mic"]) - expected_db) < 1e-4

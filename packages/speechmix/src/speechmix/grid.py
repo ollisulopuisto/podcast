@@ -264,20 +264,21 @@ def speech_grid(
     offset = frame // 2
     pad_left = offset
     pad_right = frame - 1 - offset
-    # Evaluating moving RMS directly at the subsampled frame centers via cumsum
-    # avoids computing full-rate dense window filtering across millions of
-    # intermediate audio samples (measured ~1.8x faster on realistic material;
-    # journal 2026-11-10).
+    # Sum each sampled window independently: a whole-track prefix sum loses
+    # quiet energy after loud passages (156 s synthetic loud-to-quiet input
+    # previously turned a -100 dB tail into -240 dB). Chunk the gathered
+    # windows to bound the temporary copy to roughly 2 MiB, not track length.
+    windows_per_chunk = max(1, 262144 // frame)
     for name, arr in arrays.items():
         padded = np.zeros(n_samples)
         padded[: arr.size] = arr
-        squared = padded ** 2
-        padded_sq = np.pad(squared, (pad_left, pad_right), mode="edge")
-        cs = np.empty(padded_sq.size + 1, dtype=np.float64)
-        cs[0] = 0.0
-        np.cumsum(padded_sq, out=cs[1:])
-        mean_sq = (cs[idx + frame] - cs[idx]) / frame
-        levels[name] = dsp.lin_to_db(np.sqrt(np.maximum(mean_sq, 0.0)))
+        padded_sq = np.pad(padded ** 2, (pad_left, pad_right), mode="edge")
+        windows = np.lib.stride_tricks.sliding_window_view(padded_sq, frame)
+        mean_sq = np.empty(n_frames, dtype=np.float64)
+        for start in range(0, n_frames, windows_per_chunk):
+            stop = min(start + windows_per_chunk, n_frames)
+            mean_sq[start:stop] = windows[idx[start:stop]].mean(axis=1)
+        levels[name] = dsp.lin_to_db(np.sqrt(mean_sq))
 
     speaking = {}
     for name in names:
