@@ -97,7 +97,9 @@ def open_runs(mask: np.ndarray, k: int) -> np.ndarray:
     bounds = np.concatenate(([0], change, [out.size]))
     starts = bounds[:-1]
     ends = bounds[1:]
-    drop = out[starts] & ((ends - starts) < k)
+    # != 0, ei pelkkä totuusarvo: kokonaislukumaskilla bitti-ja antaisi
+    # kokonaislukutaulukon, jota starts[...] tulkitsee paikoiksi eikä valinnaksi.
+    drop = (out[starts] != 0) & ((ends - starts) < k)
     for s, e in zip(starts[drop].tolist(), ends[drop].tolist(), strict=True):
         out[s:e] = False
     return out
@@ -197,7 +199,9 @@ def close_gaps(mask: np.ndarray, seconds: float) -> np.ndarray:
     bounds = np.concatenate(([0], change, [out.size]))
     starts = bounds[:-1]
     ends = bounds[1:]
-    fill = (~out[starts]) & (starts != 0) & (ends != out.size) & ((ends - starts) < limit)
+    # == 0, ei ~: kokonaislukumaskilla ~ antaisi kokonaislukuja, joiden
+    # käyttö valintana tulkitsee ne paikoiksi eikä totuusarvoiksi.
+    fill = (out[starts] == 0) & (starts != 0) & (ends != out.size) & ((ends - starts) < limit)
     for s, e in zip(starts[fill].tolist(), ends[fill].tolist(), strict=True):
         out[s:e] = True
     return out
