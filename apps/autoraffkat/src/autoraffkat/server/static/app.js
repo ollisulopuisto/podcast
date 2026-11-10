@@ -2797,16 +2797,22 @@ function renderExported(path, said) {
   copyBtn.textContent = T('app.copy');
   copyBtn.addEventListener('click', async () => {
     let ok = false;
-    try {
-      if (navigator.clipboard?.writeText) {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
         await navigator.clipboard.writeText(path);
         ok = true;
-      } else if (document.execCommand) {
-        field.select();
-        ok = !!document.execCommand('copy');
+      } catch {
+        // The Clipboard API can be present yet reject (e.g. permission
+        // denied): fall through to the legacy copy command (Devin on #204).
       }
-    } catch {
-      ok = false;
+    }
+    if (!ok && document.execCommand) {
+      field.select();
+      try {
+        ok = !!document.execCommand('copy');
+      } catch {
+        ok = false;
+      }
     }
     field.select();
     copyBtn.textContent = T(ok ? 'app.copied' : 'app.copyFailed');
