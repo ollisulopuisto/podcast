@@ -2787,7 +2787,37 @@ function renderExported(path, said) {
   field.readOnly = true;
   field.value = path;
   field.spellcheck = false;
+  field.setAttribute('aria-label', T('path.export'));
+  field.addEventListener('click', () => field.select());
   field.addEventListener('focus', () => field.select());
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'ghost small';
+  copyBtn.style.margin = '0';
+  copyBtn.type = 'button';
+  copyBtn.textContent = T('app.copy');
+  copyBtn.addEventListener('click', async () => {
+    let ok = false;
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(path);
+        ok = true;
+      } catch {
+        // Leikepöydän rajapinta voi hylätä kirjoituksen (esim. lupa evätty):
+        // yritä silloin vanhaa kopiointikomentoa.
+      }
+    }
+    if (!ok && document.execCommand) {
+      field.select();
+      try {
+        ok = !!document.execCommand('copy');
+      } catch {
+        ok = false;
+      }
+    }
+    field.select();
+    copyBtn.textContent = T(ok ? 'app.copied' : 'app.copyFailed');
+    setTimeout(() => { copyBtn.textContent = T('app.copy'); }, 1500);
+  });
   const fcp = document.createElement('button');
   fcp.className = 'ghost small';
   fcp.style.margin = '0';
@@ -2798,7 +2828,7 @@ function renderExported(path, said) {
   show.style.margin = '0';
   show.textContent = T('export.reveal');
   show.addEventListener('click', () => sendPath('/api/reveal', path, show));
-  box.append(label, field, fcp, show);
+  box.append(label, field, copyBtn, fcp, show);
 }
 
 /* Yhteinen lähetys molemmille napeille: virhe kerrotaan, ei niellä.
