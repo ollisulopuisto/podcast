@@ -242,3 +242,26 @@ def test_the_duck_still_lifts_when_the_speaker_actually_talks():
                  _Lane("b", b_on, np.full(n, -18.0)))
     out = masks.duck_masks(grid, _Settings())
     assert not out["a"][560:760].any(), "oma vuoro jäi vaimennetuksi"
+
+
+def test_integer_masks_behave_like_boolean_masks():
+    """Regression (Devin on #203): 0/1-kokonaislukumaski tulkitaan samoin
+    kuin totuusarvomaski. Vektoroidussa versiossa ``&`` kokonaisluvuilla
+    tuotti paikkaindeksit, jolloin väärät jaksot putosivat ja täyttyivät."""
+    mask = np.zeros(100, dtype=bool)
+    mask[0:4] = True            # reunaan ulottuva tosi jakso
+    mask[6:8] = True            # lyhyt tosi jakso, 2 solua
+    mask[50:60] = True
+    int_mask = mask.astype(np.int8)
+
+    k = 3                       # [6:8] on 2 solua eli putoaa, [0:4] säilyy
+    assert np.array_equal(
+        masks.open_runs(int_mask, k), masks.open_runs(mask, k).astype(np.int8)
+    )
+    assert np.array_equal(
+        masks.close_gaps(int_mask, 0.05),
+        masks.close_gaps(mask, 0.05).astype(np.int8),
+    )
+    # Konkreettinen odotus: vain lyhyt jakso [6:8] putoaa, pitkä [0:4] säilyy.
+    assert masks.open_runs(int_mask, k)[0]
+    assert not masks.open_runs(int_mask, k)[6]
