@@ -7,6 +7,14 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.10.1] - 2026-11-10
+
+### Added
+- Audio offset estimation core, raw-media import and sync, and programme in/out marks for autoraffkat.
+
+### Performance
+- Vectorized per-block ramps and noise-floor estimation in the shared speechmix chain; bisected envelope lookup.
+
 ## [2026.11.5.2] - 2026-11-05
 
 ### Packaging
