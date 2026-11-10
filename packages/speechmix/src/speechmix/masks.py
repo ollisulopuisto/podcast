@@ -85,13 +85,21 @@ def hops(seconds: float) -> int:
     return max(1, int(round(seconds / HOP)))
 
 def open_runs(mask: np.ndarray, k: int) -> np.ndarray:
-    """Poistaa k:ta lyhyemmät todet jaksot. Tämä on vahvistusaika."""
+    """Poistaa k:ta lyhyemmät todet jaksot. Tämä on vahvistusaika.
+
+    Optimoitu tunnistamalla pudotettavat jaksot suoraan NumPy-siirtymistä
+    ja silmukoimalla vain pudotettavat välit ilman väliaikaisia monikoita.
+    """
     if k <= 1 or mask.size == 0:
         return mask
     out = mask.copy()
-    for start, end, value in runs(mask.astype(np.int8)):
-        if value and (end - start) < k:
-            out[start:end] = False
+    change = np.flatnonzero(out[1:] != out[:-1]) + 1
+    bounds = np.concatenate(([0], change, [out.size]))
+    starts = bounds[:-1]
+    ends = bounds[1:]
+    drop = out[starts] & ((ends - starts) < k)
+    for s, e in zip(starts[drop].tolist(), ends[drop].tolist(), strict=True):
+        out[s:e] = False
     return out
 
 def open_windows(
@@ -178,15 +186,20 @@ def close_gaps(mask: np.ndarray, seconds: float) -> np.ndarray:
     epätodesta jaksosta täytettävän, jolloin maski laajenisi molempiin päihin
     — ja portin tapauksessa se tarkoittaisi vaimennusta ennen kuin peittävä
     ääni on tullut, mikä on juuri se lasku joka kuuluu.
+
+    Optimoitu tunnistamalla täytettävät aukot vektoroidusti rajojen pituuksista.
     """
     if seconds <= 0 or mask.size == 0:
         return mask
+    limit = hops(seconds)
     out = mask.copy()
-    for start, end, value in runs(mask.astype(np.int8)):
-        if value or start == 0 or end == mask.size:
-            continue
-        if (end - start) < hops(seconds):
-            out[start:end] = True
+    change = np.flatnonzero(out[1:] != out[:-1]) + 1
+    bounds = np.concatenate(([0], change, [out.size]))
+    starts = bounds[:-1]
+    ends = bounds[1:]
+    fill = (~out[starts]) & (starts != 0) & (ends != out.size) & ((ends - starts) < limit)
+    for s, e in zip(starts[fill].tolist(), ends[fill].tolist(), strict=True):
+        out[s:e] = True
     return out
 
 def speech_masks(grid) -> dict:

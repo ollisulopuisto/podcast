@@ -132,6 +132,52 @@ def test_close_gaps_is_the_dual_of_drop_short():
     assert not masks.close_gaps(mask, 1.0)[80:].any()
 
 
+def test_open_runs_and_close_gaps_invariants_fuzz():
+    """Fuzz open_runs and close_gaps across lengths, edge cases and properties."""
+    rng = np.random.default_rng(42)
+
+    # Empty and single element cases
+    empty = np.array([], dtype=bool)
+    assert len(masks.open_runs(empty, 5)) == 0
+    assert len(masks.close_gaps(empty, 0.5)) == 0
+
+    single_true = np.array([True])
+    single_false = np.array([False])
+    assert not masks.open_runs(single_true, 2)[0]
+    assert masks.open_runs(single_true, 1)[0]
+    # close_gaps leaves margins/boundaries untouched
+    assert not masks.close_gaps(single_false, 0.5)[0]
+
+    # Invariant testing across various configurations
+    for length in (2, 3, 5, 20, 100, 500):
+        for _ in range(5):
+            mask = rng.choice([False, True], size=length)
+            # Property 1: open_runs(mask, k) is always a subset of mask (no new True values)
+            k = int(rng.integers(1, 10))
+            filtered = masks.open_runs(mask, k)
+            assert filtered.shape == mask.shape
+            assert not (filtered & ~mask).any(), "open_runs introduced new True elements"
+
+            # Property 2: Any True run in filtered has length >= k
+            if filtered.any():
+                runs_filtered = masks.runs(filtered.astype(np.int8))
+                for s, e, v in runs_filtered:
+                    if v:
+                        assert e - s >= k, f"Run [{s}:{e}] was shorter than k={k}"
+
+            # Property 3: close_gaps(mask, sec) is always a superset of mask (no new False values)
+            sec = float(rng.uniform(0.01, 0.2))
+            closed = masks.close_gaps(mask, sec)
+            assert closed.shape == mask.shape
+            assert not (~closed & mask).any(), "close_gaps removed True elements"
+
+            # Property 4: Margins stay unchanged in close_gaps
+            if not mask[0]:
+                assert not closed[0], "close_gaps filled the start boundary"
+            if not mask[-1]:
+                assert not closed[-1], "close_gaps filled the end boundary"
+
+
 def test_a_plosive_does_not_reopen_the_ducked_microphone():
     """Vuoto joka hipaisee kynnystä avasi mikin kesken toisen lauseen.
 
