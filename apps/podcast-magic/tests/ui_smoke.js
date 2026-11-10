@@ -153,7 +153,7 @@ const sandbox = {
   navigator: { language: 'fi-FI' },
   localStorage: { getItem: () => null, setItem: () => {}, },
   fetch: fetchStub,
-  setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms || 0, 5)),
+  setTimeout: (fn, ms) => setTimeout(fn, Math.min(ms || 0, 1)),
   clearTimeout: (id) => clearTimeout(id),
   setInterval: () => 0,
   clearInterval: () => {},
@@ -183,6 +183,7 @@ async function settle() {
   for (let i = 0; i < 8; i += 1) {
     await new Promise((resolve) => setImmediate(resolve));
   }
+  await new Promise((resolve) => setTimeout(resolve, 5));
 }
 
 (async () => {

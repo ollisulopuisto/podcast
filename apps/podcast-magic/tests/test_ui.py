@@ -217,3 +217,22 @@ def test_file_browser_has_dialog_semantics_and_dismiss_controls():
     css = (STATIC / "style.css").read_text(encoding="utf-8")
     assert ".browser li button:focus-visible" in css
     assert ".browser .here button:focus-visible" in css
+
+
+def test_job_result_has_status_live_region_accessible_label_and_copy_button():
+    """Valmiin tuloksen laatikolla on tilatiedote ruudunlukijalle, nimilappu ja kopiointinappi."""
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    i18n = (STATIC / "i18n.js").read_text(encoding="utf-8")
+
+    assert 'id="job-result" class="exported hidden" role="status" aria-live="polite"' in html
+    assert "'app.copy': 'Kopioi polku'" in i18n
+    assert "'app.copy': 'Copy path'" in i18n
+    assert "'app.copied': 'Kopioitu!'" in i18n
+    assert "'app.copied': 'Copied!'" in i18n
+    assert "'app.copyFailed': 'Kopiointi epäonnistui'" in i18n
+    assert "'app.copyFailed': 'Copy failed'" in i18n
+    assert "'aria-label': this.t('app.done')" in app
+    assert "onfocus: (event) => event.target.select()" in app
+    assert "navigator.clipboard?.writeText" in app
+    assert "app.copyFailed" in app
