@@ -2802,8 +2802,8 @@ function renderExported(path, said) {
         await navigator.clipboard.writeText(path);
         ok = true;
       } catch {
-        // The Clipboard API can be present yet reject (e.g. permission
-        // denied): fall through to the legacy copy command (Devin on #204).
+        // Leikepöydän rajapinta voi hylätä kirjoituksen (esim. lupa evätty):
+        // yritä silloin vanhaa kopiointikomentoa.
       }
     }
     if (!ok && document.execCommand) {

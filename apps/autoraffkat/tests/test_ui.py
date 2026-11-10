@@ -254,6 +254,6 @@ def test_exported_result_has_status_live_region_accessible_label_and_copy_button
     assert "field.addEventListener('focus', () => field.select());" in app
     assert "navigator.clipboard?.writeText" in app
     assert "app.copyFailed" in app
-    # Regression (Devin on #204): a rejected writeText must fall through to
-    # the legacy copy command instead of reporting failure outright.
+    # Hylätyn writeText-kutsun jälkeen yritetään vanhaa kopiointikomentoa
+    # sen sijaan, että ilmoitettaisiin heti epäonnistumisesta.
     assert "if (!ok && document.execCommand)" in app
