@@ -235,3 +235,22 @@ def test_root_icon_endpoints_return_ok(scratch_xml):
     res_apple = client.get("/apple-touch-icon.png")
     assert res_apple.status_code == 200
     assert len(res_apple.content) > 0
+
+
+def test_exported_result_has_status_live_region_accessible_label_and_copy_button():
+    """Valmiin XML-viennin laatikolla on tilatiedote ruudunlukijalle, nimilappu ja kopiointinappi."""
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    i18n = (STATIC / "i18n.js").read_text(encoding="utf-8")
+
+    assert 'id="exported" class="exported hidden" role="status" aria-live="polite"' in html
+    assert "'app.copy': 'Kopioi polku'" in i18n
+    assert "'app.copy': 'Copy path'" in i18n
+    assert "'app.copied': 'Kopioitu!'" in i18n
+    assert "'app.copied': 'Copied!'" in i18n
+    assert "'app.copyFailed': 'Kopiointi epäonnistui'" in i18n
+    assert "'app.copyFailed': 'Copy failed'" in i18n
+    assert "field.setAttribute('aria-label', T('path.export'));" in app
+    assert "field.addEventListener('focus', () => field.select());" in app
+    assert "navigator.clipboard?.writeText" in app
+    assert "app.copyFailed" in app
