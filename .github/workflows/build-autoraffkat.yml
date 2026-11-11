@@ -17,6 +17,7 @@ jobs:
         working-directory: apps/autoraffkat
     steps:
     - name: Resolve latest merged main
+      working-directory: ${{ github.workspace }}
       env:
         GH_TOKEN: ${{ github.token }}
         EXPECTED_SHA: ${{ inputs.source_sha }}
