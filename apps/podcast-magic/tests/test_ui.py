@@ -153,14 +153,19 @@ def test_keyboard_shortcuts_preserve_native_text_and_do_not_run_jobs():
 
 
 def test_tab_navigation_and_session_have_aria_semantics():
-    """Välilehdillä on roolit ja valintatila ruudunlukijalle, ja istuntokentällä nimilappu."""
+    """Välilehdillä on roolit, kiertävä sarkainjärjestys, paneelikytkentä ja nuolinavigointi."""
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     app = (STATIC / "app.js").read_text(encoding="utf-8")
     assert 'role="tablist"' in html
     assert 'aria-labelledby="session-title"' in html
     assert "role: 'tab'" in app
+    assert "'aria-controls': 'panels'" in app
+    assert "tabindex: spec.key === this.active ? '0' : '-1'" in app
+    assert "button.setAttribute('tabindex', isOn ? '0' : '-1');" in app
     assert "'aria-selected': spec.key === this.active ? 'true' : 'false'" in app
     assert "button.setAttribute('aria-selected', isOn ? 'true' : 'false');" in app
+    assert "tabs.addEventListener('keydown'" in app
+    assert "ArrowDown" in app and "ArrowUp" in app
 
 
 def test_shortcut_controls_have_aria_keyshortcuts_and_dialog_handling():
