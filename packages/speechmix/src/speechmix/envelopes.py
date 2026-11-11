@@ -30,7 +30,7 @@ import math
 
 import numpy as np
 
-from .masks import HOP, covering_masks, drop_short, duck_masks, runs
+from .masks import HOP, _gates, covering_masks, drop_short, duck_masks, runs
 from .timeline import Track
 
 
@@ -68,11 +68,17 @@ def duck_envelopes(grid, settings: object,
     depth = float(settings.duck_db)
     if not settings.duck or depth >= 0:
         return {}
+    if grid is None or len(getattr(grid, "speakers", [])) < 2:
+        return {}
     fade = float(settings.duck_fade)
     release = float(settings.duck_release or settings.duck_fade)
-    covering = covering_masks(grid, settings)
+    # Laske portit kerran ja jaa ne covering_masksille ja duck_masksille.
+    # Aiemmin molemmat kutsuivat _gates erikseen, mikä laski identtiset
+    # porttimaskit kahteen kertaan (~1.7x hitaampi).
+    gates = _gates(grid, settings)
+    covering = covering_masks(grid, settings, _gates_precomputed=gates)
     out: dict[str, list] = {}
-    for name, mask in duck_masks(grid, settings).items():
+    for name, mask in duck_masks(grid, settings, _gates_precomputed=gates).items():
         cover = covering.get(name)
         points: list[tuple[float, float]] = []
         for start, end, value in runs(np.asarray(mask).astype(np.int8)):

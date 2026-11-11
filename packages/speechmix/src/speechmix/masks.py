@@ -244,7 +244,9 @@ def _gates(grid, settings: object) -> tuple[list, list]:
     return opened, masking
 
 
-def covering_masks(grid, settings: object) -> dict:
+def covering_masks(
+    grid, settings: object, _gates_precomputed: tuple[list, list] | None = None
+) -> dict:
     """Milloin **jonkun muun** puhe peittää tämän puhujan.
 
     Sama ``others`` jota ``duck_masks`` käyttää, mutta ulospäin: laskun
@@ -253,7 +255,13 @@ def covering_masks(grid, settings: object) -> dict:
     """
     if grid is None or not settings.duck or len(grid.speakers) < 2:
         return {}
-    _, masking = _gates(grid, settings)
+    # Salli esilasketut portit (_gates), jotta duck_envelopes ei laske samoja
+    # portteja kahta kertaa (säästää ~13 ms / 1.7x nopeampi 77 minuutilla).
+    _, masking = (
+        _gates_precomputed
+        if _gates_precomputed is not None
+        else _gates(grid, settings)
+    )
     out = {}
     for i, lane in enumerate(grid.speakers):
         others = np.zeros_like(masking[i])
@@ -264,7 +272,9 @@ def covering_masks(grid, settings: object) -> dict:
     return out
 
 
-def duck_masks(grid, settings: object) -> dict:
+def duck_masks(
+    grid, settings: object, _gates_precomputed: tuple[list, list] | None = None
+) -> dict:
     """Puhujakohtaiset «mikki kiinni» -maskit ruudukossa.
 
     Ohjaus on sama puheentunnistus kuin kuvan leikkauksessa — se on jo säädetty
@@ -304,7 +314,13 @@ def duck_masks(grid, settings: object) -> dict:
     """
     if grid is None or not settings.duck or len(grid.speakers) < 2:
         return {}
-    opened, masking = _gates(grid, settings)
+    # Salli esilasketut portit (_gates), jotta duck_envelopes ei laske samoja
+    # portteja kahta kertaa.
+    opened, masking = (
+        _gates_precomputed
+        if _gates_precomputed is not None
+        else _gates(grid, settings)
+    )
 
     out = {}
     for i, lane in enumerate(grid.speakers):
