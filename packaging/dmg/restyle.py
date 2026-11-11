@@ -117,8 +117,13 @@ def restyle(image: Path, app_name: str, background: Path) -> None:
                     f"Unexpected visible payload files need an explicit layout: {extras}"
                 )
             bg_dir = mounted / ".background"
+            if bg_dir.is_symlink():
+                raise RuntimeError("Refusing a symlinked background directory")
             bg_dir.mkdir(exist_ok=True)
-            shutil.copyfile(background, bg_dir / "welcome.png")
+            picture = bg_dir / "welcome.png"
+            if picture.is_symlink():
+                raise RuntimeError("Refusing a symlinked background image")
+            shutil.copyfile(background, picture)
             script = work / "layout.applescript"
             script.write_text(APPLESCRIPT)
             print(run("osascript", str(script), str(mounted), app_name).decode())
@@ -143,40 +148,23 @@ def restyle(image: Path, app_name: str, background: Path) -> None:
                 ).decode()
             )
             print(run("hdiutil", "verify", str(final)).decode())
-            if (
-                os.environ.get("DMG_WELCOME_CAPTURE_LOG") == "1"
-                and os.environ.get("GITHUB_ACTIONS") == "true"
-            ):
-                # Capture the FINAL read-only image, not just the source artwork.
-                from capture import capture
-
-                evidence_mount = work / "evidence"
-                evidence_mount.mkdir()
-                evidence_attached = False
-                try:
-                    run(
-                        "hdiutil",
-                        "attach",
-                        str(final),
-                        "-readonly",
-                        "-nobrowse",
-                        "-noautoopen",
-                        "-mountpoint",
-                        str(evidence_mount),
-                    )
-                    evidence_attached = True
-                    capture(evidence_mount, work)
-                except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
-                    print(f"DMG_WELCOME_CAPTURE_UNAVAILABLE: {exc}")
-                finally:
-                    if evidence_attached:
-                        run("hdiutil", "detach", str(evidence_mount))
             os.replace(final, image)
         finally:
             if attached:
                 # Do not force-detach a possibly busy disk. Failure is visible.
                 run("hdiutil", "detach", str(mounted))
     print(f"DMG welcome layout saved: {image.name}; sign/notarize only after this step")
+    if (
+        os.environ.get("DMG_WELCOME_CAPTURE_LOG") == "1"
+        and os.environ.get("GITHUB_ACTIONS") == "true"
+    ):
+        # Evidence runs after atomic replacement, outside the packaging transaction.
+        from capture import capture_image
+
+        try:
+            capture_image(image)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            print(f"DMG_WELCOME_CAPTURE_UNAVAILABLE: {exc}")
 
 
 def main() -> None:
@@ -187,7 +175,7 @@ def main() -> None:
     args = parser.parse_args()
     try:
         restyle(args.image, args.app_name, args.background)
-    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
         if isinstance(exc, subprocess.CalledProcessError):
             print(exc.output.decode(errors="replace"), file=sys.stderr)
         parser.exit(1, f"DMG styling failed: {exc}\n")

@@ -90,8 +90,15 @@ def make_dmg(app_path: Path | None = None, output: Path | None = None) -> int:
         )
 
     repository = ROOT_DIR.parents[1]
-    _run([sys.executable, str(repository / "packaging/dmg/restyle.py"), str(target),
-          "Podcast Magic.app", str(repository / "packaging/dmg/welcome-podcast-magic.png")])
+    _run(
+        [
+            sys.executable,
+            str(repository / "packaging/dmg/restyle.py"),
+            str(target),
+            app.name,
+            str(repository / "packaging/dmg/welcome-podcast-magic.png"),
+        ]
+    )
     size = target.stat().st_size / 1e6
     print(f"\nValmis! Levykuva:\n  {target}  ({size:.0f} MB)")
     return 0
