@@ -8,6 +8,7 @@ spec = importlib.util.spec_from_file_location("dmg_contracts", PATH)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 Contract = module.Contract
+CaptureContract = module.CaptureContract
 
 
 class CustomBundleNames(__import__("unittest").TestCase):
