@@ -193,8 +193,8 @@ jobs:
 
         EOF
 
-        gh release create "$TAG" "$NAME" SHA256.txt --target "$BUILD_SHA" --draft --prerelease --latest=false --title "Autoraffkat
-        $VERSION arm64 TEST $GITHUB_RUN_ID" --notes-file notes.md
+        gh release create "$TAG" --repo "$GITHUB_REPOSITORY" "$NAME" SHA256.txt --target "$BUILD_SHA" --draft --prerelease
+        --latest=false --title "Autoraffkat $VERSION arm64 TEST $GITHUB_RUN_ID" --notes-file notes.md
 
         '
     timeout-minutes: 90
