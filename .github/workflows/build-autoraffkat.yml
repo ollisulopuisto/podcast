@@ -1,279 +1,185 @@
-name: build autoraffkat
-
-# Paketointi ajetaan tageista ja käsin, ei jokaisesta puskusta: käännös hakee
-# ffmpegin verkosta ja kestää minuutteja, kun taas testit ovat sekunteja.
-# Tagi `autoraffkat-v*` julkaisee levykuvan GitHubin Releaseen.
-# Nimetty sovelluksen mukaan, koska monorepossa kolme sovellusta
-# jakaa saman tagiavaruuden ja pelkkä `v*` osuisi mihin tahansa.
-on:
+name: Autoraffkat direct morning DMG
+'on':
   workflow_dispatch:
     inputs:
-      hotfix_artifact:
-        description: Build an artifact now without the test suites (no GitHub Release)
-        type: boolean
-        required: false
-        default: false
-  push:
-    tags: ["autoraffkat-v*"]
-
+      source_sha:
+        description: Expected latest merged main SHA. App checkout is pinned to this SHA.
+        required: true
+        type: string
 permissions:
-  contents: read
-
+  contents: write
+env: {}
 jobs:
   macos:
-    # Vain Apple Silicon. GitHub on poistanut ilmaiset Intel-ajurit
-    # (`macos-13`), ja jäljellä olevat x86_64-imaget ovat maksullisia isoja
-    # ajureita. Intel-paketti tehdään siis toistaiseksi käsin Intel-koneella:
-    # `uv run python scripts/build_app.py --dmg`. Arkkitehtuuri luetaan
-    # ajurilta eikä kirjoiteta tähän, jottei tiedoston nimi voi valehdella.
     runs-on: macos-latest
     defaults:
       run:
         working-directory: apps/autoraffkat
     steps:
-      - uses: actions/checkout@v7
+    - name: Resolve latest merged main
+      env:
+        GH_TOKEN: ${{ github.token }}
+        EXPECTED_SHA: ${{ inputs.source_sha }}
+      run: 'set -euo pipefail
 
-      - name: Install ffmpeg
-        run: brew install ffmpeg
+        SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
 
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
+        [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "22"
+        test "$EXPECTED_SHA" = "$SHA"
 
-      - name: Install
-        # Työtila, ei yksi jäsen: jaettu työkalusto (pytest, ruff) on juuren
-        # `dependency-groups`issa, ja `uv sync` jäsenen hakemistossa jättää sen
-        # asentamatta sekä poistaa muiden jäsenten riippuvuudet samasta
-        # ympäristöstä. Ensimmäinen ajo kaatui tähän: «Failed to spawn: pytest».
-        run: uv sync --all-packages --all-extras --directory ../..
+        echo "BUILD_SHA=$SHA" >> "$GITHUB_ENV"
 
-      # Testit ennen pakkausta. Rikkinäinen binääri on pahempi kuin hidas
-      # käännös: sen ehtii ladata ennen kuin kukaan huomaa.
-      - name: Tests
-        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.hotfix_artifact }}
-        run: uv run pytest -q
+        echo "App source: $SHA" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Hotfix artifact bypass notice
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.hotfix_artifact }}
-        run: >-
-          echo "HOTFIX BUILD ONLY: tests were skipped; this run cannot publish a release."
+        '
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ env.BUILD_SHA }}
+    - name: Install ffmpeg
+      run: brew install ffmpeg
+    - uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: false
+        save-cache: false
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '22'
+    - name: Install
+      run: uv sync --all-packages --all-extras --directory ../..
+    - name: Tests
+      if: ${{ github.event_name != 'workflow_dispatch' || !inputs.hotfix_artifact }}
+      run: uv run pytest -q
+    - name: Hotfix artifact bypass notice
+      if: ${{ github.event_name == 'workflow_dispatch' && inputs.hotfix_artifact }}
+      run: 'echo "HOTFIX BUILD ONLY: tests were skipped; this run cannot publish a release."'
+    - name: Import Developer ID certificate
+      env:
+        BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+        P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+        KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      run: 'set -euo pipefail
 
-      - name: Import Developer ID certificate
-        env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          set -euo pipefail
-          test -n "$BUILD_CERTIFICATE_BASE64"
-          test -n "$P12_PASSWORD"
-          test -n "$KEYCHAIN_PASSWORD"
-          KEYCHAIN_PATH="$RUNNER_TEMP/podcast-signing.keychain-db"
-          CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
-          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 -D -o "$CERTIFICATE_PATH"
-          export KEYCHAIN_PATH="$KEYCHAIN_PATH" CERTIFICATE_PATH="$CERTIFICATE_PATH"
-          export KEYCHAIN_PASSWORD="$KEYCHAIN_PASSWORD" P12_PASSWORD="$P12_PASSWORD"
-          python3 "$GITHUB_WORKSPACE/scripts/macos_ci_credentials.py" import-certificate
-          security list-keychains -d user -s "$KEYCHAIN_PATH"
-          rm -f "$CERTIFICATE_PATH"
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -F 'Developer ID Application: Olli Sulopuisto (LWSR8T5392)'
+        test -n "$BUILD_CERTIFICATE_BASE64"
 
-      # Niputettavat ffmpeg-binäärit ovat iso lataus ulkopuoliselta
-      # palvelimelta. Välimuisti pitää käännöksen pystyssä silloinkin kun se
-      # palvelin on nurin.
-      - name: Cache bundled ffmpeg
-        uses: actions/cache@v6
-        with:
-          path: apps/autoraffkat/bin
-          key: ffmpeg-${{ runner.arch }}-${{ hashFiles('apps/autoraffkat/scripts/fetch_binaries.py') }}
+        test -n "$P12_PASSWORD"
 
-      # Versio ympäristöstä, jotta paketti kantaa saman numeron kuin
-      # `pyproject.toml`. `.spec`in oletus on sama luku, ja
-      # `tests/test_workspace_agrees.py` vahtii ettei se jää jälkeen.
-      - name: Build app and disk image
-        env:
-          AR_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          APPLE_SIGNING_IDENTITY: "Developer ID Application: Olli Sulopuisto (LWSR8T5392)"
-        run: |
-          if [ -n "$AR_VERSION" ]; then
-            export AR_VERSION="${AR_VERSION#autoraffkat-v}"
-          else
-            unset AR_VERSION
-          fi
-          uv run python scripts/build_app.py --dmg
+        test -n "$KEYCHAIN_PASSWORD"
 
-      # Mitä pakettiin oikeasti päätyi. Niputettu ffmpeg tulee ulkopuolelta ja
-      # allekirjoitus voi rikkoutua kopioinnissa; kumpikin selviäisi ilman tätä
-      # vasta käyttäjän koneelta. Arkkitehtuurien pitää täsmätä.
-      - name: Report what is inside
-        id: inside
-        run: |
-          arch=$(uname -m)
-          echo "arch=$arch" >> "$GITHUB_OUTPUT"
-          echo "sovellus: $(file -b dist/autoraffkat.app/Contents/MacOS/autoraffkat)"
-          echo "ffmpeg:   $(file -b bin/ffmpeg)"
-          codesign --verify --deep --strict dist/autoraffkat.app
-          echo "allekirjoitus kelpaa"
+        KEYCHAIN_PATH="$RUNNER_TEMP/podcast-signing.keychain-db"
 
-      # Arkkitehtuuri nimeen, jotta Releaseen mahtuu myöhemmin toinenkin.
-      - name: Name the image by architecture
-        run: mv dist/autoraffkat.dmg "dist/autoraffkat-${{ steps.inside.outputs.arch }}.dmg"
+        CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
 
-      - name: Sign and verify DMG
-        env:
-          APPLE_SIGNING_IDENTITY: "Developer ID Application: Olli Sulopuisto (LWSR8T5392)"
-        run: |
-          DMG_PATH="dist/autoraffkat-${{ steps.inside.outputs.arch }}.dmg"
-          codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$DMG_PATH"
-          codesign --verify --verbose=2 "$DMG_PATH"
+        printf ''%s'' "$BUILD_CERTIFICATE_BASE64" | base64 -D -o "$CERTIFICATE_PATH"
 
-      # Notarisointi Applen tunnuksilla. Tagista ilman tunnuksia käännös
-      # kaatuu, koska julkaisu lupaa notarisoidun levykuvan; käsin ajettu
-      # käännös varoittaa ja jää pelkäksi allekirjoitetuksi artefaktiksi.
-      - name: Notarise and staple DMG
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-          APPLE_TEAM_ID: LWSR8T5392
-        run: |
-          set -euo pipefail
-          DMG_PATH="dist/autoraffkat-${{ steps.inside.outputs.arch }}.dmg"
-          if [ -z "$APPLE_ID" ] || [ -z "$APPLE_APP_PASSWORD" ]; then
-            if [ "$GITHUB_REF_TYPE" = tag ]; then
-              echo "::error::APPLE_ID / APPLE_APP_PASSWORD puuttuvat; julkaisun pitää olla notarisoitu."
-              exit 1
-            fi
-            echo "::warning::Ei notarisointitunnuksia: artefakti on allekirjoitettu mutta ei notarisoitu."
-            exit 0
-          fi
-          export KEYCHAIN_PATH="$RUNNER_TEMP/podcast-signing.keychain-db"
-          export APPLE_TEAM_ID="${APPLE_TEAM_ID:-LWSR8T5392}"
-          python3 "$GITHUB_WORKSPACE/scripts/macos_ci_credentials.py" store-notary-credentials
-          result=$(xcrun notarytool submit "$DMG_PATH" --keychain-profile ci-notary --keychain "$KEYCHAIN_PATH" --wait --timeout 45m --output-format json) || true
-          echo "$result"
-          id=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
-          status=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
-          if [ "$status" != Accepted ]; then
-            xcrun notarytool log "$id" --keychain-profile ci-notary --keychain "$KEYCHAIN_PATH"
-            exit 1
-          fi
-          xcrun stapler staple "$DMG_PATH"
-          xcrun stapler validate "$DMG_PATH"
-          spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG_PATH"
+        export KEYCHAIN_PATH="$KEYCHAIN_PATH" CERTIFICATE_PATH="$CERTIFICATE_PATH"
 
-      - uses: actions/upload-artifact@v7
-        with:
-          name: autoraffkat-${{ steps.inside.outputs.arch }}
-          path: apps/autoraffkat/dist/autoraffkat-*.dmg
-          if-no-files-found: error
+        export KEYCHAIN_PASSWORD="$KEYCHAIN_PASSWORD" P12_PASSWORD="$P12_PASSWORD"
 
-      - name: Remove signing keychain
-        if: always()
-        run: security delete-keychain "$RUNNER_TEMP/podcast-signing.keychain-db" || true
+        python3 "$GITHUB_WORKSPACE/scripts/macos_ci_credentials.py" import-certificate
 
-  windows:
-    runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: apps/autoraffkat
-    steps:
-      - uses: actions/checkout@v7
+        security list-keychains -d user -s "$KEYCHAIN_PATH"
 
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
+        rm -f "$CERTIFICATE_PATH"
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "22"
+        security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -F ''Developer ID Application: Olli Sulopuisto (LWSR8T5392)''
 
-      - name: Install
-        # Työtila, ei yksi jäsen: jaettu työkalusto (pytest, ruff) on juuren
-        # `dependency-groups`issa, ja `uv sync` jäsenen hakemistossa jättää sen
-        # asentamatta sekä poistaa muiden jäsenten riippuvuudet samasta
-        # ympäristöstä. Ensimmäinen ajo kaatui tähän: «Failed to spawn: pytest».
-        run: uv sync --all-packages --all-extras --directory ../..
+        '
+    - name: Build app and disk image
+      env:
+        AR_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        APPLE_SIGNING_IDENTITY: 'Developer ID Application: Olli Sulopuisto (LWSR8T5392)'
+      run: "if [ -n \"$AR_VERSION\" ]; then\n  export AR_VERSION=\"${AR_VERSION#autoraffkat-v}\"\nelse\n  unset AR_VERSION\n\
+        fi\nuv run python scripts/build_app.py --dmg\n"
+    - name: Report what is inside
+      id: inside
+      run: 'arch=$(uname -m)
 
-      - name: Cache bundled ffmpeg
-        uses: actions/cache@v6
-        with:
-          path: apps/autoraffkat/bin
-          key: ffmpeg-windows-${{ runner.arch }}-${{ hashFiles('apps/autoraffkat/scripts/fetch_binaries.py') }}
+        echo "arch=$arch" >> "$GITHUB_OUTPUT"
 
-      - name: Fetch binaries
-        run: uv run python scripts/fetch_binaries.py --os windows
+        echo "sovellus: $(file -b dist/autoraffkat.app/Contents/MacOS/autoraffkat)"
 
-      # macOSilla ffmpeg tulee brew'sta polkuun; Windowsissa se ladataan
-      # `bin`-hakemistoon, josta testit eivät sitä löydä: aineiston synteesi
-      # ajaa `ffmpeg`in suoraan polusta.
-      - name: Put bundled ffmpeg on PATH
-        shell: pwsh
-        run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\apps\autoraffkat\bin"
+        echo "ffmpeg:   $(file -b bin/ffmpeg)"
 
-      - name: Tests
-        run: uv run pytest -q
+        codesign --verify --deep --strict dist/autoraffkat.app
 
-      - name: Build Windows app
-        run: uv run python scripts/build_app.py --clean
+        echo "allekirjoitus kelpaa"
 
-      - name: Report what is inside
-        shell: pwsh
-        run: |
-          Get-ChildItem dist/autoraffkat
-          if (!(Test-Path "dist/autoraffkat/autoraffkat.exe")) {
-            Write-Error "autoraffkat.exe puuttuu dist-kansiosta"
-            exit 1
-          }
+        '
+    - name: Name the image by architecture
+      run: mv dist/autoraffkat.dmg "dist/autoraffkat-${{ steps.inside.outputs.arch }}.dmg"
+    - name: Sign and verify DMG
+      env:
+        APPLE_SIGNING_IDENTITY: 'Developer ID Application: Olli Sulopuisto (LWSR8T5392)'
+      run: 'DMG_PATH="dist/autoraffkat-${{ steps.inside.outputs.arch }}.dmg"
 
-      - name: Compress to ZIP
-        shell: pwsh
-        run: |
-          Compress-Archive -Path dist/autoraffkat -DestinationPath dist/autoraffkat-windows-x64.zip
+        codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$DMG_PATH"
 
-      - uses: actions/upload-artifact@v7
-        with:
-          name: autoraffkat-windows-x64
-          path: apps/autoraffkat/dist/autoraffkat-windows-x64.zip
-          if-no-files-found: error
+        codesign --verify --verbose=2 "$DMG_PATH"
 
-  release:
-    # Vain tagista. Käsin ajettu käännös jää artefaktiksi, ei julkaisuksi.
-    if: startsWith(github.ref, 'refs/tags/autoraffkat-v')
-    needs: [macos, windows]
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/autoraffkat
+        '
+    - name: Notarise and staple DMG
+      env:
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        APPLE_TEAM_ID: LWSR8T5392
+      run: "set -euo pipefail\nDMG_PATH=\"dist/autoraffkat-${{ steps.inside.outputs.arch }}.dmg\"\nif [ -z \"$APPLE_ID\" ]\
+        \ || [ -z \"$APPLE_APP_PASSWORD\" ]; then\n  if [ \"$GITHUB_REF_TYPE\" = tag ]; then\n    echo \"::error::APPLE_ID\
+        \ / APPLE_APP_PASSWORD puuttuvat; julkaisun pit\xE4\xE4 olla notarisoitu.\"\n    exit 1\n  fi\n  echo \"::warning::Ei\
+        \ notarisointitunnuksia: artefakti on allekirjoitettu mutta ei notarisoitu.\"\n  exit 0\nfi\nexport KEYCHAIN_PATH=\"\
+        $RUNNER_TEMP/podcast-signing.keychain-db\"\nexport APPLE_TEAM_ID=\"${APPLE_TEAM_ID:-LWSR8T5392}\"\npython3 \"$GITHUB_WORKSPACE/scripts/macos_ci_credentials.py\"\
+        \ store-notary-credentials\nresult=$(xcrun notarytool submit \"$DMG_PATH\" --keychain-profile ci-notary --keychain\
+        \ \"$KEYCHAIN_PATH\" --wait --timeout 45m --output-format json) || true\necho \"$result\"\nid=$(printf '%s' \"$result\"\
+        \ | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"id\"])')\nstatus=$(printf '%s' \"$result\" | python3\
+        \ -c 'import json,sys; print(json.load(sys.stdin)[\"status\"])')\nif [ \"$status\" != Accepted ]; then\n  xcrun notarytool\
+        \ log \"$id\" --keychain-profile ci-notary --keychain \"$KEYCHAIN_PATH\"\n  exit 1\nfi\nxcrun stapler staple \"$DMG_PATH\"\
+        \nxcrun stapler validate \"$DMG_PATH\"\nspctl --assess --type open --context context:primary-signature --verbose=2\
+        \ \"$DMG_PATH\"\n"
+    - name: Remove signing keychain
+      if: always()
+      run: security delete-keychain "$RUNNER_TEMP/podcast-signing.keychain-db" || true
+    - name: Deliver verified versioned DMG directly to draft Release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      working-directory: ${{ github.workspace }}
+      run: 'set -euo pipefail
+
+        VERSION=$(python3 -c ''import tomllib; print(tomllib.load(open("apps/autoraffkat/pyproject.toml","rb"))["project"]["version"])'')
+
+        [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)+$ ]]
+
+        TAG="morning-${VERSION}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+        NAME="Autoraffkat-${VERSION}-manual.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}-macos-arm64.dmg"
+
+        mkdir -p "$RUNNER_TEMP/morning-release"
+
+        cp "apps/autoraffkat/dist/autoraffkat-arm64.dmg" "$RUNNER_TEMP/morning-release/$NAME"
+
+        cd "$RUNNER_TEMP/morning-release"
+
+        shasum -a 256 "$NAME" > SHA256.txt
+
+        shasum -a 256 -c SHA256.txt
+
+        cat > notes.md <<EOF
+
+        Fresh Apple Silicon build from merged main $BUILD_SHA.
+
+        App version: $VERSION. Build ID: $GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT.
+
+        Developer ID signed, notarized and stapled by the existing packaging steps.
+
+        Native feature/UI acceptance has not been performed. Draft test build, not a stable release.
+
+        No Actions artifact/cache storage and no non-Mac builds.
+
+        EOF
+
+        gh release create "$TAG" "$NAME" SHA256.txt --target "$BUILD_SHA" --draft --prerelease --latest=false --title "Autoraffkat
+        $VERSION arm64 TEST $GITHUB_RUN_ID" --notes-file notes.md
+
+        '
+    timeout-minutes: 90
     permissions:
       contents: write
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          path: apps/autoraffkat/dist
-          merge-multiple: true
-
-      - name: Publish release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cat > notes.md <<'NOTES'
-          ### macOS
-          Sovellus ja levykuva on allekirjoitettu Developer ID:llä ja
-          notarisoitu. Vain Apple Silicon.
-
-          The app and disk image are Developer ID signed and notarised.
-          Apple silicon only.
-
-          ### Windows
-          Pura zip-paketti ja käynnistä `autoraffkat.exe`.
-          Extract the zip package and run `autoraffkat.exe`.
-          NOTES
-          gh release create "$GITHUB_REF_NAME" dist/*.dmg dist/*.zip \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$GITHUB_REF_NAME" \
-            --notes-file notes.md \
-            --generate-notes
