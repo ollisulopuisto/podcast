@@ -16,6 +16,17 @@ jobs:
       run:
         working-directory: apps/autoraffkat
     steps:
+    - name: Require signing and notarization credentials
+      working-directory: ${{ github.workspace }}
+      env:
+        BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+        P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+        KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      run: "set -euo pipefail\nfor name in BUILD_CERTIFICATE_BASE64 P12_PASSWORD KEYCHAIN_PASSWORD APPLE_ID APPLE_APP_PASSWORD;\
+        \ do\n  if [[ -z \"${!name:-}\" ]]; then\n    echo \"::error::Required signing/notarization credential missing: $name\"\
+        \ >&2\n    exit 1\n  fi\ndone\n"
     - name: Resolve latest merged main
       working-directory: ${{ github.workspace }}
       env:
@@ -49,11 +60,7 @@ jobs:
     - name: Install
       run: uv sync --all-packages --all-extras --directory ../..
     - name: Tests
-      if: ${{ github.event_name != 'workflow_dispatch' || !inputs.hotfix_artifact }}
       run: uv run pytest -q
-    - name: Hotfix artifact bypass notice
-      if: ${{ github.event_name == 'workflow_dispatch' && inputs.hotfix_artifact }}
-      run: 'echo "HOTFIX BUILD ONLY: tests were skipped; this run cannot publish a release."'
     - name: Import Developer ID certificate
       env:
         BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
@@ -124,21 +131,30 @@ jobs:
         APPLE_ID: ${{ secrets.APPLE_ID }}
         APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         APPLE_TEAM_ID: LWSR8T5392
-      run: "set -euo pipefail\nDMG_PATH=\"dist/autoraffkat-${{ steps.inside.outputs.arch }}.dmg\"\nif [ -z \"$APPLE_ID\" ]\
-        \ || [ -z \"$APPLE_APP_PASSWORD\" ]; then\n  if [ \"$GITHUB_REF_TYPE\" = tag ]; then\n    echo \"::error::APPLE_ID\
-        \ / APPLE_APP_PASSWORD puuttuvat; julkaisun pit\xE4\xE4 olla notarisoitu.\"\n    exit 1\n  fi\n  echo \"::warning::Ei\
-        \ notarisointitunnuksia: artefakti on allekirjoitettu mutta ei notarisoitu.\"\n  exit 0\nfi\nexport KEYCHAIN_PATH=\"\
-        $RUNNER_TEMP/podcast-signing.keychain-db\"\nexport APPLE_TEAM_ID=\"${APPLE_TEAM_ID:-LWSR8T5392}\"\npython3 \"$GITHUB_WORKSPACE/scripts/macos_ci_credentials.py\"\
-        \ store-notary-credentials\nresult=$(xcrun notarytool submit \"$DMG_PATH\" --keychain-profile ci-notary --keychain\
-        \ \"$KEYCHAIN_PATH\" --wait --timeout 45m --output-format json) || true\necho \"$result\"\nid=$(printf '%s' \"$result\"\
-        \ | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"id\"])')\nstatus=$(printf '%s' \"$result\" | python3\
-        \ -c 'import json,sys; print(json.load(sys.stdin)[\"status\"])')\nif [ \"$status\" != Accepted ]; then\n  xcrun notarytool\
-        \ log \"$id\" --keychain-profile ci-notary --keychain \"$KEYCHAIN_PATH\"\n  exit 1\nfi\nxcrun stapler staple \"$DMG_PATH\"\
-        \nxcrun stapler validate \"$DMG_PATH\"\nspctl --assess --type open --context context:primary-signature --verbose=2\
-        \ \"$DMG_PATH\"\n"
+      run: "set -euo pipefail\nDMG_PATH=\"dist/autoraffkat-${{ steps.inside.outputs.arch }}.dmg\"\ntest -n \"$APPLE_ID\"\n\
+        test -n \"$APPLE_APP_PASSWORD\"\nexport KEYCHAIN_PATH=\"$RUNNER_TEMP/podcast-signing.keychain-db\"\nexport APPLE_TEAM_ID=\"\
+        ${APPLE_TEAM_ID:-LWSR8T5392}\"\npython3 \"$GITHUB_WORKSPACE/scripts/macos_ci_credentials.py\" store-notary-credentials\n\
+        result=$(xcrun notarytool submit \"$DMG_PATH\" --keychain-profile ci-notary --keychain \"$KEYCHAIN_PATH\" --wait --timeout\
+        \ 45m --output-format json) || true\necho \"$result\"\nid=$(printf '%s' \"$result\" | python3 -c 'import json,sys;\
+        \ print(json.load(sys.stdin)[\"id\"])')\nstatus=$(printf '%s' \"$result\" | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"\
+        status\"])')\nif [ \"$status\" != Accepted ]; then\n  xcrun notarytool log \"$id\" --keychain-profile ci-notary --keychain\
+        \ \"$KEYCHAIN_PATH\"\n  exit 1\nfi\nxcrun stapler staple \"$DMG_PATH\"\nxcrun stapler validate \"$DMG_PATH\"\nspctl\
+        \ --assess --type open --context context:primary-signature --verbose=2 \"$DMG_PATH\"\n"
     - name: Remove signing keychain
       if: always()
       run: security delete-keychain "$RUNNER_TEMP/podcast-signing.keychain-db" || true
+    - name: Verify notarization before delivery
+      run: 'set -euo pipefail
+
+        DMG_PATH="dist/autoraffkat-${{ steps.inside.outputs.arch }}.dmg"
+
+        codesign --verify --verbose=2 "$DMG_PATH"
+
+        xcrun stapler validate "$DMG_PATH"
+
+        spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG_PATH"
+
+        '
     - name: Deliver verified versioned DMG directly to draft Release
       env:
         GH_TOKEN: ${{ github.token }}
