@@ -172,31 +172,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
           APPLE_TEAM_ID: LWSR8T5392
-        run: |
-          set -euo pipefail
-          DMG_PATH="dist/Podcast Magic.dmg"
-          if [ -z "$APPLE_ID" ] || [ -z "$APPLE_APP_PASSWORD" ]; then
-            if [ "$GITHUB_REF_TYPE" = tag ]; then
-              echo "::error::APPLE_ID / APPLE_APP_PASSWORD puuttuvat; julkaisun pitää olla notarisoitu."
-              exit 1
-            fi
-            echo "::warning::Ei notarisointitunnuksia: artefakti on allekirjoitettu mutta ei notarisoitu."
-            exit 0
-          fi
-          export KEYCHAIN_PATH="$RUNNER_TEMP/podcast-signing.keychain-db"
-          export APPLE_TEAM_ID="${APPLE_TEAM_ID:-LWSR8T5392}"
-          python3 "$GITHUB_WORKSPACE/scripts/macos_ci_credentials.py" store-notary-credentials
-          result=$(xcrun notarytool submit "$DMG_PATH" --keychain-profile ci-notary --keychain "$KEYCHAIN_PATH" --wait --timeout 45m --output-format json) || true
-          echo "$result"
-          id=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
-          status=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
-          if [ "$status" != Accepted ]; then
-            xcrun notarytool log "$id" --keychain-profile ci-notary --keychain "$KEYCHAIN_PATH"
-            exit 1
-          fi
-          xcrun stapler staple "$DMG_PATH"
-          xcrun stapler validate "$DMG_PATH"
-          spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG_PATH"
+        run: bash "$GITHUB_WORKSPACE/scripts/notarise_dmg.sh" "dist/Podcast Magic.dmg"
 
       # Mitä pakettiin oikeasti päätyi. Niputettu ffmpeg tulee ulkopuolelta ja
       # allekirjoitus voi rikkoutua kopioinnissa; kumpikin selviäisi ilman tätä
