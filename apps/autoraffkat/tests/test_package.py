@@ -1,6 +1,7 @@
 """Paketti: asetusten säilyvyys ja klippisuunnitelman rakennus."""
 
 from fractions import Fraction
+from xml.etree import ElementTree as ET
 
 from autoraffkat.package import (
     BED_UNDER_SPEECH_DB,
@@ -168,8 +169,6 @@ def test_beds_off_gives_no_clips():
 
 def test_package_lanes_in_multicam_export(fixture_dir, validate_fcpxml):
     """Kortit lane 3, pohja lane -4 vaimennuskäyröineen; tulos menee DTD:stä."""
-    from xml.etree import ElementTree as ET
-
     from autoraffkat.finalcut.read import read_fcpxml
     from autoraffkat.finalcut.write import build_multicam_fcpxml
     from autoraffkat.model import Segment
@@ -407,3 +406,48 @@ def test_render_job_adds_beds_as_stereo_sources():
     assert source.duck == [(0.0, 0.0), (2.0, -6.0)]
     assert source.gain_db == 3.0
     assert source.stereo
+
+
+def test_flat_export_writes_package_lanes(fixture_dir, validate_fcpxml):
+    """Littanä vienti kirjoittaa samat lanet kuin monikamera."""
+    from autoraffkat.finalcut.read import read_fcpxml
+    from autoraffkat.finalcut.write import build_fcpxml
+    from autoraffkat.model import Segment
+    from autoraffkat.package import (
+        BedSettings,
+        PackageSettings,
+        TitleCard,
+        audio_clips,
+        video_clips,
+    )
+
+    tl = read_fcpxml(str(fixture_dir / "sync.fcpxml"))
+    by_key = {m.key: m for m in tl.media}
+    settings = PackageSettings(
+        intro=TitleCard(mode="file", path="/pkg/alku.mov"),
+        beds=BedSettings(mode="intro_outro", intro_path="/pkg/pohja.wav"),
+    )
+    durations = {"/pkg/alku.mov": 4.0, "/pkg/pohja.wav": 20.0}
+    vclips = video_clips(settings, Fraction(0), Fraction(35), durations)
+    aclips = audio_clips(
+        settings, Fraction(0), Fraction(35), speech=[(10.0, 30.0)], durations=durations
+    )
+    xml = build_fcpxml(
+        by_key,
+        [Segment("WIDE.mp4", "Laaja", 0.0, 35.0)],
+        [],
+        tl.frame_duration,
+        tl.start,
+        tl.start + Fraction(35),
+        "Paketti",
+        source="jakso.fcpxml",
+        package=(vclips, aclips),
+    )
+    root = ET.fromstring(xml)
+    attached = root.findall(".//spine/*/asset-clip")
+    lanes = {c.get("lane") for c in attached}
+    assert "3" in lanes and "-4" in lanes
+    bed = next(c for c in attached if c.get("lane") == "-4")
+    assert bed.get("audioRole") == "music.Musiikkipohja"
+    assert bed.findall(".//keyframe")
+    validate_fcpxml(xml, "package-flat.fcpxml")

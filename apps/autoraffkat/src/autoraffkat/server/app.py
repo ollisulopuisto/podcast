@@ -2375,6 +2375,7 @@ def create_app(state: AppState) -> FastAPI:
                         reframer=reframer,
                         tc_start=state.timeline.tc_start,
                         shots=shot_list,
+                        package=package_plan,
                     )
                 write_fcpxml(out_path, xml)
                 state.remember(out_path)

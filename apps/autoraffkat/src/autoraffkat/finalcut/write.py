@@ -420,8 +420,13 @@ def build_fcpxml(
     reframer=None,
     tc_start: Fraction = ZERO,
     shots: list | None = None,
+    package: tuple[list, list] | None = None,
 ) -> str:
     """Rakentaa FCPXML-merkkijonon.
+
+    ``package`` on `package.py`:n suunnitelman pari (kuvaklipit, ääniklipit):
+    kortit lanen 3 ja pohjat käyröineen lanen -4 kirjoitetaan samoin kuin
+    monikameraviennissä.
 
     ``mic_tracks`` on lista pareja (median key, puhujan nimi) siinä
     järjestyksessä, jossa mikit halutaan laneille -1, -2, ...
@@ -540,6 +545,36 @@ def build_fcpxml(
             _audio_only(item), room_ids[key], None, path, f"{item.name} tilaääni"
         )
 
+    # Paketin tiedostot ovat ulkoisia, eivät lähde-XML:n medioita: ne
+    # rakennetaan MediaItemeinä, jotta sama ``_asset_lines`` kirjoittaa ne
+    # kuin muutkin assetit. Kortti on pelkkää kuvaa, pohja pelkkää ääntä.
+    package_ids: dict[str, str] = {}
+    if package is not None:
+        for clip in package[0]:
+            fmt_id = formats.get(
+                clip.width or seq_width, clip.height or seq_height,
+                frame_duration, next_id,
+            )
+            package_ids[clip.kind] = next_id()
+            item = MediaItem(
+                key=clip.kind, name=clip.name, path=clip.path, src="",
+                asset_duration=clip.duration, has_video=True,
+                width=clip.width, height=clip.height, video_sources=1,
+            )
+            asset_lines += _asset_lines(
+                item, package_ids[clip.kind], fmt_id, clip.path, clip.name
+            )
+        for clip in package[1]:
+            package_ids[clip.kind] = next_id()
+            item = MediaItem(
+                key=clip.kind, name=clip.name, path=clip.path, src="",
+                asset_duration=clip.duration, has_audio=True,
+                audio_channels=clip.channels, audio_rate=clip.rate,
+            )
+            asset_lines += _asset_lines(
+                item, package_ids[clip.kind], None, clip.path, clip.name
+            )
+
     # ---------------------------------------------------------- spine
     body: list[str] = []
     first_clip_start_frames = 0
@@ -589,7 +624,7 @@ def build_fcpxml(
             conform=settings is not None and settings.globals.vertical,
             origin=src_frames)
 
-        if index == 0 and (mic_tracks or room_ids):
+        if index == 0 and (mic_tracks or room_ids or package_ids):
             body.append(clip + ">")
             body += transform
             attached = [
@@ -614,6 +649,23 @@ def build_fcpxml(
                 program_end,
                 first_clip_start_frames,
             )
+            if package_ids:
+                body += _package_lines(
+                    package[0], package[1], package_ids,
+                    frame_duration, program_start, first_clip_start_frames,
+                )
+                if shots is not None:
+                    from ..render import Shot as _Shot
+
+                    for clip in package[0]:
+                        a2 = to_frames(clip.start - program_start, frame_duration)
+                        b2 = to_frames(clip.end - program_start, frame_duration)
+                        if b2 > a2:
+                            shots.append(_Shot(
+                                a2, b2, path=clip.path, file_start=0.0,
+                                width=clip.width, height=clip.height,
+                                scale0=1.0, scale1=1.0, lane=clip.lane,
+                            ))
             body.append(f"            </{tag}>")
         elif transform:
             body.append(clip + ">")
