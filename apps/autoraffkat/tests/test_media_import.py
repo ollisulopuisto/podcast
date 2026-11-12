@@ -4,6 +4,7 @@ from fractions import Fraction
 
 import numpy as np
 import pytest
+from conftest import needs_ffmpeg
 
 from autoraffkat import media_import
 from autoraffkat.finalcut.read import read_fcpxml
@@ -394,7 +395,6 @@ def test_best_window_includes_boundary_windows():
     assert (total_last, start_last) == (5.0, 15)
 
 
-from conftest import needs_ffmpeg
 
 
 @needs_ffmpeg
