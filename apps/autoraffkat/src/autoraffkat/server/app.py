@@ -1451,9 +1451,10 @@ class AppState:
             # on koko kysymys, eikä sitä näe erillisestä listasta.
             "preview": build_preview(
                 grid, decision, reactions=lane,
+                # Korttien sijoittelu ratkaistulle ohjelmarajalle kuten
+                # viennissä; palkin näkymä pitää koko ruudukon rajansa.
                 package_clips=_package_preview_spans(
-                    self, Fraction(float(grid.program_start)),
-                    Fraction(float(grid.program_start + grid.duration)),
+                    self, *self.resolve_program_range(program_start, program_end),
                 ),
                 window=self.preview_window,
                 silence_spans=(silence.dead_air_spans(
@@ -1491,16 +1492,13 @@ def _package_preview_spans(state, start, end) -> list[tuple[str, float, float]]:
     asetusten kesto, joten ne näkyvät ilman renderöintiäkin.
     """
     from .. import probe
-    from ..package import audio_clips, video_clips
+    from ..package import active_bed_paths, audio_clips, video_clips
 
     pk = state.settings.package
     paths = [
         c.path for c in (pk.intro, pk.outro, pk.credits)
         if c.mode == "file" and c.path
-    ] + [
-        p for p in (pk.beds.intro_path, pk.beds.outro_path, pk.beds.throughout_path)
-        if p
-    ]
+    ] + list(active_bed_paths(pk.beds))
     durations = {}
     for path in paths:
         info = probe.info(path)
@@ -1519,7 +1517,7 @@ def _package_preview_spans(state, start, end) -> list[tuple[str, float, float]]:
     return spans
 
 
-def _package_plan(state, grid, program_start, program_end, warnings):
+def _package_plan(state, grid, program_start, program_end, warnings, work_dir):
     """Paketin klippisuunnitelma vientiin, tai None kun paketti on pois.
 
     Tiedostojen kestot ja mitat luetaan ffprobesta; äänekkyys vain kun
@@ -1528,7 +1526,7 @@ def _package_plan(state, grid, program_start, program_end, warnings):
     on tämän projektin toistuva vika.
     """
     from .. import probe
-    from ..package import audio_clips, speech_spans, video_clips
+    from ..package import active_bed_paths, audio_clips, speech_spans, video_clips
 
     pk = state.settings.package
     if (
@@ -1543,23 +1541,32 @@ def _package_plan(state, grid, program_start, program_end, warnings):
         from ..package import generated_source_available, materialize_generated
 
         if generated_source_available():
-            # Kortit renderöidään viennin työhakemistoon; onnistuneet
-            # vaihtuvat file-tilaan, epäonnistuneet varoitetaan ja jätetään.
-            work = os.path.join(os.path.dirname(state.xml_path or "."),
-                                ".autoraffkat-paketti")
-            pk, problems = materialize_generated(pk, work)
+            # Kortit renderöidään vientikohtaiseen työhakemistoon (kutsija
+            # johtaa sen tulostenimestä): aiempi vienti viittaa omiin
+            # tiedostoihinsa, eikä uudelleenvienti korvaa niitä alta.
+            pk, problems = materialize_generated(pk, work_dir)
             for problem in problems:
                 warnings.append(t("export.package_generated_failed", error=problem))
         else:
             warnings.append(t("export.package_generated_unavailable"))
 
+    # Generoiduksi jäänyt kortti (Tekstitys puuttuu tai renderöinti
+    # epäonnistui) ei saa päätyä aikajanalle: sillä ei ole tiedostoa,
+    # ja tyhjä polku rikkoisi viennin. Käytetään aina kopiota, jotta
+    # tallennetut asetukset eivät muutu.
+    from ..package import PackageSettings
+
+    pk = PackageSettings.from_json(pk.to_json())
+    for card in (pk.intro, pk.outro, pk.credits):
+        if card.mode == "generated":
+            card.mode = "off"
+
     paths = set()
     for card in (pk.intro, pk.outro, pk.credits):
         if card.mode == "file" and card.path:
             paths.add(card.path)
-    for path in (pk.beds.intro_path, pk.beds.outro_path, pk.beds.throughout_path):
-        if path:
-            paths.add(path)
+    for path in active_bed_paths(pk.beds):
+        paths.add(path)
     infos = {path: probe.info(path) for path in sorted(paths)}
     for path, info in infos.items():
         if not info:
@@ -1573,8 +1580,8 @@ def _package_plan(state, grid, program_start, program_end, warnings):
     bed_loudness = {}
     beds = pk.beds
     if beds.mode != "off" and not beds.keep_music_level:
-        for path in (beds.intro_path, beds.outro_path, beds.throughout_path):
-            if path and infos.get(path):
+        for path in active_bed_paths(beds):
+            if infos.get(path):
                 value = probe.loudness(path)
                 if value is not None:
                     bed_loudness[path] = value
@@ -2371,8 +2378,14 @@ def create_app(state: AppState) -> FastAPI:
                     from .. import movement as movement_mod
 
                     segments = movement_mod.punch_segments(segments, _grid)
-                package_plan = _package_plan(state, _grid, program_start,
-                                             program_end, warnings)
+                package_plan = _package_plan(
+                    state, _grid, program_start, program_end, warnings,
+                    os.path.join(
+                        os.path.dirname(state.xml_path or "."),
+                        ".autoraffkat-paketti",
+                        os.path.splitext(os.path.basename(out_path))[0],
+                    ),
+                )
                 passthrough = _passthrough_tracks(state, mic_tracks)
                 if passthrough and state.timeline.multicams:
                     names = {t.key: t.name for t in state.timeline.tracks}

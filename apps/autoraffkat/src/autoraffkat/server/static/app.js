@@ -2773,8 +2773,8 @@ class SessionHistory {
 }
 const sessionHistories = new Map();
 function editSnapshot() {
-  const { tracks, globals, audio } = payload();
-  return { tracks, globals, audio };
+  const { tracks, globals, audio, package: pkg } = payload();
+  return { tracks, globals, audio, package: pkg };
 }
 function currentHistory() {
   const key = state.xml_path || '';
@@ -2805,7 +2805,8 @@ function moveHistory(action, id) {
   const restored = JSON.parse(h.nodes[h.head].value);
   state.tracks.forEach((track) => { if (restored.tracks[track.key]) track.config = restored.tracks[track.key]; });
   state.globals = restored.globals; state.audio = restored.audio;
-  renderHeader(); renderTracks(); renderGlobals();
+  if (restored.package) state.package = restored.package;
+  renderHeader(); renderTracks(); renderGlobals(); renderPackage();
   clearTimeout(pending); send();
 }
 

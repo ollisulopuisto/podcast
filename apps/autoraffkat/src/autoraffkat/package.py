@@ -188,7 +188,12 @@ def video_clips(
     durations = durations or {}
     clips: list[PackageVideoClip] = []
 
-    def card(card_settings: TitleCard | CreditsSettings, kind: str, start: Fraction) -> None:
+    def card(
+        card_settings: TitleCard | CreditsSettings,
+        kind: str,
+        start: Fraction,
+        end_cap: Fraction | None = None,
+    ) -> None:
         if card_settings.mode == "off":
             return
         if card_settings.mode == "file":
@@ -201,7 +206,8 @@ def video_clips(
             if not card_settings.text.strip():
                 return
             length = card_settings.duration
-        end = min(start + _frac(length), program_end)
+        limit = program_end if end_cap is None else min(end_cap, program_end)
+        end = min(start + _frac(length), limit)
         if end <= start:
             return
         clips.append(
@@ -232,7 +238,14 @@ def video_clips(
             if settings.credits.mode == "file"
             else settings.credits.duration
         )
-        card(settings.credits, "credits_end", program_end - outro_len - _frac(length))
+        # Tekstit+outro voivat olla ohjelmaa pidemmät: alku ripustetaan
+        # ohjelman alkuun eikä miinukselle, ja loppu pysyy outron alussa.
+        card(
+            settings.credits,
+            "credits_end",
+            max(program_start, program_end - outro_len - _frac(length)),
+            end_cap=program_end - outro_len,
+        )
     if settings.outro.mode != "off":
         card(settings.outro, "outro", program_end - outro_len)
     return clips
@@ -272,6 +285,16 @@ def throughout_curve(
     times = [t for t, _ in points]
     assert times == sorted(times), "keyframet menevät taaksepäin"
     return points
+
+
+def active_bed_paths(beds: BedSettings) -> list[str]:
+    """Käytössä olevan pohjatilan tiedostot: mittaus ja varoitukset
+    koskevat vain näitä, ei muistiin jääneitä polkuja toisesta tilasta."""
+    if beds.mode == "off":
+        return []
+    if beds.mode == "throughout":
+        return [beds.throughout_path] if beds.throughout_path else []
+    return [p for p in (beds.intro_path, beds.outro_path) if p]
 
 
 def audio_clips(

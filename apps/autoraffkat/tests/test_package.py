@@ -272,7 +272,7 @@ def test_apply_reads_the_package_payload():
     assert state.settings.package.beds.mode == "throughout"
 
 
-def test_package_plan_uses_probed_durations(monkeypatch):
+def test_package_plan_uses_probed_durations(monkeypatch, tmp_path):
     from types import SimpleNamespace
 
     from autoraffkat import probe
@@ -299,7 +299,8 @@ def test_package_plan_uses_probed_durations(monkeypatch):
     grid = SimpleNamespace(speakers=(), n=0, program_start=0.0)
     warnings = []
 
-    plan = _package_plan(state, grid, Fraction(0), Fraction(60), warnings)
+    plan = _package_plan(state, grid, Fraction(0), Fraction(60), warnings,
+                         str(tmp_path / "work"))
     assert plan is not None
     vclips, aclips = plan
     assert [c.kind for c in vclips] == ["intro"]
@@ -311,7 +312,7 @@ def test_package_plan_uses_probed_durations(monkeypatch):
     assert warnings == []
 
 
-def test_package_plan_warns_about_missing_files(monkeypatch):
+def test_package_plan_warns_about_missing_files(monkeypatch, tmp_path):
     from types import SimpleNamespace
 
     from autoraffkat import probe
@@ -326,12 +327,13 @@ def test_package_plan_warns_about_missing_files(monkeypatch):
     grid = SimpleNamespace(speakers=(), n=0, program_start=0.0)
     warnings = []
 
-    plan = _package_plan(state, grid, Fraction(0), Fraction(60), warnings)
+    plan = _package_plan(state, grid, Fraction(0), Fraction(60), warnings,
+                         str(tmp_path / "work"))
     assert plan is None
     assert warnings and "poissa.mov" in warnings[0]
 
 
-def test_package_plan_off_gives_nothing():
+def test_package_plan_off_gives_nothing(tmp_path):
     from types import SimpleNamespace
 
     from autoraffkat.project import ProjectSettings
@@ -340,7 +342,8 @@ def test_package_plan_off_gives_nothing():
     state = SimpleNamespace(settings=ProjectSettings())
     grid = SimpleNamespace(speakers=(), n=0, program_start=0.0)
     warnings = []
-    assert _package_plan(state, grid, Fraction(0), Fraction(60), warnings) is None
+    assert _package_plan(state, grid, Fraction(0), Fraction(60), warnings,
+                       str(tmp_path / "work")) is None
     assert warnings == []
 
 
@@ -553,7 +556,8 @@ def test_package_plan_materializes_generated_cards(monkeypatch, tmp_path):
     grid = SimpleNamespace(speakers=(), n=0, program_start=0.0)
     warnings = []
 
-    plan = _package_plan(state, grid, Fraction(0), Fraction(60), warnings)
+    plan = _package_plan(state, grid, Fraction(0), Fraction(60), warnings,
+                         str(tmp_path / "work"))
     assert plan is not None
     vclips, _ = plan
     assert [c.kind for c in vclips] == ["intro"]
@@ -785,3 +789,110 @@ def test_compound_audio_keeps_package_clips_single(fixture_dir, validate_fcpxml)
     assert "bed_intro" in refs(inner) and "intro" not in refs(inner)
     assert "intro" in refs(outer) and "bed_intro" not in refs(outer)
     validate_fcpxml(xml, "package-compound.fcpxml")
+def test_credits_never_start_before_the_programme():
+    """Pitkät lopputekstit lyhenevät ohjelman alkuun: aiemmin alku meni
+    negatiiviseksi kun tekstit ja outro olivat yhdessä ohjelmaa pidemmät,
+    ja negatiivinen alku rikkoi viennin."""
+    settings = PackageSettings(
+        outro=TitleCard(mode="file", path="/m/loppu.mov"),
+        credits=CreditsSettings(mode="file", path="/m/tekstit.mov", placement="end"),
+    )
+    durations = {"/m/loppu.mov": 5.0, "/m/tekstit.mov": 20.0}
+    clips = video_clips(settings, Fraction(0), Fraction(10), durations)
+    by_kind = {c.kind: c for c in clips}
+    assert by_kind["credits_end"].start == Fraction(0)
+    assert by_kind["credits_end"].end == by_kind["outro"].start == Fraction(5)
+
+
+def test_package_plan_drops_generated_cards_without_a_source(monkeypatch, tmp_path):
+    """Tekstitys puuttuu: generoiduksi jäänyt kortti ei päädy aikajanalle
+    (polkua ei ole) vaan poistuu suunnitelman kopiosta, ja varoitus kertoo
+    asiasta. Käyttäjän tallennetut asetukset säilyvät ennallaan."""
+    import autoraffkat.package as pkg
+    from autoraffkat import probe
+    from autoraffkat.project import ProjectSettings
+    from autoraffkat.server.app import _package_plan
+
+    monkeypatch.setattr(pkg, "generated_source_available", lambda: False)
+    monkeypatch.setattr(probe, "info", lambda path: {})
+    settings = ProjectSettings()
+    settings.package.intro.mode = "generated"
+    settings.package.intro.text = "Otsikko"
+    state = SimpleNamespace(settings=settings, xml_path=str(tmp_path / "j.fcpxml"))
+    grid = SimpleNamespace(speakers=(), n=0, program_start=0.0)
+    warnings = []
+
+    plan = _package_plan(state, grid, Fraction(0), Fraction(60), warnings,
+                         str(tmp_path / "work"))
+    assert plan is None  # ainoa klippi oli generoitunut intro
+    assert warnings, "puuttuvasta Tekstityksestä varoitetaan"
+    assert settings.package.intro.mode == "generated", (
+        "suunnitelman kopiointi ei saa muuttaa tallennettuja asetuksia"
+    )
+
+
+def test_package_plan_materializes_into_the_given_work_dir(monkeypatch, tmp_path):
+    """Kutsijan antama työhakemisto käytetään sellaisenaan: kaksi eri
+    nimistä vientiä eivät korvaa toistensa kortteja (aiemmin hakemisto oli
+    aina sama)."""
+    import autoraffkat.package as pkg
+    from autoraffkat import probe
+    from autoraffkat.project import ProjectSettings
+    from autoraffkat.server.app import _package_plan
+
+    used_dirs = []
+
+    def fake_materialize(settings, work):
+        used_dirs.append(work)
+        return settings, []
+
+    monkeypatch.setattr(pkg, "generated_source_available", lambda: True)
+    monkeypatch.setattr(pkg, "materialize_generated", fake_materialize)
+    monkeypatch.setattr(probe, "info", lambda path: {})
+    settings = ProjectSettings()
+    settings.package.intro.mode = "generated"
+    settings.package.intro.text = "Otsikko"
+    state = SimpleNamespace(settings=settings, xml_path=str(tmp_path / "j.fcpxml"))
+    grid = SimpleNamespace(speakers=(), n=0, program_start=0.0)
+
+    first = str(tmp_path / ".autoraffkat-paketti" / "eka")
+    second = str(tmp_path / ".autoraffkat-paketti" / "toka")
+    _package_plan(state, grid, Fraction(0), Fraction(60), [], first)
+    _package_plan(state, grid, Fraction(0), Fraction(60), [], second)
+    assert used_dirs == [first, second]
+
+
+def test_inactive_bed_paths_are_not_probed_or_measured(monkeypatch, tmp_path):
+    """Pohjatila «throughout»: intro- ja outro-polut ovat muistia toisesta
+    tilasta — niitä ei lueta, niistä ei varoiteta puuttuvina eikä niiden
+    äänekkyyttä mitata."""
+    from autoraffkat import probe
+    from autoraffkat.project import ProjectSettings
+    from autoraffkat.server.app import _package_plan
+
+    probed, measured = [], []
+    monkeypatch.setattr(
+        probe, "info",
+        lambda path: probed.append(path) or (
+            {"duration": 30.0, "audio": {"channels": 2, "rate": 48000}}
+            if path == "/m/pohja.wav" else {}),
+    )
+    monkeypatch.setattr(
+        probe, "loudness", lambda path: measured.append(path) or -20.0)
+
+    settings = ProjectSettings()
+    settings.package.beds.mode = "throughout"
+    settings.package.beds.throughout_path = "/m/pohja.wav"
+    settings.package.beds.intro_path = "/m/poissa.wav"  # muistia toisesta tilasta
+    settings.audio.enabled = True
+    settings.audio.target_lufs = -16.0
+    state = SimpleNamespace(settings=settings)
+    grid = SimpleNamespace(speakers=(), n=0, program_start=0.0)
+    warnings = []
+
+    plan = _package_plan(state, grid, Fraction(0), Fraction(60), warnings,
+                         str(tmp_path / "work"))
+    assert plan is not None
+    assert probed == ["/m/pohja.wav"]
+    assert measured == ["/m/pohja.wav"]
+    assert warnings == []
