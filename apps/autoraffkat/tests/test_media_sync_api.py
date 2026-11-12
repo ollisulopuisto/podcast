@@ -332,3 +332,27 @@ def test_media_preview_errors_are_translated(tmp_path, monkeypatch):
         assert detail.startswith("Mediatiedostoa ei voi lukea"), detail
     finally:
         i18n._current.reset(token)
+
+def test_media_preview_rejects_non_string_fields_with_400(tmp_path, monkeypatch):
+    """JSON-kenttä voi olla numero: normalisointi ei saa kaatua 500:ksi
+    vaan vastaus on 400 kuten ennen, ja «all»-esikatselu jättää targetin
+    huomiotta kuten ennenkin."""
+    camera, microphone = _preview_harness(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+    client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
+    base = {
+        "paths": [str(camera), str(microphone)],
+        "reference": str(camera),
+        "shifts": {},
+        "kind": "all",
+    }
+
+    response = client.post("/api/media/preview", json={**base, "reference": 123})
+    assert response.status_code == 400  # ei 500
+
+    response = client.post("/api/media/preview", json={**base, "target": 123})
+    assert response.status_code == 200, response.json()  # target jätetään huomiotta
+
+    response = client.post(
+        "/api/media/preview", json={**base, "kind": "speaker", "target": 123})
+    assert response.status_code == 400
