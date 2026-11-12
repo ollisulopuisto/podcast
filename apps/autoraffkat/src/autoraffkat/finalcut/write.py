@@ -328,6 +328,27 @@ def _attach(body: list[str], index: int, lines: list[str]) -> list[str]:
     return out
 
 
+def _drop_clips(lines: list[str], refs: set[str]) -> list[str]:
+    """Poistaa annettuihin resursseihin viittaavat asset-klipit.
+
+    Pohjalla voi olla lapsia (keyframe-käyrä), joten poisto ulottuu
+    sulkevaan tagiin asti. Itsesulkeva klippi on yksi rivi.
+    """
+    out: list[str] = []
+    skip = False
+    for line in lines:
+        if skip:
+            if line.strip() == "</asset-clip>":
+                skip = False
+            continue
+        m = re.search(r'<asset-clip ref="([^"]+)"', line)
+        if m and m.group(1) in refs:
+            skip = not line.rstrip().endswith("/>")
+            continue
+        out.append(line)
+    return out
+
+
 def _compound_audio(
     body: list[str],
     resources: str,
@@ -335,6 +356,8 @@ def _compound_audio(
     frame_duration,
     project_name: str,
     master_db: float,
+    video_only: set[str] | None = None,
+    audio_only: set[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Ääni yhdistelmäklipiksi, kuva jää monikameraksi.
 
@@ -352,6 +375,13 @@ def _compound_audio(
     """
     audio_body = [_srcenable(line, "audio") for line in body]
     video_body = [_srcenable(line, "video") for line in body]
+    # Paketin klipit ovat liitettyjä, eivät isännän omaa ainetta, joten
+    # ``srcEnable`` ei ulotu niihin: ilman tätä pohja soisi kahdesti ja
+    # äänetön kortti seisoisi turhana yhdistelmän sekvenssissä.
+    if video_only:
+        audio_body = _drop_clips(audio_body, video_only)
+    if audio_only:
+        video_body = _drop_clips(video_body, audio_only)
 
     next_id = _free_id(resources)
     format_id, media_id = f"r{next_id}", f"r{next_id + 1}"
@@ -420,8 +450,13 @@ def build_fcpxml(
     reframer=None,
     tc_start: Fraction = ZERO,
     shots: list | None = None,
+    package: tuple[list, list] | None = None,
 ) -> str:
     """Rakentaa FCPXML-merkkijonon.
+
+    ``package`` on `package.py`:n suunnitelman pari (kuvaklipit, ääniklipit):
+    kortit lanen 3 ja pohjat käyröineen lanen -4 kirjoitetaan samoin kuin
+    monikameraviennissä.
 
     ``mic_tracks`` on lista pareja (median key, puhujan nimi) siinä
     järjestyksessä, jossa mikit halutaan laneille -1, -2, ...
@@ -540,6 +575,36 @@ def build_fcpxml(
             _audio_only(item), room_ids[key], None, path, f"{item.name} tilaääni"
         )
 
+    # Paketin tiedostot ovat ulkoisia, eivät lähde-XML:n medioita: ne
+    # rakennetaan MediaItemeinä, jotta sama ``_asset_lines`` kirjoittaa ne
+    # kuin muutkin assetit. Kortti on pelkkää kuvaa, pohja pelkkää ääntä.
+    package_ids: dict[str, str] = {}
+    if package is not None:
+        for clip in package[0]:
+            fmt_id = formats.get(
+                clip.width or seq_width, clip.height or seq_height,
+                frame_duration, next_id,
+            )
+            package_ids[clip.kind] = next_id()
+            item = MediaItem(
+                key=clip.kind, name=clip.name, path=clip.path, src="",
+                asset_duration=clip.duration, has_video=True,
+                width=clip.width, height=clip.height, video_sources=1,
+            )
+            asset_lines += _asset_lines(
+                item, package_ids[clip.kind], fmt_id, clip.path, clip.name
+            )
+        for clip in package[1]:
+            package_ids[clip.kind] = next_id()
+            item = MediaItem(
+                key=clip.kind, name=clip.name, path=clip.path, src="",
+                asset_duration=clip.duration, has_audio=True,
+                audio_channels=clip.channels, audio_rate=clip.rate,
+            )
+            asset_lines += _asset_lines(
+                item, package_ids[clip.kind], None, clip.path, clip.name
+            )
+
     # ---------------------------------------------------------- spine
     body: list[str] = []
     first_clip_start_frames = 0
@@ -589,7 +654,7 @@ def build_fcpxml(
             conform=settings is not None and settings.globals.vertical,
             origin=src_frames)
 
-        if index == 0 and (mic_tracks or room_ids):
+        if index == 0 and (mic_tracks or room_ids or package_ids):
             body.append(clip + ">")
             body += transform
             attached = [
@@ -614,6 +679,23 @@ def build_fcpxml(
                 program_end,
                 first_clip_start_frames,
             )
+            if package_ids:
+                body += _package_lines(
+                    package[0], package[1], package_ids,
+                    frame_duration, program_start, first_clip_start_frames,
+                )
+                if shots is not None:
+                    from ..render import Shot as _Shot
+
+                    for clip in package[0]:
+                        a2 = to_frames(clip.start - program_start, frame_duration)
+                        b2 = to_frames(clip.end - program_start, frame_duration)
+                        if b2 > a2:
+                            shots.append(_Shot(
+                                a2, b2, path=clip.path, file_start=0.0,
+                                width=clip.width, height=clip.height,
+                                scale0=1.0, scale1=1.0, lane=clip.lane,
+                            ))
             body.append(f"            </{tag}>")
         elif transform:
             body.append(clip + ">")
@@ -1514,7 +1596,8 @@ def _source_resources(
     frame_duration: Fraction | None = None,
     width: int = 1920,
     height: int = 1080,
-) -> tuple[str, str, str, dict[str, str], dict[str, str]]:
+    package: tuple[list, list] | None = None,
+) -> tuple[str, str, str, dict[str, str], dict[str, str], dict[str, str]]:
     """Lähde-XML:n ``<resources>``, versio, sekvenssin formaatti ja tilaääni-id:t.
 
     Multicam-määrittelyä ei rakenneta uudestaan vaan se kopioidaan: kulmien
@@ -1553,8 +1636,14 @@ def _source_resources(
         resources.append(_room_asset(source, res_id, target))
         room_ids[asset_id] = res_id
 
+    package_ids: dict[str, str] = {}
+    if package is not None:
+        package_ids = _package_assets(
+            package[0], package[1], resources, frame_duration or Fraction(1, 25)
+        )
+
     body = ET.tostring(resources, encoding="unicode")
-    return body, root.get("version", "1.10"), seq_format, room_ids, raw_angles
+    return body, root.get("version", "1.10"), seq_format, room_ids, raw_angles, package_ids
 
 
 def _room_lines(
@@ -1600,6 +1689,133 @@ def _room_lines(
                 f'duration="{frames_str(dur, frame_duration)}" '
                 f"audioRole={quoteattr(ROOM_ROLE)}/>"
             )
+    return lines
+
+
+def _package_asset(clip, res_id: str, fmt_id: str | None):
+    """Paketin ulkoisesta tiedostosta oma ``<asset>``-resurssi.
+
+    Toisin kuin tilaääni, paketin tiedostot eivät johdu lähteen assetista,
+    joten resurssi rakennetaan tyhjästä. Kortit ovat pelkkää kuvaa (alfa-
+    elokuvan mahdollinen ääni jätetään pois, ks. `_video_only`), pohjat
+    pelkkää ääntä.
+    """
+    from xml.etree import ElementTree as ET  # paikallinen: vain tämä tarvitsee
+
+    asset = ET.Element("asset")
+    asset.set("id", res_id)
+    asset.set("name", clip.name)
+    asset.set("start", "0s")
+    asset.set("duration", format_time(clip.duration))
+    if fmt_id is not None:
+        asset.set("hasVideo", "1")
+        asset.set("videoSources", "1")
+        asset.set("format", fmt_id)
+    else:
+        asset.set("hasAudio", "1")
+        asset.set("audioSources", "1")
+        asset.set("audioChannels", str(max(1, clip.channels)))
+        asset.set("audioRate", str(clip.rate))
+    ET.SubElement(asset, "media-rep", {"kind": "original-media", "src": file_url(clip.path)})
+    return asset
+
+
+def _package_assets(video, audio, resources, frame_duration) -> dict[str, str]:
+    """Paketin klippien resurssit kopioidun lohkon perään; palauttaa kind -> id."""
+    from xml.etree import ElementTree as ET  # paikallinen: vain tämä tarvitsee
+
+    ids: dict[str, str] = {}
+    for clip in video:
+        fmt = ET.SubElement(resources, "format")
+        fmt_id = _next_resource_id(resources)
+        fmt.set("id", fmt_id)
+        fmt.set("width", str(clip.width))
+        fmt.set("height", str(clip.height))
+        # Kortin formaatti seuraa kortin omaa ruutunopeutta: 30 fps kortti
+        # 25 fps projektissa saisi projektin frameDurationin, ja Final Cut
+        # venyttäisi kortin keston. Mittaamaton (0) käyttää projektin.
+        own_fps = getattr(clip, "fps", 0.0)
+        step = (
+            Fraction(1, 1) / Fraction(own_fps).limit_denominator(100_000)
+            if own_fps > 0
+            else frame_duration
+        )
+        fmt.set("frameDuration", frames_str(1, step))
+        res_id = _next_resource_id(resources)
+        resources.append(_package_asset(clip, res_id, fmt_id))
+        ids[clip.kind] = res_id
+    for clip in audio:
+        res_id = _next_resource_id(resources)
+        resources.append(_package_asset(clip, res_id, None))
+        ids[clip.kind] = res_id
+    return ids
+
+
+def _package_lines(
+    video,
+    audio,
+    res_ids: dict[str, str],
+    frame_duration,
+    program_start,
+    parent_start_frames: int,
+) -> list[str]:
+    """Paketin kortit ja pohjat liitettyinä klippeinä. Sama aikasääntö kuin
+    tilaäänellä: offset on isäntäklipin paikallisessa aikapohjassa, ja
+    pohjan ``adjust-volume``-keyframet klipin omassa aikapohjassa."""
+    lines: list[str] = []
+
+    def placement(clip):
+        off = to_frames(clip.start - program_start, frame_duration)
+        dur = to_frames(clip.duration, frame_duration)
+        return off, dur
+
+    for clip in video:
+        if clip.kind not in res_ids:
+            continue
+        off, dur = placement(clip)
+        if dur <= 0:
+            continue
+        lines.append(
+            f'              <asset-clip ref="{res_ids[clip.kind]}" lane="{clip.lane}" '
+            f'offset="{frames_str(parent_start_frames + off, frame_duration)}" '
+            f"name={quoteattr(clip.name)} "
+            f'start="{frames_str(0, frame_duration)}" '
+            f'duration="{frames_str(dur, frame_duration)}"/>'
+        )
+    for clip in audio:
+        if clip.kind not in res_ids:
+            continue
+        off, dur = placement(clip)
+        if dur <= 0:
+            continue
+        attrs = (
+            f'              <asset-clip ref="{res_ids[clip.kind]}" lane="{clip.lane}" '
+            f'offset="{frames_str(parent_start_frames + off, frame_duration)}" '
+            f"name={quoteattr(clip.name)} "
+            f'start="{frames_str(0, frame_duration)}" '
+            f'duration="{frames_str(dur, frame_duration)}" '
+            f"audioRole={quoteattr(clip.role)}"
+        )
+        if not clip.curve:
+            lines.append(attrs + "/>")
+            continue
+        indent = "              "
+        lines.append(attrs + ">")
+        lines.append(f"{indent}  <adjust-volume>")
+        lines.append(f'{indent}    <param name="amount">')
+        lines.append(f"{indent}      <keyframeAnimation>")
+        for when, db in clip.curve:
+            local = to_frames(
+                Fraction(when).limit_denominator(48000) - clip.start, frame_duration
+            )
+            lines.append(
+                f'{indent}        <keyframe time="{frames_str(local, frame_duration)}" '
+                f'value="{clip.base_gain_db + db:g}dB"/>'
+            )
+        lines.append(f"{indent}      </keyframeAnimation>")
+        lines.append(f"{indent}    </param>")
+        lines.append(f"{indent}  </adjust-volume>")
+        lines.append(f"{indent}</asset-clip>")
     return lines
 
 
@@ -1972,8 +2188,14 @@ def build_multicam_fcpxml(
     reframer=None,
     shots: list | None = None,
     passthrough: list[str] | None = None,
+    package: tuple[list, list] | None = None,
 ) -> str:
     """Rakentaa monikameraleikkauksen: yksi ``<mc-clip>`` per kuva.
+
+    ``package`` on pari (kuvaklipit, ääniklipit) `package.py`:n suunnitel-
+    masta: tekstikortit kirjoitetaan reaktioiden yläpuolelle lanen 3 ja
+    musiikkipohjat vaimennuskäyröineen lanelle -4. Molemmat liitetään
+    ensimmäiseen kuvaklippiin, kuten tilaääni.
 
     ``passthrough``: raitojen avaimet joiden ääni soi lähteen tavoin vaikka
     niille ei ole mikkirooleja (``roles``-vapaa miksaus). Ilman tätä
@@ -2053,7 +2275,7 @@ def build_multicam_fcpxml(
     else:
         seq_width = reference.width if reference and reference.width else 1920
         seq_height = reference.height if reference and reference.height else 1080
-    resources, version, seq_format, room_ids, raw_angles = _source_resources(
+    resources, version, seq_format, room_ids, raw_angles, package_ids = _source_resources(
         timeline.source_path,
         redirects,
         room_jobs,
@@ -2061,11 +2283,13 @@ def build_multicam_fcpxml(
         frame_duration=frame_duration,
         width=seq_width,
         height=seq_height,
+        package=package,
     )
 
 
     body: list[str] = []
     attached_room = False
+    attached_package = False
     attached_reactions = False
     # Monikamerassa kulmien assetit ovat jo kopioidussa <resources>-lohkossa,
     # joten reaktioklippi viittaa niihin sellaisenaan eikä uutta resurssia
@@ -2250,6 +2474,32 @@ def build_multicam_fcpxml(
                 program_end,
                 to_frames(mc.source_at(at), frame_duration),
             )
+        if not attached_package and package_ids:
+            attached_package = True
+            sources = sources + _package_lines(
+                package[0],
+                package[1],
+                package_ids,
+                frame_duration,
+                program_start,
+                to_frames(mc.source_at(at), frame_duration),
+            )
+            if shots is not None:
+                from ..render import Shot as _Shot
+
+                # Sama klippilista kuin XML:ssä: Render ei päätä mitään itse.
+                # HUOM: flatten korvaa kortin ajalta alla olevan kuvan, eli
+                # alfapinottu päällekkäiskuva (lower third) ei vielä toimi —
+                # koko ruudun kortit toimivat.
+                for clip in package[0]:
+                    a = to_frames(clip.start - program_start, frame_duration)
+                    b = to_frames(clip.end - program_start, frame_duration)
+                    if b > a:
+                        shots.append(_Shot(
+                            a, b, path=clip.path, file_start=0.0,
+                            width=clip.width, height=clip.height,
+                            scale0=1.0, scale1=1.0, lane=clip.lane,
+                        ))
         sources = sources + speaker_keyword
         if sources:
             body.append("            <mc-clip " + " ".join(attrs) + ">")
@@ -2266,9 +2516,16 @@ def build_multicam_fcpxml(
     # yleissäädin ja puhujakohtainen säätö ovat samassa ikkunassa.
     extra_resources: list[str] = []
     if settings is not None and settings.globals.compound_audio:
+        video_only = audio_only = None
+        if package_ids and package is not None:
+            video_only = {package_ids[c.kind] for c in package[0]
+                          if c.kind in package_ids}
+            audio_only = {package_ids[c.kind] for c in package[1]
+                          if c.kind in package_ids}
         body, extra_resources = _compound_audio(
             body, resources, program_frames, frame_duration, project_name,
             float(settings.globals.master_db),
+            video_only=video_only, audio_only=audio_only,
         )
 
     note, metadata = _sequence_extras(settings, source)

@@ -790,6 +790,7 @@ function renderGlobals() {
   }).row);
 
   renderAudio();
+  renderPackage();
 
   host.append(resetButton('globals', T('app.reset')));
 
@@ -1398,9 +1399,125 @@ function rowReset(keys) {
     const base = state.audio_defaults || {};
     keys.forEach((k) => { if (k in base) state.audio[k] = base[k]; });
     renderAudio();
+  renderPackage();
     schedule(0);
   });
   return { button, refresh };
+}
+
+function renderPackage() {
+  const host = $('package-panel');
+  if (!host) return;
+  host.textContent = '';
+  if (!state.package) {
+    state.package = {
+      intro: { mode: 'off', path: '', text: '', duration: 5 },
+      outro: { mode: 'off', path: '', text: '', duration: 5 },
+      credits: { mode: 'off', placement: 'end', path: '', text: '', duration: 8 },
+      beds: { mode: 'intro_outro', intro_path: '', outro_path: '',
+              throughout_path: '', keep_music_level: false },
+    };
+  }
+  const pk = state.package;
+
+  const select = (options, current, onChange) => {
+    const el = document.createElement('select');
+    options.forEach(([value, label]) => {
+      const option = document.createElement('option');
+      option.value = value; option.textContent = label;
+      el.append(option);
+    });
+    el.value = current;
+    el.addEventListener('change', () => { onChange(el.value); renderPackage(); schedule(0); });
+    return el;
+  };
+  const textField = (value, placeholder, onChange) => {
+    const el = document.createElement('input');
+    el.type = 'text'; el.value = value || ''; el.placeholder = placeholder;
+    el.autocomplete = 'off';
+    el.addEventListener('change', () => { onChange(el.value); schedule(0); });
+    return el;
+  };
+  const numberField = (value, onChange) => {
+    const el = document.createElement('input');
+    el.type = 'number'; el.min = '1'; el.step = '0.5'; el.value = value;
+    el.addEventListener('change', () => { onChange(el.value); schedule(0); });
+    return el;
+  };
+  const field = (label, control) => {
+    const row = document.createElement('label');
+    row.className = 'field';
+    row.append(Object.assign(document.createElement('span'), { textContent: label }), control);
+    return row;
+  };
+
+  const cardBlock = (card, titleKey) => {
+    const box = document.createElement('div');
+    box.append(Object.assign(document.createElement('h3'),
+      { textContent: T(titleKey) }));
+    box.append(field(T('package.mode'), select([
+      ['off', T('package.modeOff')],
+      ['file', T('package.modeFile')],
+      ['generated', T('package.modeGenerated')],
+    ], card.mode, (v) => { card.mode = v; })));
+    if (card.mode === 'file') {
+      box.append(field(T('package.file'),
+        textField(card.path, T('package.fileHint'), (v) => { card.path = v; })));
+    } else if (card.mode === 'generated') {
+      box.append(field(T('package.text'),
+        textField(card.text, T('package.textHint'), (v) => { card.text = v; })));
+      box.append(field(T('package.duration'),
+        numberField(card.duration, (v) => { card.duration = parseFloat(v) || card.duration; })));
+      const note = document.createElement('p');
+      note.className = 'muted small';
+      note.textContent = T('package.generatedNote');
+      box.append(note);
+    }
+    return box;
+  };
+
+  host.append(cardBlock(pk.intro, 'package.intro'));
+  host.append(cardBlock(pk.outro, 'package.outro'));
+
+  const creditsBox = cardBlock(pk.credits, 'package.credits');
+  if (pk.credits.mode !== 'off') {
+    creditsBox.append(field(T('package.placement'), select([
+      ['end', T('package.placementEnd')],
+      ['start', T('package.placementStart')],
+      ['both', T('package.placementBoth')],
+    ], pk.credits.placement, (v) => { pk.credits.placement = v; })));
+  }
+  host.append(creditsBox);
+
+  const bedsBox = document.createElement('div');
+  bedsBox.append(Object.assign(document.createElement('h3'),
+    { textContent: T('package.beds') }));
+  bedsBox.append(field(T('package.bedsMode'), select([
+    ['off', T('package.modeOff')],
+    ['intro_outro', T('package.bedsIntroOutro')],
+    ['throughout', T('package.bedsThroughout')],
+  ], pk.beds.mode, (v) => { pk.beds.mode = v; })));
+  if (pk.beds.mode === 'intro_outro') {
+    bedsBox.append(field(T('package.bedIntro'),
+      textField(pk.beds.intro_path, T('package.fileHint'), (v) => { pk.beds.intro_path = v; })));
+    bedsBox.append(field(T('package.bedOutro'),
+      textField(pk.beds.outro_path, T('package.fileHint'), (v) => { pk.beds.outro_path = v; })));
+  } else if (pk.beds.mode === 'throughout') {
+    bedsBox.append(field(T('package.bedThroughout'),
+      textField(pk.beds.throughout_path, T('package.fileHint'), (v) => { pk.beds.throughout_path = v; })));
+  }
+  if (pk.beds.mode !== 'off') {
+    const toggle = document.createElement('label');
+    toggle.className = 'check';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = !!pk.beds.keep_music_level;
+    box.addEventListener('change', () => { pk.beds.keep_music_level = box.checked; schedule(0); });
+    toggle.append(box, Object.assign(document.createElement('span'),
+      { textContent: T('package.keepLevel') }));
+    bedsBox.append(toggle);
+  }
+  host.append(bedsBox);
 }
 
 function renderAudio() {
@@ -1418,6 +1535,7 @@ function renderAudio() {
   box.addEventListener('change', () => {
     audio.enabled = box.checked;
     renderAudio();
+  renderPackage();
     schedule(0);
   });
   toggle.append(box, Object.assign(document.createElement('span'),
@@ -1475,6 +1593,7 @@ function renderAudio() {
            väärään säätimeen. Palvelin tekee saman tarkistuksen. */
         audio.plugin_params = {};
         renderAudio();
+  renderPackage();
         schedule(0);
       });
       plug.append(plugInput);
@@ -1617,6 +1736,7 @@ function renderAudio() {
           if (!select.value) return;      // «mukautettu» ei muuta mitään
           audio.target_lufs = Number(select.value);
           renderAudio();
+  renderPackage();
           schedule(0);
         });
         field.append(select);
@@ -1637,6 +1757,7 @@ function renderAudio() {
       programBox.addEventListener('change', () => {
         audio.program_target = programBox.checked;
         renderAudio();
+  renderPackage();
         schedule(0);
       });
       program.append(programBox, Object.assign(document.createElement('span'),
@@ -1681,6 +1802,7 @@ function renderAudio() {
       select.addEventListener('change', () => {
         audio.room_track = select.value;
         renderAudio();
+  renderPackage();
         schedule(0);
       });
       field.append(select);
@@ -1877,6 +1999,7 @@ async function resetSection(which) {
                    enabled: state.audio.enabled };
     state.audio = Object.assign(data.audio, keep);
     renderAudio();
+  renderPackage();
   }
   schedule(0);
 }
@@ -1931,6 +2054,7 @@ async function loadPluginParams(path) {
     pluginParams[path] = 'error';
   }
   renderAudio();
+  renderPackage();
 }
 
 /* Säätimet ruudulle. Arvo on liitännäisen omassa yksikössä — desibeliä,
@@ -1975,6 +2099,7 @@ function renderPluginParams(host, audio) {
       state = data;
       pluginParams = {};
       renderAudio();
+  renderPackage();
       return;
     } catch (err) {
       editor.textContent = (err && err.message) || T('audio.pluginEditorFailed');
@@ -2047,6 +2172,7 @@ function renderPluginParams(host, audio) {
   defaults.addEventListener('click', () => {
     audio.plugin_params = {};
     renderAudio();
+  renderPackage();
     schedule(0);
   });
   host.append(defaults);
@@ -2093,6 +2219,7 @@ function watchMix(announce) {
     const data = await (await fetch('/api/state')).json();
     state.mix = data.mix;
     renderAudio();
+  renderPackage();
     if (data.mix.progress.running) return;
     clearInterval(mixTimer);
     /* Ajo jolla ei ollut mitään tehtävää on ohi ennen ensimmäistä kyselyä:
@@ -2325,8 +2452,9 @@ function drawBar() {
      kasvoa joka mitattiin, joten «negatiivinen» ei enää tarkoita tyhjää. */
   const hasShots = shots.some((v) => v !== -1);
   const hasSilence = !!(preview && state.audio && state.audio.silence_pass);
+  const hasPackage = !!(preview && preview.package && preview.package.length);
   const rows = preview ? preview.speakers.length + 1 + (hasShots ? 1 : 0)
-    + (hasSilence ? 1 : 0) : 1;
+    + (hasSilence ? 1 : 0) + (hasPackage ? 1 : 0) : 1;
   const rowHeight = 22, gap = 4, shotHeight = 10;
   const height = (rows - (hasShots ? 1 : 0)) * rowHeight
     + (hasShots ? shotHeight : 0) + (rows - 1) * gap + 8;
@@ -2384,6 +2512,24 @@ function drawBar() {
       ctx.fillStyle = 'rgba(244, 174, 66, .82)';
       ctx.fillRect(left + Math.min(fadePx, right - left), lowerY,
         Math.max(0, right - left - 2 * fadePx), rowHeight);
+    });
+    lowerY += rowHeight + gap;
+  }
+
+  /* Paketin kortit ja pohjat omana rivinään, samassa aikapohjassa kuin
+     hiljaisuusjaksot: esikatselu näyttää sijoittelun ennen vientiä. */
+  if (hasPackage) {
+    ctx.fillStyle = '#191c22';
+    ctx.fillRect(0, lowerY, width, rowHeight);
+    const viewStart = preview.view_start;
+    const viewEnd = preview.view_end;
+    const viewDuration = Math.max(0.001, viewEnd - viewStart);
+    preview.package.forEach((span) => {
+      const left = Math.max(0, (span.start - viewStart) / viewDuration * width);
+      const right = Math.min(width, (span.end - viewStart) / viewDuration * width);
+      ctx.fillStyle = span.kind.startsWith('bed')
+        ? 'rgba(88, 166, 255, .55)' : 'rgba(163, 113, 247, .75)';
+      ctx.fillRect(left, lowerY, Math.max(1, right - left), rowHeight);
     });
     lowerY += rowHeight + gap;
   }
@@ -2585,6 +2731,7 @@ function payload() {
   const tracks = {};
   state.tracks.forEach((m) => { tracks[m.key] = m.config; });
   return { tracks, globals: state.globals, audio: state.audio,
+           package: state.package,
            preview_window: previewWindow,
            program_range: { start: programRange[0], end: programRange[1] } };
 }
@@ -2626,8 +2773,8 @@ class SessionHistory {
 }
 const sessionHistories = new Map();
 function editSnapshot() {
-  const { tracks, globals, audio } = payload();
-  return { tracks, globals, audio };
+  const { tracks, globals, audio, package: pkg } = payload();
+  return { tracks, globals, audio, package: pkg };
 }
 function currentHistory() {
   const key = state.xml_path || '';
@@ -2658,7 +2805,8 @@ function moveHistory(action, id) {
   const restored = JSON.parse(h.nodes[h.head].value);
   state.tracks.forEach((track) => { if (restored.tracks[track.key]) track.config = restored.tracks[track.key]; });
   state.globals = restored.globals; state.audio = restored.audio;
-  renderHeader(); renderTracks(); renderGlobals();
+  if (restored.package) state.package = restored.package;
+  renderHeader(); renderTracks(); renderGlobals(); renderPackage();
   clearTimeout(pending); send();
 }
 

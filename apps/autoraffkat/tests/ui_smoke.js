@@ -592,6 +592,20 @@ async function asyncPaths() {
   await step('runMix', () => context.runMix());
   await step('resetSection(globals)', () => context.resetSection('globals'));
   await step('resetSection(audio)', () => context.resetSection('audio'));
+  /* Peruutus palauttaa myös paketin: snapshot ja palautus ohjasivat
+     aiemmin vain raidat, yleiset ja äänen, joten korttien ja pohjien
+     muokkaukset jäivät historian ulkopuolelle. */
+  run('historia palauttaa paketin', () => {
+    vm.runInContext(`(() => {
+      const original = JSON.stringify(state.package);
+      state.package.intro.mode = 'file';
+      state.package.intro.path = '/x/alku.mov';
+      moveHistory('undo');
+      if (JSON.stringify(state.package) !== original) {
+        throw new Error('paketin muutos ei palautunut peruutuksessa');
+      }
+    })()`, context);
+  });
   /* Liitännäisen säätimet piirtyvät vasta kun palvelin on kertonut mitä
      liitännäisessä on, eli asynkronisen kierroksen jälkeen. Ilman tätä
      renderPluginParams ei ajaisi kuin lataushaaransa. */

@@ -449,6 +449,23 @@ def test_a_square_tile_is_drawn_at_native_size_not_fitted():
         == pytest.approx(0.5625)
 
 
+def test_a_higher_lane_wins_over_a_lower_cover():
+    """Laneprioriteetti: tekstikortti (lane 3) näkyy reaktiokuvan (lane 1)
+    päällä kuten FCPXML:n pinossa — aiemmin aikaisemmin alkava peitto vei
+    välin riippumatta lanesta, joten kortti katosi reaktion alle."""
+    base = _tile("base.mp4", 1, start=0, end=100)
+    reaction = _tile("reaction.mp4", 1, start=10, end=50, lane=1)
+    title = _tile("title.mp4", 1, start=30, end=70, lane=3)
+    flat = render.flatten([base, reaction, title], render.Fraction(1, 25))
+    spans = [(s.start, s.end, s.path) for s in flat]
+    assert spans == [
+        (0, 10, "base.mp4"),
+        (10, 30, "reaction.mp4"),
+        (30, 70, "title.mp4"),
+        (70, 100, "base.mp4"),
+    ]
+
+
 def test_a_square_reaction_keeps_the_base_under_it_as_its_other_half():
     """Reaktio (lane 1) ei korvaa pohjakuvaa vaan jättää sen pinon toiseksi
     puoliskoksi, ja rajaus säilyy paloissa."""

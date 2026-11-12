@@ -20,6 +20,7 @@ omasta pystypohjasta.
 
 from __future__ import annotations
 
+import itertools
 import subprocess
 from dataclasses import dataclass
 
@@ -230,24 +231,44 @@ def flatten(shots: list[Shot], frame_duration: Fraction) -> list[Shot]:
 
     out: list[Shot] = []
     for shot in base:
-        cursor = shot.start
-        for cover in over:
-            if cover.end <= cursor or cover.start >= shot.end:
+        covers = [c for c in over if c.end > shot.start and c.start < shot.end]
+        if not covers:
+            out.append(piece(shot, shot.start, shot.end))
+            continue
+        # Peitot ratkaistaan lane-prioriteetilla: suurempi lane näkyy
+        # päällimmäisenä kuten FCPXML:ssä (esim. tekstikortti lanella 3
+        # reaktiokuvan yläpuolella). Pilkonta jokaisen peiton rajalla,
+        # joten päällimmäinen on yksiselitteinen joka atomivälillä.
+        # Saman lanen peitoista aikaisemmin alkava voittaa, kuten ennenkin.
+        bounds = sorted(
+            {shot.start, shot.end}
+            | {max(c.start, shot.start) for c in covers}
+            | {min(c.end, shot.end) for c in covers}
+        )
+        atoms: list[list] = []
+        for a, b in itertools.pairwise(bounds):
+            best = None
+            for c in covers:
+                if (c.start < b and c.end > a
+                        and (best is None or c.lane > best.lane
+                             or (c.lane == best.lane and c.start < best.start))):
+                    best = c
+            if atoms and atoms[-1][2] is best and atoms[-1][1] == a:
+                atoms[-1][1] = b
+            else:
+                atoms.append([a, b, best])
+        for a, b, cover in atoms:
+            if cover is None:
+                out.append(piece(shot, a, b))
                 continue
-            if cover.start > cursor:
-                out.append(piece(shot, cursor, cover.start))
-            low, high = max(cover.start, cursor), min(cover.end, shot.end)
-            top = piece(cover, low, high)
+            top = piece(cover, a, b)
             # Pino: kumpikin puolikas on ruudulla. Samalla paneelilla
             # (asettelun alapaneeli) reaktio korvaa pohjan.
             stacked = (cover.panel is not None and shot.panel is not None
                        and cover.panel != shot.panel)
             if (cover.crop and shot.crop) or stacked:
-                top.partner = piece(shot, low, high)
+                top.partner = piece(shot, a, b)
             out.append(top)
-            cursor = high
-        if cursor < shot.end:
-            out.append(piece(shot, cursor, shot.end))
     return [s for s in out if s.end > s.start]
 
 

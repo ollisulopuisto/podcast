@@ -768,7 +768,8 @@ class AppState:
 
     def render_job(self, shots, mic_tracks, replacements, room, ducks,
                    program_start, program_end, movie: str,
-                   passthrough: list[str] | None = None) -> dict:
+                   passthrough: list[str] | None = None,
+                   package: tuple[list, list] | None = None) -> dict:
         """Renderöinnin syöte samoista päätöksistä joilla XML juuri kirjoitettiin.
 
         Kuvat tulevat kirjoittajalta (``shots``), ääni samoista käsitellyistä
@@ -804,6 +805,16 @@ class AppState:
         for key in passthrough or []:
             for item in self.timeline.track_media(key):
                 sources.append(render.AudioSource(item.path, placements(item), gain_db=gain))
+        # Paketin pohjat soivat omina stereokanavinaan samalla käyrällä kuin
+        # vientiin kirjoitetaan — Render ei päätä tasoja itse.
+        for clip in (package or ([], []))[1]:
+            sources.append(render.AudioSource(
+                clip.path,
+                [(float(clip.start), float(clip.end), 0.0)],
+                duck=list(clip.curve),
+                gain_db=clip.base_gain_db,
+                stereo=True,
+            ))
         if self.settings.globals.vertical:
             from .. import reframe
 
@@ -1082,6 +1093,7 @@ class AppState:
             # lisäpainikkeen on kytkin joka näyttää rikkinäiseltä.
             if g.visual_speech and not was and self.analysis is not None:
                 self.start_measure_speech()
+        self._apply_package(payload.get("package") or {})
         self._apply_audio(payload.get("audio") or {})
         if (
             ("audio" in payload or "tracks" in payload)
@@ -1095,6 +1107,42 @@ class AppState:
         # koska ilman sitä päätös ei valmistu.
         if "tracks" in payload and self.analysis is not None:
             self.start_measure_speech()
+
+    def _apply_package(self, raw: dict) -> None:
+        """Jakson paketin asetukset. Vain tunnetut kentät, kuten äänessä."""
+        pk = self.settings.package
+        for card_name in ("intro", "outro"):
+            values = raw.get(card_name) or {}
+            card = getattr(pk, card_name)
+            if values.get("mode") in ("off", "file", "generated"):
+                card.mode = values["mode"]
+            if "path" in values:
+                card.path = str(values["path"])
+            if "text" in values:
+                card.text = str(values["text"])
+            if "duration" in values:
+                with contextlib.suppress(TypeError, ValueError):
+                    card.duration = max(0.5, float(values["duration"]))
+        credits = raw.get("credits") or {}
+        if credits.get("mode") in ("off", "file", "generated"):
+            pk.credits.mode = credits["mode"]
+        if credits.get("placement") in ("start", "end", "both"):
+            pk.credits.placement = credits["placement"]
+        if "path" in credits:
+            pk.credits.path = str(credits["path"])
+        if "text" in credits:
+            pk.credits.text = str(credits["text"])
+        if "duration" in credits:
+            with contextlib.suppress(TypeError, ValueError):
+                pk.credits.duration = max(0.5, float(credits["duration"]))
+        beds = raw.get("beds") or {}
+        if beds.get("mode") in ("off", "intro_outro", "throughout"):
+            pk.beds.mode = beds["mode"]
+        for name in ("intro_path", "outro_path", "throughout_path"):
+            if name in beds:
+                setattr(pk.beds, name, str(beds[name]))
+        if "keep_music_level" in beds:
+            pk.beds.keep_music_level = bool(beds["keep_music_level"])
 
     def _apply_audio(self, raw: dict) -> None:
         """Äänenkäsittelyn asetukset. Ei käynnistä käsittelyä — se on hidas."""
@@ -1403,6 +1451,11 @@ class AppState:
             # on koko kysymys, eikä sitä näe erillisestä listasta.
             "preview": build_preview(
                 grid, decision, reactions=lane,
+                # Korttien sijoittelu ratkaistulle ohjelmarajalle kuten
+                # viennissä; palkin näkymä pitää koko ruudukon rajansa.
+                package_clips=_package_preview_spans(
+                    self, *self.resolve_program_range(program_start, program_end),
+                ),
                 window=self.preview_window,
                 silence_spans=(silence.dead_air_spans(
                     grid, self.settings.audio.silence_min_gap
@@ -1429,6 +1482,157 @@ class AppState:
             "ms": round(elapsed, 1),
             "_grid": (grid, program_start, program_end, decision),
         }
+
+
+def _package_preview_spans(state, start, end) -> list[tuple[str, float, float]]:
+    """Pakettipalkin spanit: sijoittelu ilman sivuvaikutuksia.
+
+    Kestot tulevat ffprobe-välimuistista kuten viennissä, mutta esikatselu
+    ei aja Tekstitystä eikä äänekkyysmittausta — generoiduilla korteilla on
+    asetusten kesto, joten ne näkyvät ilman renderöintiäkin.
+    """
+    from .. import probe
+    from ..package import active_bed_paths, audio_clips, video_clips
+
+    pk = state.settings.package
+    paths = [
+        c.path for c in (pk.intro, pk.outro, pk.credits)
+        if c.mode == "file" and c.path
+    ] + list(active_bed_paths(pk.beds))
+    durations = {}
+    for path in paths:
+        info = probe.info(path)
+        if info.get("duration"):
+            durations[path] = float(info["duration"])
+    if end <= start:
+        return []
+    spans = [
+        (clip.kind, float(clip.start), float(clip.end))
+        for clip in video_clips(pk, start, end, durations)
+    ]
+    spans += [
+        (clip.kind, float(clip.start), float(clip.end))
+        for clip in audio_clips(pk, start, end, [], durations)
+    ]
+    return spans
+
+
+def _package_work_dir(xml_path: str | None, out_path: str) -> str:
+    """Vientikohtainen työhakemisto generoiduille korteille.
+
+    Tulosteen nimi yksinään ei riitä avaimeksi: sama tiedostonimi toiseen
+    hakemistoon on eri vienti, ja yhteinen hakemisto korvaisi aiemman
+    viennin kortit alta. Siksi perään tiiviste koko polusta.
+    """
+    import hashlib
+
+    stem = os.path.splitext(os.path.basename(out_path))[0]
+    digest = hashlib.sha256(os.path.abspath(out_path).encode()).hexdigest()[:8]
+    return os.path.join(os.path.dirname(xml_path or "."),
+                        ".autoraffkat-paketti", f"{stem}-{digest}")
+
+
+def _package_plan(state, grid, program_start, program_end, warnings, work_dir):
+    """Paketin klippisuunnitelma vientiin, tai None kun paketti on pois.
+
+    Tiedostojen kestot ja mitat luetaan ffprobesta; äänekkyys vain kun
+    tasonsovitus on käytössä (keep-music-level ohittaa). Puuttuva tiedosto
+    on varoitus eikä hiljainen puute: «asetus päällä, tuloksessa ei mitään»
+    on tämän projektin toistuva vika.
+    """
+    from .. import probe
+    from ..package import active_bed_paths, audio_clips, speech_spans, video_clips
+
+    pk = state.settings.package
+    if (
+        pk.intro.mode == "off"
+        and pk.outro.mode == "off"
+        and pk.credits.mode == "off"
+        and pk.beds.mode == "off"
+    ):
+        return None
+
+    if any(c.mode == "generated" for c in (pk.intro, pk.outro, pk.credits)):
+        from ..package import generated_source_available, materialize_generated
+
+        if generated_source_available():
+            # Kortit renderöidään vientikohtaiseen työhakemistoon (kutsija
+            # johtaa sen tulostenimestä): aiempi vienti viittaa omiin
+            # tiedostoihinsa, eikä uudelleenvienti korvaa niitä alta.
+            pk, problems = materialize_generated(pk, work_dir)
+            for problem in problems:
+                warnings.append(t("export.package_generated_failed", error=problem))
+        else:
+            warnings.append(t("export.package_generated_unavailable"))
+
+    # Generoiduksi jäänyt kortti (Tekstitys puuttuu tai renderöinti
+    # epäonnistui) ei saa päätyä aikajanalle: sillä ei ole tiedostoa,
+    # ja tyhjä polku rikkoisi viennin. Käytetään aina kopiota, jotta
+    # tallennetut asetukset eivät muutu.
+    from ..package import PackageSettings
+
+    pk = PackageSettings.from_json(pk.to_json())
+    for card in (pk.intro, pk.outro, pk.credits):
+        if card.mode == "generated":
+            card.mode = "off"
+
+    paths = set()
+    for card in (pk.intro, pk.outro, pk.credits):
+        if card.mode == "file" and card.path:
+            paths.add(card.path)
+    for path in active_bed_paths(pk.beds):
+        paths.add(path)
+    infos = {path: probe.info(path) for path in sorted(paths)}
+    for path, info in infos.items():
+        if not info:
+            warnings.append(t("export.package_missing", name=os.path.basename(path)))
+    durations = {
+        path: float(info["duration"])
+        for path, info in infos.items()
+        if info.get("duration")
+    }
+
+    bed_loudness = {}
+    beds = pk.beds
+    if beds.mode != "off" and not beds.keep_music_level:
+        for path in active_bed_paths(beds):
+            if infos.get(path):
+                value = probe.loudness(path)
+                if value is not None:
+                    bed_loudness[path] = value
+                else:
+                    warnings.append(
+                        t("export.package_loudness", name=os.path.basename(path))
+                    )
+    speech_lufs = (
+        state.settings.audio.target_lufs if state.settings.audio.enabled else None
+    )
+    vclips = video_clips(pk, program_start, program_end, durations)
+    for clip in vclips:
+        info = infos.get(clip.path) or {}
+        video = info.get("video") or {}
+        if video.get("width"):
+            clip.width, clip.height = int(video["width"]), int(video["height"])
+        if video.get("fps"):
+            clip.fps = float(video["fps"])
+    aclips = audio_clips(
+        pk,
+        program_start,
+        program_end,
+        speech_spans(grid),
+        durations,
+        bed_loudness,
+        speech_lufs,
+    )
+    for clip in aclips:
+        audio = (infos.get(clip.path) or {}).get("audio") or {}
+        if audio.get("channels"):
+            clip.channels = int(audio["channels"])
+        if audio.get("rate"):
+            clip.rate = int(audio["rate"])
+    if not vclips and not aclips:
+        return None
+    return (vclips, aclips)
 
 
 def _passthrough_tracks(state: AppState, mic_tracks: list) -> list[str]:
@@ -1638,6 +1842,7 @@ def _state_json(state: AppState) -> dict:
         "language": state.language,
         "languages": list(LANGUAGES),
         "audio": state.settings.audio.to_json(),
+        "package": state.settings.package.to_json(),
         # Mitatut oletukset käyttöliittymälle. Se merkitsee poikkeaman
         # suljetulle riville, ja poikkeaman on tultava samasta paikasta kuin
         # arvot itse — JavaScriptiin kirjoitettu kopio ajautuisi erilleen
@@ -2188,6 +2393,10 @@ def create_app(state: AppState) -> FastAPI:
                     from .. import movement as movement_mod
 
                     segments = movement_mod.punch_segments(segments, _grid)
+                package_plan = _package_plan(
+                    state, _grid, program_start, program_end, warnings,
+                    _package_work_dir(state.xml_path, out_path),
+                )
                 passthrough = _passthrough_tracks(state, mic_tracks)
                 if passthrough and state.timeline.multicams:
                     names = {t.key: t.name for t in state.timeline.tracks}
@@ -2214,6 +2423,7 @@ def create_app(state: AppState) -> FastAPI:
                         reframer=reframer,
                         shots=shot_list,
                         passthrough=passthrough,
+                        package=package_plan,
                     )
                 else:
                     # Hiljainen pudotus littanaan vientiin ei saa jäädä
@@ -2236,6 +2446,7 @@ def create_app(state: AppState) -> FastAPI:
                         reframer=reframer,
                         tc_start=state.timeline.tc_start,
                         shots=shot_list,
+                        package=package_plan,
                     )
                 write_fcpxml(out_path, xml)
                 state.remember(out_path)
@@ -2248,7 +2459,8 @@ def create_app(state: AppState) -> FastAPI:
                 state.remember(movie)
                 job = state.render_job(shot_list, mic_tracks, replacements, room,
                                        ducks, program_start, program_end, movie,
-                                       passthrough=passthrough)
+                                       passthrough=passthrough,
+                                       package=package_plan)
                 # Käynnissä heti eikä vasta säikeessä: muuten vastauksen jälkeen
                 # heti kysytty tila näyttäisi valmiilta, ja painike palaisi.
                 state.render_progress.update({"running": True, "fraction": 0.0,

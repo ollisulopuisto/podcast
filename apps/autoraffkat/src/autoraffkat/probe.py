@@ -115,3 +115,53 @@ def info(path: str) -> dict:
         }
     _cache[key] = out
     return out
+
+
+def loudness(path: str) -> float | None:
+    """Tiedoston integroitu äänekkyys (LUFS) ffmpegin loudnorm-mittauksella.
+
+    Hidas (yksi dekoodaus per tiedosto), joten tulos välimuistitetaan samoin
+    avaimin kuin ``info``. Musiikkipohjan tasonsovitus tarvitsee tämän;
+    keep-music-level -tilassa ei mitata.
+    """
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    key = (path, stat.st_size, int(stat.st_mtime), "lufs")
+    hit = _cache.get(key)
+    if hit is not None:
+        return hit.get("lufs")
+    try:
+        ffmpeg_bin = get_binary_path("ffmpeg")
+        done = subprocess.run(
+            [
+                ffmpeg_bin,
+                "-hide_banner",
+                "-nostats",
+                "-i",
+                path,
+                "-af",
+                "loudnorm=print_format=json",
+                "-f",
+                "null",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT * 4,
+        )
+    except (OSError, subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+    # loudnorm tulostaa mittauksen json-lohkona stderrin loppuun.
+    tail = (done.stderr or "").rstrip().split("}")[-2] + "}" if "}" in (done.stderr or "") else ""
+    try:
+        block = json.loads("{" + tail.split("{", 1)[1] if "{" in tail else "")
+        value = float(block.get("input_i"))
+    except (ValueError, TypeError, IndexError):
+        return None
+    entry = {"lufs": value}
+    _cache[key] = entry
+    return value
