@@ -152,8 +152,8 @@ def test_vectorized_matches_the_loop_implementation(
         reference[:] = rng.normal(size=ref_len)
         source[:] = rng.normal(size=src_len)
 
-    kwargs = dict(hop_seconds=0.02, max_shift_seconds=max_shift_s,
-                  min_overlap_seconds=1.0)
+    kwargs = {"hop_seconds": 0.02, "max_shift_seconds": max_shift_s,
+              "min_overlap_seconds": 1.0}
     expected = _reference_estimate_offset(reference, source, **kwargs)
     result = estimate_offset(reference, source, **kwargs)
 
@@ -166,7 +166,7 @@ def test_vectorized_matches_the_loop_implementation(
 
 
 def test_vectorized_matches_loop_on_flat_and_near_flat_audio():
-    kwargs = dict(hop_seconds=0.02, max_shift_seconds=2.0, min_overlap_seconds=1.0)
+    kwargs = {"hop_seconds": 0.02, "max_shift_seconds": 2.0, "min_overlap_seconds": 1.0}
     flat_ref = np.zeros(300)
     flat_src = np.zeros(300)
     assert estimate_offset(flat_ref, flat_src, **kwargs) is None
