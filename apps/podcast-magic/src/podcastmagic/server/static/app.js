@@ -368,9 +368,33 @@ const PM = {
         label: spec.title ? (spec.title[I18N.lang] || spec.title.fi) : spec.key,
         translated: false,
         matches: e => (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key === String(index + 1),
-        run: () => this.selectModule(spec.key),
+        run: () => this.selectModule(spec.key, this.focusIsInTabs()),
       })),
     ];
+  },
+
+  // Välilehtiradan nuolinavigointi (roving tabindex). Muokkausnäppäimet
+  // ohitetaan kokonaan: Alt+Nuolet on selaimen historia ja muokattu
+  // Home/End kuuluu selaimelle, joten emme saa varastaa niitä välilehtiin.
+  handleTabKeydown(e) {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const keys = (this.state?.modules || []).map((m) => m.key);
+    if (!keys.length) return;
+    const idx = keys.indexOf(this.active);
+    let next = -1;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+      next = (idx + 1) % keys.length;
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+      next = (idx - 1 + keys.length) % keys.length;
+    } else if (e.key === 'Home') {
+      next = 0;
+    } else if (e.key === 'End') {
+      next = keys.length - 1;
+    }
+    if (next >= 0) {
+      e.preventDefault();
+      this.selectModule(keys[next], true);
+    }
   },
 
   handleShortcut(event) {
@@ -406,13 +430,24 @@ const PM = {
 
   // ---- kuoren piirto -----------------------------------------------------
 
-  selectModule(key) {
+  // Onko kohdistus välilehtiraidassa? Välilehden pikanäppäin siirtää
+  // kohdistuksen uuteen välilehteen vain silloin; muissa tapauksissa se
+  // pysyy missä oli (esim. lomakekentässä).
+  focusIsInTabs() {
+    if (typeof document === 'undefined') return false;
+    const tabs = document.getElementById('tabs');
+    return !!(tabs && tabs.contains && tabs.contains(document.activeElement));
+  },
+
+  selectModule(key, focus = false) {
     this.active = key;
     try { localStorage.setItem('pm.module', key); } catch { /* yksityinen ikkuna */ }
     document.querySelectorAll('#tabs button').forEach((button) => {
       const isOn = button.dataset.key === key;
       button.classList.toggle('on', isOn);
       button.setAttribute('aria-selected', isOn ? 'true' : 'false');
+      button.setAttribute('tabindex', isOn ? '0' : '-1');
+      if (isOn && focus) button.focus?.();
     });
     const panels = document.getElementById('panels');
     panels.setAttribute('aria-labelledby', `tab-${key}`);
@@ -430,7 +465,9 @@ const PM = {
     tabs.replaceChildren(...this.state.modules.map((spec) => this.el('button', {
       id: `tab-${spec.key}`,
       role: 'tab',
+      'aria-controls': 'panels',
       'aria-selected': spec.key === this.active ? 'true' : 'false',
+      tabindex: spec.key === this.active ? '0' : '-1',
       'data-key': spec.key,
       text: spec.title[I18N.lang] || spec.title.fi,
       title: spec.blurb[I18N.lang] || spec.blurb.fi,
@@ -489,6 +526,9 @@ const PM = {
     try { remembered = localStorage.getItem('pm.module'); } catch { /* yksityinen ikkuna */ }
     const keys = this.state.modules.map((m) => m.key);
     this.active = keys.includes(remembered) ? remembered : keys[0];
+
+    const tabs = document.getElementById('tabs');
+    tabs.addEventListener('keydown', (e) => this.handleTabKeydown(e));
 
     document.getElementById('browse').addEventListener('click', () => this.pick());
     document.getElementById('session').addEventListener('change', (event) => {

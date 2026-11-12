@@ -152,15 +152,35 @@ def test_keyboard_shortcuts_preserve_native_text_and_do_not_run_jobs():
     assert "OK keyboard" in done.stdout
 
 
+@needs_node
+def test_tab_keyboard_behavior_moves_focus_and_preserves_browser_shortcuts():
+    """Välilehtinäppäinten käyttäytyminen: valinta, tabindex, paneeli ja kohdistus yhdessä.
+
+    Pikanäppäin siirtää kohdistuksen vain radan sisältä, ja Alt/Ctrl/Meta/
+    Shift+nuolet jäävät selaimen historialle ja omille komennoille.
+    """
+    done = subprocess.run(
+        ["node", str(Path(__file__).with_name("tab_keyboard.js")), str(STATIC / "app.js")],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert done.returncode == 0, done.stderr or done.stdout
+    assert "OK tab keyboard" in done.stdout
+
+
 def test_tab_navigation_and_session_have_aria_semantics():
-    """Välilehdillä on roolit ja valintatila ruudunlukijalle, ja istuntokentällä nimilappu."""
+    """Välilehdillä on roolit, kiertävä sarkainjärjestys, paneelikytkentä ja nuolinavigointi."""
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     app = (STATIC / "app.js").read_text(encoding="utf-8")
     assert 'role="tablist"' in html
     assert 'aria-labelledby="session-title"' in html
     assert "role: 'tab'" in app
+    assert "'aria-controls': 'panels'" in app
+    assert "tabindex: spec.key === this.active ? '0' : '-1'" in app
+    assert "button.setAttribute('tabindex', isOn ? '0' : '-1');" in app
     assert "'aria-selected': spec.key === this.active ? 'true' : 'false'" in app
     assert "button.setAttribute('aria-selected', isOn ? 'true' : 'false');" in app
+    assert "tabs.addEventListener('keydown'" in app
+    assert "ArrowDown" in app and "ArrowUp" in app
 
 
 def test_shortcut_controls_have_aria_keyshortcuts_and_dialog_handling():
