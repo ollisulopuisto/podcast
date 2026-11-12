@@ -657,21 +657,27 @@ class AppState:
             return lambda fraction: report((offset + fraction * count) / max(1, whole))
 
         try:
-            tables, errors = video_analyse.tables(
-                grid, roles, self.timeline, self.settings.globals,
-                progress=part(0, len(files)))
-            crowd: dict = {}
-            if crowd_files:
-                crowd, crowd_errors = video_analyse.crowd_tables(
-                    roles, self.timeline, self.settings.globals,
-                    progress=part(len(files), len(crowd_files)))
-                errors = {**errors, **crowd_errors}
+            # Liike ensin: se on pelkkä ffmpeg-ajo ja valmistuu minuuteissa
+            # kasvopurkuun verrattuna, joten pelkkää leikkausta liikkeeseen
+            # tarvitseva ei jää odottamaan Visionia.
             motion_tables: dict = {}
             if motion_files:
                 motion_tables, motion_errors = video_motion.tables(
                     motion_files,
-                    progress=part(len(files) + len(crowd_files), len(motion_files)))
-                errors = {**errors, **motion_errors}
+                    progress=part(0, len(motion_files)))
+                errors0 = dict(motion_errors)
+            else:
+                errors0 = {}
+            tables, errors = video_analyse.tables(
+                grid, roles, self.timeline, self.settings.globals,
+                progress=part(len(motion_files), len(files)))
+            errors = {**errors0, **errors}
+            crowd: dict = {}
+            if crowd_files:
+                crowd, crowd_errors = video_analyse.crowd_tables(
+                    roles, self.timeline, self.settings.globals,
+                    progress=part(len(motion_files) + len(files), len(crowd_files)))
+                errors = {**errors, **crowd_errors}
             with self.lock:
                 self.video_tables = tables
                 self.crowd_tables = crowd
@@ -777,6 +783,11 @@ class AppState:
         if grid.wide_key:
             keys.add(grid.wide_key)
         keys.update(shot.key for shot in getattr(grid, "groups", ()) or ())
+        # Kaikki valittavat kuvat, ei vain puhujien ensisijaiset lähikuvat:
+        # päätös saa valita myös toisen lähikuvan samalle puhujalle, ja
+        # senkin liike pitää olla mitattuna tai sen leikkaukset jäävät
+        # napsauttamatta.
+        keys.update(shot.key for shot in getattr(grid, "shots", ()) or ())
         return {key: list(self.timeline.track_media(key)) for key in sorted(keys)}
 
     def _motion_files(self, grid) -> list:
@@ -2573,6 +2584,13 @@ def create_app(state: AppState) -> FastAPI:
                     warnings.append(t("video.none_measured")
                                     if not state.video_tables
                                     else t("video.no_candidates"))
+
+                # Leikkaus liikkeeseen päällä mutta mittaamatta: vienti
+                # käyttää alkuperäisiä leikkauksia sanomatta mitään — sama
+                # vikaluokka kuin reaktioiden «päällä mutta tyhjä».
+                if (state.settings.globals.cut_on_movement
+                        and not state.motion_tables):
+                    warnings.append(t("export.motion_unmeasured"))
 
                 # Pystyviennin kehystys: sama kahden tyhjän tapauksen sääntö.
                 # Mittaamaton jakso saa letterboxin, mutta kokonaan hiljainen

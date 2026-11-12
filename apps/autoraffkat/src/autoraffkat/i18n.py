@@ -307,6 +307,14 @@ CATALOG: dict[str, dict[str, str]] = {
         "en": "Reaction shots are on but no close-up has been measured. The "
         "export was made without them — run the measurement and export again.",
     },
+    "export.motion_unmeasured": {
+        "fi": "Leikkaus liikkeeseen on päällä mutta liikettä ei ole mitattu. "
+        "Vienti tehtiin alkuperäisillä leikkauksilla — aja mittaus ja vie "
+        "uudestaan.",
+        "en": "Cut on movement is on but no movement has been measured. The "
+        "export was made with the original cuts — run the measurement and "
+        "export again.",
+    },
     "video.no_candidates": {
         "fi": "Reaktiokuvat ovat päällä ja lähikuvat mitattu, mutta yksikään "
         "hetki ei läpäissyt porttia. Vienti tehtiin ilman niitä.",

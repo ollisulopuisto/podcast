@@ -607,6 +607,14 @@ def _movement_snap(segments: list[Segment], g: Globals, motion, grid: Grid):
     keys, marks = motion
     if marks is None or not keys:
         return segments
+    # Napsautus ei saa venyttää kuvaa aineistoon jota ei ole: kulman
+    # saatavuus rajaa siirron kuten se rajaa alkuperäisen valinnankin.
+    if grid.shots:
+        available = {shot.key: shot.available for shot in grid.shots}
+    else:
+        available = {lane.close_key: lane.available
+                     for lane in grid.speakers if lane.close_key}
+        available.update({shot.key: shot.available for shot in grid.groups})
     row_of = {key: index for index, key in enumerate(keys)}
     reach = int(round(MOTION_REACH / HOP))
     out = list(segments)
@@ -630,6 +638,21 @@ def _movement_snap(segments: list[Segment], g: Globals, motion, grid: Grid):
             continue
         if at - prev.start < g.min_shot or cur.end - at < g.min_shot:
             continue
+        # Vain venyvä puoli vaatii tarkistuksen: jos leikkaus aikaistuu,
+        # saapuva kuva alkaa aiemmin, ja jos se myöhäistyy, lähtevä kuva
+        # jatkuu pidempään. Venyvän kulman on oltava olemassa koko
+        # lisävälillä, muuten ruudulle nousisi kuvaa jota ei ole.
+        if at < boundary:
+            grew, span = cur.angle, (at, boundary)
+        else:
+            grew, span = prev.angle, (boundary, at)
+        mask = available.get(grew)
+        if mask is not None:
+            lo = int(round((span[0] - grid.program_start) / HOP))
+            hi = int(round((span[1] - grid.program_start) / HOP))
+            lo, hi = max(0, lo), min(grid.n, hi)
+            if hi > lo and not mask[lo:hi].all():
+                continue
         out[i - 1] = replace(prev, end=at)
         out[i] = replace(cur, start=at)
     return out
