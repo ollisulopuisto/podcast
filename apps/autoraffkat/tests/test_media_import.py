@@ -370,9 +370,76 @@ def test_pick_preview_spans_without_activity_falls_back_to_middle(tmp_path):
 
 
 def test_preview_cache_key_changes_with_shifts(tmp_path):
-    first = media_import.preview_cache_key(["a.wav"], {"a.wav": 1.0}, "all", "", 8.0, 10.0)
-    second = media_import.preview_cache_key(["a.wav"], {"a.wav": 1.5}, "all", "", 8.0, 10.0)
-    again = media_import.preview_cache_key(["a.wav"], {"a.wav": 1.0}, "all", "", 8.0, 10.0)
+    first = media_import.preview_cache_key(["a.wav"], "a.wav", {"a.wav": 1.0}, "all", "", 8.0, 10.0)
+    second = media_import.preview_cache_key(["a.wav"], "a.wav", {"a.wav": 1.5}, "all", "", 8.0, 10.0)
+    again = media_import.preview_cache_key(["a.wav"], "a.wav", {"a.wav": 1.0}, "all", "", 8.0, 10.0)
 
     assert first != second
     assert first == again
+
+
+def test_best_window_includes_boundary_windows():
+    # Aktiivisuus täysin ensimmäisessä tai viimeisessä mahdollisessa
+    # ikkunassa: molempien pitää olla ehdokkaina oikealla summalla.
+    width = 5
+    first = np.zeros(20)
+    first[:width] = 1.0
+    last = np.zeros(20)
+    last[-width:] = 1.0
+
+    total_first, start_first = media_import._best_window(np.cumsum(first), 20, width)
+    total_last, start_last = media_import._best_window(np.cumsum(last), 20, width)
+
+    assert (total_first, start_first) == (5.0, 0)
+    assert (total_last, start_last) == (5.0, 15)
+
+
+from conftest import needs_ffmpeg
+
+
+@needs_ffmpeg
+def test_render_preview_clip_stacks_camera_and_audio_only(tmp_path):
+    # 16:9-kamera + pelkkä ääniraita: sarakkeiden korkeudet poikkeavat,
+    # joten hstack vaatii normalisoinnin. (Regressio Devin-katselmoinnista.)
+    import subprocess
+
+    camera = tmp_path / "camera.mp4"
+    microphone = tmp_path / "Peter.wav"
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=duration=8:size=640x360:rate=25",
+         "-f", "lavfi", "-i", "sine=frequency=440:duration=8",
+         "-c:v", "mpeg4", "-c:a", "aac", "-shortest", str(camera)],
+        check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=550:duration=8", str(microphone)],
+        check=True, capture_output=True,
+    )
+    out = tmp_path / "preview.mp4"
+
+    media_import.render_preview_clip(
+        [str(camera), str(microphone)], str(camera),
+        {str(camera): 0.0, str(microphone): 0.0}, 1.0, 3.0, str(out),
+    )
+
+    assert out.exists() and out.stat().st_size > 0
+
+
+def test_preview_cache_key_covers_media_identity_and_layout(tmp_path):
+    # Sama polku, uusi tiedosto: aikaleima muuttuu -> uusi avain.
+    # Viitteen vaihto tai järjestyksen muutos -> uusi avain.
+    base = media_import.preview_cache_key(
+        ["cam.mp4", "mic.wav"], "cam.mp4", {"mic.wav": 1.0}, "all", "", 8.0, 10.0,
+        stamps={"cam.mp4": [100, 111], "mic.wav": [50, 222]},
+    )
+    replaced = media_import.preview_cache_key(
+        ["cam.mp4", "mic.wav"], "cam.mp4", {"mic.wav": 1.0}, "all", "", 8.0, 10.0,
+        stamps={"cam.mp4": [100, 111], "mic.wav": [50, 333]},
+    )
+    swapped_reference = media_import.preview_cache_key(
+        ["mic.wav", "cam.mp4"], "mic.wav", {"mic.wav": 1.0}, "all", "", 8.0, 10.0,
+        stamps={"cam.mp4": [100, 111], "mic.wav": [50, 222]},
+    )
+
+    assert base != replaced
+    assert base != swapped_reference

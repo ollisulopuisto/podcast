@@ -150,6 +150,9 @@ class AppState:
         default_factory=lambda: {"done": 0, "total": 0, "current": "", "ready": False}
     )
     load_error: str = ""
+    # Inspect-kutsussa tarkistetut mediatiedostot. Esikatselu rendaa ja
+    # tarjoilee tiedoston sisältöä, joten se rajoitetaan näihin polkuihin.
+    media_paths: set = field(default_factory=set)
     media_sync: dict = field(default_factory=lambda: {
         "running": False, "fraction": 0.0, "current": "", "ready": False,
         "error": "", "result": None,
@@ -2063,6 +2066,8 @@ def create_app(state: AppState) -> FastAPI:
             sources = media_import.inspect_media(paths)
         except media_import.MediaImportError as exc:
             raise HTTPException(400, str(exc)) from exc
+        with state.lock:
+            state.media_paths = {source.path for source in sources}
         return {
             "sources": [
                 {
@@ -2091,7 +2096,7 @@ def create_app(state: AppState) -> FastAPI:
             try:
                 window = float(window)
             except (TypeError, ValueError):
-                raise HTTPException(400, "Invalid sync window.")
+                raise HTTPException(400, "Invalid sync window.") from None
             if window <= 0:
                 raise HTTPException(400, "Invalid sync window.")
         try:
@@ -2151,6 +2156,13 @@ def create_app(state: AppState) -> FastAPI:
             raise HTTPException(400, "Invalid preview kind.")
         if kind == "speaker" and target not in paths:
             raise HTTPException(400, "Choose which track to preview.")
+        with state.lock:
+            known_paths = set(state.media_paths)
+        if not set(paths) <= known_paths:
+            # Esikatselu palauttaa rendattua sisältöä ladattavaksi, joten
+            # mielivaltaisia polkuja ei hyväksytä: vain inspect-kutsussa
+            # tarkistetut tiedostot kelpaavat.
+            raise HTTPException(400, "Inspect the media files first.")
         try:
             sources = media_import.inspect_media(paths)
         except media_import.MediaImportError as exc:
@@ -2178,9 +2190,20 @@ def create_app(state: AppState) -> FastAPI:
             duration = spans["speaker_seconds"]
             target_key = target
         shift_map = {src.path: float(shifts.get(src.path, 0.0)) for src in sources if src.has_audio}
+        ordered_paths = [
+            reference,
+            *[src.path for src in sources if src.path != reference and src.has_audio],
+        ]
+        try:
+            stamps = {
+                path: [os.stat(path).st_size, os.stat(path).st_mtime_ns]
+                for path in ordered_paths
+            }
+        except OSError as exc:
+            raise HTTPException(400, f"Media file not readable: {exc}") from exc
         key = media_import.preview_cache_key(
-            [src.path for src in sources if src.has_audio],
-            shift_map, kind, target_key, start, duration,
+            ordered_paths, reference, shift_map, kind, target_key,
+            start, duration, stamps=stamps,
         )
         out_dir = os.path.join(cache_dir(), "esikatselu")
         os.makedirs(out_dir, exist_ok=True)
@@ -2188,8 +2211,7 @@ def create_app(state: AppState) -> FastAPI:
         if not os.path.exists(out_path):
             try:
                 media_import.render_preview_clip(
-                    [src.path for src in sources if src.has_audio],
-                    reference, shift_map, start, duration, out_path,
+                    ordered_paths, reference, shift_map, start, duration, out_path,
                 )
             except Exception as exc:
                 raise HTTPException(500, f"Preview render failed: {exc}") from exc
