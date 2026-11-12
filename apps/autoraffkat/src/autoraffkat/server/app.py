@@ -2266,17 +2266,13 @@ def create_app(state: AppState) -> FastAPI:
         if not re.fullmatch(r"[0-9a-f]{40}\.mp4", name):
             raise HTTPException(400, t("media.invalid_preview_name"))
         with state.lock:
-            allowed = name[:-4] in state.media_preview_keys
-        if not allowed:
+            registered = {key: key for key in state.media_preview_keys}
+        key = registered.get(name[:-4])
+        if key is None:
             raise HTTPException(404, t("media.preview_not_found"))
-        # CodeQL-näkyvä rakennustarkistus: nimi on jo regex-rajattu ja
-        # rekisterissä, mutta todellinen polku varmistetaan vielä pysyväksi
-        # välimuistihakemiston sisällä (realpath + vertailu kuten #212:ssä).
-        out_dir = os.path.join(cache_dir(), "esikatselu")
-        real_dir = os.path.realpath(out_dir)
-        out_path = os.path.realpath(os.path.join(real_dir, name))
-        if os.path.dirname(out_path) != real_dir:
-            raise HTTPException(400, t("media.invalid_preview_name"))
+        # Polku rakennetaan palvelimen rekisteröimästä avaimesta eikä
+        # pyynnön merkkijonosta käytetä polkuna sellaisenaan (CodeQL).
+        out_path = os.path.join(cache_dir(), "esikatselu", f"{key}.mp4")
         if not os.path.exists(out_path):
             raise HTTPException(404, t("media.preview_not_found"))
         return FileResponse(out_path, media_type="video/mp4")
