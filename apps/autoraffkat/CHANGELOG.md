@@ -8,6 +8,10 @@ and this project adheres to Calendar Versioning (CalVer).
 ## [Unreleased]
 
 ### Added
+- Cut on movement: an optional setting that snaps each cut to the nearest
+  measured moment of movement in the outgoing angle, so the picture change
+  lands inside motion instead of a freeze. Off by default; measured from
+  keyframes, cached on disk like the face measurement.
 - Media sync search window: automatic mode (starts at ±5 min, expands to
   the full recording when the match is weak) plus manual presets of
   ±5 min, ±30 min, ±2 h and full range.

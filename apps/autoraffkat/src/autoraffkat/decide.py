@@ -48,6 +48,12 @@ from .model import (
 # katkaisua paikkaan jossa puheenvuoro tuntuu jo eri kohdalta.
 REACTION_REACH = 4.0
 
+# Kuinka kaukaa leikkaus siirretään mitattuun liikehetkeen, sekunteina.
+# Avainruutuja on noin yksi sekunnissa, joten lyhyempi ulottuva ei
+# löytäisi liikettä ja pitempi siirtäisi leikkauksen liian kauas
+# vuorenvaihdon tahdista.
+MOTION_REACH = 1.5
+
 WIDE = -2  # want-taulukon erikoisarvot
 HOLD = -1
 
@@ -586,6 +592,49 @@ def _reaction_point(
     return best[1:] if best else None
 
 
+def _movement_snap(segments: list[Segment], g: Globals, motion, grid: Grid):
+    """Siirtää leikkaukset lähimpään mitattuun liikehetkeen.
+
+    Leikkaus liikkeen päälle kätkeytyy: katsojan silmä seuraa liikettä
+    eikä leikkauskohtaa. ``motion`` on ``(kulmien avaimet, (kulmia, n)
+    totuustaulukko)`` kuten reaktiohetkien marks. Liikettä etsitään siitä
+    kulmasta joka on ruudulla ennen leikkausta — saapuvan kuvan liike ei
+    kätke mitään, koska se ei ole vielä näkynyt. Siirto tehdään vain jos
+    kumpikin puoli jää vähintään ``min_shot`` pituiseksi.
+    """
+    if motion is None:
+        return segments
+    keys, marks = motion
+    if marks is None or not keys:
+        return segments
+    row_of = {key: index for index, key in enumerate(keys)}
+    reach = int(round(MOTION_REACH / HOP))
+    out = list(segments)
+    for i in range(1, len(out)):
+        prev, cur = out[i - 1], out[i]
+        row = row_of.get(prev.angle)
+        if row is None or row >= marks.shape[0]:
+            continue
+        boundary = float(cur.start)
+        centre = int(round((boundary - grid.program_start) / HOP))
+        low = max(0, centre - reach)
+        high = min(grid.n, centre + reach + 1)
+        if high <= low:
+            continue
+        hits = np.flatnonzero(marks[row, low:high])
+        if not hits.size:
+            continue
+        pick = int(hits[np.argmin(np.abs(hits - (centre - low)))])
+        at = grid.program_start + (low + pick) * HOP
+        if at == boundary:
+            continue
+        if at - prev.start < g.min_shot or cur.end - at < g.min_shot:
+            continue
+        out[i - 1] = replace(prev, end=at)
+        out[i] = replace(cur, start=at)
+    return out
+
+
 def _force_wide(
     segments: list[Segment],
     g: Globals,
@@ -887,12 +936,14 @@ def _respect_edits(
     return out
 
 
-def decide(grid: Grid, g: Globals, marks=None) -> Decision:
+def decide(grid: Grid, g: Globals, marks=None, motion=None) -> Decision:
     """Leikkauslista. Tämän on pyörittävä millisekunneissa.
 
     ``marks`` on valinnainen ``(puhujia, n)`` totuustaulukko mitatuista
-    reaktiohetkistä. Taulukko eikä rajapinta: päätöskerros ei lue
-    tiedostoja, ks. CLAUDE.md.
+    reaktiohetkistä. ``motion`` on valinnainen ``(kulmien avaimet,
+    (kulmia, n) totuustaulukko)`` mitatuista liikehetkistä, joihin
+    leikkaukset siirretään lyhyen ulottuvan sisällä. Taulukkoja eikä
+    rajapintoja: päätöskerros ei lue tiedostoja, ks. CLAUDE.md.
     """
     if grid.shots:
         grid = replace(grid, wide_key=grid.context_key)
@@ -942,6 +993,7 @@ def decide(grid: Grid, g: Globals, marks=None) -> Decision:
             Segment(key, label, grid.program_start + at, grid.program_start + end)
         )
     segments = _merge(segments)
+    segments = _movement_snap(segments, g, motion, grid)
     segments = _force_wide(segments, g, WIDE_LABEL, grid.wide_key,
                            grid=grid, marks=marks)
     if bookends:

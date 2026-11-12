@@ -410,6 +410,8 @@ const STRINGS = {
        ratkaise, kynnys ratkaisee. */
     'reactions.title': 'Reaktiokuvat',
     'reactions.hint': 'Kuuntelijan lähikuva kesken toisen puheen, omalle lanelle.',
+    'cutmovement.title': 'Leikkaus liikkeeseen',
+    'cutmovement.hint': 'Leikkaus siirretään lähimpään mitattuun liikehetkeen.',
     'reactions.measure': 'Mittaa lähikuvat',
     'reactions.again': 'Mittaa uudestaan',
     'reactions.measuring': 'mitataan…',
@@ -924,6 +926,8 @@ const STRINGS = {
     'audio.programTrimPreview': 'Estimated program trim: {trim} dB (from overlap)',
     'reactions.title': 'Reaction shots',
     'reactions.hint': "The listener's close-up during the other person's speech, on its own lane.",
+    'cutmovement.title': 'Cut on movement',
+    'cutmovement.hint': 'Cuts move to the nearest measured moment of movement.',
     'reactions.measure': 'Measure the close-ups',
     'reactions.again': 'Measure again',
     'reactions.measuring': 'measuring…',
