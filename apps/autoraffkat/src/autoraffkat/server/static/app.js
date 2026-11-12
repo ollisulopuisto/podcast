@@ -3621,6 +3621,7 @@ function renderMediaSync() {
     if (estimate && estimate.shift_seconds !== null) {
       const score = Number(estimate.correlation);
       hint.textContent = `r=${Number.isFinite(score) ? score.toFixed(2) : '—'}`;
+      if (estimate.window_expanded) hint.textContent += ` · ${T('sync.expanded')}`;
     } else {
       hint.textContent = source.has_audio ? T('sync.noEstimate') : T('sync.noEstimate');
     }
@@ -3636,6 +3637,14 @@ function renderMediaSync() {
     kind.className = 'muted';
     kind.textContent = source.has_video ? T('sync.camera') : source.name;
     row.append(name, shiftLabel, kind);
+    if (source.has_audio) {
+      const listen = document.createElement('button');
+      listen.type = 'button';
+      listen.className = 'ghost';
+      listen.textContent = T('sync.listen');
+      listen.addEventListener('click', () => playSyncPreview('speaker', source.path));
+      row.append(listen);
+    }
     list.append(row);
   });
   $('media-sync-progress').textContent = '';
@@ -3649,7 +3658,11 @@ async function estimateMediaSync() {
   try {
     const response = await fetch('/api/media/estimate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paths: mediaImport.paths, reference: mediaImport.reference }),
+      body: JSON.stringify({
+        paths: mediaImport.paths,
+        reference: mediaImport.reference,
+        window: $('media-sync-window').value,
+      }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'Estimate failed.');
@@ -3677,10 +3690,7 @@ async function estimateMediaSync() {
   }
 }
 
-async function importSyncedMedia() {
-  if (!mediaImport) return;
-  const button = $('media-sync-import');
-  setBusy(button, true, T('sync.importing'));
+function collectSyncOffsets() {
   const shifts = {};
   let invalid = false;
   $('media-sync-sources').querySelectorAll('input[data-media-path]').forEach((input) => {
@@ -3688,7 +3698,46 @@ async function importSyncedMedia() {
     if (!Number.isFinite(value)) invalid = true;
     else shifts[input.dataset.mediaPath] = value;
   });
-  if (invalid) {
+  return invalid ? null : shifts;
+}
+
+async function playSyncPreview(kind, target) {
+  if (!mediaImport) return;
+  const shifts = collectSyncOffsets();
+  if (!shifts) {
+    $('media-sync-progress').textContent = T('sync.importFailed', { error: 'Offsets must be numbers.' });
+    return;
+  }
+  $('media-sync-progress').textContent = T('sync.previewRendering');
+  try {
+    const response = await fetch('/api/media/preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        paths: mediaImport.paths,
+        reference: mediaImport.reference,
+        shifts,
+        kind,
+        target,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Preview failed.');
+    const video = $('media-sync-preview');
+    video.src = data.url;
+    $('media-sync-preview-box').classList.remove('hidden');
+    video.play();
+    $('media-sync-progress').textContent = '';
+  } catch (err) {
+    $('media-sync-progress').textContent = T('sync.previewFailed', { error: err.message });
+  }
+}
+
+async function importSyncedMedia() {
+  if (!mediaImport) return;
+  const button = $('media-sync-import');
+  setBusy(button, true, T('sync.importing'));
+  const shifts = collectSyncOffsets();
+  if (!shifts) {
     $('media-sync-progress').textContent = T('sync.importFailed', { error: 'Offsets must be numbers.' });
     setBusy(button, false);
     return;
@@ -3806,6 +3855,7 @@ $('media-sync-reference').addEventListener('change', (event) => {
   }
 });
 $('media-sync-estimate').addEventListener('click', estimateMediaSync);
+$('media-sync-listen').addEventListener('click', () => playSyncPreview('all'));
 $('media-sync-import').addEventListener('click', importSyncedMedia);
 $('export').addEventListener('click', exportXml);
 $('render').addEventListener('click', renderVideo);
