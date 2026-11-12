@@ -378,12 +378,11 @@ def test_render_job_adds_beds_as_stereo_sources():
     from types import SimpleNamespace
 
     from autoraffkat.package import PackageAudioClip
-    from autoraffkat.project import ProjectSettings
     from autoraffkat.server.app import AppState
 
     state = AppState(xml_path="")
     state.timeline = SimpleNamespace(
-        media_by_key=lambda: {},
+        media_by_key=dict,
         track_media=lambda key: [],
         media=[],
         frame_duration=Fraction(1, 25),

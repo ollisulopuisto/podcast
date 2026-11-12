@@ -1692,7 +1692,7 @@ def _room_lines(
     return lines
 
 
-def _package_asset(clip, res_id: str, fmt_id: str | None, frame_duration):
+def _package_asset(clip, res_id: str, fmt_id: str | None):
     """Paketin ulkoisesta tiedostosta oma ``<asset>``-resurssi.
 
     Toisin kuin tilaääni, paketin tiedostot eivät johdu lähteen assetista,
@@ -1742,11 +1742,11 @@ def _package_assets(video, audio, resources, frame_duration) -> dict[str, str]:
         )
         fmt.set("frameDuration", frames_str(1, step))
         res_id = _next_resource_id(resources)
-        resources.append(_package_asset(clip, res_id, fmt_id, frame_duration))
+        resources.append(_package_asset(clip, res_id, fmt_id))
         ids[clip.kind] = res_id
     for clip in audio:
         res_id = _next_resource_id(resources)
-        resources.append(_package_asset(clip, res_id, None, frame_duration))
+        resources.append(_package_asset(clip, res_id, None))
         ids[clip.kind] = res_id
     return ids
 

@@ -1121,10 +1121,8 @@ class AppState:
             if "text" in values:
                 card.text = str(values["text"])
             if "duration" in values:
-                try:
+                with contextlib.suppress(TypeError, ValueError):
                     card.duration = max(0.5, float(values["duration"]))
-                except (TypeError, ValueError):
-                    pass
         credits = raw.get("credits") or {}
         if credits.get("mode") in ("off", "file", "generated"):
             pk.credits.mode = credits["mode"]
@@ -1135,10 +1133,8 @@ class AppState:
         if "text" in credits:
             pk.credits.text = str(credits["text"])
         if "duration" in credits:
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 pk.credits.duration = max(0.5, float(credits["duration"]))
-            except (TypeError, ValueError):
-                pass
         beds = raw.get("beds") or {}
         if beds.get("mode") in ("off", "intro_outro", "throughout"):
             pk.beds.mode = beds["mode"]
