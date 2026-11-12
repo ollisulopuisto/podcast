@@ -1082,6 +1082,7 @@ class AppState:
             # lisäpainikkeen on kytkin joka näyttää rikkinäiseltä.
             if g.visual_speech and not was and self.analysis is not None:
                 self.start_measure_speech()
+        self._apply_package(payload.get("package") or {})
         self._apply_audio(payload.get("audio") or {})
         if (
             ("audio" in payload or "tracks" in payload)
@@ -1095,6 +1096,46 @@ class AppState:
         # koska ilman sitä päätös ei valmistu.
         if "tracks" in payload and self.analysis is not None:
             self.start_measure_speech()
+
+    def _apply_package(self, raw: dict) -> None:
+        """Jakson paketin asetukset. Vain tunnetut kentät, kuten äänessä."""
+        pk = self.settings.package
+        for card_name in ("intro", "outro"):
+            values = raw.get(card_name) or {}
+            card = getattr(pk, card_name)
+            if values.get("mode") in ("off", "file", "generated"):
+                card.mode = values["mode"]
+            if "path" in values:
+                card.path = str(values["path"])
+            if "text" in values:
+                card.text = str(values["text"])
+            if "duration" in values:
+                try:
+                    card.duration = max(0.5, float(values["duration"]))
+                except (TypeError, ValueError):
+                    pass
+        credits = raw.get("credits") or {}
+        if credits.get("mode") in ("off", "file", "generated"):
+            pk.credits.mode = credits["mode"]
+        if credits.get("placement") in ("start", "end", "both"):
+            pk.credits.placement = credits["placement"]
+        if "path" in credits:
+            pk.credits.path = str(credits["path"])
+        if "text" in credits:
+            pk.credits.text = str(credits["text"])
+        if "duration" in credits:
+            try:
+                pk.credits.duration = max(0.5, float(credits["duration"]))
+            except (TypeError, ValueError):
+                pass
+        beds = raw.get("beds") or {}
+        if beds.get("mode") in ("off", "intro_outro", "throughout"):
+            pk.beds.mode = beds["mode"]
+        for name in ("intro_path", "outro_path", "throughout_path"):
+            if name in beds:
+                setattr(pk.beds, name, str(beds[name]))
+        if "keep_music_level" in beds:
+            pk.beds.keep_music_level = bool(beds["keep_music_level"])
 
     def _apply_audio(self, raw: dict) -> None:
         """Äänenkäsittelyn asetukset. Ei käynnistä käsittelyä — se on hidas."""
@@ -1429,6 +1470,89 @@ class AppState:
             "ms": round(elapsed, 1),
             "_grid": (grid, program_start, program_end, decision),
         }
+
+
+def _package_plan(state, grid, program_start, program_end, warnings):
+    """Paketin klippisuunnitelma vientiin, tai None kun paketti on pois.
+
+    Tiedostojen kestot ja mitat luetaan ffprobesta; äänekkyys vain kun
+    tasonsovitus on käytössä (keep-music-level ohittaa). Puuttuva tiedosto
+    on varoitus eikä hiljainen puute: «asetus päällä, tuloksessa ei mitään»
+    on tämän projektin toistuva vika.
+    """
+    from .. import probe
+    from ..package import audio_clips, speech_spans, video_clips
+
+    pk = state.settings.package
+    if (
+        pk.intro.mode == "off"
+        and pk.outro.mode == "off"
+        and pk.credits.mode == "off"
+        and pk.beds.mode == "off"
+    ):
+        return None
+
+    paths = set()
+    for card in (pk.intro, pk.outro, pk.credits):
+        if card.mode == "file" and card.path:
+            paths.add(card.path)
+    for path in (pk.beds.intro_path, pk.beds.outro_path, pk.beds.throughout_path):
+        if path:
+            paths.add(path)
+    infos = {path: probe.info(path) for path in sorted(paths)}
+    for path, info in infos.items():
+        if not info:
+            warnings.append(t("export.package_missing", name=os.path.basename(path)))
+    durations = {
+        path: float(info["duration"])
+        for path, info in infos.items()
+        if info.get("duration")
+    }
+    if any(c.mode == "generated" for c in (pk.intro, pk.outro, pk.credits)):
+        from ..package import generated_source_available
+
+        if not generated_source_available():
+            warnings.append(t("export.package_generated_unavailable"))
+
+    bed_loudness = {}
+    beds = pk.beds
+    if beds.mode != "off" and not beds.keep_music_level:
+        for path in (beds.intro_path, beds.outro_path, beds.throughout_path):
+            if path and infos.get(path):
+                value = probe.loudness(path)
+                if value is not None:
+                    bed_loudness[path] = value
+                else:
+                    warnings.append(
+                        t("export.package_loudness", name=os.path.basename(path))
+                    )
+    speech_lufs = (
+        state.settings.audio.target_lufs if state.settings.audio.enabled else None
+    )
+    vclips = video_clips(pk, program_start, program_end, durations)
+    for clip in vclips:
+        info = infos.get(clip.path) or {}
+        video = info.get("video") or {}
+        if video.get("width"):
+            clip.width, clip.height = int(video["width"]), int(video["height"])
+    aclips = audio_clips(
+        pk,
+        program_start,
+        program_end,
+        speech_spans(grid),
+        durations,
+        bed_loudness,
+        speech_lufs,
+    )
+    for clip in aclips:
+        audio = (infos.get(clip.path) or {}).get("audio") or {}
+        if audio.get("channels"):
+            clip.channels = int(audio["channels"])
+        if audio.get("rate"):
+            clip.rate = int(audio["rate"])
+    if not vclips and not aclips:
+        return None
+    return (vclips, aclips)
 
 
 def _passthrough_tracks(state: AppState, mic_tracks: list) -> list[str]:
@@ -2188,6 +2312,8 @@ def create_app(state: AppState) -> FastAPI:
                     from .. import movement as movement_mod
 
                     segments = movement_mod.punch_segments(segments, _grid)
+                package_plan = _package_plan(state, _grid, program_start,
+                                             program_end, warnings)
                 passthrough = _passthrough_tracks(state, mic_tracks)
                 if passthrough and state.timeline.multicams:
                     names = {t.key: t.name for t in state.timeline.tracks}
@@ -2214,6 +2340,7 @@ def create_app(state: AppState) -> FastAPI:
                         reframer=reframer,
                         shots=shot_list,
                         passthrough=passthrough,
+                        package=package_plan,
                     )
                 else:
                     # Hiljainen pudotus littanaan vientiin ei saa jäädä

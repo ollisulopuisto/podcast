@@ -178,6 +178,18 @@ CATALOG: dict[str, dict[str, str]] = {
         "en": "Ducking is on, but no microphone matched a mask: no ducking "
         "envelope was written into the export.",
     },
+    "export.package_missing": {
+        "fi": "Paketin tiedostoa ei löydy: {name}. Korttia tai pohjaa ei kirjoitettu vientiin.",
+        "en": "The package file is missing: {name}. The card or bed was not written into the export.",
+    },
+    "export.package_generated_unavailable": {
+        "fi": "Generoidut tekstit vaativat Tekstityksen alfa-viennin, jota ei ole asennettu: kortit jätettiin pois.",
+        "en": "Generated titles need Tekstitys' alpha export, which is not installed: the cards were left out.",
+    },
+    "export.package_loudness": {
+        "fi": "Pohjan äänekkyyttä ei saatu mitattua: {name}. Tasonsovitusta ei tehty.",
+        "en": "The bed's loudness could not be measured: {name}. No level fit was applied.",
+    },
     "export.silence_none": {
         "fi": "Hiljaisuuspassi on päällä, mutta sisäisiä riittävän pitkiä taukoja ei löytynyt.",
         "en": "The silence pass is on, but no long enough internal gaps were found.",

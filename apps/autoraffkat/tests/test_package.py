@@ -222,3 +222,123 @@ def test_package_lanes_in_multicam_export(fixture_dir, validate_fcpxml):
     bed_asset = assets[beds[0].get("ref")]
     assert bed_asset.get("hasAudio") == "1" and bed_asset.get("hasVideo") is None
     validate_fcpxml(xml, "package.fcpxml")
+
+
+def test_project_settings_carry_the_package():
+    from autoraffkat.project import ProjectSettings, name_tag
+
+    settings = ProjectSettings()
+    assert settings.package.intro.mode == "off"
+    settings.package.intro.mode = "file"
+    settings.package.intro.path = "/m/alku.mov"
+    settings.package.beds.mode = "throughout"
+    settings.package.beds.throughout_path = "/m/pohja.wav"
+    again = ProjectSettings.from_json(settings.to_json())
+    assert again.package == settings.package
+    settings.globals.name_tags = True
+    assert "pkg" in name_tag(settings)
+    # Oletustila ei kuulu nimeen.
+    plain = ProjectSettings()
+    plain.globals.name_tags = True
+    assert "pkg" not in name_tag(plain)
+
+
+def test_apply_reads_the_package_payload():
+    from autoraffkat.server.app import AppState
+
+    state = AppState(xml_path="")
+    state.apply(
+        {
+            "package": {
+                "intro": {"mode": "file", "path": "/m/alku.mov"},
+                "outro": {"mode": "generated", "text": "Hei!", "duration": 6},
+                "credits": {"mode": "file", "path": "/m/t.mov", "placement": "both"},
+                "beds": {
+                    "mode": "throughout",
+                    "throughout_path": "/m/pohja.wav",
+                    "keep_music_level": True,
+                },
+            }
+        }
+    )
+    pk = state.settings.package
+    assert pk.intro.mode == "file" and pk.intro.path == "/m/alku.mov"
+    assert pk.outro.mode == "generated" and pk.outro.duration == 6.0
+    assert pk.credits.placement == "both"
+    assert pk.beds.mode == "throughout" and pk.beds.keep_music_level
+    # Roska ei päädy kenttiin.
+    state.apply({"package": {"intro": {"mode": "roska"}, "beds": {"mode": "roska"}}})
+    assert state.settings.package.intro.mode == "file"
+    assert state.settings.package.beds.mode == "throughout"
+
+
+def test_package_plan_uses_probed_durations(monkeypatch):
+    from types import SimpleNamespace
+
+    from autoraffkat import probe
+    from autoraffkat.project import ProjectSettings
+    from autoraffkat.server.app import _package_plan
+
+    monkeypatch.setattr(
+        probe,
+        "info",
+        lambda path: {
+            "/m/alku.mov": {"duration": 4.0, "video": {"width": 3840, "height": 2160}},
+            "/m/pohja.wav": {"duration": 30.0, "audio": {"channels": 2, "rate": 48000}},
+        }.get(path, {}),
+    )
+    monkeypatch.setattr(probe, "loudness", lambda path: -20.0)
+
+    settings = ProjectSettings()
+    settings.package.intro.mode = "file"
+    settings.package.intro.path = "/m/alku.mov"
+    settings.package.beds.intro_path = "/m/pohja.wav"
+    settings.audio.enabled = True
+    settings.audio.target_lufs = -16.0
+    state = SimpleNamespace(settings=settings)
+    grid = SimpleNamespace(speakers=(), n=0, program_start=0.0)
+    warnings = []
+
+    plan = _package_plan(state, grid, Fraction(0), Fraction(60), warnings)
+    assert plan is not None
+    vclips, aclips = plan
+    assert [c.kind for c in vclips] == ["intro"]
+    assert (vclips[0].width, vclips[0].height) == (3840, 2160)
+    assert [c.kind for c in aclips] == ["bed_intro"]
+    assert float(aclips[0].end) == 30.0
+    # Tasonsovitus: -16 - 1 - (-20) = +3 dB.
+    assert aclips[0].base_gain_db == 3.0
+    assert warnings == []
+
+
+def test_package_plan_warns_about_missing_files(monkeypatch):
+    from types import SimpleNamespace
+
+    from autoraffkat import probe
+    from autoraffkat.project import ProjectSettings
+    from autoraffkat.server.app import _package_plan
+
+    monkeypatch.setattr(probe, "info", lambda path: {})
+    settings = ProjectSettings()
+    settings.package.intro.mode = "file"
+    settings.package.intro.path = "/m/poissa.mov"
+    state = SimpleNamespace(settings=settings)
+    grid = SimpleNamespace(speakers=(), n=0, program_start=0.0)
+    warnings = []
+
+    plan = _package_plan(state, grid, Fraction(0), Fraction(60), warnings)
+    assert plan is None
+    assert warnings and "poissa.mov" in warnings[0]
+
+
+def test_package_plan_off_gives_nothing():
+    from types import SimpleNamespace
+
+    from autoraffkat.project import ProjectSettings
+    from autoraffkat.server.app import _package_plan
+
+    state = SimpleNamespace(settings=ProjectSettings())
+    grid = SimpleNamespace(speakers=(), n=0, program_start=0.0)
+    warnings = []
+    assert _package_plan(state, grid, Fraction(0), Fraction(60), warnings) is None
+    assert warnings == []

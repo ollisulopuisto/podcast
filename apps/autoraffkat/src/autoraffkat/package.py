@@ -348,6 +348,32 @@ def generated_source_available() -> bool:
     return TEKSTITYS_RENDER_ALPHA in out.stdout
 
 
+def speech_spans(grid) -> list[tuple[float, float]]:
+    """Jaksot, joilla joku puhuu, ohjelma-ajan sekunteina.
+
+    Sama ruudukkoluku kuin hiljaisuuspassilla: pohjan vaimennus perustuu
+    samaan puhetottumuuteen eikä omaan mittaukseen.
+    """
+    import numpy as np
+
+    from speechmix.masks import HOP, runs
+
+    speakers = getattr(grid, "speakers", ())
+    n = int(getattr(grid, "n", 0))
+    if n <= 0 or not speakers:
+        return []
+    talking = np.zeros(n, dtype=bool)
+    for speaker in speakers:
+        lane = np.asarray(speaker.on, dtype=bool)
+        talking[: min(n, lane.size)] |= lane[:n]
+    start = float(grid.program_start)
+    return [
+        (start + lo * HOP, start + hi * HOP)
+        for lo, hi, is_talking in runs(talking.astype(np.int8))
+        if is_talking
+    ]
+
+
 def parse_settings(text: str) -> PackageSettings:
     """Asetusten lukeminen projektin JSON:sta."""
     return PackageSettings.from_json(json.loads(text))

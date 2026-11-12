@@ -27,6 +27,7 @@ from .model import (
     Globals,
     TrackConfig,
 )
+from .package import PackageSettings
 from .program_range import encode_time
 
 FORMAT_VERSION = 2
@@ -117,6 +118,17 @@ def name_tag(settings: ProjectSettings) -> str:
         return ""
     rhythm = g.rhythm if g.rhythm in RHYTHM_PRESETS else RHYTHM_CUSTOM
     parts = [rhythm]
+    # Paketti poikkeustilassa: sama sääntö kuin muilla, vain oletuksesta
+    # poikkeava kuuluu nimeen.
+    pk = settings.package
+    if (
+        pk.intro.mode != "off"
+        or pk.outro.mode != "off"
+        or pk.credits.mode != "off"
+        or pk.beds.mode not in ("off", "intro_outro")
+        or (pk.beds.mode == "intro_outro" and (pk.beds.intro_path or pk.beds.outro_path))
+    ):
+        parts.append("pkg")
     if rhythm == RHYTHM_CUSTOM:
         # Mukautetussa rytmissä nimi ei kerro mitään ilman lukua.
         parts.append(_seconds(g.min_shot))
@@ -237,6 +249,10 @@ def _range_value(value) -> str | None:
         return None
 
 
+def _package_settings() -> "PackageSettings":
+    return PackageSettings()
+
+
 @dataclass
 class ProjectSettings:
     """Yhden lähde-XML:n asetukset: raitakohtaiset roolit ja globaalit säätimet."""
@@ -244,6 +260,7 @@ class ProjectSettings:
     tracks: dict[str, TrackConfig] = field(default_factory=dict)
     globals: Globals = field(default_factory=Globals)
     audio: AudioSettings = field(default_factory=AudioSettings)
+    package: "PackageSettings" = field(default_factory=_package_settings)
     language: str = ""  # "" = järjestelmän mukaan
     range_start: str | None = None
     range_end: str | None = None
@@ -261,6 +278,7 @@ class ProjectSettings:
             "version": FORMAT_VERSION,
             "globals": self.globals.to_json(),
             "audio": self.audio.to_json(),
+            "package": self.package.to_json(),
             "language": self.language,
             "program_range": {"start": self.range_start, "end": self.range_end},
             "tracks": {k: v.to_json() for k, v in self.tracks.items()},
@@ -296,6 +314,7 @@ class ProjectSettings:
             tracks=tracks,
             globals=Globals.from_json(data.get("globals") or {}),
             audio=AudioSettings.from_json(data.get("audio") or {}),
+            package=PackageSettings.from_json(data.get("package") or {}),
             language=str(data.get("language") or ""),
             range_start=_range_value((data.get("program_range") or {}).get("start")),
             range_end=_range_value((data.get("program_range") or {}).get("end")),
