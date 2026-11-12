@@ -40,7 +40,7 @@ def resolve(path: str) -> str:
     käsittelyn muualle kuin aiotun lähteen hakemistoon.
     """
     path = os.path.expanduser(path)
-    if _has_upward_component(path):
+    if ".." in path.replace("\\", "/").split("/"):
         raise ValueError(
             f"polku ei saa sisaltaa hakemistoon ylospain suuntaavaa osaa: {path!r}"
         )
@@ -51,11 +51,6 @@ def resolve(path: str) -> str:
         if os.path.exists(inner):
             return inner
     return path
-
-
-def _has_upward_component(path: str) -> bool:
-    """Palauttaa True, jos polussa on hakemistoon ylos osoittava osa (..)."""
-    return ".." in path.replace("\\", "/").split("/")
 
 
 # Nimeen kirjoitettavat säätimet. Lista on tarkka eikä «mitä tahansa sanoja»:
