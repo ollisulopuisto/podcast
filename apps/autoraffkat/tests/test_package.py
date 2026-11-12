@@ -909,3 +909,105 @@ def test_package_work_dir_distinguishes_same_named_outputs(tmp_path):
     # Sama vienti uudestaan osuu samaan hakemistoon.
     assert _package_work_dir(str(tmp_path / "j.fcpxml"),
                              str(tmp_path / "a" / "vienti.mp4")) == first
+
+def test_throughout_bed_ends_at_the_files_end():
+    """Ohjelmaa lyhyempi koko jakson pohja loppuu tiedoston loppuun:
+    pidempi klipi soisi hiljaisuutta ja XML väittäisi olematonta kestoa."""
+    settings = PackageSettings(
+        beds=BedSettings(mode="throughout", throughout_path="/m/pohja.wav")
+    )
+    (clip,) = audio_clips(
+        settings, Fraction(0), Fraction(60), [], durations={"/m/pohja.wav": 30.0}
+    )
+    assert clip.end == Fraction(30)
+    # Pituus käyrässäkin: pisteet eivät ylitä klipin loppua.
+    assert all(t <= 30.0 for t, _ in clip.curve)
+
+
+def test_a_long_outro_is_clamped_to_the_programme():
+    """Ohjelmaa pidempi outro alkaa ohjelman alusta, ei miinukselta:
+    negatiivinen alku rikkoisi viennin (sama vika kuin teksteissä)."""
+    settings = PackageSettings(
+        outro=TitleCard(mode="file", path="/m/loppu.mov"),
+    )
+    clips = video_clips(settings, Fraction(0), Fraction(10),
+                        durations={"/m/loppu.mov": 20.0})
+    (outro,) = clips
+    assert outro.start == Fraction(0)
+    assert outro.end == Fraction(10)
+
+
+def test_short_programme_drops_overlapping_end_credits():
+    """Lyhyt ohjelma: alun kortit syövät tilan, joten lopun tekstejä ei
+    aseteta niiden päälle samalle lanelle vaan ne jätetään pois."""
+    settings = PackageSettings(
+        intro=TitleCard(mode="file", path="/m/alku.mov"),
+        credits=CreditsSettings(mode="file", path="/m/tekstit.mov", placement="both"),
+        outro=TitleCard(mode="file", path="/m/loppu.mov"),
+    )
+    durations = {"/m/alku.mov": 4.0, "/m/tekstit.mov": 8.0, "/m/loppu.mov": 5.0}
+    clips = video_clips(settings, Fraction(0), Fraction(10), durations)
+    by_kind = {c.kind: c for c in clips}
+    assert "credits_end" not in by_kind, "lopun teksteille ei jäänyt aikaa"
+    assert (by_kind["credits_start"].start, by_kind["credits_start"].end) == (4, 10)
+
+
+def test_package_plan_warns_when_bed_level_cannot_be_matched(monkeypatch, tmp_path):
+    """Äänenkäsittely pois: puheen tasoa ei ole, joten pohjan tasonsovitusta
+    ei tehdä — käyttäjän on kuultava se varoituksena, ei hiljaisena nollana."""
+    from autoraffkat import probe
+    from autoraffkat.project import ProjectSettings
+    from autoraffkat.server.app import _package_plan
+
+    monkeypatch.setattr(
+        probe, "info",
+        lambda path: {"duration": 30.0, "audio": {"channels": 2, "rate": 48000}},
+    )
+    monkeypatch.setattr(probe, "loudness", lambda path: -20.0)
+    settings = ProjectSettings()
+    settings.package.beds.mode = "intro_outro"
+    settings.package.beds.intro_path = "/m/pohja.wav"
+    settings.audio.enabled = False
+    state = SimpleNamespace(settings=settings)
+    grid = SimpleNamespace(speakers=(), n=0, program_start=0.0)
+    warnings = []
+
+    plan = _package_plan(state, grid, Fraction(0), Fraction(60), warnings,
+                         str(tmp_path / "work"))
+    assert plan is not None
+    _vclips, aclips = plan
+    assert aclips[0].base_gain_db == 0.0
+    assert warnings and "soviteta" in warnings[0]
+
+
+def test_flat_package_title_uses_its_own_frame_rate(fixture_dir):
+    """Litteä vienti: 30 fps kortti 25 fps projektissa saa oman
+    frameDurationinsa kuten monikameraviennissäkin."""
+    from autoraffkat.finalcut.read import read_fcpxml
+    from autoraffkat.finalcut.write import build_fcpxml
+    from autoraffkat.model import Segment
+
+    tl = read_fcpxml(str(fixture_dir / "sync.fcpxml"))
+    by_key = {m.key: m for m in tl.media}
+    settings = PackageSettings(intro=TitleCard(mode="file", path="/pkg/alku.mov"))
+    vclips = video_clips(
+        settings, Fraction(0), Fraction(35), durations={"/pkg/alku.mov": 4.0}
+    )
+    (clip,) = vclips
+    clip.fps = 29.97
+    xml = build_fcpxml(
+        by_key,
+        [Segment("WIDE.mp4", "Laaja", 0.0, 35.0)],
+        [],
+        tl.frame_duration,
+        tl.start,
+        tl.start + Fraction(35),
+        "Paketti",
+        package=(vclips, []),
+    )
+    root = ET.fromstring(xml)
+    asset = next(a for a in root.iter("asset") if a.get("hasVideo") == "1"
+                 and a.get("name", "").startswith("intro"))
+    fmt = {f.get("id"): f for f in root.iter("format")}[asset.get("format")]
+    fd = Fraction(fmt.get("frameDuration").rstrip("s"))
+    assert abs(float(fd) - 1.0 / 29.97) < 1e-6

@@ -13,6 +13,7 @@ haulla saa käynnistää kymmentä ffprobea.
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 
@@ -160,6 +161,12 @@ def loudness(path: str) -> float | None:
     try:
         block = json.loads("{" + tail.split("{", 1)[1] if "{" in tail else "")
         value = float(block.get("input_i"))
+        # Hiljaisesta aineistosta loudnorm raportoi "-inf": se ei ole
+        # mitattu taso vaan mittauksen puute, ja sovitin muuttuisi
+        # äärettömäksi vahvistukseksi. Palauta None kuten muulloinkin,
+        # jotta varoitus ja nollahvaimennuksen varapolku hoitavat tämän.
+        if not math.isfinite(value):
+            return None
     except (ValueError, TypeError, IndexError):
         return None
     entry = {"lufs": value}

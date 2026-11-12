@@ -28,6 +28,13 @@ _current: ContextVar[str] = ContextVar("language", default=DEFAULT)
 
 # Avain -> kieli -> teksti. Nimeäminen: moduuli.asia.
 CATALOG: dict[str, dict[str, str]] = {
+    "export.package_bed_unmatched": {
+        "fi": "Musiikkipohjan tasoa ei soviteta puheeseen, koska "
+        "äänenkäsittely on pois päältä — pohja soi alkuperäisellä "
+        "voimakkuudella.",
+        "en": "The music bed level is not matched to speech because audio "
+        "processing is off - the bed plays at its original level.",
+    },
     "media.inspect_first": {
         "fi": "Tarkista mediatiedostot ensin.",
         "en": "Inspect the media files first.",

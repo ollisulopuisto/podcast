@@ -43,3 +43,25 @@ def test_result_is_cached(fixture_dir):
         pytest.skip("fixturen mediaa ei ole")
     first = probe.info(str(path))
     assert probe.info(str(path)) is first
+
+def test_loudness_rejects_an_infinite_measurement(tmp_path, monkeypatch):
+    """Hiljainen tiedosto: loudnorm raportoi -inf LUFS, mikä ei ole taso
+    vaan mittauksen puute. Paluun on oltava None, jotta tasonsovitin ei
+    muutu äärettömäksi vahvistukseksi."""
+    import subprocess
+
+    from autoraffkat import probe
+
+    media = tmp_path / "hiljainen.wav"
+    media.write_bytes(b"wav")
+
+    class Done:
+        returncode = 0
+        stdout = ""
+        stderr = '[Parsed_loudnorm_0]\n{\n\t"input_i" : "-inf"\n}\n'
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: Done())
+    monkeypatch.setattr(probe, "get_binary_path", lambda name: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(probe, "_cache", {})
+
+    assert probe.loudness(str(media)) is None

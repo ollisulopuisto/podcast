@@ -153,6 +153,10 @@ class AppState:
     # Inspect-kutsussa tarkistetut mediatiedostot. Esikatselu rendaa ja
     # tarjoilee tiedoston sisältöä, joten se rajoitetaan näihin polkuihin.
     media_paths: set = field(default_factory=set)
+    # Nykyisellä mediavalinnalla rendatut esikatseluavaimet: valinnan
+    # vaihtuessa vanhat linkit lakkaavat toimimasta (404), vaikka tiedosto
+    # jäisi välimuistiin.
+    media_preview_keys: set = field(default_factory=set)
     media_sync: dict = field(default_factory=lambda: {
         "running": False, "fraction": 0.0, "current": "", "ready": False,
         "error": "", "result": None,
@@ -1612,6 +1616,10 @@ def _package_plan(state, grid, program_start, program_end, warnings, work_dir):
     speech_lufs = (
         state.settings.audio.target_lufs if state.settings.audio.enabled else None
     )
+    if active_bed_paths(beds) and not beds.keep_music_level and speech_lufs is None:
+        # Tasonsovitusta ei voi tehdä ilman puheen tasoa: älytään olla
+        # hiljaa, vaan kerrotaan että pohja soi alkuperäisellä voimakkuudella.
+        warnings.append(t("export.package_bed_unmatched"))
     vclips = video_clips(pk, program_start, program_end, durations)
     for clip in vclips:
         info = infos.get(clip.path) or {}
@@ -2068,6 +2076,7 @@ def create_app(state: AppState) -> FastAPI:
             raise HTTPException(400, str(exc)) from exc
         with state.lock:
             state.media_paths = {source.path for source in sources}
+            state.media_preview_keys = set()
         return {
             "sources": [
                 {
@@ -2231,6 +2240,8 @@ def create_app(state: AppState) -> FastAPI:
                 )
             except Exception as exc:
                 raise HTTPException(500, f"Preview render failed: {exc}") from exc
+        with state.lock:
+            state.media_preview_keys.add(key)
         return {
             "url": f"/api/media/preview/{key}.mp4",
             "start": start,
@@ -2242,6 +2253,10 @@ def create_app(state: AppState) -> FastAPI:
         """Palauttaa rendatun esikatselun välimuistista."""
         if not re.fullmatch(r"[0-9a-f]{40}\.mp4", name):
             raise HTTPException(400, "Invalid preview name.")
+        with state.lock:
+            allowed = name[:-4] in state.media_preview_keys
+        if not allowed:
+            raise HTTPException(404, "Preview not found.")
         out_path = os.path.join(cache_dir(), "esikatselu", name)
         if not os.path.exists(out_path):
             raise HTTPException(404, "Preview not found.")

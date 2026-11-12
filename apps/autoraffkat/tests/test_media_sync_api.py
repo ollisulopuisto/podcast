@@ -356,3 +356,32 @@ def test_media_preview_rejects_non_string_fields_with_400(tmp_path, monkeypatch)
     response = client.post(
         "/api/media/preview", json={**base, "kind": "speaker", "target": 123})
     assert response.status_code == 400
+
+def test_media_preview_links_follow_the_selection(tmp_path, monkeypatch):
+    """Esikatselulinkki elää valinnan mukana: uusi inspect mitätöi vanhat
+    linkit (404), ja uudelleenrendaus samalla valinnalla toimii jälleen."""
+    camera, microphone = _preview_harness(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+
+    def render():
+        return client.post(
+            "/api/media/preview",
+            json={
+                "paths": [str(camera), str(microphone)],
+                "reference": str(camera),
+                "shifts": {},
+                "kind": "all",
+            },
+        )
+
+    client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
+    url = render().json()["url"]
+    assert client.get(url).status_code == 200
+
+    # Valinta tehdään uudestaan: vanha linkki ei enää palauta mitään.
+    client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
+    assert client.get(url).status_code == 404
+
+    # Sama valinta rendataan uudelleen: sama välimuistitiedosto kelpaa.
+    assert render().json()["url"] == url
+    assert client.get(url).status_code == 200
