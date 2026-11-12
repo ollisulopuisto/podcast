@@ -2393,6 +2393,22 @@ def build_multicam_fcpxml(
                 program_start,
                 to_frames(mc.source_at(at), frame_duration),
             )
+            if shots is not None:
+                from ..render import Shot as _Shot
+
+                # Sama klippilista kuin XML:ssä: Render ei päätä mitään itse.
+                # HUOM: flatten korvaa kortin ajalta alla olevan kuvan, eli
+                # alfapinottu päällekkäiskuva (lower third) ei vielä toimi —
+                # koko ruudun kortit toimivat.
+                for clip in package[0]:
+                    a = to_frames(clip.start - program_start, frame_duration)
+                    b = to_frames(clip.end - program_start, frame_duration)
+                    if b > a:
+                        shots.append(_Shot(
+                            a, b, path=clip.path, file_start=0.0,
+                            width=clip.width, height=clip.height,
+                            scale0=1.0, scale1=1.0, lane=clip.lane,
+                        ))
         sources = sources + speaker_keyword
         if sources:
             body.append("            <mc-clip " + " ".join(attrs) + ">")

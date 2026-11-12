@@ -768,7 +768,8 @@ class AppState:
 
     def render_job(self, shots, mic_tracks, replacements, room, ducks,
                    program_start, program_end, movie: str,
-                   passthrough: list[str] | None = None) -> dict:
+                   passthrough: list[str] | None = None,
+                   package: tuple[list, list] | None = None) -> dict:
         """Renderöinnin syöte samoista päätöksistä joilla XML juuri kirjoitettiin.
 
         Kuvat tulevat kirjoittajalta (``shots``), ääni samoista käsitellyistä
@@ -804,6 +805,16 @@ class AppState:
         for key in passthrough or []:
             for item in self.timeline.track_media(key):
                 sources.append(render.AudioSource(item.path, placements(item), gain_db=gain))
+        # Paketin pohjat soivat omina stereokanavinaan samalla käyrällä kuin
+        # vientiin kirjoitetaan — Render ei päätä tasoja itse.
+        for clip in (package or ([], []))[1]:
+            sources.append(render.AudioSource(
+                clip.path,
+                [(float(clip.start), float(clip.end), 0.0)],
+                duck=list(clip.curve),
+                gain_db=clip.base_gain_db,
+                stereo=True,
+            ))
         if self.settings.globals.vertical:
             from .. import reframe
 
@@ -2376,7 +2387,8 @@ def create_app(state: AppState) -> FastAPI:
                 state.remember(movie)
                 job = state.render_job(shot_list, mic_tracks, replacements, room,
                                        ducks, program_start, program_end, movie,
-                                       passthrough=passthrough)
+                                       passthrough=passthrough,
+                                       package=package_plan)
                 # Käynnissä heti eikä vasta säikeessä: muuten vastauksen jälkeen
                 # heti kysytty tila näyttäisi valmiilta, ja painike palaisi.
                 state.render_progress.update({"running": True, "fraction": 0.0,

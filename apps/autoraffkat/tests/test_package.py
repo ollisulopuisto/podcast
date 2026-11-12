@@ -342,3 +342,68 @@ def test_package_plan_off_gives_nothing():
     warnings = []
     assert _package_plan(state, grid, Fraction(0), Fraction(60), warnings) is None
     assert warnings == []
+
+
+def test_writer_records_title_shots_for_render(fixture_dir):
+    """Kortti menee sekä XML:ään että Renderin kuvalistaan samoilla ajoilla."""
+    from autoraffkat.finalcut.read import read_fcpxml
+    from autoraffkat.finalcut.write import build_multicam_fcpxml
+    from autoraffkat.model import Segment
+    from autoraffkat.package import PackageSettings, TitleCard, video_clips
+
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    settings = PackageSettings(
+        intro=TitleCard(mode="file", path="/pkg/alku.mov"),
+    )
+    vclips = video_clips(settings, Fraction(0), Fraction(36), {"/pkg/alku.mov": 4.0})
+    shots = []
+    build_multicam_fcpxml(
+        tl,
+        [Segment("WIDE", "Laaja", 0.0, 36.0)],
+        [],
+        Fraction(0),
+        Fraction(36),
+        "Paketti",
+        package=(vclips, []),
+        shots=shots,
+    )
+    titles = [s for s in shots if s.lane == 3]
+    assert len(titles) == 1
+    assert titles[0].path == "/pkg/alku.mov"
+    assert titles[0].start == 0
+    assert titles[0].end == int(4.0 / float(tl.frame_duration))
+
+
+def test_render_job_adds_beds_as_stereo_sources():
+    from types import SimpleNamespace
+
+    from autoraffkat.package import PackageAudioClip
+    from autoraffkat.project import ProjectSettings
+    from autoraffkat.server.app import AppState
+
+    state = AppState(xml_path="")
+    state.timeline = SimpleNamespace(
+        media_by_key=lambda: {},
+        track_media=lambda key: [],
+        media=[],
+        frame_duration=Fraction(1, 25),
+    )
+    bed = PackageAudioClip(
+        kind="bed_intro",
+        name="bed",
+        path="/m/pohja.wav",
+        start=Fraction(0),
+        end=Fraction(10),
+        curve=[(0.0, 0.0), (2.0, -6.0)],
+        base_gain_db=3.0,
+    )
+    job = state.render_job(
+        [], [], {}, [], [], Fraction(0), Fraction(60), "/tmp/out.mp4",
+        package=([], [bed]),
+    )
+    (source,) = job["sources"]
+    assert source.path == "/m/pohja.wav"
+    assert source.placements == [(0.0, 10.0, 0.0)]
+    assert source.duck == [(0.0, 0.0), (2.0, -6.0)]
+    assert source.gain_db == 3.0
+    assert source.stereo
