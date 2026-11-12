@@ -58,33 +58,41 @@ def estimate_offset(
     ref_sq_sum = np.concatenate(([0.0], np.cumsum(ref * ref)))
     src_sum = np.concatenate(([0.0], np.cumsum(src)))
     src_sq_sum = np.concatenate(([0.0], np.cumsum(src * src)))
-    best: tuple[float, int] | None = None
 
-    for lag in range(-min(max_lag, len(src) - 1), min(max_lag, len(ref) - 1) + 1):
-        src_start = max(0, -lag)
-        ref_start = max(0, lag)
-        count = min(len(src) - src_start, len(ref) - ref_start)
-        if count < min_overlap:
-            continue
-
-        src_end = src_start + count
-        ref_end = ref_start + count
-        sx = src_sum[src_end] - src_sum[src_start]
-        sy = ref_sum[ref_end] - ref_sum[ref_start]
-        sxx = src_sq_sum[src_end] - src_sq_sum[src_start]
-        syy = ref_sq_sum[ref_end] - ref_sq_sum[ref_start]
-        dot = cross[lag if lag >= 0 else fft_size + lag]
-        covariance = dot - sx * sy / count
-        variance_src = sxx - sx * sx / count
-        variance_ref = syy - sy * sy / count
-        denominator = math.sqrt(max(variance_src, 0.0) * max(variance_ref, 0.0))
-        if denominator <= 1e-12:
-            continue
-        correlation = float(np.clip(covariance / denominator, -1.0, 1.0))
-        if best is None or correlation > best[0]:
-            best = (correlation, lag)
-
-    if best is None:
+    # Kaikkien etsintäalueen viiveiden pisteytys kerralla. Silmukka teki
+    # saman laskennan yksi viive kerrallaan Pythonissa; vektoroitu versio on
+    # numeerisesti identtinen mutta tekee koko aineiston (tunteja) haun
+    # millisekunteja hitaamman ±5 min ikkunan sijaan sekunneissa.
+    lo = -min(max_lag, len(src) - 1)
+    hi = min(max_lag, len(ref) - 1)
+    lags = np.arange(lo, hi + 1)
+    if lags.size == 0:
         return None
-    correlation, lag = best
-    return OffsetEstimate(lag * hop_seconds, correlation)
+
+    src_start = np.maximum(0, -lags)
+    ref_start = np.maximum(0, lags)
+    count = np.minimum(len(src) - src_start, len(ref) - ref_start)
+    src_end = src_start + count
+    ref_end = ref_start + count
+
+    sx = src_sum[src_end] - src_sum[src_start]
+    sy = ref_sum[ref_end] - ref_sum[ref_start]
+    sxx = src_sq_sum[src_end] - src_sq_sum[src_start]
+    syy = ref_sq_sum[ref_end] - ref_sq_sum[ref_start]
+    dot = cross[np.where(lags >= 0, lags, fft_size + lags)]
+
+    covariance = dot - sx * sy / count
+    variance_src = sxx - sx * sx / count
+    variance_ref = syy - sy * sy / count
+    denominator = np.sqrt(np.maximum(variance_src, 0.0) * np.maximum(variance_ref, 0.0))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        correlation = np.clip(covariance / denominator, -1.0, 1.0)
+
+    # Kelvottomat viiveet (liian vähän päällekkäisyyttä tai vakiovariaanssi)
+    # eivät osallistu maksimiin. Tasatilanteessa ensimmäinen voittaa, kuten
+    # silmukassakin (silmukka piti ensimmäisen, argmax palauttaa sen).
+    correlation[(count < min_overlap) | (denominator <= 1e-12)] = -np.inf
+    best = int(np.argmax(correlation))
+    if not math.isfinite(float(correlation[best])):
+        return None
+    return OffsetEstimate(int(lags[best]) * hop_seconds, float(correlation[best]))
