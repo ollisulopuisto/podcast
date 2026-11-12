@@ -125,6 +125,66 @@ and its schemas are documented and supported. The existing local HTTP API and
 the `autoraffkat` launcher are starting points, not complete agent interfaces.
 
 
+## Agent operation (MCP) and automatic in/out markers
+
+Requested 2026-11-12. Goal: a client opens an LLM agent (Claude) and tells it
+to make a video from given camera and microphone files; the agent drives
+Autoraffkat through MCP/API: sync audio to video, find the show's start and
+end, cut, export.
+
+### MCP adapter over the local API and CLI
+
+Thin stdio MCP server wrapping the existing `/api/v1/*` endpoints and the
+headless CLI (`autoraffkat edit` / `inspect`). The endpoints already cover the
+workflow an agent needs: media inspect, sync estimate, source-project import,
+open, settings, cut, export. Estimate ~1-2 days (a few hundred lines plus tool
+schemas). The documented, stable v1 contract (section above) can lag the
+adapter. One friction to fix on the way: `/api/media/import` currently expects
+human-reviewed sync shifts, so the agent flow wants an explicit auto-accept
+option that passes the measured shifts through.
+
+### Clap/transient-based in/out markers (~2 days)
+
+Manual in/out markers already exist (the program range setting). This
+automates the suggestion: an opening clap is a broadband transient that lands
+on **every** microphone at once — the all-tracks requirement is what rejects a
+single-mic tap that must not end the episode. In-marker = first sustained
+speech after the opening clap; out-marker = last sustained speech before the
+closing clap; expected episode length as sanity rails. All DSP pieces exist:
+envelope extraction (speechmix), silence runs (`audio/silence.py`), envelope
+cross-correlation (`audio/sync.py`), speech-on grids from the analysis layer.
+Result lands as an auto-suggested `program_range`, one click from override.
+
+### Browser SaaS notes (assessment 2026-11-12)
+
+Constraints from Olli: nobody uploads 10+ GB of video, weak client PCs,
+everything in the browser.
+
+- **Option B — proxy/audio-upload SaaS (the natural fit).** The cut decision
+  is speech-driven: upload audio stems (~100-500 MB per show-hour) plus
+  low-res proxies (a few % of original size) for the video-measured features.
+  The server runs the existing FastAPI engine almost untouched; the user gets
+  back the FCPXML and relinks to local originals (the existing relink module
+  is exactly this). The server can also render the social/vertical outputs
+  from proxies — the deliverable is 1080x1920 or below, so proxy-quality
+  sources are legitimate. Full-quality masters need a resumable originals
+  upload or a local render.
+- **Option C — thin local agent + hosted web UI.** The app already is a
+  localhost API server; keep it on the user's machine, add a hosted account/UI
+  layer that drives it. Zero upload, and rendering happens where the originals
+  live with hardware encode (`render_av.py`). Combines with B: server cut +
+  server social render from proxies, local agent optional for masters.
+- **Ruled out: pure WASM in-browser.** Pyodide + ffmpeg.wasm reading 10 GB
+  originals on a weak PC is the worst combination; months of porting for a
+  worse result.
+- Cheapest validating step for B: run the existing app on one VPS, add a
+  minimal upload form feeding `/api/media/import`, and put one real episode
+  through it. Days to a private pilot.
+- Unverified in the assessment: render times and output sizes, proxy-quality
+  rendering end-to-end, how gracefully video-measured features degrade on
+  audio-only uploads, WASM dependency compatibility, and the MCP wrapper
+  itself (not prototyped).
+
 ## Inserts: stills and video on screen (slideshow / B-roll)
 
 Not started. Roadmap only (decided 2026-11-12). Show a still or a video clip over the picture while the hosts talk about it, for example a car image during a car segment.
