@@ -123,3 +123,27 @@ drivable by command-line tools and LLM agents:
 Treat the current web routes as implementation details until this contract
 and its schemas are documented and supported. The existing local HTTP API and
 the `autoraffkat` launcher are starting points, not complete agent interfaces.
+
+
+## Inserts: stills and video on screen (slideshow / B-roll)
+
+Not started. Roadmap only (decided 2026-11-12). Show a still or a video clip over the picture while the hosts talk about it, for example a car image during a car segment.
+
+### Idea
+- A new "inserts" lane of video-only clips above the picture, the same pattern as reaction shots (connected clips on a positive lane, video only, enabled by default, one selection to remove).
+- One shared clip list drives both the FCPXML export and Render video, so the two cannot drift. Titles, music-bed and credits clips (the "Package" idea) would use the same lane writer and renderer.
+- Per item: start and length, fill with crop, fit with blurred background, or picture-in-picture; Ken Burns zoom and pan on stills; alpha PNG; fade in and out; video muted by default; optional credit lower third; same list fitted to 9:16 for vertical export.
+
+### Placement
+1. Manual first: drop files, drag on the lane, set start and length.
+2. Later, transcript-assisted: show the transcript under the lane and click a word to place an insert; simple keyword matching against file names or tags. Model-picked images need a separate decision.
+3. Asset source: own folder; Tekstitys' B-roll Reel search (public media, with credits) as a possible picker. Licence and attribution stay with the user.
+
+### Risks and untested parts
+- Nothing was imported into Final Cut. All Final Cut behavior is taken from CLAUDE.md, not tested.
+- Connected clips can drift on a ripple edit in Final Cut (CLAUDE.md, "Reaction shots"). That matters for an image timed to a word. A nested clip may avoid it, but must be settled by importing.
+- The AVFoundation renderer (render_av.py) was not read. Stills, alpha and extra video lanes there are unknown. The ffmpeg overlay path in render.py can composite alpha in principle.
+- Ken Burns as keyframed transform on stills is untested.
+- Video inserts must stay muted or they sum with the processed microphones (the same issue reaction clips had).
+- Transcript code and Tekstitys' B-roll code were not read.
+- Rough size: medium for manual placement (the cost is writing and rendering it twice); transcript-assisted is a separate spec.
