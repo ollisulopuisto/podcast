@@ -30,10 +30,16 @@ class Guard(unittest.TestCase):
     def test_empty_string_still_counts(self):
         self.assertEqual(len(v.missing({"NSMicrophoneUsageDescription": ""}, {})), 1)
 
-    def test_modern_calendar_and_reminder_keys(self):
-        for k in ("NSRemindersFullAccessUsageDescription", "NSCalendarsWriteOnlyAccessUsageDescription"):
+    def test_modern_calendar_and_photo_keys(self):
+        for k in ("NSCalendarsWriteOnlyAccessUsageDescription", "NSPhotoLibraryAddUsageDescription"):
             self.assertEqual(len(v.missing({k: "x"}, {})), 1)
-        self.assertEqual(len(v.missing({"NSPhotoLibraryAddUsageDescription": "x"}, {})), 1)
+
+    def test_reminders_need_the_reminders_entitlement_too(self):
+        cal = {v.CAL: True}
+        for k in ("NSRemindersUsageDescription", "NSRemindersFullAccessUsageDescription"):
+            self.assertEqual(v.missing({k: "x"}, cal), [(k, v.REM)])
+            self.assertEqual(v.missing({k: "x"}, {**cal, v.REM: True}), [])
+            self.assertEqual(len(v.missing({k: "x"}, {})), 2)
 
     def test_localized_only_key_is_found(self):
         with tempfile.TemporaryDirectory() as d:

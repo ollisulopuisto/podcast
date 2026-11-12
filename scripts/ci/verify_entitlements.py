@@ -15,7 +15,13 @@ import re
 import subprocess
 import sys
 
-# Info.plist usage key -> entitlement that hardened runtime needs for it.
+CAL = "com.apple.security.personal-information.calendars"
+# Apple documents only the calendars key. The reminders key is undocumented but
+# has been used for Reminders access (eclecticlight.co, 2021-01-08), so a
+# Reminders usage string requires both.
+REM = "com.apple.security.personal-information.reminders"
+
+# Info.plist usage key -> entitlement(s) that hardened runtime needs for it.
 REQUIRED = {
     "NSMicrophoneUsageDescription": "com.apple.security.device.audio-input",
     "NSCameraUsageDescription": "com.apple.security.device.camera",
@@ -24,8 +30,8 @@ REQUIRED = {
     "NSCalendarsUsageDescription": "com.apple.security.personal-information.calendars",
     "NSCalendarsFullAccessUsageDescription": "com.apple.security.personal-information.calendars",
     "NSCalendarsWriteOnlyAccessUsageDescription": "com.apple.security.personal-information.calendars",
-    "NSRemindersUsageDescription": "com.apple.security.personal-information.calendars",
-    "NSRemindersFullAccessUsageDescription": "com.apple.security.personal-information.calendars",
+    "NSRemindersUsageDescription": (CAL, REM),
+    "NSRemindersFullAccessUsageDescription": (CAL, REM),
     "NSLocationUsageDescription": "com.apple.security.personal-information.location",
     "NSLocationWhenInUseUsageDescription": "com.apple.security.personal-information.location",
     "NSPhotoLibraryUsageDescription": "com.apple.security.personal-information.photos-library",
@@ -35,10 +41,13 @@ REQUIRED = {
 
 def missing(info, ents):
     out = []
-    for key, ent in REQUIRED.items():
+    for key, needed in REQUIRED.items():
         # Presence is enough: an empty string still declares the feature.
-        if key in info and ents.get(ent) is not True:
-            out.append((key, ent))
+        if key not in info:
+            continue
+        for ent in (needed,) if isinstance(needed, str) else needed:
+            if ents.get(ent) is not True:
+                out.append((key, ent))
     return out
 
 
