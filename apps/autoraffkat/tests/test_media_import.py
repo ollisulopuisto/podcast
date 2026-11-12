@@ -137,9 +137,9 @@ def test_estimate_media_sync_compares_each_mic_to_selected_camera(
     assert result["reference"] == str(camera)
     assert result["tracks"] == [
         {"path": str(first_mic), "name": "Peter", "shift_seconds": -0.26,
-         "correlation": pytest.approx(1.0), "error": ""},
+         "correlation": pytest.approx(1.0), "error": "", "window_expanded": False},
         {"path": str(second_mic), "name": "Anna", "shift_seconds": 0.18,
-         "correlation": pytest.approx(1.0), "error": ""},
+         "correlation": pytest.approx(1.0), "error": "", "window_expanded": False},
     ]
 
 
@@ -205,3 +205,174 @@ def test_estimate_media_sync_also_aligns_other_camera_audio(tmp_path, monkeypatc
 
     assert [item["path"] for item in results["tracks"]] == [str(second_camera), str(microphone)]
     assert results["tracks"][0]["shift_seconds"] == -0.1
+
+
+def _probe_durations(monkeypatch, durations):
+    """Ffprobe-vale: pituudet sekunteina, mp4:llä kuvaa."""
+    monkeypatch.setattr(
+        media_import.probe,
+        "info",
+        lambda path: {
+            "duration": durations[path],
+            **(
+                {"video": {"width": 1280, "height": 720, "fps": 25.0},
+                 "audio": {"channels": 2, "rate": 48000}}
+                if path.endswith(".mp4")
+                else {"audio": {"channels": 1, "rate": 48000}}
+            ),
+        },
+    )
+
+
+def _long_sync_pair(tmp_path, monkeypatch, shift_samples, mic_samples=None, noise=0.0):
+    """Kamera + mikki, jossa mikin signaali on kamerasta viivästetty kopio."""
+    camera = tmp_path / "camera.mp4"
+    microphone = tmp_path / "Peter.wav"
+    camera.touch()
+    microphone.touch()
+    total = 35000  # 700 s verhoja 0.02 s hopilla
+    _probe_durations(monkeypatch, {str(camera): 700.0, str(microphone): 700.0})
+    rng = np.random.default_rng(5)
+    reference = rng.normal(size=total)
+    mic = rng.normal(size=total) * noise if noise else np.zeros(total)
+    take = (mic_samples or total) - shift_samples
+    mic[shift_samples:shift_samples + take] = reference[:take]
+    return str(camera), str(microphone), {str(camera): reference, str(microphone): mic}
+
+
+def test_estimate_sync_auto_expands_past_default_window(tmp_path, monkeypatch):
+    # Siirto 400 s: oletusikkuna ±300 s ei riitä, auto laajentaa koko aineistoon.
+    camera, microphone, envelopes = _long_sync_pair(tmp_path, monkeypatch, 20000)
+
+    result = media_import.estimate_sync(
+        [camera, microphone],
+        reference_path=camera,
+        envelope_loader=envelopes.__getitem__,
+    )
+
+    track = result["tracks"][0]
+    assert track["shift_seconds"] == pytest.approx(-400.0, abs=0.05)
+    assert track["correlation"] == pytest.approx(1.0)
+    assert track["window_expanded"] is True
+
+
+def test_estimate_sync_fixed_window_does_not_expand(tmp_path, monkeypatch):
+    camera, microphone, envelopes = _long_sync_pair(tmp_path, monkeypatch, 20000)
+
+    result = media_import.estimate_sync(
+        [camera, microphone],
+        reference_path=camera,
+        envelope_loader=envelopes.__getitem__,
+        window=300,
+    )
+
+    track = result["tracks"][0]
+    assert track["window_expanded"] is False
+    assert (
+        track["shift_seconds"] is None
+        or track["shift_seconds"] != pytest.approx(-400.0, abs=0.05)
+    )
+
+
+def test_estimate_sync_full_window_searches_everything(tmp_path, monkeypatch):
+    camera, microphone, envelopes = _long_sync_pair(tmp_path, monkeypatch, 20000)
+
+    result = media_import.estimate_sync(
+        [camera, microphone],
+        reference_path=camera,
+        envelope_loader=envelopes.__getitem__,
+        window="full",
+    )
+
+    track = result["tracks"][0]
+    assert track["shift_seconds"] == pytest.approx(-400.0, abs=0.05)
+    assert track["window_expanded"] is False
+
+
+def test_estimate_sync_numeric_window_finds_without_expansion(tmp_path, monkeypatch):
+    camera, microphone, envelopes = _long_sync_pair(tmp_path, monkeypatch, 20000)
+
+    result = media_import.estimate_sync(
+        [camera, microphone],
+        reference_path=camera,
+        envelope_loader=envelopes.__getitem__,
+        window=500,
+    )
+
+    track = result["tracks"][0]
+    assert track["shift_seconds"] == pytest.approx(-400.0, abs=0.05)
+    assert track["window_expanded"] is False
+
+
+def test_estimate_sync_auto_accepts_weak_match_only_after_expansion(tmp_path, monkeypatch):
+    # Heikko (r<0.4) mutta oikea osuma 400 s kohdalla: kapea ikkuna ei löydä
+    # mitään, laajennus hyväksyy parhaan löytämänsä vaikka se jää alle kynnyksen.
+    camera, microphone, envelopes = _long_sync_pair(tmp_path, monkeypatch, 20000, noise=2.6)
+    mic = envelopes[microphone]
+    rng = np.random.default_rng(9)
+    reference = envelopes[camera]
+    mic[20000:] = reference[:15000] + rng.normal(size=15000) * 2.6
+
+    result = media_import.estimate_sync(
+        [camera, microphone],
+        reference_path=camera,
+        envelope_loader=envelopes.__getitem__,
+    )
+
+    track = result["tracks"][0]
+    assert track["shift_seconds"] == pytest.approx(-400.0, abs=0.05)
+    assert track["correlation"] < media_import.SYNC_AUTO_THRESHOLD
+    assert track["window_expanded"] is True
+
+
+def test_estimate_sync_rejects_nonpositive_window(tmp_path, monkeypatch):
+    camera, microphone, envelopes = _long_sync_pair(tmp_path, monkeypatch, 20000)
+
+    with pytest.raises(media_import.MediaImportError):
+        media_import.estimate_sync(
+            [camera, microphone],
+            reference_path=camera,
+            envelope_loader=envelopes.__getitem__,
+            window=0,
+        )
+
+
+def test_pick_preview_spans_finds_shared_and_solo_moments(tmp_path):
+    # Viite aktiivinen 16-36 s, raita (siirto +1 s) aktiivinen viiteaikana
+    # 1-7 s yksinään ja 16-36 s yhdessä viitteen kanssa.
+    n = 2000  # 40 s
+    reference = np.full(n, 0.01)
+    reference[800:1800] = 1.0
+    mic = np.full(n, 0.01)
+    mic[0:300] = 1.0      # viiteaika 1-7 s (siirto +1 s = 50 näytettä)
+    mic[750:1750] = 1.0   # viiteaika 16-36 s
+    envelopes = {"camera.mp4": reference, "Peter.wav": mic}
+    tracks = [{"path": "Peter.wav", "shift_seconds": 1.0}]
+
+    spans = media_import.pick_preview_spans(envelopes, "camera.mp4", tracks)
+
+    # Kaikkien yhteinen pätkä (10 s) mahtuu kokonaan yhteisalueelle.
+    assert 16.0 - 0.5 <= spans["all"]
+    assert spans["all"] + spans["all_seconds"] <= 36.0 + 0.5
+    # Kaiutinraadan pätkä valitsee soolo-alueen alun (n. 1 s).
+    assert spans["per_speaker"]["Peter.wav"] == pytest.approx(1.0, abs=0.5)
+
+
+def test_pick_preview_spans_without_activity_falls_back_to_middle(tmp_path):
+    n = 1000
+    silence = np.zeros(n)
+    envelopes = {"camera.mp4": silence, "Peter.wav": silence.copy()}
+    tracks = [{"path": "Peter.wav", "shift_seconds": 0.0}]
+
+    spans = media_import.pick_preview_spans(envelopes, "camera.mp4", tracks)
+
+    assert spans["all"] == pytest.approx(5.0)
+
+
+def test_preview_cache_key_changes_with_shifts(tmp_path):
+    first = media_import.preview_cache_key(["a.wav"], {"a.wav": 1.0}, "all", "", 8.0, 10.0)
+    second = media_import.preview_cache_key(["a.wav"], {"a.wav": 1.5}, "all", "", 8.0, 10.0)
+    again = media_import.preview_cache_key(["a.wav"], {"a.wav": 1.0}, "all", "", 8.0, 10.0)
+
+    assert first != second
+    assert first == again

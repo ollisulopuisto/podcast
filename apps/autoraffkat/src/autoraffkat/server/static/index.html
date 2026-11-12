@@ -57,10 +57,21 @@
     <button id="media-sync-close" type="button" class="ghost" data-t="sync.close">Sulje</button>
   </div>
   <label class="field"><span data-t="sync.reference">Synkan vertailukamera</span><select id="media-sync-reference"></select></label>
+  <label class="field"><span data-t="sync.window">Hakuikkuna</span><select id="media-sync-window">
+    <option value="auto" data-t="sync.windowAuto" selected>Automaattinen</option>
+    <option value="300" data-t="sync.window5min">±5 min</option>
+    <option value="1800" data-t="sync.window30min">±30 min</option>
+    <option value="7200" data-t="sync.window2h">±2 h</option>
+    <option value="full" data-t="sync.windowFull">Koko aineisto</option>
+  </select></label>
   <div id="media-sync-sources" class="sync-sources"></div>
   <p id="media-sync-progress" class="muted" role="status" aria-live="polite"></p>
+  <div id="media-sync-preview-box" class="hidden">
+    <video id="media-sync-preview" controls preload="metadata"></video>
+  </div>
   <div class="sync-actions">
     <button id="media-sync-estimate" type="button" class="ghost" data-t="sync.estimate">Arvioi synkka</button>
+    <button id="media-sync-listen" type="button" class="ghost" data-t="sync.listenAll">Kuuntele yhteinen kohta</button>
     <button id="media-sync-import" type="button" class="primary" data-t="sync.import">Käytä siirtoja ja jatka</button>
   </div>
 </section>
