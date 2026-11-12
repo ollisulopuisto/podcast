@@ -46,6 +46,18 @@ class Guard(unittest.TestCase):
                 plistlib.dump({"NSCameraUsageDescription": "Cam"}, f, fmt=plistlib.FMT_BINARY)
             self.assertIn("NSCameraUsageDescription", v.localized_keys(os.path.join(d, "A.app")))
 
+    def test_strings_comments_are_ignored(self):
+        text = (
+            '/* "NSCameraUsageDescription" = "x"; */\n'
+            '// "NSContactsUsageDescription" = "x";\n'
+            '"NSMicrophoneUsageDescription" = "see /* not a comment */ here"; // real\n'
+            'NSLocationUsageDescription = "y";\n'
+        )
+        self.assertEqual(
+            v.strings_keys(text),
+            ["NSMicrophoneUsageDescription", "NSLocationUsageDescription"],
+        )
+
     def test_cli_source_mode(self):
         with tempfile.TemporaryDirectory() as d:
             i, e = os.path.join(d, "i.plist"), os.path.join(d, "e.plist")

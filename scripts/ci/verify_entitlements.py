@@ -42,6 +42,19 @@ def missing(info, ents):
     return out
 
 
+TOKEN = re.compile(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|[^\s=;"]+|[=;]', re.S)
+
+
+def strings_keys(text):
+    """Keys assigned in an OpenStep .strings file; comments are skipped."""
+    tokens = [t for t in TOKEN.findall(text) if not t.startswith(("/*", "//"))]
+    keys = []
+    for i in range(len(tokens) - 1):
+        if tokens[i + 1] == "=" and tokens[i] not in "=;":
+            keys.append(tokens[i].strip('"'))
+    return keys
+
+
 def localized_keys(app):
     """Usage keys that exist only in Contents/Resources/*.lproj/InfoPlist.strings."""
     keys = {}
@@ -52,8 +65,7 @@ def localized_keys(app):
             parsed = plistlib.loads(data)
         except Exception:
             text = data.decode("utf-16" if data[:2] in (b"\xff\xfe", b"\xfe\xff") else "utf-8", "replace")
-            found = re.findall(r'"?(NS\w+UsageDescription)"?\s*=\s*"', text)
-            parsed = {k: "" for k in found}
+            parsed = {k: "" for k in strings_keys(text)}
         keys.update({k: v for k, v in parsed.items() if k in REQUIRED})
     return keys
 
