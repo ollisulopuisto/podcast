@@ -526,3 +526,29 @@ def test_duck_envelopes_reuses_precomputed_gates():
     # duck_envelopes antaa täsmälleen saman tuloksen
     actual = envelopes.duck_envelopes(grid, settings, 0.0)
     assert actual == expected
+
+
+def test_duck_envelopes_computes_gates_once(monkeypatch):
+    """Optimoinnin vartija: portit lasketaan tasan kerran per kutsu.
+
+    Kahdentunut _gates-kutsu jäisi muista testeistä kiinni vasta
+    suorituskyvystä, ei tuloksesta, joten lasketaan kutsut suoraan.
+    """
+    from speechmix import masks
+
+    calls = 0
+    real_gates = masks._gates
+
+    def counting_gates(grid, settings):
+        nonlocal calls
+        calls += 1
+        return real_gates(grid, settings)
+
+    # duck_envelopes käyttää omaa tuontiaan, maskit moduulinsa globaalia.
+    monkeypatch.setattr(masks, "_gates", counting_gates)
+    monkeypatch.setattr(envelopes, "_gates", counting_gates, raising=False)
+
+    grid, settings = _turn_taking(), _Settings()
+    envelopes.duck_envelopes(grid, settings, 0.0)
+
+    assert calls == 1
