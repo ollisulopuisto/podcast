@@ -381,10 +381,15 @@ def _activity_mask(envelope) -> object:
 
 
 def _best_window(cum, length: int, width: int):
-    """Leveän ikkunan paras sijainti summataulukosta; palauttaa (summa, alku)."""
+    """Leveän ikkunan paras sijainti summataulukosta; palauttaa (summa, alku).
+
+    Summataulukolla ei ole nolla-etuliitettä, joten ensimmäinen ikkuna on
+    pelkkä ``cum[width - 1]`` ja vasta sitä seuraavista vähennetään edellinen.
+    """
     if length <= width:
         return (float(cum[length - 1] if length else 0), 0)
-    sums = cum[width:] - cum[:-width]
+    sums = cum[width - 1:].copy()
+    sums[1:] -= cum[:-width]
     index = int(sums.argmax())
     return (float(sums[index]), index)
 
@@ -489,7 +494,6 @@ def render_preview_clip(
     (raita alkaa myöhemmin) peitetään ffmpeg:n adelay/alla olevala -it -offsetilla.
     """
     import subprocess
-    import tempfile
 
     if runner is None:
         def runner(cmd, **kw):
@@ -512,7 +516,14 @@ def render_preview_clip(
         except Exception:
             has_video = False
         if has_video:
-            filters.append(f"[{i}:v]scale=320:-2[v{i}]")
+            # Sarakkeiden pitää olla samankokoisia tai hstack hylkää graafin:
+            # 16:9-kamera skaalautuisi 320x180:ksi kun ääniraidan paikkake
+            # on 320x240. Sovita ja pehmennä (pad) yhteiseen ruutuun.
+            filters.append(
+                f"[{i}:v]scale=320:240:force_original_aspect_ratio=decrease"
+                f":force_divisible_by=2,pad=320:240:(320-iw)/2:(240-ih)/2,"
+                f"setsar=1[v{i}]"
+            )
         else:
             # Pelkkä ääniraita: piirrä tumma ruutu, jotta pinotussa kuvassa
             # jokainen raita näkyy omassa sarakkeessaan.
@@ -542,13 +553,31 @@ def render_preview_clip(
     return output_path
 
 
-def preview_cache_key(paths: list, shifts: dict, kind: str, target: str, start: float, duration: float) -> str:
-    """Vakaa avain esikatseluvälimuistiin parametreista."""
+def preview_cache_key(
+    ordered_paths: list,
+    reference_path: str,
+    shifts: dict,
+    kind: str,
+    target: str,
+    start: float,
+    duration: float,
+    *,
+    stamps: dict | None = None,
+) -> str:
+    """Vakaa avain esikatseluvälimuistiin parametreista.
+
+    Järjestys ja viite kuuluvat avaimeen, koska renderöinti asettaa viitteen
+    ensimmäiseksi sarakkeeksi. ``stamps`` (polku -> [koko, mtime_ns])
+    erottaa saman polun alle korvatun tiedoston, kuten verhovälimuistissakin.
+    """
     import hashlib
     import json
     payload = json.dumps(
-        {"paths": sorted(paths), "shifts": {k: round(float(v), 3) for k, v in sorted(shifts.items())},
-         "kind": kind, "target": target, "start": round(start, 2), "duration": round(duration, 2)},
+        {"paths": list(ordered_paths), "reference": reference_path,
+         "shifts": {k: round(float(v), 3) for k, v in sorted(shifts.items())},
+         "kind": kind, "target": target, "start": round(start, 2),
+         "duration": round(duration, 2),
+         "stamps": {k: stamps.get(k) for k in ordered_paths} if stamps else None},
         sort_keys=True,
     )
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()

@@ -168,6 +168,7 @@ def _preview_harness(tmp_path, monkeypatch):
 def test_media_preview_renders_and_serves_clip(tmp_path, monkeypatch):
     camera, microphone = _preview_harness(tmp_path, monkeypatch)
     client = TestClient(create_app(AppState(xml_path="")))
+    client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
 
     response = client.post(
         "/api/media/preview",
@@ -209,6 +210,7 @@ def test_media_preview_validates_request(tmp_path, monkeypatch):
 def test_media_preview_speaker_uses_shorter_span(tmp_path, monkeypatch):
     camera, microphone = _preview_harness(tmp_path, monkeypatch)
     client = TestClient(create_app(AppState(xml_path="")))
+    client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
 
     response = client.post(
         "/api/media/preview",
@@ -233,3 +235,20 @@ def test_media_preview_file_guards_name(tmp_path, monkeypatch):
     assert client.get(
         "/api/media/preview/" + "0" * 40 + ".mp4"
     ).status_code == 404
+
+
+def test_media_preview_requires_inspected_paths(tmp_path, monkeypatch):
+    camera, microphone = _preview_harness(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+    payload = {
+        "paths": [str(camera), str(microphone)],
+        "reference": str(camera),
+        "shifts": {str(microphone): 0.0},
+        "kind": "all",
+    }
+
+    # Ilman inspect-kutsua polut ovat tuntemattomia: ei rendata.
+    assert client.post("/api/media/preview", json=payload).status_code == 400
+
+    client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
+    assert client.post("/api/media/preview", json=payload).status_code == 200
