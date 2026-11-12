@@ -143,6 +143,14 @@ adapter. One friction to fix on the way: `/api/media/import` currently expects
 human-reviewed sync shifts, so the agent flow wants an explicit auto-accept
 option that passes the measured shifts through.
 
+Dependency to call out: the agent workflow leans on media routes that are
+not yet part of the versioned contract — `/api/media/inspect`,
+`/api/media/estimate`, `/api/media/import` and `/api/open` are unversioned
+(`/api/v1` currently covers only project actions: state, settings, cut,
+export). Before the MCP interface can be called stable, promote these to
+v1 (`/api/v1/media/inspect|estimate|import`, `/api/v1/open`) with schemas,
+or document the adapter as pinned to the unversioned routes until then.
+
 ### Clap/transient-based in/out markers (~2 days)
 
 Manual in/out markers already exist (the program range setting). This
@@ -154,6 +162,31 @@ closing clap; expected episode length as sanity rails. All DSP pieces exist:
 envelope extraction (speechmix), silence runs (`audio/silence.py`), envelope
 cross-correlation (`audio/sync.py`), speech-on grids from the analysis layer.
 Result lands as an auto-suggested `program_range`, one click from override.
+
+### Suomeksi: agenttikäyttö (MCP) ja automaattiset alku/loppumerkit
+
+Pyydetty 2026-11-12. Tavoite: asiakas sanoo LLM-agentille (Claude) "tee
+video näistä kamera- ja mikkitiedostoista", ja agentti ajaa Autoraffkatin
+läpi MCP:llä/API:lla: synkkaa ääni kuvaan, löydä jakson alku ja loppu,
+leikkaa, vie.
+
+MCP-adapteri on ohut stdio-palvelin olemassa olevien `/api/v1/*`-reittien
+ja pääkäyttäytymättömän CLI:n päälle, arviolta 1-2 päivää. Huomio: agentin
+työnkulku nojaa medioihin liittyviin reitteihin (`/api/media/inspect`,
+`/api/media/estimate`, `/api/media/import`, `/api/open`), jotka eivät vielä
+kuulu versioituun rajapintaan — ne pitää nostaa v1:een ennen kuin MCP:tä
+voi kutsua vakaaksi. Lisäksi `/api/media/import` odottaa nyt ihmisen
+tarkistamia siirtoja, joten agenttivirtaan tarvitaan nimenomainen
+auto-accept-valinta, joka syöttää mitatut siirrot suoraan.
+
+Alku/loppumerkit automaattisesti: jakson aloittava taputus on laajakaistainen
+transientti, joka näkyy **kaikissa** mikeissä yhtä aikaa — juuri tämä
+kaikkien-raatojen vaatimus erottaa sen yhden mikin napautuksesta, joka ei
+saa päättää jaksoa. Alkumerkki = ensimmäinen jatkuva puhe alkutaputuksen
+jälkeen, loppumerkki = viimeinen jatkuva puhe ennen lopputaputusta, ja
+odotettu jakson pituus järjen raiteina. Kaikki DSP-palikat ovat valmiina;
+tulos ilmestyy ehdotettuna `program_range`:na, yhden klikkauksen päässä
+ylikirjoituksesta.
 
 ### Media sync: wider search, listen-before-import, drift (phase 2)
 
@@ -199,6 +232,41 @@ opt-in toggle, off).**
     material (inaudible by construction), resample as the fallback when no
     usable silences exist.
 
+### Suomeksi: mediasynkka — leveämpi haku, kuuntelu ennen tuontia, ajankuluminen (vaihe 2)
+
+2026-11-12 speksistä ja Ollin päätöksistä. Vaihe 1 odottaa hänen "build
+it" -käskyään; vektorointi on jo tehty (`perf/sync-vectorize`).
+
+**Vaihe 1 — hakuikkuna ja kuunteluesikatselu.**
+- Kiinteän ±5 min haun tilalle luottamuksella ohjattu automaattinen
+  laajennus: haetaan ensin ±5 min, ja jos korrelaatiohuippu jää alle
+  kynnyksen (~0.4, viritetään oikeilla jaksoilla), laajennetaan koko
+  tallenteeseen. Käsin valittavat esiasetukset (±5/±30 min/±2 h/koko)
+  säilyvät tarkkuuspriorina. Vektoroidun pisteytyksen myötä koko aineiston
+  haku on ~0.09 s kahden tunnin verhoilla, joten ikkuna ei ole enää
+  suorituskykykysymys.
+- Kuuntelu ennen tuontia synkkapaneelissa: yksi 10 s "kaikki puhuvat"
+  -pätkä (kameran kuva + kaikki mikit ehdotetuilla siirroilla) ja 5 s
+  kaiutinraatapätkät, valittuna jo lasketuista verhoista. Kuuntele,
+  säädä siirtoa, kuuntele uudestaan, tuo vasta kun kuulostaa oikealta.
+
+**Vaihe 2 — kellon ajankuluminen (Olli 2026-11-12: oletus ei ajankulumista;
+opt-in-kytkin, oletuksena pois päältä).**
+- Tunnistus: ensimmäisen osuman jälkeen mitataan siirto uudelleen lyhyemmän
+  tiedoston alun ja lopun läheltä, ankkuroituna tunnettuun synkkapisteeseen.
+  Jos alku ja loppu ovat eri mieltä toleranssin yli (pari ruutua tunnissa),
+  tiedostot kuluvat.
+- Kun synkkaus epäonnistuu ajankulumisen jälkiin (hyvät paikalliset osumat
+  ovat keskenään ristiriidassa), näytetään "tiedostot näyttävät kuluma" ja
+  tarjotaan korjauskytkintä pelkän epäonnistumisen sijaan.
+- Korjaus, kaksi ehdokasta: yhtenäinen lineaarinen uudelleennäytteistys
+  viitekelloon (vakiomenetelmä, mutta olettaa vakion kuluman) tai
+  paloittainen uudelleensynkkaus hiljaisissa kohdissa (Ollin ehdotus:
+  ankkurointi noin minuutin välein tai kun kukaan ei puhu — katkot osuvat
+  hiljaisuuteen eivätkä kuulu, hintana segmenttien kirjanpito ja segmentin
+  sisällä kertyvä kuluma). Rakennettaessa oletus on paloittainen puhe-
+  aineistolle, uudelleennäytteistys varatoimena kun hiljaisuutta ei ole.
+
 ### Browser SaaS notes (assessment 2026-11-12)
 
 Constraints from Olli: nobody uploads 10+ GB of video, weak client PCs,
@@ -208,8 +276,12 @@ everything in the browser.
   is speech-driven: upload audio stems (~100-500 MB per show-hour) plus
   low-res proxies (a few % of original size) for the video-measured features.
   The server runs the existing FastAPI engine almost untouched; the user gets
-  back the FCPXML and relinks to local originals (the existing relink module
-  is exactly this). The server can also render the social/vertical outputs
+  back the FCPXML and relinks to local originals. Relink must be client-side:
+  the hosted `relink_timeline` scans the machine it runs on, which is the
+  server — it can never see the user's originals. Concretely (as in the VPS
+  pilot spec): before download, rewrite the file URLs in the exported XML to
+  bare file names, and the user points Final Cut at the local originals
+  folder once. The server can also render the social/vertical outputs
   from proxies — the deliverable is 1080x1920 or below, so proxy-quality
   sources are legitimate. Full-quality masters need a resumable originals
   upload or a local render.
@@ -228,6 +300,38 @@ everything in the browser.
   rendering end-to-end, how gracefully video-measured features degrade on
   audio-only uploads, WASM dependency compatibility, and the MCP wrapper
   itself (not prototyped).
+
+### Suomeksi: selain-SaaS (arviointi 2026-11-12)
+
+Ollin reunaehdot: kukaan ei lataa yli 10 gigaa videota verkkoon, asiakkaan
+kone on hentoinen, kaiken pitää toimia selaimessa.
+
+- **Vaihtoehto B — proxy-/äänivaralataus-SaaS (luonnollinen sopivuus).**
+  Leikkauspäätös on puheohjattu: verkkoon siirtyvät vain ääniraidat
+  (~100-500 MB per shown tunti) ja matalan resoluution proxyt (muutama
+  prosentti alkuperäisen koosta) kuvamittausta varten. Palvelin ajaa
+  nykyisen FastAPI-moottorin lähes koskemattomana. Käyttäjä saa takaisin
+  FCPXML:n ja linkittää sen paikallisiin alkuperäisiin. Linkitys täytyy
+  tehdä asiakkaalla: palvelimella ajettu `relink_timeline` skannaa sen
+  koneen, jolla se pyörii — se ei koskaan näe käyttäjän alkuperäisiä.
+  Käytännössä (kuten VPS-pilottispeksissä): ennen latausta viennin
+  tiedostopolut kirjoitetaan pelkiksi tiedostonimiksi, ja käyttäjä näyttää
+  Final Cutille kerran paikallisen kansion. Palvelin voi myös renderöidä
+  some-/pystyversiot proxyista — lopputulos on korkeintaan 1080x1920, joten
+  proxy-laatu riittää. Täyslaatuiset masterit vaativat jatkuvaa
+  alkuperäislatausta tai paikallista renderöintiä.
+- **Vaihtoehto C — ohut paikallinen agentti + isännöity web-UI.** Sovellus
+  on jo valmiina localhost-API-palvelin; pidetään se käyttäjän koneella ja
+  lisätään isännöity tunnus/UI-kerros, joka ohjaa sitä. Ei lainkaan
+  latausta, ja renderöinti tapahtuu siellä missä alkuperäiset ovat,
+  laitteistokiihdytyksellä (`render_av.py`). Yhdistyy B:hen: palvelinleikkaus
+  ja some-renderit proxyista, paikallinen agentti vapaaehtoinen mastereille.
+- **Hylätty: puhdas WASM selaimessa.** Pyodide + ffmpeg.wasm lukemassa
+  10 gigan alkuperäisiä heikolla koneella on huonoin mahdollinen yhdistelmä;
+  kuukausien porttaus huonompaan lopputulokseen.
+- Halvin B:tä validoiva askel: aja nykyinen sovellus yhdellä VPS:llä, lisää
+  minimaalinen latauslomake `/api/media/import`:iin syöttäväksi ja aja yksi
+  oikea jakso läpi. Päiviä yksityiseen pilottiin.
 
 ## Inserts: stills and video on screen (slideshow / B-roll)
 
