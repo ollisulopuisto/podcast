@@ -368,9 +368,33 @@ const PM = {
         label: spec.title ? (spec.title[I18N.lang] || spec.title.fi) : spec.key,
         translated: false,
         matches: e => (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key === String(index + 1),
-        run: () => this.selectModule(spec.key),
+        run: () => this.selectModule(spec.key, this.focusIsInTabs()),
       })),
     ];
+  },
+
+  // Välilehtiradan nuolinavigointi (roving tabindex). Muokkausnäppäimet
+  // ohitetaan kokonaan: Alt+Nuolet on selaimen historia ja muokattu
+  // Home/End kuuluu selaimelle, joten emme saa varastaa niitä välilehtiin.
+  handleTabKeydown(e) {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const keys = (this.state?.modules || []).map((m) => m.key);
+    if (!keys.length) return;
+    const idx = keys.indexOf(this.active);
+    let next = -1;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+      next = (idx + 1) % keys.length;
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+      next = (idx - 1 + keys.length) % keys.length;
+    } else if (e.key === 'Home') {
+      next = 0;
+    } else if (e.key === 'End') {
+      next = keys.length - 1;
+    }
+    if (next >= 0) {
+      e.preventDefault();
+      this.selectModule(keys[next], true);
+    }
   },
 
   handleShortcut(event) {
@@ -405,6 +429,15 @@ const PM = {
   },
 
   // ---- kuoren piirto -----------------------------------------------------
+
+  // Onko kohdistus välilehtiraidassa? Välilehden pikanäppäin siirtää
+  // kohdistuksen uuteen välilehteen vain silloin; muissa tapauksissa se
+  // pysyy missä oli (esim. lomakekentässä).
+  focusIsInTabs() {
+    if (typeof document === 'undefined') return false;
+    const tabs = document.getElementById('tabs');
+    return !!(tabs && tabs.contains && tabs.contains(document.activeElement));
+  },
 
   selectModule(key, focus = false) {
     this.active = key;
@@ -495,25 +528,7 @@ const PM = {
     this.active = keys.includes(remembered) ? remembered : keys[0];
 
     const tabs = document.getElementById('tabs');
-    tabs.addEventListener('keydown', (e) => {
-      const keys = (this.state?.modules || []).map((m) => m.key);
-      if (!keys.length) return;
-      const idx = keys.indexOf(this.active);
-      let next = -1;
-      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
-        next = (idx + 1) % keys.length;
-      } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
-        next = (idx - 1 + keys.length) % keys.length;
-      } else if (e.key === 'Home') {
-        next = 0;
-      } else if (e.key === 'End') {
-        next = keys.length - 1;
-      }
-      if (next >= 0) {
-        e.preventDefault();
-        this.selectModule(keys[next], true);
-      }
-    });
+    tabs.addEventListener('keydown', (e) => this.handleTabKeydown(e));
 
     document.getElementById('browse').addEventListener('click', () => this.pick());
     document.getElementById('session').addEventListener('change', (event) => {
