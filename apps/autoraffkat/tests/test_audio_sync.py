@@ -177,3 +177,20 @@ def test_vectorized_matches_loop_on_flat_and_near_flat_audio():
     result = estimate_offset(quiet, quiet.copy(), **kwargs)
     expected = _reference_estimate_offset(quiet, quiet.copy(), **kwargs)
     assert (result is None) == (expected is None)
+
+
+def test_estimate_offset_returns_none_when_an_envelope_is_empty():
+    # Tyhjä mikki + lyhyt kameraverho: ei yhteistä ääntä, ei arviota.
+    # (Regressio: vektoroitu versio indeksoi FFT-taulukon ohi, kun
+    # tyhjän verhon pituus-1 meni negatiiviseksi.)
+    reference = np.random.default_rng(11).normal(size=17)
+    empty = np.array([])
+
+    assert estimate_offset(
+        reference, empty, hop_seconds=0.02,
+        max_shift_seconds=300.0, min_overlap_seconds=5.0,
+    ) is None
+    assert estimate_offset(
+        empty, reference, hop_seconds=0.02,
+        max_shift_seconds=300.0, min_overlap_seconds=5.0,
+    ) is None

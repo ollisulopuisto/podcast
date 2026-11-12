@@ -7,12 +7,6 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
-### Performance
-- Vectorized the per-lag scoring loop in audio sync offset estimation: a
-  full-range search over two-hour envelopes now takes ~0.09 s instead of
-  ~2.1 s (measured), with bit-identical results (regression test compares
-  against the previous loop implementation).
-
 ## [2026.11.12.1] - 2026-11-12
 
 ### Added

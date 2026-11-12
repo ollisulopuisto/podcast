@@ -45,9 +45,12 @@ def estimate_offset(
 
     max_lag = int(max_shift_seconds / hop_seconds)
     min_overlap = math.ceil(min_overlap_seconds / hop_seconds)
-    corr_size = len(ref) + len(src) - 1
-    if corr_size <= 0:
+    if len(ref) == 0 or len(src) == 0:
+        # Tyhjällä verholla ei ole yhteistä ääntä eikä arvioitavaa. Tämä
+        # täytyy erottaa ennen FFT:tä: pituus-1 menee negatiiviseksi ja
+        # viiverajat sekä ristikorrelaation indeksit lasketaan siitä.
         return None
+    corr_size = len(ref) + len(src) - 1
     fft_size = 1 << (corr_size - 1).bit_length()
     cross = np.fft.irfft(
         np.fft.rfft(ref, fft_size) * np.conjugate(np.fft.rfft(src, fft_size)),
