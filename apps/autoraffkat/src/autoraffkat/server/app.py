@@ -1503,6 +1503,20 @@ def _package_plan(state, grid, program_start, program_end, warnings):
     ):
         return None
 
+    if any(c.mode == "generated" for c in (pk.intro, pk.outro, pk.credits)):
+        from ..package import generated_source_available, materialize_generated
+
+        if generated_source_available():
+            # Kortit renderöidään viennin työhakemistoon; onnistuneet
+            # vaihtuvat file-tilaan, epäonnistuneet varoitetaan ja jätetään.
+            work = os.path.join(os.path.dirname(state.xml_path or "."),
+                                ".autoraffkat-paketti")
+            pk, problems = materialize_generated(pk, work)
+            for problem in problems:
+                warnings.append(t("export.package_generated_failed", error=problem))
+        else:
+            warnings.append(t("export.package_generated_unavailable"))
+
     paths = set()
     for card in (pk.intro, pk.outro, pk.credits):
         if card.mode == "file" and card.path:
@@ -1519,11 +1533,6 @@ def _package_plan(state, grid, program_start, program_end, warnings):
         for path, info in infos.items()
         if info.get("duration")
     }
-    if any(c.mode == "generated" for c in (pk.intro, pk.outro, pk.credits)):
-        from ..package import generated_source_available
-
-        if not generated_source_available():
-            warnings.append(t("export.package_generated_unavailable"))
 
     bed_loudness = {}
     beds = pk.beds

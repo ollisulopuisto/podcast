@@ -186,6 +186,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "fi": "Generoidut tekstit vaativat Tekstityksen alfa-viennin, jota ei ole asennettu: kortit jätettiin pois.",
         "en": "Generated titles need Tekstitys' alpha export, which is not installed: the cards were left out.",
     },
+    "export.package_generated_failed": {
+        "fi": "Generoidun kortin ajo epäonnistui: {error}. Kortti jätettiin pois.",
+        "en": "Rendering the generated card failed: {error}. The card was left out.",
+    },
     "export.package_loudness": {
         "fi": "Pohjan äänekkyyttä ei saatu mitattua: {name}. Tasonsovitusta ei tehty.",
         "en": "The bed's loudness could not be measured: {name}. No level fit was applied.",

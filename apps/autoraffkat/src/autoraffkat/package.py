@@ -327,6 +327,85 @@ def audio_clips(
     return clips
 
 
+def materialize_generated(
+    settings: PackageSettings,
+    work_dir: str,
+    width: int = 1920,
+    height: int = 1080,
+    fps: float = 25.0,
+) -> tuple["PackageSettings", list[str]]:
+    """Generoidut kortit ajetuiksi alfa-elokuvoiksi Tekstityksen render-alphalla.
+
+    Palauttaa (syvä kopio asetuksista, ongelmat). Onnistunut kortti on kopiossa
+    file-tilassa tuotokseen osoittaen; epäonnistunut jää generated-tilaan ja
+    ongelmat kertovat syyn. Tekstityksen alfa-vienti on erillinen PR
+    (tekstitys #78): ilman sitä jokainen generoitu kortti on yksi ongelma
+    eikä mitään ajeta.
+    """
+    import os
+    import shutil
+    import subprocess
+
+    result = PackageSettings.from_json(settings.to_json())
+    problems: list[str] = []
+    exe = shutil.which("tekstitys")
+    if exe is None or not generated_source_available():
+        for card in (result.intro, result.outro, result.credits):
+            if card.mode == "generated" and card.text.strip():
+                problems.append("tekstitys render-alpha puuttuu")
+        return result, problems
+
+    os.makedirs(work_dir, exist_ok=True)
+    for name in ("intro", "outro", "credits"):
+        card = getattr(result, name)
+        if card.mode != "generated" or not card.text.strip():
+            continue
+        duration_ms = round(card.duration * 1000)
+        sidecar = os.path.join(work_dir, f"{name}.capslap.json")
+        with open(sidecar, "w", encoding="utf-8") as fh:
+            json.dump(
+                {
+                    "segments": [
+                        {"startMs": 0, "endMs": duration_ms, "text": card.text}
+                    ],
+                    "style": {},
+                },
+                fh,
+                ensure_ascii=False,
+            )
+        out = os.path.join(work_dir, f"{name}.mov")
+        try:
+            done = subprocess.run(
+                [
+                    exe,
+                    "render-alpha",
+                    "--captions",
+                    sidecar,
+                    "--size",
+                    f"{width}x{height}",
+                    "--fps",
+                    str(fps),
+                    "--duration",
+                    str(card.duration),
+                    "--out",
+                    out,
+                    "--json",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=1200,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            problems.append(f"{name}: {exc}")
+            continue
+        if done.returncode != 0 or not os.path.exists(out):
+            problems.append(f"{name}: {(done.stderr or done.stdout).strip()[:200]}")
+            continue
+        card.mode = "file"
+        card.path = out
+    return result, problems
+
+
 def generated_source_available() -> bool:
     """Onko generoitujen tekstien lähde (Tekstitys render-alpha) käytettävissä?
 

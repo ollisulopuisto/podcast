@@ -451,3 +451,111 @@ def test_flat_export_writes_package_lanes(fixture_dir, validate_fcpxml):
     assert bed.get("audioRole") == "music.Musiikkipohja"
     assert bed.findall(".//keyframe")
     validate_fcpxml(xml, "package-flat.fcpxml")
+
+
+def test_materialize_generated_without_tekstitys(monkeypatch, tmp_path):
+    """Ilman Tekstitystä kortit jäävät ennalleen ja syy kerrotaan."""
+    from autoraffkat.package import materialize_generated
+
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    settings = PackageSettings(
+        intro=TitleCard(mode="generated", text="Otsikko", duration=4.0),
+        outro=TitleCard(mode="file", path="/m/loppu.mov"),
+    )
+    result, problems = materialize_generated(settings, str(tmp_path))
+    assert problems
+    assert result.intro.mode == "generated"  # ei vaiteta file-tilaan ilman tuotosta
+    assert result.outro.mode == "file"  # koskematon
+    assert not list(tmp_path.iterdir())  # mitään ei ajettu
+
+
+def test_materialize_generated_runs_the_cli(monkeypatch, tmp_path):
+    """Onnistunut ajo vaihtaa kortin file-tilaan tuotokseen osoittaen."""
+    import autoraffkat.package as pkg
+    from autoraffkat.package import materialize_generated
+
+    calls = []
+
+    class Done:
+        returncode = 0
+        stdout = "{}"
+        stderr = ""
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        out = cmd[cmd.index("--out") + 1]
+        with open(out, "w") as fh:
+            fh.write("mov")
+        return Done()
+
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/tekstitys")
+    monkeypatch.setattr(pkg, "generated_source_available", lambda: True)
+    import subprocess
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    settings = PackageSettings(
+        intro=TitleCard(mode="generated", text="Otsikko", duration=4.0),
+    )
+    result, problems = materialize_generated(settings, str(tmp_path / "pkg"))
+    assert problems == []
+    assert result.intro.mode == "file"
+    assert result.intro.path.endswith("intro.mov")
+    cmd = calls[0]
+    assert cmd[:2] == ["/usr/bin/tekstitys", "render-alpha"]
+    assert "1920x1080" in cmd
+    # Sivuvaikutukset: sidecar kirjoitettiin kortin tekstillä.
+    import json as json_mod
+
+    sidecar = json_mod.loads((tmp_path / "pkg" / "intro.capslap.json").read_text())
+    assert sidecar["segments"][0]["text"] == "Otsikko"
+    assert sidecar["segments"][0]["endMs"] == 4000
+
+
+def test_package_plan_materializes_generated_cards(monkeypatch, tmp_path):
+    """Generoitu kortti ajetaan Tekstityksellä ja sen kesto mitataan tuotoksesta."""
+    from types import SimpleNamespace
+
+    import autoraffkat.package as pkg
+    from autoraffkat import probe
+    from autoraffkat.project import ProjectSettings
+    from autoraffkat.server.app import _package_plan
+
+    class Done:
+        returncode = 0
+        stdout = "{}"
+        stderr = ""
+
+    def fake_run(cmd, **kw):
+        out = cmd[cmd.index("--out") + 1]
+        with open(out, "w") as fh:
+            fh.write("mov")
+        return Done()
+
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/tekstitys")
+    monkeypatch.setattr(pkg, "generated_source_available", lambda: True)
+    import subprocess
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        probe,
+        "info",
+        lambda path: (
+            {"duration": 4.0, "video": {"width": 1920, "height": 1080}}
+            if path.endswith(".mov")
+            else {}
+        ),
+    )
+    settings = ProjectSettings()
+    settings.package.intro.mode = "generated"
+    settings.package.intro.text = "Otsikko"
+    settings.package.intro.duration = 4.0
+    state = SimpleNamespace(settings=settings, xml_path=str(tmp_path / "j.fcpxml"))
+    grid = SimpleNamespace(speakers=(), n=0, program_start=0.0)
+    warnings = []
+
+    plan = _package_plan(state, grid, Fraction(0), Fraction(60), warnings)
+    assert plan is not None
+    vclips, _ = plan
+    assert [c.kind for c in vclips] == ["intro"]
+    assert float(vclips[0].end) == 4.0  # kesto mitattu tuotoksesta, ei arvattu
+    assert warnings == []
