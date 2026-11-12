@@ -194,3 +194,32 @@ def test_estimate_offset_returns_none_when_an_envelope_is_empty():
         empty, reference, hop_seconds=0.02,
         max_shift_seconds=300.0, min_overlap_seconds=5.0,
     ) is None
+
+
+def test_vectorized_scores_candidates_without_a_python_loop(monkeypatch):
+    # Vanha silmukka kävi jokaisen ehdokasviiveen läpi Pythonissa ja kutsui
+    # np.clipiä kerran per viive; vektorointi pisteyttää kaikki kerrallaan.
+    # Tämä on deterministinen työnmäärämitallus, ei kellonaikatesti: silmukka
+    # ylittää kynnyksen kymmenellä tuhannella kutsulla, vektori jää yhteen.
+    calls = 0
+    original_clip = np.clip
+
+    def counting_clip(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original_clip(*args, **kwargs)
+
+    monkeypatch.setattr(np, "clip", counting_clip)
+    rng = np.random.default_rng(17)
+    reference = rng.normal(size=5000)
+    source = np.zeros(5000)
+    source[1000:] = reference[:-1000]
+
+    result = estimate_offset(
+        reference, source, hop_seconds=0.02,
+        max_shift_seconds=100.0, min_overlap_seconds=1.0,
+    )
+
+    assert result is not None
+    assert result.shift_seconds == pytest.approx(-20.0, abs=0.02)
+    assert calls < 10, f"pisteytys tehtiin {calls} np.clip-kutsulla eli viive kerrallaan"
