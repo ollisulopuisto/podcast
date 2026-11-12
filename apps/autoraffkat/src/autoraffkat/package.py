@@ -140,6 +140,7 @@ class PackageVideoClip:
     role: str = TITLE_ROLE
     width: int = 1920  # mitattu tiedostosta; assetin formaattia varten
     height: int = 1080
+    fps: float = 0.0  # lähteen oma ruutunopeus; 0 = projektin nopeus
 
     @property
     def duration(self) -> Fraction:
@@ -217,20 +218,23 @@ def video_clips(
     if settings.credits.mode != "off" and settings.credits.placement in ("start", "both"):
         after_intro = clips[-1].end if clips else program_start
         card(settings.credits, "credits_start", after_intro)
+    # Lopun järjestys on päätetty: tekijät ensin, outro viimeisenä. Ne eivät
+    # jaa lopun kehyksiä samalla lanella vaan credits_end päättyy outron
+    # alkuun (2026-11: päällekkäisyys olisi satunnaista pinoutumista).
+    outro_len = _frac(
+        durations.get(settings.outro.path, 0.0)
+        if settings.outro.mode == "file"
+        else settings.outro.duration
+    ) if settings.outro.mode != "off" else Fraction(0)
     if settings.credits.mode != "off" and settings.credits.placement in ("end", "both"):
         length = (
             durations.get(settings.credits.path, 0.0)
             if settings.credits.mode == "file"
             else settings.credits.duration
         )
-        card(settings.credits, "credits_end", program_end - _frac(length))
+        card(settings.credits, "credits_end", program_end - outro_len - _frac(length))
     if settings.outro.mode != "off":
-        length = (
-            durations.get(settings.outro.path, 0.0)
-            if settings.outro.mode == "file"
-            else settings.outro.duration
-        )
-        card(settings.outro, "outro", program_end - _frac(length))
+        card(settings.outro, "outro", program_end - outro_len)
     return clips
 
 
@@ -240,22 +244,33 @@ def throughout_curve(
     """Koko jakson alla soivan pohjan vaimennus puheen mukaan.
 
     Puheen alkaessa pohja vaimenee TAIL_UNDER_DB:iin 0,4 s johdolla ja palaa
-    1,34 s paluulla (musicbed-moduulin mittaamat arvot).
+    1,34 s paluulla (musicbed-moduulin mittaamat arvot). Vaimennusikkunat
+    (johdoineen ja paluineen) sulautetaan ennen pisteitä: muuten lähekkäiset
+    puhejaksot tuottaisivat taaksepäin meneviä keyframe-aikoja ja musiikki
+    palautuisi kesken seuraavan puhujan vuoron.
     """
-    points: list[tuple[float, float]] = [(start, 0.0)]
     lead, release = 0.4, 1.34
+    windows: list[list[float]] = []
     for span_start, span_end in sorted(speech):
         if span_end <= start or span_start >= end:
             continue
-        dip_start = max(start, span_start - lead)
-        dip_end = min(end, span_end + release)
-        if dip_start > points[-1][0]:
-            points.append((dip_start, 0.0))
-        points.append((min(dip_start + lead, end), TAIL_UNDER_DB))
-        points.append((dip_end, TAIL_UNDER_DB))
-        points.append((min(dip_end + release, end), 0.0))
+        low = max(start, span_start - lead)
+        high = min(end, span_end + release)
+        if windows and low <= windows[-1][1]:
+            windows[-1][1] = max(windows[-1][1], high)
+        else:
+            windows.append([low, high])
+    points: list[tuple[float, float]] = [(start, 0.0)]
+    for low, high in windows:
+        if low > points[-1][0]:
+            points.append((low, 0.0))
+        points.append((min(low + lead, high), TAIL_UNDER_DB))
+        points.append((high, TAIL_UNDER_DB))
+        points.append((min(high + release, end), 0.0))
     if points[-1] != (end, 0.0):
         points.append((end, points[-1][1]))
+    times = [t for t, _ in points]
+    assert times == sorted(times), "keyframet menevät taaksepäin"
     return points
 
 
@@ -288,42 +303,58 @@ def audio_clips(
             return 0.0
         return (speech_lufs - BED_UNDER_SPEECH_DB) - bed_loudness[path]
 
-    def make(kind: str, path: str, start: float, end: float, cold_open: bool) -> None:
+    def make(kind: str, path: str, start: Fraction, end: Fraction, cold_open: bool) -> None:
         if not path or end <= start:
             return
+        # Klipin rajat pysyvät rationaaleina loppuun asti (repon
+        # rationaaliaikasääntö); käyrän dB-pisteet ovat sekunteja ja
+        # kvantisoituvat kirjoittajan to_frames:ssa.
+        start_f, end_f = float(start), float(end)
         local_speech = [
-            (max(start, s) - start, min(end, e) - start)
+            (max(start_f, s) - start_f, min(end_f, e) - start_f)
             for s, e in speech
-            if e > start and s < end
+            if e > start_f and s < end_f
         ]
         if kind == "bed_throughout":
-            points = throughout_curve(0.0, end - start, local_speech)
+            points = throughout_curve(0.0, end_f - start_f, local_speech)
         else:
-            measured = bed_curve(0.0, end - start, local_speech, cold_open)
-            points = measured if measured is not None else [(0.0, 0.0)]
+            measured = bed_curve(0.0, end_f - start_f, local_speech, cold_open)
+            # Mittausta ei aina ole (ei riittävää taukoa). Päätetty
+            # varapolku (2026-11): sama puhetta seuraava vaimennus kuin
+            # throughout-tilassa — litteä käyrä soittaisi musiikin
+            # vaimentamatta puheen päälle.
+            points = (
+                measured
+                if measured is not None
+                else throughout_curve(0.0, end_f - start_f, local_speech)
+            )
         clips.append(
             PackageAudioClip(
                 kind=kind,
                 name=f"{kind}: {Path(path).stem}",
                 path=path,
-                start=_frac(start),
-                end=_frac(end),
-                curve=[(t + start, db) for t, db in points],
+                start=start,
+                end=end,
+                curve=[(t + start_f, db) for t, db in points],
                 base_gain_db=gain(path),
             )
         )
 
-    start_f = float(program_start)
-    end_f = float(program_end)
     if beds.mode == "throughout":
-        make("bed_throughout", beds.throughout_path, start_f, end_f, True)
+        make("bed_throughout", beds.throughout_path, program_start, program_end, True)
     else:
-        intro_dur = durations.get(beds.intro_path, 0.0)
-        outro_dur = durations.get(beds.outro_path, 0.0)
+        # Pohjat puristetaan ohjelmaan: pidempi tiedosto ei karkaa viennin
+        # rajojen yli. Jos intro ja outro eivät mahdu molemmat, intro
+        # lyhenee outron alkuun (2026-11: loppu on se mikä kuulija kuulee
+        # viimeisenä, ja outron häivytys on sen oma).
+        intro_dur = _frac(durations.get(beds.intro_path, 0.0))
+        outro_dur = _frac(durations.get(beds.outro_path, 0.0))
+        outro_start = max(program_end - outro_dur, program_start)
+        intro_end = min(program_start + intro_dur, program_end, outro_start)
         if beds.intro_path and intro_dur > 0:
-            make("bed_intro", beds.intro_path, start_f, start_f + intro_dur, True)
+            make("bed_intro", beds.intro_path, program_start, intro_end, True)
         if beds.outro_path and outro_dur > 0:
-            make("bed_outro", beds.outro_path, end_f - outro_dur, end_f, False)
+            make("bed_outro", beds.outro_path, outro_start, program_end, False)
     return clips
 
 

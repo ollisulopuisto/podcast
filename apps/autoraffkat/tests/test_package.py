@@ -611,3 +611,178 @@ def test_preview_spans_without_side_effects(monkeypatch):
     assert ("intro", 0.0, 6.0) in spans
     # Generoitu näkyy asetusten kestolla ilman renderöintiä.
     assert ("outro", 57.0, 60.0) in spans
+
+
+def test_nearby_speech_does_not_reverse_bed_keyframes():
+    """Kaksi lähekkäistä puhejaksoa: vaimennusikkunat menevät päällekkäin,
+    mutta käyrän ajat pysyvät nousevina eikä mikään palaa taaksepäin."""
+    settings = PackageSettings(
+        beds=BedSettings(mode="throughout", throughout_path="/m/pohja.wav")
+    )
+    (clip,) = audio_clips(
+        settings,
+        Fraction(0),
+        Fraction(60),
+        speech=[(10.0, 11.0), (11.2, 12.0)],
+        durations={"/m/pohja.wav": 60.0},
+    )
+    times = [t for t, _ in clip.curve]
+    assert times == sorted(times)
+    assert len(times) == len(set(times))
+
+
+def test_credits_end_before_outro():
+    """Lopputekstit ja outro eivät soi samoja kehyksiä: tekstit loppuvat
+    outron alkuun, vaikka niille olisi jäänyt aikaa outronkin päälle."""
+    settings = PackageSettings(
+        outro=TitleCard(mode="file", path="/m/loppu.mov"),
+        credits=CreditsSettings(mode="file", path="/m/tekstit.mov", placement="end"),
+    )
+    durations = {"/m/loppu.mov": 5.0, "/m/tekstit.mov": 8.0}
+    clips = video_clips(settings, Fraction(0), Fraction(60), durations)
+    by_kind = {c.kind: c for c in clips}
+    assert by_kind["credits_end"].end == by_kind["outro"].start
+    assert by_kind["outro"].end == Fraction(60)
+
+
+def test_unmeasurable_bed_falls_back_to_ducking():
+    """Kun mittaukseen ei ole tilaa, pohja seuraa puhetta throughout-
+    käyrällä — ei soi litteänä vaimentamatta (monkeypatch pakottaa
+    mittauksen epäonnistumaan)."""
+    import autoraffkat.package as pkg
+
+    original = pkg.bed_curve
+    pkg.bed_curve = lambda *a, **k: None
+    try:
+        settings = PackageSettings(
+            beds=BedSettings(mode="intro_outro", intro_path="/m/pohja.wav")
+        )
+        (clip,) = audio_clips(
+            settings,
+            Fraction(0),
+            Fraction(60),
+            speech=[(5.0, 10.0)],
+            durations={"/m/pohja.wav": 20.0},
+        )
+    finally:
+        pkg.bed_curve = original
+    levels = [db for _, db in clip.curve]
+    assert min(levels) < 0.0, "varapolku vaimentaa puheen alla"
+    times = [t for t, _ in clip.curve]
+    assert times == sorted(times)
+
+
+def test_long_beds_are_clamped_to_the_programme():
+    """Ohjelmaa pidempi pohjatiedosto ei karkaa viennin ulkopuolelle, ja
+    kun intro ja outro eivät mahdu molemmat, intro lyhenee outron alkuun."""
+    settings = PackageSettings(
+        beds=BedSettings(
+            mode="intro_outro",
+            intro_path="/m/alkupohja.wav",
+            outro_path="/m/loppupohja.wav",
+        )
+    )
+    clips = audio_clips(
+        settings,
+        Fraction(0),
+        Fraction(10),
+        speech=[],
+        durations={"/m/alkupohja.wav": 8.0, "/m/loppupohja.wav": 8.0},
+    )
+    by_kind = {c.kind: c for c in clips}
+    assert by_kind["bed_intro"].start == Fraction(0)
+    assert by_kind["bed_outro"].end == Fraction(10)
+    assert by_kind["bed_intro"].end == by_kind["bed_outro"].start == Fraction(2)
+    # Yksisuuntainen puristus: pelkkä pitkä intro puristuu ohjelman loppuun.
+    settings.beds.outro_path = ""
+    (clip,) = audio_clips(
+        settings, Fraction(0), Fraction(10), [], durations={"/m/alkupohja.wav": 30.0}
+    )
+    assert clip.end == Fraction(10)
+
+
+def test_bed_bounds_stay_rational():
+    """Rationaaliset ohjelmarajat säilyvät klippien rafoina: ei float-
+    kiertoa (repon rationaaliaikasääntö)."""
+    settings = PackageSettings(
+        beds=BedSettings(mode="throughout", throughout_path="/m/pohja.wav")
+    )
+    start, end = Fraction(1001, 30), Fraction(3601, 30)
+    (clip,) = audio_clips(
+        settings, start, end, [], durations={"/m/pohja.wav": 300.0}
+    )
+    assert clip.start == start and clip.end == end
+    assert isinstance(clip.start, Fraction) and isinstance(clip.end, Fraction)
+
+
+def test_title_format_uses_the_clips_own_frame_rate(fixture_dir):
+    """30 fps kortti 25 fps projektissa: assetin formaatti seuraa kortin
+    omaa ruutunopeutta, ei projektin — muuten Final Cut venyttää keston."""
+    from autoraffkat.finalcut.read import read_fcpxml
+    from autoraffkat.finalcut.write import build_multicam_fcpxml
+    from autoraffkat.model import Segment
+
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    settings = PackageSettings(intro=TitleCard(mode="file", path="/pkg/alku.mov"))
+    vclips = video_clips(
+        settings, Fraction(0), Fraction(36), durations={"/pkg/alku.mov": 4.0}
+    )
+    (clip,) = vclips
+    clip.fps = 29.97
+    xml = build_multicam_fcpxml(
+        tl,
+        [Segment("WIDE", "Laaja", 0.0, 36.0)],
+        [],
+        Fraction(0),
+        Fraction(36),
+        "Paketti",
+        package=(vclips, []),
+    )
+    root = ET.fromstring(xml)
+    asset = next(a for a in root.iter("asset") if a.get("hasVideo") == "1"
+                 and a.get("name", "").startswith("intro"))
+    fmt = {f.get("id"): f for f in root.iter("format")}[asset.get("format")]
+    fd = Fraction(fmt.get("frameDuration").rstrip("s"))
+    assert abs(float(fd) - 1.0 / 29.97) < 1e-6
+
+
+def test_compound_audio_keeps_package_clips_single(fixture_dir, validate_fcpxml):
+    """Yhdistelmääänellä paketin klipit ovat vain yhdessä rungossa: kortit
+    kuvan mukana, pohjat yhdistelmän sisällä — ei kahteen kertaan."""
+    from autoraffkat.finalcut.read import read_fcpxml
+    from autoraffkat.finalcut.write import build_multicam_fcpxml
+    from autoraffkat.model import Segment
+    from autoraffkat.project import ProjectSettings
+
+    tl = read_fcpxml(str(fixture_dir / "multicam.fcpxml"))
+    package = PackageSettings(
+        intro=TitleCard(mode="file", path="/pkg/alku.mov"),
+        beds=BedSettings(mode="intro_outro", intro_path="/pkg/pohja.wav"),
+    )
+    durations = {"/pkg/alku.mov": 4.0, "/pkg/pohja.wav": 20.0}
+    vclips = video_clips(package, Fraction(0), Fraction(36), durations)
+    aclips = audio_clips(package, Fraction(0), Fraction(36), [(10.0, 30.0)], durations)
+    settings = ProjectSettings()
+    settings.globals.compound_audio = True
+    xml = build_multicam_fcpxml(
+        tl,
+        [Segment("WIDE", "Laaja", 0.0, 36.0)],
+        [],
+        Fraction(0),
+        Fraction(36),
+        "Paketti",
+        settings=settings,
+        package=(vclips, aclips),
+    )
+    root = ET.fromstring(xml)
+    (media,) = [m for m in root.iter("media") if m.find("sequence") is not None]
+    inner = media.find("sequence/spine")
+    outer = root.find(".//project/sequence/spine")
+
+    def refs(node):
+        return [c.get("name", "").split(":")[0]
+                for c in node.iter("asset-clip")]
+
+    assert "bed_intro" in refs(inner) and "intro" not in refs(inner)
+    assert "intro" in refs(outer) and "bed_intro" not in refs(outer)
+    validate_fcpxml(xml, "package-compound.fcpxml")

@@ -1595,6 +1595,8 @@ def _package_plan(state, grid, program_start, program_end, warnings):
         video = info.get("video") or {}
         if video.get("width"):
             clip.width, clip.height = int(video["width"]), int(video["height"])
+        if video.get("fps"):
+            clip.fps = float(video["fps"])
     aclips = audio_clips(
         pk,
         program_start,

@@ -328,6 +328,27 @@ def _attach(body: list[str], index: int, lines: list[str]) -> list[str]:
     return out
 
 
+def _drop_clips(lines: list[str], refs: set[str]) -> list[str]:
+    """Poistaa annettuihin resursseihin viittaavat asset-klipit.
+
+    Pohjalla voi olla lapsia (keyframe-käyrä), joten poisto ulottuu
+    sulkevaan tagiin asti. Itsesulkeva klippi on yksi rivi.
+    """
+    out: list[str] = []
+    skip = False
+    for line in lines:
+        if skip:
+            if line.strip() == "</asset-clip>":
+                skip = False
+            continue
+        m = re.search(r'<asset-clip ref="([^"]+)"', line)
+        if m and m.group(1) in refs:
+            skip = not line.rstrip().endswith("/>")
+            continue
+        out.append(line)
+    return out
+
+
 def _compound_audio(
     body: list[str],
     resources: str,
@@ -335,6 +356,8 @@ def _compound_audio(
     frame_duration,
     project_name: str,
     master_db: float,
+    video_only: set[str] | None = None,
+    audio_only: set[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Ääni yhdistelmäklipiksi, kuva jää monikameraksi.
 
@@ -352,6 +375,13 @@ def _compound_audio(
     """
     audio_body = [_srcenable(line, "audio") for line in body]
     video_body = [_srcenable(line, "video") for line in body]
+    # Paketin klipit ovat liitettyjä, eivät isännän omaa ainetta, joten
+    # ``srcEnable`` ei ulotu niihin: ilman tätä pohja soisi kahdesti ja
+    # äänetön kortti seisoisi turhana yhdistelmän sekvenssissä.
+    if video_only:
+        audio_body = _drop_clips(audio_body, video_only)
+    if audio_only:
+        video_body = _drop_clips(video_body, audio_only)
 
     next_id = _free_id(resources)
     format_id, media_id = f"r{next_id}", f"r{next_id + 1}"
@@ -1701,7 +1731,16 @@ def _package_assets(video, audio, resources, frame_duration) -> dict[str, str]:
         fmt.set("id", fmt_id)
         fmt.set("width", str(clip.width))
         fmt.set("height", str(clip.height))
-        fmt.set("frameDuration", frames_str(1, frame_duration))
+        # Kortin formaatti seuraa kortin omaa ruutunopeutta: 30 fps kortti
+        # 25 fps projektissa saisi projektin frameDurationin, ja Final Cut
+        # venyttäisi kortin keston. Mittaamaton (0) käyttää projektin.
+        own_fps = getattr(clip, "fps", 0.0)
+        step = (
+            Fraction(1, 1) / Fraction(own_fps).limit_denominator(100_000)
+            if own_fps > 0
+            else frame_duration
+        )
+        fmt.set("frameDuration", frames_str(1, step))
         res_id = _next_resource_id(resources)
         resources.append(_package_asset(clip, res_id, fmt_id, frame_duration))
         ids[clip.kind] = res_id
@@ -2477,9 +2516,16 @@ def build_multicam_fcpxml(
     # yleissäädin ja puhujakohtainen säätö ovat samassa ikkunassa.
     extra_resources: list[str] = []
     if settings is not None and settings.globals.compound_audio:
+        video_only = audio_only = None
+        if package_ids and package is not None:
+            video_only = {package_ids[c.kind] for c in package[0]
+                          if c.kind in package_ids}
+            audio_only = {package_ids[c.kind] for c in package[1]
+                          if c.kind in package_ids}
         body, extra_resources = _compound_audio(
             body, resources, program_frames, frame_duration, project_name,
             float(settings.globals.master_db),
+            video_only=video_only, audio_only=audio_only,
         )
 
     note, metadata = _sequence_extras(settings, source)
