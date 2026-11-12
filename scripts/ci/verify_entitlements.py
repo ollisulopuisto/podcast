@@ -9,7 +9,9 @@ Usage:
   verify_entitlements.py --info Info.plist --entitlements App.entitlements   # source check
 """
 import argparse
+import glob
 import plistlib
+import re
 import subprocess
 import sys
 
@@ -21,24 +23,45 @@ REQUIRED = {
     "NSContactsUsageDescription": "com.apple.security.personal-information.addressbook",
     "NSCalendarsUsageDescription": "com.apple.security.personal-information.calendars",
     "NSCalendarsFullAccessUsageDescription": "com.apple.security.personal-information.calendars",
+    "NSCalendarsWriteOnlyAccessUsageDescription": "com.apple.security.personal-information.calendars",
     "NSRemindersUsageDescription": "com.apple.security.personal-information.calendars",
+    "NSRemindersFullAccessUsageDescription": "com.apple.security.personal-information.calendars",
     "NSLocationUsageDescription": "com.apple.security.personal-information.location",
     "NSLocationWhenInUseUsageDescription": "com.apple.security.personal-information.location",
     "NSPhotoLibraryUsageDescription": "com.apple.security.personal-information.photos-library",
+    "NSPhotoLibraryAddUsageDescription": "com.apple.security.personal-information.photos-library",
 }
 
 
 def missing(info, ents):
     out = []
     for key, ent in REQUIRED.items():
-        if info.get(key) and ents.get(ent) is not True:
+        # Presence is enough: an empty string still declares the feature.
+        if key in info and ents.get(ent) is not True:
             out.append((key, ent))
     return out
+
+
+def localized_keys(app):
+    """Usage keys that exist only in Contents/Resources/*.lproj/InfoPlist.strings."""
+    keys = {}
+    for path in glob.glob(f"{app}/Contents/Resources/*.lproj/InfoPlist.strings"):
+        with open(path, "rb") as fh:
+            data = fh.read()
+        try:
+            parsed = plistlib.loads(data)
+        except Exception:
+            text = data.decode("utf-16" if data[:2] in (b"\xff\xfe", b"\xfe\xff") else "utf-8", "replace")
+            found = re.findall(r'"?(NS\w+UsageDescription)"?\s*=\s*"', text)
+            parsed = {k: "" for k in found}
+        keys.update({k: v for k, v in parsed.items() if k in REQUIRED})
+    return keys
 
 
 def load_app(app):
     with open(f"{app}/Contents/Info.plist", "rb") as f:
         info = plistlib.load(f)
+    info = {**localized_keys(app), **info}
     raw = subprocess.run(
         ["codesign", "-d", "--entitlements", ":-", app],
         capture_output=True, check=False,

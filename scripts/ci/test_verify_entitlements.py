@@ -27,6 +27,25 @@ class Guard(unittest.TestCase):
     def test_no_usage_strings_passes(self):
         self.assertEqual(v.missing({}, {}), [])
 
+    def test_empty_string_still_counts(self):
+        self.assertEqual(len(v.missing({"NSMicrophoneUsageDescription": ""}, {})), 1)
+
+    def test_modern_calendar_and_reminder_keys(self):
+        for k in ("NSRemindersFullAccessUsageDescription", "NSCalendarsWriteOnlyAccessUsageDescription"):
+            self.assertEqual(len(v.missing({k: "x"}, {})), 1)
+        self.assertEqual(len(v.missing({"NSPhotoLibraryAddUsageDescription": "x"}, {})), 1)
+
+    def test_localized_only_key_is_found(self):
+        with tempfile.TemporaryDirectory() as d:
+            lp = os.path.join(d, "A.app/Contents/Resources/en.lproj")
+            os.makedirs(lp)
+            with open(os.path.join(lp, "InfoPlist.strings"), "w") as f:
+                f.write('"NSMicrophoneUsageDescription" = "Mic";\n')
+            self.assertEqual(v.localized_keys(os.path.join(d, "A.app")), {"NSMicrophoneUsageDescription": ""})
+            with open(os.path.join(lp, "InfoPlist.strings"), "wb") as f:
+                plistlib.dump({"NSCameraUsageDescription": "Cam"}, f, fmt=plistlib.FMT_BINARY)
+            self.assertIn("NSCameraUsageDescription", v.localized_keys(os.path.join(d, "A.app")))
+
     def test_cli_source_mode(self):
         with tempfile.TemporaryDirectory() as d:
             i, e = os.path.join(d, "i.plist"), os.path.join(d, "e.plist")
