@@ -34,12 +34,12 @@ class Guard(unittest.TestCase):
         for k in ("NSCalendarsWriteOnlyAccessUsageDescription", "NSPhotoLibraryAddUsageDescription"):
             self.assertEqual(len(v.missing({k: "x"}, {})), 1)
 
-    def test_reminders_need_only_the_documented_calendars_entitlement(self):
+    def test_reminders_need_the_reminders_entitlement_too(self):
+        cal = {v.CAL: True}
         for k in ("NSRemindersUsageDescription", "NSRemindersFullAccessUsageDescription"):
-            self.assertEqual(v.missing({k: "x"}, {v.CAL: True}), [])
-            self.assertEqual(v.missing({k: "x"}, {v.CAL: True, v.REM: True}), [])
-            self.assertEqual(v.missing({k: "x"}, {v.REM: True}), [(k, v.CAL)])
-            self.assertEqual(v.missing({k: "x"}, {}), [(k, v.CAL)])
+            self.assertEqual(v.missing({k: "x"}, cal), [(k, v.REM)])
+            self.assertEqual(v.missing({k: "x"}, {**cal, v.REM: True}), [])
+            self.assertEqual(len(v.missing({k: "x"}, {})), 2)
 
     def test_localized_only_key_is_found(self):
         with tempfile.TemporaryDirectory() as d:

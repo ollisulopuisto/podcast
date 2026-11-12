@@ -16,9 +16,9 @@ import subprocess
 import sys
 
 CAL = "com.apple.security.personal-information.calendars"
-# Apple documents only the calendars key for EventKit, and EventKit covers Reminders too (the macOS entitlement
-# docs and EKEventStore docs name no separate Reminders key). A com.apple.security.personal-information.reminders
-# key has been seen in the wild (eclecticlight.co, 2021-01-08) but is undocumented, so the guard does not demand it.
+# Apple documents only the calendars key. The reminders key is undocumented but
+# has been used for Reminders access (eclecticlight.co, 2021-01-08), so a
+# Reminders usage string requires both.
 REM = "com.apple.security.personal-information.reminders"
 
 # Info.plist usage key -> entitlement(s) that hardened runtime needs for it.
@@ -30,8 +30,8 @@ REQUIRED = {
     "NSCalendarsUsageDescription": "com.apple.security.personal-information.calendars",
     "NSCalendarsFullAccessUsageDescription": "com.apple.security.personal-information.calendars",
     "NSCalendarsWriteOnlyAccessUsageDescription": "com.apple.security.personal-information.calendars",
-    "NSRemindersUsageDescription": CAL,
-    "NSRemindersFullAccessUsageDescription": CAL,
+    "NSRemindersUsageDescription": (CAL, REM),
+    "NSRemindersFullAccessUsageDescription": (CAL, REM),
     "NSLocationUsageDescription": "com.apple.security.personal-information.location",
     "NSLocationWhenInUseUsageDescription": "com.apple.security.personal-information.location",
     "NSPhotoLibraryUsageDescription": "com.apple.security.personal-information.photos-library",
