@@ -19,7 +19,7 @@ def _bucket_bounds(n: int, columns: int) -> np.ndarray:
 
 def build(grid: Grid, decision: Decision, columns: int = 1400,
           reactions=None, window=None, silence_spans=None,
-          silence_fade: float = 0.4) -> dict:
+          silence_fade: float = 0.4, package_clips=None) -> dict:
     """Palauttaa palkin: kuka äänessä ja mikä kuva valittiin, sarakkeittain.
 
     ``reactions`` on lista ``(alku, loppu, puhujan indeksi)`` ohjelma-ajassa.
@@ -79,6 +79,15 @@ def build(grid: Grid, decision: Decision, columns: int = 1400,
             for column in range(max(0, low), min(columns, max(high, low + 1))):
                 lane[column] = int(index)
 
+    # Paketin kortit ja pohjat ohjelma-aikana, ikkunaan rajattuna: sama
+    # aikapohja kuin hiljaisuusjaksolla, jotta selain piirtää ne tarkalleen
+    # samoihin kohtiin kuin viennin.
+    package = []
+    for kind, start, end in package_clips or ():
+        if end <= view_start or start >= view_end:
+            continue
+        package.append({"kind": kind, "start": float(start), "end": float(end)})
+
     # Timestamps stay in programme time so the browser can draw the exact
     # gaps (including their fade shoulders) at the same zoom as the cut.
     silence = []
@@ -101,6 +110,7 @@ def build(grid: Grid, decision: Decision, columns: int = 1400,
         "columns": columns,
         "reactions": lane,
         "silence": silence,
+        "package": package,
         "duration": grid.duration,
         "program_start": grid.program_start,
         # Näkymän rajat: viivain piirtää näistä, ei ohjelman kokonaiskestosta.

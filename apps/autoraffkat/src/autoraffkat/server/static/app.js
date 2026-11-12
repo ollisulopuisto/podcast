@@ -2452,8 +2452,9 @@ function drawBar() {
      kasvoa joka mitattiin, joten «negatiivinen» ei enää tarkoita tyhjää. */
   const hasShots = shots.some((v) => v !== -1);
   const hasSilence = !!(preview && state.audio && state.audio.silence_pass);
+  const hasPackage = !!(preview && preview.package && preview.package.length);
   const rows = preview ? preview.speakers.length + 1 + (hasShots ? 1 : 0)
-    + (hasSilence ? 1 : 0) : 1;
+    + (hasSilence ? 1 : 0) + (hasPackage ? 1 : 0) : 1;
   const rowHeight = 22, gap = 4, shotHeight = 10;
   const height = (rows - (hasShots ? 1 : 0)) * rowHeight
     + (hasShots ? shotHeight : 0) + (rows - 1) * gap + 8;
@@ -2511,6 +2512,24 @@ function drawBar() {
       ctx.fillStyle = 'rgba(244, 174, 66, .82)';
       ctx.fillRect(left + Math.min(fadePx, right - left), lowerY,
         Math.max(0, right - left - 2 * fadePx), rowHeight);
+    });
+    lowerY += rowHeight + gap;
+  }
+
+  /* Paketin kortit ja pohjat omana rivinään, samassa aikapohjassa kuin
+     hiljaisuusjaksot: esikatselu näyttää sijoittelun ennen vientiä. */
+  if (hasPackage) {
+    ctx.fillStyle = '#191c22';
+    ctx.fillRect(0, lowerY, width, rowHeight);
+    const viewStart = preview.view_start;
+    const viewEnd = preview.view_end;
+    const viewDuration = Math.max(0.001, viewEnd - viewStart);
+    preview.package.forEach((span) => {
+      const left = Math.max(0, (span.start - viewStart) / viewDuration * width);
+      const right = Math.min(width, (span.end - viewStart) / viewDuration * width);
+      ctx.fillStyle = span.kind.startsWith('bed')
+        ? 'rgba(88, 166, 255, .55)' : 'rgba(163, 113, 247, .75)';
+      ctx.fillRect(left, lowerY, Math.max(1, right - left), rowHeight);
     });
     lowerY += rowHeight + gap;
   }

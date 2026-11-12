@@ -1455,6 +1455,10 @@ class AppState:
             # on koko kysymys, eikä sitä näe erillisestä listasta.
             "preview": build_preview(
                 grid, decision, reactions=lane,
+                package_clips=_package_preview_spans(
+                    self, Fraction(float(grid.program_start)),
+                    Fraction(float(grid.program_start + grid.duration)),
+                ),
                 window=self.preview_window,
                 silence_spans=(silence.dead_air_spans(
                     grid, self.settings.audio.silence_min_gap
@@ -1481,6 +1485,42 @@ class AppState:
             "ms": round(elapsed, 1),
             "_grid": (grid, program_start, program_end, decision),
         }
+
+
+def _package_preview_spans(state, start, end) -> list[tuple[str, float, float]]:
+    """Pakettipalkin spanit: sijoittelu ilman sivuvaikutuksia.
+
+    Kestot tulevat ffprobe-välimuistista kuten viennissä, mutta esikatselu
+    ei aja Tekstitystä eikä äänekkyysmittausta — generoiduilla korteilla on
+    asetusten kesto, joten ne näkyvät ilman renderöintiäkin.
+    """
+    from .. import probe
+    from ..package import audio_clips, video_clips
+
+    pk = state.settings.package
+    paths = [
+        c.path for c in (pk.intro, pk.outro, pk.credits)
+        if c.mode == "file" and c.path
+    ] + [
+        p for p in (pk.beds.intro_path, pk.beds.outro_path, pk.beds.throughout_path)
+        if p
+    ]
+    durations = {}
+    for path in paths:
+        info = probe.info(path)
+        if info.get("duration"):
+            durations[path] = float(info["duration"])
+    if end <= start:
+        return []
+    spans = [
+        (clip.kind, float(clip.start), float(clip.end))
+        for clip in video_clips(pk, start, end, durations)
+    ]
+    spans += [
+        (clip.kind, float(clip.start), float(clip.end))
+        for clip in audio_clips(pk, start, end, [], durations)
+    ]
+    return spans
 
 
 def _package_plan(state, grid, program_start, program_end, warnings):

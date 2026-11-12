@@ -1,6 +1,7 @@
 """Paketti: asetusten säilyvyys ja klippisuunnitelman rakennus."""
 
 from fractions import Fraction
+from types import SimpleNamespace
 from xml.etree import ElementTree as ET
 
 from autoraffkat.package import (
@@ -559,3 +560,54 @@ def test_package_plan_materializes_generated_cards(monkeypatch, tmp_path):
     assert [c.kind for c in vclips] == ["intro"]
     assert float(vclips[0].end) == 4.0  # kesto mitattu tuotoksesta, ei arvattu
     assert warnings == []
+
+
+def test_preview_carries_package_spans():
+    """Pakettipalkki rajautuu ikkunaan ja kantaa lajin mukana."""
+    import numpy as np
+
+    from autoraffkat.preview import build
+
+    grid = SimpleNamespace(
+        n=100,
+        duration=100.0,
+        program_start=0.0,
+        speakers=(),
+        shots=(),
+        groups=(),
+    )
+    decision = SimpleNamespace(chosen=np.zeros(100, dtype=np.int32))
+    out = build(
+        grid,
+        decision,
+        package_clips=[("intro", 0.0, 4.0), ("bed_intro", 0.0, 20.0),
+                       ("outro", 95.0, 100.0)],
+        window=(0.0, 50.0),
+    )
+    kinds = [span["kind"] for span in out["package"]]
+    assert kinds == ["intro", "bed_intro"]  # outro ikkunan ulkopuolella
+    assert out["package"][0]["end"] == 4.0
+
+
+def test_preview_spans_without_side_effects(monkeypatch):
+    """Esikatselu mittaa kestot ffprobesta mutta ei aja Tekstitystä."""
+    from types import SimpleNamespace
+
+    from autoraffkat import probe
+    from autoraffkat.project import ProjectSettings
+    from autoraffkat.server.app import _package_preview_spans
+
+    monkeypatch.setattr(
+        probe, "info", lambda path: {"duration": 6.0} if path == "/m/a.mov" else {}
+    )
+    settings = ProjectSettings()
+    settings.package.intro.mode = "file"
+    settings.package.intro.path = "/m/a.mov"
+    settings.package.outro.mode = "generated"
+    settings.package.outro.text = "Hei"
+    settings.package.outro.duration = 3.0
+    state = SimpleNamespace(settings=settings)
+    spans = _package_preview_spans(state, Fraction(0), Fraction(60))
+    assert ("intro", 0.0, 6.0) in spans
+    # Generoitu näkyy asetusten kestolla ilman renderöintiä.
+    assert ("outro", 57.0, 60.0) in spans
