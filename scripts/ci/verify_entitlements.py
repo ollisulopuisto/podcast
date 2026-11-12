@@ -51,7 +51,7 @@ def missing(info, ents):
     return out
 
 
-TOKEN = re.compile(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|[^\s=;"]+|[=;]', re.S)
+TOKEN = re.compile(r'/\*.*?\*/|//[^\r\n]*|"(?:\\.|[^"\\])*"|[^\s=;"]+|[=;]', re.S)
 
 
 def strings_keys(text):
@@ -73,7 +73,7 @@ def localized_keys(app):
         try:
             parsed = plistlib.loads(data)
         except Exception:
-            text = data.decode("utf-16" if data[:2] in (b"\xff\xfe", b"\xfe\xff") else "utf-8", "replace")
+            text = data.decode("utf-16" if data[:2] in (b"\xff\xfe", b"\xfe\xff") else "utf-8-sig", "replace")
             parsed = dict.fromkeys(strings_keys(text), "")
         keys.update({k: v for k, v in parsed.items() if k in REQUIRED})
     return keys

@@ -64,6 +64,18 @@ class Guard(unittest.TestCase):
             ["NSMicrophoneUsageDescription", "NSLocationUsageDescription"],
         )
 
+    def test_cr_only_line_endings_end_line_comments(self):
+        text = '// old mac comment\rNSCameraUsageDescription = "x";\r'
+        self.assertEqual(v.strings_keys(text), ["NSCameraUsageDescription"])
+
+    def test_utf8_bom_does_not_hide_first_key(self):
+        with tempfile.TemporaryDirectory() as d:
+            lp = os.path.join(d, "A.app/Contents/Resources/en.lproj")
+            os.makedirs(lp)
+            with open(os.path.join(lp, "InfoPlist.strings"), "wb") as f:
+                f.write(b'\xef\xbb\xbfNSCameraUsageDescription = "x";\n')
+            self.assertIn("NSCameraUsageDescription", v.localized_keys(os.path.join(d, "A.app")))
+
     def test_cli_source_mode(self):
         with tempfile.TemporaryDirectory() as d:
             i, e = os.path.join(d, "i.plist"), os.path.join(d, "e.plist")
