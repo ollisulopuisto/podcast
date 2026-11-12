@@ -1762,6 +1762,7 @@ def _state_json(state: AppState) -> dict:
         "language": state.language,
         "languages": list(LANGUAGES),
         "audio": state.settings.audio.to_json(),
+        "package": state.settings.package.to_json(),
         # Mitatut oletukset käyttöliittymälle. Se merkitsee poikkeaman
         # suljetulle riville, ja poikkeaman on tultava samasta paikasta kuin
         # arvot itse — JavaScriptiin kirjoitettu kopio ajautuisi erilleen
