@@ -896,3 +896,16 @@ def test_inactive_bed_paths_are_not_probed_or_measured(monkeypatch, tmp_path):
     assert probed == ["/m/pohja.wav"]
     assert measured == ["/m/pohja.wav"]
     assert warnings == []
+
+def test_package_work_dir_distinguishes_same_named_outputs(tmp_path):
+    """Sama tulostenimi eri hakemistoihin on eri vienti: työhakemistoissa
+    näkyy nimen lisäksi polun tiiviste, jotta kortit eivät korvaannu."""
+    from autoraffkat.server.app import _package_work_dir
+
+    first = _package_work_dir(str(tmp_path / "j.fcpxml"), str(tmp_path / "a" / "vienti.mp4"))
+    second = _package_work_dir(str(tmp_path / "j.fcpxml"), str(tmp_path / "b" / "vienti.mp4"))
+    assert first != second
+    assert "vienti" in first and "vienti" in second
+    # Sama vienti uudestaan osuu samaan hakemistoon.
+    assert _package_work_dir(str(tmp_path / "j.fcpxml"),
+                             str(tmp_path / "a" / "vienti.mp4")) == first

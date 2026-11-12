@@ -1517,6 +1517,21 @@ def _package_preview_spans(state, start, end) -> list[tuple[str, float, float]]:
     return spans
 
 
+def _package_work_dir(xml_path: str | None, out_path: str) -> str:
+    """Vientikohtainen työhakemisto generoiduille korteille.
+
+    Tulosteen nimi yksinään ei riitä avaimeksi: sama tiedostonimi toiseen
+    hakemistoon on eri vienti, ja yhteinen hakemisto korvaisi aiemman
+    viennin kortit alta. Siksi perään tiiviste koko polusta.
+    """
+    import hashlib
+
+    stem = os.path.splitext(os.path.basename(out_path))[0]
+    digest = hashlib.sha256(os.path.abspath(out_path).encode()).hexdigest()[:8]
+    return os.path.join(os.path.dirname(xml_path or "."),
+                        ".autoraffkat-paketti", f"{stem}-{digest}")
+
+
 def _package_plan(state, grid, program_start, program_end, warnings, work_dir):
     """Paketin klippisuunnitelma vientiin, tai None kun paketti on pois.
 
@@ -2380,11 +2395,7 @@ def create_app(state: AppState) -> FastAPI:
                     segments = movement_mod.punch_segments(segments, _grid)
                 package_plan = _package_plan(
                     state, _grid, program_start, program_end, warnings,
-                    os.path.join(
-                        os.path.dirname(state.xml_path or "."),
-                        ".autoraffkat-paketti",
-                        os.path.splitext(os.path.basename(out_path))[0],
-                    ),
+                    _package_work_dir(state.xml_path, out_path),
                 )
                 passthrough = _passthrough_tracks(state, mic_tracks)
                 if passthrough and state.timeline.multicams:
