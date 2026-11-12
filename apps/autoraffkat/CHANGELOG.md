@@ -7,6 +7,18 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.12.1] - 2026-11-12
+
+### Added
+- Job results get a copy-path button for the exported file, with a live-region status for screen readers and a clear message if copying fails.
+- Tabs support roving tabindex and arrow-key navigation.
+
+### Packaging
+- New DMG welcome window (direction A).
+
+### Performance
+- Vectorized run filtering in the shared speechmix masks and reuse of precomputed gates in `duck_envelopes`.
+
 ## [2026.11.10.1] - 2026-11-10
 
 ### Added
