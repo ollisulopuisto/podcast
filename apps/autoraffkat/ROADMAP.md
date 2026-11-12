@@ -155,6 +155,50 @@ envelope extraction (speechmix), silence runs (`audio/silence.py`), envelope
 cross-correlation (`audio/sync.py`), speech-on grids from the analysis layer.
 Result lands as an auto-suggested `program_range`, one click from override.
 
+### Media sync: wider search, listen-before-import, drift (phase 2)
+
+From the 2026-11-12 spec and Olli's decisions. Phase 1 awaits his "build
+it"; the vectorization groundwork is already done (`perf/sync-vectorize`).
+
+**Phase 1 — search window and preview by listening.**
+- Replace the fixed ±5 min search with confidence-gated auto-expansion
+  (BBC audio-offset-finder pattern): search ±5 min; if the peak correlation
+  is below threshold (~0.4, tune on real episodes), expand to the full
+  recording. Manual presets (±5/±30 min/±2 h/full) stay available as an
+  accuracy prior. The vectorized scorer makes full-range search ~0.09 s on
+  two-hour envelopes, so the window is no longer a performance question.
+- Listen-before-import in the sync panel: one 10 s "everybody talks" clip
+  (camera picture + all mics mixed with the proposed offsets) and 5 s
+  per-speaker clips, picked from the already-computed envelopes (maximal
+  simultaneous speech / dominant mic). Listen → adjust the offset field →
+  re-preview → import. syncstart ships the same idea as zoomed correlation
+  diagrams; ears are the accepted fallback when confidence is low.
+
+**Phase 2 — clock drift (Olli 2026-11-12: assume no drift by default; an
+opt-in toggle, off).**
+- Detection: after the first full-file match, re-measure the offset near
+  the start and near the end of the shorter file, anchored to the known
+  sync point. If start and end disagree beyond a tolerance (a frame or two
+  per hour), the files drift.
+- Failure path: when a sync attempt fails with a drift signature (good
+  local matches that disagree), show "files seem to drift" and offer the
+  drift-fix toggle instead of a bare failure.
+- Correction, two candidates:
+  - *Single linear resample* of the drifting track to the reference clock.
+    Uniform timing, standard fix (protyposis.net/clockdrift); cost is one
+    resampling pass and it assumes drift is constant — temperature and
+    battery wobble leave a small residual.
+  - *Piecewise re-sync at quiet points* (Olli's suggestion): keep constant
+    offsets but re-anchor them about once a minute, or at points where
+    nobody is talking (the speech grids already exist). Discontinuities
+    land in silence so they are inaudible; no resampling artifacts; cost
+    is more timeline bookkeeping — each drifting mic becomes several
+    segments in the FCPXML — and drift still accumulates inside a segment
+    (bounded by the segment length).
+  - Decision when built: default to piecewise-at-silence for speech
+    material (inaudible by construction), resample as the fallback when no
+    usable silences exist.
+
 ### Browser SaaS notes (assessment 2026-11-12)
 
 Constraints from Olli: nobody uploads 10+ GB of video, weak client PCs,
