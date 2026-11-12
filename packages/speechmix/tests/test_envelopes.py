@@ -498,3 +498,57 @@ def test_mask_samples_is_closed_ranges_painted_out():
     assert out[:rate].sum() == 0
     assert out[rate : 2 * rate].all()
     assert out[2 * rate :].sum() == 0
+
+
+def test_duck_envelopes_reuses_precomputed_gates():
+    """covering_masks ja duck_masks hyväksyvät esilasketut portit ja antavat saman tuloksen."""
+    from speechmix import masks
+
+    grid, settings = _turn_taking(), _Settings()
+    expected = envelopes.duck_envelopes(grid, settings, 0.0)
+
+    # Esilasketut portit
+    gates = masks._gates(grid, settings)
+    cov_with_gates = masks.covering_masks(grid, settings, _gates_precomputed=gates)
+    duck_with_gates = masks.duck_masks(grid, settings, _gates_precomputed=gates)
+
+    cov_direct = masks.covering_masks(grid, settings)
+    duck_direct = masks.duck_masks(grid, settings)
+
+    assert set(cov_with_gates) == set(cov_direct)
+    for k in cov_direct:
+        assert np.array_equal(cov_with_gates[k], cov_direct[k])
+
+    assert set(duck_with_gates) == set(duck_direct)
+    for k in duck_direct:
+        assert np.array_equal(duck_with_gates[k], duck_direct[k])
+
+    # duck_envelopes antaa täsmälleen saman tuloksen
+    actual = envelopes.duck_envelopes(grid, settings, 0.0)
+    assert actual == expected
+
+
+def test_duck_envelopes_computes_gates_once(monkeypatch):
+    """Optimoinnin vartija: portit lasketaan tasan kerran per kutsu.
+
+    Kahdentunut _gates-kutsu jäisi muista testeistä kiinni vasta
+    suorituskyvystä, ei tuloksesta, joten lasketaan kutsut suoraan.
+    """
+    from speechmix import masks
+
+    calls = 0
+    real_gates = masks._gates
+
+    def counting_gates(grid, settings):
+        nonlocal calls
+        calls += 1
+        return real_gates(grid, settings)
+
+    # duck_envelopes käyttää omaa tuontiaan, maskit moduulinsa globaalia.
+    monkeypatch.setattr(masks, "_gates", counting_gates)
+    monkeypatch.setattr(envelopes, "_gates", counting_gates, raising=False)
+
+    grid, settings = _turn_taking(), _Settings()
+    envelopes.duck_envelopes(grid, settings, 0.0)
+
+    assert calls == 1
