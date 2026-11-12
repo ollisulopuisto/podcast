@@ -1,0 +1,17 @@
+name: Entitlement guard tests
+on:
+  pull_request:
+    paths:
+      - 'scripts/ci/verify_entitlements.py'
+      - 'scripts/ci/test_verify_entitlements.py'
+      - '.github/workflows/entitlement-guard.yml'
+permissions:
+  contents: read
+jobs:
+  guard-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests for the entitlement guard
+        run: python3 scripts/ci/test_verify_entitlements.py -v

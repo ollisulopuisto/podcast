@@ -184,6 +184,8 @@ jobs:
           echo "ffmpeg:   $(file -b bin/ffmpeg)"
           codesign --verify --deep --strict "dist/Podcast Magic.app"
           echo "allekirjoitus kelpaa"
+          python3 "$GITHUB_WORKSPACE/scripts/ci/test_verify_entitlements.py"
+          python3 "$GITHUB_WORKSPACE/scripts/ci/verify_entitlements.py" "dist/Podcast Magic.app"
 
       # Alusta ja arkkitehtuuri nimeen: Releaseen tulee kolme pakettia, ja
       # väli nimessä ei kestä latauslinkkiä.
