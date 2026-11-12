@@ -2105,9 +2105,9 @@ def create_app(state: AppState) -> FastAPI:
             try:
                 window = float(window)
             except (TypeError, ValueError):
-                raise HTTPException(400, "Invalid sync window.") from None
+                raise HTTPException(400, t("media.invalid_sync_window")) from None
             if window <= 0:
-                raise HTTPException(400, "Invalid sync window.")
+                raise HTTPException(400, t("media.invalid_sync_window"))
         try:
             sources = media_import.inspect_media(paths)
         except media_import.MediaImportError as exc:
@@ -2160,16 +2160,16 @@ def create_app(state: AppState) -> FastAPI:
         if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
             raise HTTPException(400, "Choose media files first.")
         if not isinstance(shifts, dict):
-            raise HTTPException(400, "Run the sync estimate first.")
+            raise HTTPException(400, t("media.needs_estimate"))
         if kind not in ("all", "speaker"):
-            raise HTTPException(400, "Invalid preview kind.")
+            raise HTTPException(400, t("media.invalid_preview_kind"))
         # Tyypit ennen normalisointia: JSON-kenttä voi olla muukin kuin
         # merkkijono, eikä expanduser saa kaatua 500:ksi vaan vastata 400
         # kuten ennenkin. «all»-esikatselussa targetia ei käytetä lainkaan.
         if not isinstance(reference, str):
-            raise HTTPException(400, "Choose a camera with reference audio.")
+            raise HTTPException(400, t("media.choose_reference"))
         if kind == "speaker" and not isinstance(target, str):
-            raise HTTPException(400, "Choose which track to preview.")
+            raise HTTPException(400, t("media.choose_track"))
         # Polut normalisoidaan kuten inspect_mediassa: selain voi pitää
         # alkuperäiset (suhteelliset) polut, ja vertailun onnistuminen ei
         # saa riippua siitä kumpaan muotoon ne kirjoitettiin.
@@ -2180,7 +2180,7 @@ def create_app(state: AppState) -> FastAPI:
         shifts = {os.path.abspath(os.path.expanduser(path)): value
                   for path, value in shifts.items()}
         if kind == "speaker" and target not in paths:
-            raise HTTPException(400, "Choose which track to preview.")
+            raise HTTPException(400, t("media.choose_track"))
         with state.lock:
             known_paths = set(state.media_paths)
         if not set(paths) <= known_paths:
@@ -2193,7 +2193,7 @@ def create_app(state: AppState) -> FastAPI:
         except media_import.MediaImportError as exc:
             raise HTTPException(400, str(exc)) from exc
         if reference not in {src.path for src in sources if src.has_video and src.has_audio}:
-            raise HTTPException(400, "Choose a camera with reference audio.")
+            raise HTTPException(400, t("media.choose_reference"))
         try:
             envelopes = {
                 src.path: envelope_for(src.path, cache_dir=cache_dir())
@@ -2219,11 +2219,19 @@ def create_app(state: AppState) -> FastAPI:
             reference,
             *[src.path for src in sources if src.path != reference and src.has_audio],
         ]
+        # Aikaleimoja varten statataan vain inspect-vaiheessa tarkistetut
+        # polut, ja arvo haetaan palvelimen tallentamasta joukosta eikä
+        # pyynnön merkkijonoja käytetä polkuna sellaisenaan (CodeQL).
+        with state.lock:
+            checked_paths = {path: path for path in state.media_paths}
         try:
-            stamps = {
-                path: [os.stat(path).st_size, os.stat(path).st_mtime_ns]
-                for path in ordered_paths
-            }
+            stamps = {}
+            for path in ordered_paths:
+                checked = checked_paths.get(path)
+                if checked is None:
+                    raise HTTPException(400, t("media.inspect_first"))
+                info = os.stat(checked)
+                stamps[path] = [info.st_size, info.st_mtime_ns]
         except OSError as exc:
             raise HTTPException(400, t("media.not_readable", error=exc)) from exc
         key = media_import.preview_cache_key(
@@ -2233,7 +2241,7 @@ def create_app(state: AppState) -> FastAPI:
         # Avain on sha1-tiiviste, mutta CodeQL:n polkuinjektiosuojaus
         # kirjoitetaan suoraksi kuten #212:ssä: ei ylöspäin osoittavia osia.
         if ".." in key.replace("\\", "/").split("/"):
-            raise HTTPException(500, "Invalid preview key.")
+            raise HTTPException(500, t("media.invalid_preview_key"))
         out_dir = os.path.join(cache_dir(), "esikatselu")
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{key}.mp4")
@@ -2243,7 +2251,7 @@ def create_app(state: AppState) -> FastAPI:
                     ordered_paths, reference, shift_map, start, duration, out_path,
                 )
             except Exception as exc:
-                raise HTTPException(500, f"Preview render failed: {exc}") from exc
+                raise HTTPException(500, t("media.preview_failed", error=exc)) from exc
         with state.lock:
             state.media_preview_keys.add(key)
         return {
@@ -2256,18 +2264,21 @@ def create_app(state: AppState) -> FastAPI:
     def media_preview_file(name: str):
         """Palauttaa rendatun esikatselun välimuistista."""
         if not re.fullmatch(r"[0-9a-f]{40}\.mp4", name):
-            raise HTTPException(400, "Invalid preview name.")
-        # Sama suoraksi kirjoitettu suojaus kuin #212:ssä: regex jo rajaa
-        # nimen, mutta tarkistus tekee polun turvallisuudesta näkyvän.
-        if ".." in name.replace("\\", "/").split("/"):
-            raise HTTPException(400, "Invalid preview name.")
+            raise HTTPException(400, t("media.invalid_preview_name"))
         with state.lock:
             allowed = name[:-4] in state.media_preview_keys
         if not allowed:
-            raise HTTPException(404, "Preview not found.")
-        out_path = os.path.join(cache_dir(), "esikatselu", name)
+            raise HTTPException(404, t("media.preview_not_found"))
+        # CodeQL-näkyvä rakennustarkistus: nimi on jo regex-rajattu ja
+        # rekisterissä, mutta todellinen polku varmistetaan vielä pysyväksi
+        # välimuistihakemiston sisällä (realpath + vertailu kuten #212:ssä).
+        out_dir = os.path.join(cache_dir(), "esikatselu")
+        real_dir = os.path.realpath(out_dir)
+        out_path = os.path.realpath(os.path.join(real_dir, name))
+        if os.path.dirname(out_path) != real_dir:
+            raise HTTPException(400, t("media.invalid_preview_name"))
         if not os.path.exists(out_path):
-            raise HTTPException(404, "Preview not found.")
+            raise HTTPException(404, t("media.preview_not_found"))
         return FileResponse(out_path, media_type="video/mp4")
 
     @app.post("/api/media/import")

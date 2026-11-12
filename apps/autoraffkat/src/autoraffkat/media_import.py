@@ -454,19 +454,19 @@ def pick_preview_spans(
     if not presence.any():
         center = max(0.0, (ref_len * hop_seconds - all_seconds) / 2)
         spans["all"] = center
-        spans["per_speaker"] = {t["path"]: center for t in tracks}
-        return spans
+    else:
+        stacked = numpy.minimum.reduce([ref_mask, *shifted.values()])
+        cum = numpy.cumsum(stacked)
+        _, start = _best_window(cum, ref_len, all_width)
+        spans["all"] = start * hop_seconds
 
-    stacked = numpy.minimum.reduce([ref_mask, *shifted.values()])
-    cum = numpy.cumsum(stacked)
-    _, start = _best_window(cum, ref_len, all_width)
-    spans["all"] = start * hop_seconds
-
+    # Kaiutinikkunat lasketaan aina kunkin raidan omasta maskista, myös
+    # kun yhteistä hetkeä ei ole: muuten yksin puhuva raita esikatseltaisiin
+    # viitteen puolivälistä eikä omalta aktiiviselta kohdaltaan.
     per_speaker = {}
-    other_sum = ref_mask
     for path, mask in shifted.items():
         own = mask
-        others = other_sum + sum(m for p, m in shifted.items() if p != path)
+        others = ref_mask + sum(m for p, m in shifted.items() if p != path)
         # Pieni ylipaino omalle aktiivisuudelle: tasatilanteessa valitaan
         # kohta, jossa raita edes puhuu, ei täysi hiljaisuus.
         score = own * 1.01 - numpy.minimum(others, 1.0)
@@ -490,8 +490,10 @@ def render_preview_clip(
     """Rendaa yhden esikatselupätkän: kaikki raadat samaan videoon viiteaikana.
 
     ``shifts`` on polku -> sekuntiviive (viiteaika = raidan aika + viive).
-    Jokainen raita leikataan kohdasta start - shift; negatiivinen loppuosa
-    (raita alkaa myöhemmin) peitetään ffmpeg:n adelay/alla olevala -it -offsetilla.
+    Jokainen raita leikataan kohdasta start - shift; jos raita alkaa vasta
+    esikatseluikkunan jälkeen (shift > start), ääntä viivästetään adelaylla
+    ja kuvaa tpad-pehmityksellä yhtä paljon, jotta kamera ei näy ennen
+    alkuaan.
     """
     import subprocess
 
@@ -507,7 +509,8 @@ def render_preview_clip(
     for i, path in enumerate(ordered):
         shift = float(shifts.get(path, 0.0))
         seek = max(0.0, start_seconds - shift)
-        delay_ms = int(round(max(0.0, shift - start_seconds) * 1000))
+        delay_s = max(0.0, shift - start_seconds)
+        delay_ms = int(round(delay_s * 1000))
         inputs += ["-ss", f"{seek:.3f}", "-t", f"{duration_seconds:.3f}", "-i", path]
         filters.append(f"[{i}:a]aresample=48000,adelay={delay_ms}:all=1[a{i}]")
         mix_inputs.append(f"[a{i}]")
@@ -516,11 +519,18 @@ def render_preview_clip(
         except Exception:
             has_video = False
         if has_video:
+            # Myöhemmin alkavan kameran kuva viivästetään kuten ääni:
+            # tpad lisää tumman alkupätkän, jotta kamera ei näy ennen
+            # aineistossa todellista alkuaan.
+            vpad = (
+                f"tpad=start_mode=add:start_duration={delay_s:.3f}:color=0x202020,"
+                if delay_s > 0 else ""
+            )
             # Sarakkeiden pitää olla samankokoisia tai hstack hylkää graafin:
             # 16:9-kamera skaalautuisi 320x180:ksi kun ääniraidan paikkake
             # on 320x240. Sovita ja pehmennä (pad) yhteiseen ruutuun.
             filters.append(
-                f"[{i}:v]scale=320:240:force_original_aspect_ratio=decrease"
+                f"[{i}:v]{vpad}scale=320:240:force_original_aspect_ratio=decrease"
                 f":force_divisible_by=2,pad=320:240:(320-iw)/2:(240-ih)/2,"
                 f"setsar=1[v{i}]"
             )

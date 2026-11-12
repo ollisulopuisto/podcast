@@ -443,3 +443,49 @@ def test_preview_cache_key_covers_media_identity_and_layout(tmp_path):
 
     assert base != replaced
     assert base != swapped_reference
+
+
+def test_pick_preview_spans_disjoint_activity_previews_each_solo():
+    # Mikki puhuu vain 15-20 s ja viite vain 2-8 s: yhteistä hetkeä ei ole.
+    # Sooloesikatselun pitää osua mikin omaan aktiivisuuteen, ei viitteen
+    # puoliväliin. (Devin-löydös #222.)
+    n = 1000  # 20 s
+    reference = np.full(n, 0.01)
+    reference[100:400] = 1.0
+    mic = np.full(n, 0.01)
+    mic[750:] = 1.0
+    envelopes = {"camera.mp4": reference, "Peter.wav": mic}
+    tracks = [{"path": "Peter.wav", "shift_seconds": 0.0}]
+
+    spans = media_import.pick_preview_spans(envelopes, "camera.mp4", tracks)
+
+    assert spans["all"] == pytest.approx(5.0)
+    assert spans["per_speaker"]["Peter.wav"] == pytest.approx(15.0, abs=0.5)
+
+
+def test_render_preview_clip_delays_video_when_shift_exceeds_start(tmp_path, monkeypatch):
+    # Toisen kameran siirto (+12 s) ylittää esikatselun alun (10 s): ääni
+    # viivästetään adelaylla, ja kuvan pitää viivästyä yhtä paljon, muuten
+    # kamera näkyy ennen kuin se aineistossa alkaa. (Devin-löydös #222.)
+    reference = tmp_path / "ref.mp4"
+    reference.write_bytes(b"x")
+    camera = tmp_path / "cam2.mp4"
+    camera.write_bytes(b"x")
+    monkeypatch.setattr(
+        media_import.probe, "info",
+        lambda path: {"video": True} if str(path).endswith(".mp4") else {"video": False},
+    )
+    captured = {}
+
+    def fake_runner(cmd, **kw):
+        captured["cmd"] = list(cmd)
+
+    media_import.render_preview_clip(
+        [str(reference), str(camera)], str(reference),
+        {str(reference): 0.0, str(camera): 12.0}, 10.0, 5.0,
+        str(tmp_path / "out.mp4"), runner=fake_runner,
+    )
+
+    filters = captured["cmd"][captured["cmd"].index("-filter_complex") + 1]
+    assert "adelay=2000" in filters
+    assert "tpad=start_mode=add:start_duration=2.000" in filters

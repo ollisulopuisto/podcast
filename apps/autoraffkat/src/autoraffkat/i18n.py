@@ -43,6 +43,42 @@ CATALOG: dict[str, dict[str, str]] = {
         "fi": "Mediatiedostoa ei voi lukea: {error}",
         "en": "Media file not readable: {error}",
     },
+    "media.needs_estimate": {
+        "fi": "Aja synkkausarvio ensin.",
+        "en": "Run the sync estimate first.",
+    },
+    "media.invalid_sync_window": {
+        "fi": "Virheellinen synkkausikkuna.",
+        "en": "Invalid sync window.",
+    },
+    "media.invalid_preview_kind": {
+        "fi": "Tuntematon esikatselun laji.",
+        "en": "Invalid preview kind.",
+    },
+    "media.choose_track": {
+        "fi": "Valitse esikatseltava raita.",
+        "en": "Choose which track to preview.",
+    },
+    "media.choose_reference": {
+        "fi": "Valitse kamera, jossa on viiteääni.",
+        "en": "Choose a camera with reference audio.",
+    },
+    "media.invalid_preview_key": {
+        "fi": "Virheellinen esikatseluavain.",
+        "en": "Invalid preview key.",
+    },
+    "media.preview_failed": {
+        "fi": "Esikatselun renderöinti epäonnistui: {error}",
+        "en": "Preview render failed: {error}",
+    },
+    "media.invalid_preview_name": {
+        "fi": "Virheellinen esikatselun nimi.",
+        "en": "Invalid preview name.",
+    },
+    "media.preview_not_found": {
+        "fi": "Esikatselua ei löydy.",
+        "en": "Preview not found.",
+    },
     "read.no_project": {
         "fi": "XML:stä ei löytynyt projektia eikä synkronoitua klippiä. "
         "Vie Final Cutista joko synkkaklippi tai projekti.",

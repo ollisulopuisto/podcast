@@ -385,3 +385,25 @@ def test_media_preview_links_follow_the_selection(tmp_path, monkeypatch):
     # Sama valinta rendataan uudelleen: sama välimuistitiedosto kelpaa.
     assert render().json()["url"] == url
     assert client.get(url).status_code == 200
+
+
+def test_media_preview_and_estimate_errors_are_translated(tmp_path, monkeypatch):
+    # Käyttäjälle näkyvät virheet käyvät t():n kautta: oletuskielellä (fi)
+    # vastaus ei saa olla englanninkielinen literaali. (Devin-löydös #222.)
+    camera, microphone = _preview_harness(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+    base = {"paths": [str(camera), str(microphone)], "reference": str(camera)}
+
+    response = client.post(
+        "/api/media/preview", json={**base, "shifts": {}, "kind": "sideways"}
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Tuntematon esikatselun laji."
+
+    response = client.post("/api/media/estimate", json={**base, "window": "sideways"})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Virheellinen synkkausikkuna."
+
+    response = client.get("/api/media/preview/not-a-hash.mp4")
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Virheellinen esikatselun nimi."
