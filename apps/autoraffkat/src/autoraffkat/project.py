@@ -218,6 +218,10 @@ def next_output_path(xml_path: str, tag: str = "") -> str:
     Numero juoksee tiivisteen sisällä: eri säätimillä tehty leikkaus on eri
     tiedosto eikä saman tiedoston seuraava versio.
     """
+    if _has_upward_component(xml_path):
+        raise ValueError(
+            f"polku ei saa sisaltaa hakemistoon ylospain suuntaavaa osaa: {xml_path!r}"
+        )
     base = _output_base(xml_path, tag)
     if not os.path.exists(f"{base}.fcpxml"):
         return f"{base}.fcpxml"
