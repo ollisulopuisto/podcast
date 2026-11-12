@@ -66,9 +66,6 @@ ignore = [
     # Rivin pituus hoidetaan line-lengthillä; E501 kaksoiskappaleena vain
     # meluaisi kommenteista joissa on mittauslukuja.
     "E501",
-    # Silmukan muuttuja suljetussa funktiossa on tässä koodissa tahallista
-    # (esikatselun piirto, säätimien käsittelijät) ja aina heti kutsuttua.
-    "B023",
     # Koodi ja kommentit ovat suomea ja käyttävät typografisia merkkejä
     # tarkoituksella: «lainausmerkit» ja miinusmerkki mittausluvuissa.
     # Sekaannusta ei ole, koska nämä eivät ole tunnisteita.

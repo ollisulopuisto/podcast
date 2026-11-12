@@ -2162,7 +2162,7 @@ def build_multicam_fcpxml(
                     else next((x for x in mine if x in heard), mine[0]))
             heard.setdefault(pick, []).append(speaker)
 
-        def silent(angle: str, playing: list[str]) -> list[str]:
+        def silent(angle: str, playing: list[str], present=present) -> list[str]:
             return [x for x in present.get(angle, []) if x not in playing]
 
         video_speakers = heard.pop(video_angle, []) if video_angle else []

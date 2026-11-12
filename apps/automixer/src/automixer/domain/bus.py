@@ -195,7 +195,7 @@ class Bus:
         total_procs = len(self.processors)
         for i, p in enumerate(self.processors):
 
-            def p_cb(p_val):
+            def p_cb(p_val, i=i, p=p):
                 if progress_callback:
                     # Map processor internal progress (0-1) to bus progress (0.5-1.0)
                     bus_p = 0.5 + 0.5 * ((i + p_val) / total_procs)

@@ -220,7 +220,7 @@ def test_long_segments_fuzz_monotonic_rises():
     """Varmistaa että eripituiset ja -jyrkät nousut muodostavat kelvolliset luiskat."""
     for length in (4.0, 8.0, 15.0):
         for rise_db in (35.0, 50.0, 70.0):
-            pts = _points(lambda t: -80.0 + rise_db * (t / length) if t <= length else -80.0 + rise_db,
+            pts = _points(lambda t, rise_db=rise_db, length=length: -80.0 + rise_db * (t / length) if t <= length else -80.0 + rise_db,
                           length=length + 2.0)
             segs = fades.long_segments(pts)
             # Yli 30 dB nousu saa vähintään kaksi luiskaa
