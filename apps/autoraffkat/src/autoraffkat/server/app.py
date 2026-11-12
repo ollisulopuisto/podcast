@@ -2230,6 +2230,10 @@ def create_app(state: AppState) -> FastAPI:
             ordered_paths, reference, shift_map, kind, target_key,
             start, duration, stamps=stamps,
         )
+        # Avain on sha1-tiiviste, mutta CodeQL:n polkuinjektiosuojaus
+        # kirjoitetaan suoraksi kuten #212:ssä: ei ylöspäin osoittavia osia.
+        if ".." in key.replace("\\", "/").split("/"):
+            raise HTTPException(500, "Invalid preview key.")
         out_dir = os.path.join(cache_dir(), "esikatselu")
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{key}.mp4")
@@ -2252,6 +2256,10 @@ def create_app(state: AppState) -> FastAPI:
     def media_preview_file(name: str):
         """Palauttaa rendatun esikatselun välimuistista."""
         if not re.fullmatch(r"[0-9a-f]{40}\.mp4", name):
+            raise HTTPException(400, "Invalid preview name.")
+        # Sama suoraksi kirjoitettu suojaus kuin #212:ssä: regex jo rajaa
+        # nimen, mutta tarkistus tekee polun turvallisuudesta näkyvän.
+        if ".." in name.replace("\\", "/").split("/"):
             raise HTTPException(400, "Invalid preview name.")
         with state.lock:
             allowed = name[:-4] in state.media_preview_keys
