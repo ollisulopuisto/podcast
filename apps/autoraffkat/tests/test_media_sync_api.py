@@ -1,5 +1,7 @@
 """Mediasynkan API pitää pitkän mittauksen taustatyönä ja näyttää tilan."""
 
+import os
+
 from fastapi.testclient import TestClient
 
 from autoraffkat import media_import
@@ -41,7 +43,7 @@ def test_media_inspect_returns_sync_reference_candidates(tmp_path, monkeypatch):
 def test_media_estimate_status_reports_completed_review(tmp_path, monkeypatch):
     camera, microphone = _media(tmp_path, monkeypatch)
 
-    def estimate(paths, *, reference_path, progress):
+    def estimate(paths, *, reference_path, progress, window="auto"):
         progress("camera", 0.5)
         progress("Peter", 1.0)
         return {
@@ -99,3 +101,309 @@ def test_media_picker_returns_multiple_paths(tmp_path, monkeypatch):
     response = client.post("/api/pick-media")
 
     assert response.json() == {"paths": selected}
+
+
+def test_media_estimate_passes_window_through(tmp_path, monkeypatch):
+    camera, microphone = _media(tmp_path, monkeypatch)
+    seen = {}
+
+    def estimate(paths, *, reference_path, progress, window="auto"):
+        seen["window"] = window
+        return {"reference": reference_path, "tracks": []}
+
+    monkeypatch.setattr(server_app.media_import, "estimate_sync", estimate)
+
+    class ImmediateThread:
+        def __init__(self, *, target, daemon, name):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(server_app.threading, "Thread", ImmediateThread)
+    client = TestClient(create_app(AppState(xml_path="")))
+
+    response = client.post(
+        "/api/media/estimate",
+        json={"paths": [str(camera), str(microphone)],
+              "reference": str(camera), "window": "1800"},
+    )
+
+    assert response.status_code == 202
+    assert seen["window"] == 1800.0
+
+
+def test_media_estimate_rejects_invalid_window(tmp_path, monkeypatch):
+    camera, microphone = _media(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+
+    response = client.post(
+        "/api/media/estimate",
+        json={"paths": [str(camera), str(microphone)],
+              "reference": str(camera), "window": "sideways"},
+    )
+
+    assert response.status_code == 400
+
+
+def _preview_harness(tmp_path, monkeypatch):
+    """Valeverhot ja -renderöinti: API-testi ei koske ffmpeg:iin."""
+    import numpy as np
+
+    camera, microphone = _media(tmp_path, monkeypatch)
+    envelopes = {
+        str(camera): np.random.default_rng(3).normal(size=1000),
+        str(microphone): np.random.default_rng(4).normal(size=1000),
+    }
+    monkeypatch.setattr(server_app, "envelope_for", lambda path, cache_dir=None: envelopes[path])
+    monkeypatch.setattr(server_app, "cache_dir", lambda: str(tmp_path / "cache"))
+
+    def fake_render(paths, reference_path, shifts, start, duration, output_path):
+        with open(output_path, "wb") as handle:
+            handle.write(b"fake mp4")
+        return output_path
+
+    monkeypatch.setattr(server_app.media_import, "render_preview_clip", fake_render)
+    return camera, microphone
+
+
+def test_media_preview_renders_and_serves_clip(tmp_path, monkeypatch):
+    camera, microphone = _preview_harness(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+    client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
+
+    response = client.post(
+        "/api/media/preview",
+        json={
+            "paths": [str(camera), str(microphone)],
+            "reference": str(camera),
+            "shifts": {str(microphone): 1.25},
+            "kind": "all",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["url"].startswith("/api/media/preview/")
+    assert body["duration"] == media_import.PREVIEW_ALL_SECONDS
+
+    clip = client.get(body["url"])
+    assert clip.status_code == 200
+    assert clip.headers["content-type"] == "video/mp4"
+    assert clip.content == b"fake mp4"
+
+
+def test_media_preview_validates_request(tmp_path, monkeypatch):
+    camera, microphone = _preview_harness(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+    base = {
+        "paths": [str(camera), str(microphone)],
+        "reference": str(camera),
+        "shifts": {str(microphone): 0.0},
+    }
+
+    assert client.post("/api/media/preview", json={**base, "kind": "sideways"}).status_code == 400
+    assert client.post("/api/media/preview", json={**base, "kind": "speaker"}).status_code == 400
+    assert client.post(
+        "/api/media/preview", json={"paths": [str(camera)], "reference": str(camera)}
+    ).status_code == 400
+
+
+def test_media_preview_speaker_uses_shorter_span(tmp_path, monkeypatch):
+    camera, microphone = _preview_harness(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+    client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
+
+    response = client.post(
+        "/api/media/preview",
+        json={
+            "paths": [str(camera), str(microphone)],
+            "reference": str(camera),
+            "shifts": {str(microphone): 0.0},
+            "kind": "speaker",
+            "target": str(microphone),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["duration"] == media_import.PREVIEW_SPEAKER_SECONDS
+
+
+def test_media_preview_file_guards_name(tmp_path, monkeypatch):
+    client = TestClient(create_app(AppState(xml_path="")))
+
+    assert client.get("/api/media/preview/../etc/passwd").status_code in (400, 404)
+    assert client.get("/api/media/preview/not-a-hash.mp4").status_code == 400
+    assert client.get(
+        "/api/media/preview/" + "0" * 40 + ".mp4"
+    ).status_code == 404
+
+
+def test_media_preview_requires_inspected_paths(tmp_path, monkeypatch):
+    camera, microphone = _preview_harness(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+    payload = {
+        "paths": [str(camera), str(microphone)],
+        "reference": str(camera),
+        "shifts": {str(microphone): 0.0},
+        "kind": "all",
+    }
+
+    # Ilman inspect-kutsua polut ovat tuntemattomia: ei rendata.
+    assert client.post("/api/media/preview", json=payload).status_code == 400
+
+    client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
+    assert client.post("/api/media/preview", json=payload).status_code == 200
+
+def test_media_preview_accepts_relative_paths(tmp_path, monkeypatch):
+    """Selain voi pitää alkuperäiset suhteelliset polut: ne normalisoidaan
+    kuten inspect_mediassa, joten kelvollinen valinta ei kärähdä 400:een."""
+    camera, microphone = _preview_harness(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+    client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
+
+    monkeypatch.chdir(tmp_path)
+    response = client.post(
+        "/api/media/preview",
+        json={
+            "paths": ["camera.mp4", "Peter.wav"],
+            "reference": "camera.mp4",
+            "shifts": {str(microphone): 0.0},
+            "kind": "all",
+        },
+    )
+    assert response.status_code == 200, response.json()
+
+
+def test_media_preview_errors_are_translated(tmp_path, monkeypatch):
+    """Esikatselun virheet tulevat käännösluettelosta: suomeksi kun suomi
+    on valittuna, englanniksi muuten."""
+    from autoraffkat import i18n
+
+    camera, microphone = _preview_harness(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+
+    token = i18n._current.set("fi")
+    try:
+        response = client.post(
+            "/api/media/preview",
+            json={
+                "paths": [str(camera), str(microphone)],
+                "reference": str(camera),
+                "shifts": {},
+                "kind": "all",
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == i18n.CATALOG["media.inspect_first"]["fi"]
+
+        # Lukemisvirhe inspectin jälkeen (tiedosto katoaa tai oikeudet
+        # menevät ennen statia): virhekin on suomeksi. inspect ja tilastot
+        # lavastetaan, jotta päästään juuri tähän haaraan.
+        from types import SimpleNamespace
+
+        client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
+        monkeypatch.setattr(
+            server_app.media_import, "inspect_media",
+            lambda paths: [
+                SimpleNamespace(path=str(camera), has_video=True, has_audio=True),
+                SimpleNamespace(path=str(microphone), has_video=False, has_audio=True),
+            ],
+        )
+        real_stat = os.stat
+
+        def broken_stat(path, *args, **kwargs):
+            if str(path) == str(microphone):
+                raise OSError("poistettu")
+            return real_stat(path, *args, **kwargs)
+
+        monkeypatch.setattr(os, "stat", broken_stat)
+        response = client.post(
+            "/api/media/preview",
+            json={
+                "paths": [str(camera), str(microphone)],
+                "reference": str(camera),
+                "shifts": {},
+                "kind": "all",
+            },
+        )
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert detail.startswith("Mediatiedostoa ei voi lukea"), detail
+    finally:
+        i18n._current.reset(token)
+
+def test_media_preview_rejects_non_string_fields_with_400(tmp_path, monkeypatch):
+    """JSON-kenttä voi olla numero: normalisointi ei saa kaatua 500:ksi
+    vaan vastaus on 400 kuten ennen, ja «all»-esikatselu jättää targetin
+    huomiotta kuten ennenkin."""
+    camera, microphone = _preview_harness(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+    client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
+    base = {
+        "paths": [str(camera), str(microphone)],
+        "reference": str(camera),
+        "shifts": {},
+        "kind": "all",
+    }
+
+    response = client.post("/api/media/preview", json={**base, "reference": 123})
+    assert response.status_code == 400  # ei 500
+
+    response = client.post("/api/media/preview", json={**base, "target": 123})
+    assert response.status_code == 200, response.json()  # target jätetään huomiotta
+
+    response = client.post(
+        "/api/media/preview", json={**base, "kind": "speaker", "target": 123})
+    assert response.status_code == 400
+
+def test_media_preview_links_follow_the_selection(tmp_path, monkeypatch):
+    """Esikatselulinkki elää valinnan mukana: uusi inspect mitätöi vanhat
+    linkit (404), ja uudelleenrendaus samalla valinnalla toimii jälleen."""
+    camera, microphone = _preview_harness(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+
+    def render():
+        return client.post(
+            "/api/media/preview",
+            json={
+                "paths": [str(camera), str(microphone)],
+                "reference": str(camera),
+                "shifts": {},
+                "kind": "all",
+            },
+        )
+
+    client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
+    url = render().json()["url"]
+    assert client.get(url).status_code == 200
+
+    # Valinta tehdään uudestaan: vanha linkki ei enää palauta mitään.
+    client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
+    assert client.get(url).status_code == 404
+
+    # Sama valinta rendataan uudelleen: sama välimuistitiedosto kelpaa.
+    assert render().json()["url"] == url
+    assert client.get(url).status_code == 200
+
+
+def test_media_preview_and_estimate_errors_are_translated(tmp_path, monkeypatch):
+    # Käyttäjälle näkyvät virheet käyvät t():n kautta: oletuskielellä (fi)
+    # vastaus ei saa olla englanninkielinen literaali. (Devin-löydös #222.)
+    camera, microphone = _preview_harness(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+    base = {"paths": [str(camera), str(microphone)], "reference": str(camera)}
+
+    response = client.post(
+        "/api/media/preview", json={**base, "shifts": {}, "kind": "sideways"}
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Tuntematon esikatselun laji."
+
+    response = client.post("/api/media/estimate", json={**base, "window": "sideways"})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Virheellinen synkkausikkuna."
+
+    response = client.get("/api/media/preview/not-a-hash.mp4")
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Virheellinen esikatselun nimi."

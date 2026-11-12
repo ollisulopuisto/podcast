@@ -190,8 +190,10 @@ ylikirjoituksesta.
 
 ### Media sync: wider search, listen-before-import, drift (phase 2)
 
-From the 2026-11-12 spec and Olli's decisions. Phase 1 awaits his "build
-it"; the vectorization groundwork is already done (`perf/sync-vectorize`).
+From the 2026-11-12 spec and Olli's decisions. **Phase 1 is implemented
+on `feature/sync-window-preview`** (confidence-gated auto-expansion and
+listen-before-import, on top of the vectorized scorer merged in #219).
+Phase 2 (drift) is not built.
 
 **Phase 1 — search window and preview by listening.**
 - Replace the fixed ±5 min search with confidence-gated auto-expansion

@@ -22,6 +22,13 @@ from .timeline import ZERO
 
 MAX_SYNC_SHIFT_S = 300.0
 MIN_SYNC_OVERLAP_S = 5.0
+# Tämän alle jäävä korrelaatio on epäilyttävä: "auto"-ikkuna laajentaa
+# haun koko aineistoon. BBC:n audio-offset-finder tekee saman luottamus-
+# rajalla kiinteän ikkunan sijaan. Haku on vektorointi jälkeen halpaa,
+# joten ikkuna on tarkkuuspriori, ei suorituskykykysymys.
+SYNC_AUTO_THRESHOLD = 0.4
+PREVIEW_ALL_SECONDS = 10.0
+PREVIEW_SPEAKER_SECONDS = 5.0
 
 
 class MediaImportError(ValueError):
@@ -90,18 +97,29 @@ def inspect_media(paths: list[str]) -> list[MediaSource]:
     return sources
 
 
+def _full_window_seconds(reference: "MediaSource", source: "MediaSource") -> float:
+    """Koko aineiston haku: viive voi olla enintään pitemmän tiedoston pituus."""
+    return float(max(reference.duration, source.duration))
+
+
 def estimate_sync(
     paths: list[str],
     *,
     reference_path: str | None = None,
     envelope_loader=None,
     progress=None,
+    window: str | float = "auto",
 ) -> dict:
     """Mittaa erilliset mikrofonit valitun kameran ääneen nähden.
 
     Pisteytys näkyy käyttöliittymässä arviona, ei automaattisena hyväksyntänä.
     ``envelope_loader`` on testiraja; normaalisti verhokäyrä puretaan ffmpegillä
     ja säilötään sovelluksen omaan välimuistiin.
+
+    ``window`` on etsintäikkuna: ``"auto"`` (oletus) hakee ensin
+    ±MAX_SYNC_SHIFT_S ja laajentaa koko aineistoon jos osuman korrelaatio
+    jää alle SYNC_AUTO_THRESHOLDin, ``"full"`` hakee suoraan koko
+    aineistosta, ja lukuarvo on kiinteä ikkuna sekunteina.
     """
     sources = inspect_media(paths)
     references = [source for source in sources if source.has_video and source.has_audio]
@@ -153,18 +171,48 @@ def estimate_sync(
     for source in tracks_to_measure:
         try:
             source_envelope = envelopes[source.path]
+            full = _full_window_seconds(reference, source)
+            if window == "full":
+                max_shift = full
+            elif window == "auto":
+                max_shift = MAX_SYNC_SHIFT_S
+            else:
+                max_shift = float(window)
+                if max_shift <= 0:
+                    raise MediaImportError("Sync window must be positive.")
             estimate = estimate_offset(
                 reference_envelope,
                 source_envelope,
                 hop_seconds=HOP,
-                max_shift_seconds=MAX_SYNC_SHIFT_S,
+                max_shift_seconds=max_shift,
                 min_overlap_seconds=MIN_SYNC_OVERLAP_S,
             )
+            expanded = False
+            if window == "auto" and (
+                estimate is None or estimate.correlation < SYNC_AUTO_THRESHOLD
+            ) and full > max_shift:
+                retry = estimate_offset(
+                    reference_envelope,
+                    source_envelope,
+                    hop_seconds=HOP,
+                    max_shift_seconds=full,
+                    min_overlap_seconds=MIN_SYNC_OVERLAP_S,
+                )
+                # Laajennus korvaa vain aidosti paremman osuman: heikko
+                # osuma kapealla ikkunalla voi olla sattumaa, mutta vielä
+                # heikompi täydestä aineistosta ei ole parannus.
+                if retry is not None and (
+                    estimate is None or retry.correlation > estimate.correlation
+                ):
+                    estimate = retry
+                    expanded = True
+        except MediaImportError:
+            raise
         except Exception as exc:
             tracks.append(
                 {"path": source.path, "name": source.name,
                  "shift_seconds": None, "correlation": None,
-                 "error": str(exc)}
+                 "error": str(exc), "window_expanded": False}
             )
             continue
         tracks.append(
@@ -174,6 +222,7 @@ def estimate_sync(
                 "shift_seconds": estimate.shift_seconds if estimate else None,
                 "correlation": estimate.correlation if estimate else None,
                 "error": "" if estimate else "Not enough matching audio to estimate a shift.",
+                "window_expanded": expanded,
             }
         )
     return {"reference": reference.path, "tracks": tracks}
@@ -315,3 +364,230 @@ def write_source_project(
     with path.open("x", encoding="utf-8") as output:
         output.write("\n".join(lines) + "\n")
     return str(path)
+
+
+# --- Esikatselu (kuuntele synkkaus ennen tuontia) ---
+
+
+def _activity_mask(envelope) -> object:
+    """Ääniaktiivisuus verhokäyrästä: yli keskitason + puoli hajontaa.
+
+    Yksinkertainen energiakynnys riittää tähän: tarkoitus on vain löytää
+    kohta, jossa puhutaan, ei tarkkaa puhesegmentointia.
+    """
+    mean = envelope.mean()
+    std = envelope.std()
+    return envelope > (mean + 0.5 * std)
+
+
+def _best_window(cum, length: int, width: int):
+    """Leveän ikkunan paras sijainti summataulukosta; palauttaa (summa, alku).
+
+    Summataulukolla ei ole nolla-etuliitettä, joten ensimmäinen ikkuna on
+    pelkkä ``cum[width - 1]`` ja vasta sitä seuraavista vähennetään edellinen.
+    """
+    if length <= width:
+        return (float(cum[length - 1] if length else 0), 0)
+    sums = cum[width - 1:].copy()
+    sums[1:] -= cum[:-width]
+    index = int(sums.argmax())
+    return (float(sums[index]), index)
+
+
+def pick_preview_spans(
+    envelopes: dict,
+    reference_path: str,
+    tracks: list,
+    *,
+    hop_seconds: float = HOP,
+    all_seconds: float = PREVIEW_ALL_SECONDS,
+    speaker_seconds: float = PREVIEW_SPEAKER_SECONDS,
+) -> dict:
+    """Valitsee esikatselupätkät viiteaikajanalla.
+
+    ``tracks`` on estimate_sync:in track-rivit (path + shift_seconds).
+    Kaikki-puhuvat-pätkä valitaan niin, että mahdollisimman moni raita on
+    samaan aikaan aktiivinen; kaiutinraadalle valitaan kohta, jossa juuri
+    se raita on aktiivisempi kuin muut. Puutteellisen aineiston tapauksessa
+    otetaan paras saatavilla oleva hetki (fallback keskelle).
+    """
+    import numpy
+
+    spans: dict = {"all_seconds": all_seconds, "speaker_seconds": speaker_seconds}
+    reference_envelope = envelopes[reference_path]
+    ref_len = len(reference_envelope)
+    if ref_len == 0:
+        spans["all"] = 0.0
+        spans["per_speaker"] = {}
+        return spans
+
+    masks = {}
+    durations = {}
+    for path, envelope in envelopes.items():
+        masks[path] = numpy.asarray(_activity_mask(numpy.asarray(envelope)), dtype=numpy.float64)
+        durations[path] = len(envelope) * hop_seconds
+
+    def aligned_mask(path: str, shift: float) -> object:
+        """Raidan aktiviteettimaski viiteajan ruudukossa (raita + shift = viiteaika)."""
+        ref = masks[path]
+        offset = int(round(shift / hop_seconds))
+        aligned = numpy.zeros(ref_len, dtype=numpy.float64)
+        if offset >= 0:
+            src_end = min(len(ref), ref_len - offset)
+            aligned[offset:offset + src_end] = ref[:src_end]
+        else:
+            src_start = -offset
+            take = min(ref_len, len(ref) - src_start)
+            if take > 0:
+                aligned[:take] = ref[src_start:src_start + take]
+        return aligned
+
+    ref_mask = masks[reference_path]
+    shifted = {t["path"]: aligned_mask(t["path"], t["shift_seconds"]) for t in tracks}
+
+    all_width = max(1, int(round(all_seconds / hop_seconds)))
+    spk_width = max(1, int(round(speaker_seconds / hop_seconds)))
+
+    # Yhteinen hetki: vain kohdat joissa kaikki raadat ovat läsnä (maski > 0),
+    # ja niistä ikkuna jolla suurin samaan-aikainen aktiivisuus.
+    presence = numpy.minimum.reduce([ref_mask > 0, *[(m > 0) for m in shifted.values()]]) if shifted else ref_mask > 0
+    if not presence.any():
+        center = max(0.0, (ref_len * hop_seconds - all_seconds) / 2)
+        spans["all"] = center
+    else:
+        stacked = numpy.minimum.reduce([ref_mask, *shifted.values()])
+        cum = numpy.cumsum(stacked)
+        _, start = _best_window(cum, ref_len, all_width)
+        spans["all"] = start * hop_seconds
+
+    # Kaiutinikkunat lasketaan aina kunkin raidan omasta maskista, myös
+    # kun yhteistä hetkeä ei ole: muuten yksin puhuva raita esikatseltaisiin
+    # viitteen puolivälistä eikä omalta aktiiviselta kohdaltaan.
+    per_speaker = {}
+    for path, mask in shifted.items():
+        own = mask
+        others = ref_mask + sum(m for p, m in shifted.items() if p != path)
+        # Pieni ylipaino omalle aktiivisuudelle: tasatilanteessa valitaan
+        # kohta, jossa raita edes puhuu, ei täysi hiljaisuus.
+        score = own * 1.01 - numpy.minimum(others, 1.0)
+        cum = numpy.cumsum(score)
+        _, start = _best_window(cum, ref_len, spk_width)
+        per_speaker[path] = start * hop_seconds
+    spans["per_speaker"] = per_speaker
+    return spans
+
+
+def render_preview_clip(
+    paths: list,
+    reference_path: str,
+    shifts: dict,
+    start_seconds: float,
+    duration_seconds: float,
+    output_path: str,
+    *,
+    runner=None,
+) -> str:
+    """Rendaa yhden esikatselupätkän: kaikki raadat samaan videoon viiteaikana.
+
+    ``shifts`` on polku -> sekuntiviive (viiteaika = raidan aika + viive).
+    Jokainen raita leikataan kohdasta start - shift; jos raita alkaa vasta
+    esikatseluikkunan jälkeen (shift > start), ääntä viivästetään adelaylla
+    ja kuvaa tpad-pehmityksellä yhtä paljon, jotta kamera ei näy ennen
+    alkuaan.
+    """
+    import subprocess
+
+    if runner is None:
+        def runner(cmd, **kw):
+            return subprocess.run(cmd, check=True, capture_output=True, **kw)
+
+    ordered = [reference_path, *[p for p in paths if p != reference_path]]
+    inputs = []
+    filters = []
+    mix_inputs = []
+    vid_labels = []
+    for i, path in enumerate(ordered):
+        shift = float(shifts.get(path, 0.0))
+        seek = max(0.0, start_seconds - shift)
+        delay_s = max(0.0, shift - start_seconds)
+        delay_ms = int(round(delay_s * 1000))
+        inputs += ["-ss", f"{seek:.3f}", "-t", f"{duration_seconds:.3f}", "-i", path]
+        filters.append(f"[{i}:a]aresample=48000,adelay={delay_ms}:all=1[a{i}]")
+        mix_inputs.append(f"[a{i}]")
+        try:
+            has_video = bool(probe.info(path).get("video"))
+        except Exception:
+            has_video = False
+        if has_video:
+            # Myöhemmin alkavan kameran kuva viivästetään kuten ääni:
+            # tpad lisää tumman alkupätkän, jotta kamera ei näy ennen
+            # aineistossa todellista alkuaan.
+            vpad = (
+                f"tpad=start_mode=add:start_duration={delay_s:.3f}:color=0x202020,"
+                if delay_s > 0 else ""
+            )
+            # Sarakkeiden pitää olla samankokoisia tai hstack hylkää graafin:
+            # 16:9-kamera skaalautuisi 320x180:ksi kun ääniraidan paikkake
+            # on 320x240. Sovita ja pehmennä (pad) yhteiseen ruutuun.
+            filters.append(
+                f"[{i}:v]{vpad}scale=320:240:force_original_aspect_ratio=decrease"
+                f":force_divisible_by=2,pad=320:240:(320-iw)/2:(240-ih)/2,"
+                f"setsar=1[v{i}]"
+            )
+        else:
+            # Pelkkä ääniraita: piirrä tumma ruutu, jotta pinotussa kuvassa
+            # jokainen raita näkyy omassa sarakkeessaan.
+            filters.append(
+                f"color=c=0x202020:s=320x240:d={duration_seconds:.3f}[v{i}]"
+            )
+        vid_labels.append(f"[v{i}]")
+    n = len(mix_inputs)
+    filters.append(f"{''.join(mix_inputs)}amix=inputs={n}:normalize=0,alimiter[aout]")
+    filters.append(f"{''.join(vid_labels)}hstack=inputs={n}[vout]")
+
+    cmd = [
+        "ffmpeg", "-y", *inputs,
+        "-filter_complex", ";".join(filters),
+        "-map", "[vout]", "-map", "[aout]",
+        "-t", f"{duration_seconds:.3f}",
+        "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-movflags", "+faststart",
+        output_path,
+    ]
+    try:
+        runner(cmd)
+    except Exception:
+        # Laatikossa/libx264-puutteessa putoa mpeg4:ään; esikatselulle riittää.
+        fallback = [c if c != "libx264" else "mpeg4" for c in cmd]
+        runner(fallback)
+    return output_path
+
+
+def preview_cache_key(
+    ordered_paths: list,
+    reference_path: str,
+    shifts: dict,
+    kind: str,
+    target: str,
+    start: float,
+    duration: float,
+    *,
+    stamps: dict | None = None,
+) -> str:
+    """Vakaa avain esikatseluvälimuistiin parametreista.
+
+    Järjestys ja viite kuuluvat avaimeen, koska renderöinti asettaa viitteen
+    ensimmäiseksi sarakkeeksi. ``stamps`` (polku -> [koko, mtime_ns])
+    erottaa saman polun alle korvatun tiedoston, kuten verhovälimuistissakin.
+    """
+    import hashlib
+    import json
+    payload = json.dumps(
+        {"paths": list(ordered_paths), "reference": reference_path,
+         "shifts": {k: round(float(v), 3) for k, v in sorted(shifts.items())},
+         "kind": kind, "target": target, "start": round(start, 2),
+         "duration": round(duration, 2),
+         "stamps": {k: stamps.get(k) for k in ordered_paths} if stamps else None},
+        sort_keys=True,
+    )
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()

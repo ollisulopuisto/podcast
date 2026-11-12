@@ -221,9 +221,13 @@ def video_clips(
         )
 
     card(settings.intro, "intro", program_start)
+    # Alun kortit varaavat aikajanansa: lopun tekstit eivät saa alkaa niiden
+    # päälle samalle lanelle, vaikka ohjelmassa olisi vähän tilaa.
+    credits_floor = clips[-1].end if clips else program_start
     if settings.credits.mode != "off" and settings.credits.placement in ("start", "both"):
-        after_intro = clips[-1].end if clips else program_start
-        card(settings.credits, "credits_start", after_intro)
+        card(settings.credits, "credits_start", credits_floor)
+        credits_floor = clips[-1].end if len(clips) and clips[-1].kind == "credits_start" \
+            else credits_floor
     # Lopun järjestys on päätetty: tekijät ensin, outro viimeisenä. Ne eivät
     # jaa lopun kehyksiä samalla lanella vaan credits_end päättyy outron
     # alkuun (2026-11: päällekkäisyys olisi satunnaista pinoutumista).
@@ -232,6 +236,9 @@ def video_clips(
         if settings.outro.mode == "file"
         else settings.outro.duration
     ) if settings.outro.mode != "off" else Fraction(0)
+    # Ohjelmaa pidempi outro rajataan ohjelmaan: negatiivinen alku rikkoisi
+    # viennin kuten negatiivinen tekstien alku.
+    outro_start = max(program_start, program_end - outro_len)
     if settings.credits.mode != "off" and settings.credits.placement in ("end", "both"):
         length = (
             durations.get(settings.credits.path, 0.0)
@@ -240,14 +247,16 @@ def video_clips(
         )
         # Tekstit+outro voivat olla ohjelmaa pidemmät: alku ripustetaan
         # ohjelman alkuun eikä miinukselle, ja loppu pysyy outron alussa.
+        # Lyhyessä ohjelmassa alun kortit voivat syödä koko välin: silloin
+        # lopun tekstejä ei ole mihinkään laittaa ja ne jätetään pois.
         card(
             settings.credits,
             "credits_end",
-            max(program_start, program_end - outro_len - _frac(length)),
-            end_cap=program_end - outro_len,
+            max(credits_floor, outro_start - _frac(length)),
+            end_cap=outro_start,
         )
     if settings.outro.mode != "off":
-        card(settings.outro, "outro", program_end - outro_len)
+        card(settings.outro, "outro", outro_start)
     return clips
 
 
@@ -364,7 +373,16 @@ def audio_clips(
         )
 
     if beds.mode == "throughout":
-        make("bed_throughout", beds.throughout_path, program_start, program_end, True)
+        # Tiedosto voi olla ohjelmaa lyhyempi: klipin on loputtava tiedoston
+        # lopussa. Muutoin rendaus jatkaisi hiljaisuudella ja XML väittäisi
+        # tiedostolla olevan keston, jota siinä ei ole.
+        bed_dur = _frac(durations.get(beds.throughout_path, 0.0))
+        bed_end = (
+            min(program_end, program_start + bed_dur)
+            if bed_dur > 0
+            else program_end
+        )
+        make("bed_throughout", beds.throughout_path, program_start, bed_end, True)
     else:
         # Pohjat puristetaan ohjelmaan: pidempi tiedosto ei karkaa viennin
         # rajojen yli. Jos intro ja outro eivät mahdu molemmat, intro

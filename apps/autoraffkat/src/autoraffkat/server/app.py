@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -26,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 
 from speechmix import chain, editor
 from speechmix.chain import ChainError
+from speechmix.rms import envelope_for
 
 from .. import (
     i18n,
@@ -48,7 +50,7 @@ from ..analysis import (
     resolve_roles,
     singleton_shots,
 )
-from ..audio import mix, silence
+from ..audio import cache_dir, mix, silence
 from ..decide import WIDE_LABEL, decide
 from ..finalcut.read import ReadError, Timeline, read_fcpxml
 from ..finalcut.write import (
@@ -148,6 +150,13 @@ class AppState:
         default_factory=lambda: {"done": 0, "total": 0, "current": "", "ready": False}
     )
     load_error: str = ""
+    # Inspect-kutsussa tarkistetut mediatiedostot. Esikatselu rendaa ja
+    # tarjoilee tiedoston sisältöä, joten se rajoitetaan näihin polkuihin.
+    media_paths: set = field(default_factory=set)
+    # Nykyisellä mediavalinnalla rendatut esikatseluavaimet: valinnan
+    # vaihtuessa vanhat linkit lakkaavat toimimasta (404), vaikka tiedosto
+    # jäisi välimuistiin.
+    media_preview_keys: set = field(default_factory=set)
     media_sync: dict = field(default_factory=lambda: {
         "running": False, "fraction": 0.0, "current": "", "ready": False,
         "error": "", "result": None,
@@ -1607,6 +1616,10 @@ def _package_plan(state, grid, program_start, program_end, warnings, work_dir):
     speech_lufs = (
         state.settings.audio.target_lufs if state.settings.audio.enabled else None
     )
+    if active_bed_paths(beds) and not beds.keep_music_level and speech_lufs is None:
+        # Tasonsovitusta ei voi tehdä ilman puheen tasoa: älytään olla
+        # hiljaa, vaan kerrotaan että pohja soi alkuperäisellä voimakkuudella.
+        warnings.append(t("export.package_bed_unmatched"))
     vclips = video_clips(pk, program_start, program_end, durations)
     for clip in vclips:
         info = infos.get(clip.path) or {}
@@ -2061,6 +2074,9 @@ def create_app(state: AppState) -> FastAPI:
             sources = media_import.inspect_media(paths)
         except media_import.MediaImportError as exc:
             raise HTTPException(400, str(exc)) from exc
+        with state.lock:
+            state.media_paths = {source.path for source in sources}
+            state.media_preview_keys = set()
         return {
             "sources": [
                 {
@@ -2082,8 +2098,16 @@ def create_app(state: AppState) -> FastAPI:
         body = payload or {}
         paths = body.get("paths")
         reference = body.get("reference")
+        window = body.get("window", "auto")
         if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
             raise HTTPException(400, "Choose media files first.")
+        if window != "auto" and window != "full":
+            try:
+                window = float(window)
+            except (TypeError, ValueError):
+                raise HTTPException(400, t("media.invalid_sync_window")) from None
+            if window <= 0:
+                raise HTTPException(400, t("media.invalid_sync_window"))
         try:
             sources = media_import.inspect_media(paths)
         except media_import.MediaImportError as exc:
@@ -2106,7 +2130,7 @@ def create_app(state: AppState) -> FastAPI:
         def work():
             try:
                 result = media_import.estimate_sync(
-                    paths, reference_path=reference, progress=report
+                    paths, reference_path=reference, progress=report, window=window
                 )
                 with state.lock:
                     state.media_sync.update(
@@ -2118,6 +2142,140 @@ def create_app(state: AppState) -> FastAPI:
 
         threading.Thread(target=work, name="media-sync-estimate", daemon=True).start()
         return {"accepted": True}
+
+    @app.post("/api/media/preview")
+    def media_preview(payload: dict):
+        """Rendaa esikatselupätkän synkkausarvoilla kuunneltavaksi.
+
+        kind: "all" (kaikki puhuvat samaan aikaan) tai "speaker" (yksi raita,
+        target-polku). Pätkä valitaan aktiviteettimaskeista ja rendataan
+        välimuistiin; samanlainen pyyntö palauttaa saman tiedoston.
+        """
+        body = payload or {}
+        paths = body.get("paths")
+        reference = body.get("reference")
+        shifts = body.get("shifts")
+        kind = body.get("kind", "all")
+        target = body.get("target")
+        if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
+            raise HTTPException(400, "Choose media files first.")
+        if not isinstance(shifts, dict):
+            raise HTTPException(400, t("media.needs_estimate"))
+        if kind not in ("all", "speaker"):
+            raise HTTPException(400, t("media.invalid_preview_kind"))
+        # Tyypit ennen normalisointia: JSON-kenttä voi olla muukin kuin
+        # merkkijono, eikä expanduser saa kaatua 500:ksi vaan vastata 400
+        # kuten ennenkin. «all»-esikatselussa targetia ei käytetä lainkaan.
+        if not isinstance(reference, str):
+            raise HTTPException(400, t("media.choose_reference"))
+        if kind == "speaker" and not isinstance(target, str):
+            raise HTTPException(400, t("media.choose_track"))
+        # Polut normalisoidaan kuten inspect_mediassa: selain voi pitää
+        # alkuperäiset (suhteelliset) polut, ja vertailun onnistuminen ei
+        # saa riippua siitä kumpaan muotoon ne kirjoitettiin.
+        paths = [os.path.abspath(os.path.expanduser(path)) for path in paths]
+        reference = os.path.abspath(os.path.expanduser(reference))
+        if kind == "speaker":
+            target = os.path.abspath(os.path.expanduser(target))
+        shifts = {os.path.abspath(os.path.expanduser(path)): value
+                  for path, value in shifts.items()}
+        if kind == "speaker" and target not in paths:
+            raise HTTPException(400, t("media.choose_track"))
+        with state.lock:
+            known_paths = set(state.media_paths)
+        if not set(paths) <= known_paths:
+            # Esikatselu palauttaa rendattua sisältöä ladattavaksi, joten
+            # mielivaltaisia polkuja ei hyväksytä: vain inspect-kutsussa
+            # tarkistetut tiedostot kelpaavat.
+            raise HTTPException(400, t("media.inspect_first"))
+        try:
+            sources = media_import.inspect_media(paths)
+        except media_import.MediaImportError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if reference not in {src.path for src in sources if src.has_video and src.has_audio}:
+            raise HTTPException(400, t("media.choose_reference"))
+        try:
+            envelopes = {
+                src.path: envelope_for(src.path, cache_dir=cache_dir())
+                for src in sources if src.has_audio
+            }
+        except Exception as exc:
+            raise HTTPException(400, str(exc)) from exc
+        tracks = [
+            {"path": src.path, "shift_seconds": float(shifts.get(src.path, 0.0))}
+            for src in sources if src.path != reference and src.has_audio
+        ]
+        spans = media_import.pick_preview_spans(envelopes, reference, tracks)
+        if kind == "all":
+            start = spans["all"]
+            duration = spans["all_seconds"]
+            target_key = ""
+        else:
+            start = spans["per_speaker"].get(target, 0.0)
+            duration = spans["speaker_seconds"]
+            target_key = target
+        shift_map = {src.path: float(shifts.get(src.path, 0.0)) for src in sources if src.has_audio}
+        ordered_paths = [
+            reference,
+            *[src.path for src in sources if src.path != reference and src.has_audio],
+        ]
+        # Aikaleimoja varten statataan vain inspect-vaiheessa tarkistetut
+        # polut, ja arvo haetaan palvelimen tallentamasta joukosta eikä
+        # pyynnön merkkijonoja käytetä polkuna sellaisenaan (CodeQL).
+        with state.lock:
+            checked_paths = {path: path for path in state.media_paths}
+        try:
+            stamps = {}
+            for path in ordered_paths:
+                checked = checked_paths.get(path)
+                if checked is None:
+                    raise HTTPException(400, t("media.inspect_first"))
+                info = os.stat(checked)
+                stamps[path] = [info.st_size, info.st_mtime_ns]
+        except OSError as exc:
+            raise HTTPException(400, t("media.not_readable", error=exc)) from exc
+        key = media_import.preview_cache_key(
+            ordered_paths, reference, shift_map, kind, target_key,
+            start, duration, stamps=stamps,
+        )
+        # Avain on sha1-tiiviste, mutta CodeQL:n polkuinjektiosuojaus
+        # kirjoitetaan suoraksi kuten #212:ssä: ei ylöspäin osoittavia osia.
+        if ".." in key.replace("\\", "/").split("/"):
+            raise HTTPException(500, t("media.invalid_preview_key"))
+        out_dir = os.path.join(cache_dir(), "esikatselu")
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, f"{key}.mp4")
+        if not os.path.exists(out_path):
+            try:
+                media_import.render_preview_clip(
+                    ordered_paths, reference, shift_map, start, duration, out_path,
+                )
+            except Exception as exc:
+                raise HTTPException(500, t("media.preview_failed", error=exc)) from exc
+        with state.lock:
+            state.media_preview_keys.add(key)
+        return {
+            "url": f"/api/media/preview/{key}.mp4",
+            "start": start,
+            "duration": duration,
+        }
+
+    @app.get("/api/media/preview/{name}")
+    def media_preview_file(name: str):
+        """Palauttaa rendatun esikatselun välimuistista."""
+        if not re.fullmatch(r"[0-9a-f]{40}\.mp4", name):
+            raise HTTPException(400, t("media.invalid_preview_name"))
+        with state.lock:
+            registered = {key: key for key in state.media_preview_keys}
+        key = registered.get(name[:-4])
+        if key is None:
+            raise HTTPException(404, t("media.preview_not_found"))
+        # Polku rakennetaan palvelimen rekisteröimästä avaimesta eikä
+        # pyynnön merkkijonosta käytetä polkuna sellaisenaan (CodeQL).
+        out_path = os.path.join(cache_dir(), "esikatselu", f"{key}.mp4")
+        if not os.path.exists(out_path):
+            raise HTTPException(404, t("media.preview_not_found"))
+        return FileResponse(out_path, media_type="video/mp4")
 
     @app.post("/api/media/import")
     def import_media(payload: dict):

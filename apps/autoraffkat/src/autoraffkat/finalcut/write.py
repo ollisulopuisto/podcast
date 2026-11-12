@@ -581,9 +581,18 @@ def build_fcpxml(
     package_ids: dict[str, str] = {}
     if package is not None:
         for clip in package[0]:
+            # Kortin formaatti seuraa kortin omaa ruutunopeutta kuten
+            # monikameraviennissä: 30 fps kortti 25 fps projektissa ei saa
+            # periä projektin frameDurationia. Mittaamaton käyttää projektin.
+            own_fps = getattr(clip, "fps", 0.0)
+            step = (
+                Fraction(1, 1) / Fraction(own_fps).limit_denominator(100_000)
+                if own_fps > 0
+                else frame_duration
+            )
             fmt_id = formats.get(
                 clip.width or seq_width, clip.height or seq_height,
-                frame_duration, next_id,
+                step, next_id,
             )
             package_ids[clip.kind] = next_id()
             item = MediaItem(

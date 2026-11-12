@@ -57,6 +57,8 @@ function makeElement(tag) {
       toggle(n, on) { if (on === undefined ? !this._set.has(n) : on) this._set.add(n); else this._set.delete(n); },
       contains(n) { return this._set.has(n); },
     },
+    /* Esikatselun <video>: app.js kutsuu play()ta asetettuaan src:n. */
+    play() {},
     append(...nodes) {
       nodes.forEach((n) => { if (n && typeof n === 'object') n._parent = this;
                              this.children.push(n); });
@@ -219,6 +221,7 @@ const routes = {
   '/api/pick': () => ({ path: '/x/valittu.fcpxml' }),
   '/api/media/estimate': () => ({ accepted: true }),
   '/api/media/import': () => ({ path: '/x/autoraffkat-source.fcpxml' }),
+  '/api/media/preview': () => ({ url: '/api/media/preview/abc123.mp4', start: 8.0, duration: 10.0 }),
   '/api/state': () => ({ ...state, video: { progress: { running: false } }, media_sync: { running: false, ready: true, fraction: 1, current: '', error: '', result: { tracks: [{ path: '/x/mic.wav', name: 'Mic', shift_seconds: 0.25, correlation: 0.91 }] } } }),
   '/api/open': () => state,
   '/api/pan-auto': () => state,
@@ -577,6 +580,22 @@ async function asyncPaths() {
     context.setTimeout = (fn) => { fn(); return 0; };
     try { await context.estimateMediaSync(); }
     finally { context.setTimeout = originalTimeout; }
+  });
+  /* Kuunteluesikatselu: yhteinen hetki ja yksi raita, samalla reitillä
+     kuin Kuuntele-napit. playSyncPreview nielaisee virheensä tilapalkkiin,
+     joten onnistuminen pitää väittää erikseen: soittimeen pitää tulla
+     palvelimen osoite eikä tilassa saa olla virhettä. */
+  await step('playSyncPreview (yhteinen)', async () => {
+    await context.playSyncPreview('all');
+    if (registry.get('media-sync-preview').src !== '/api/media/preview/abc123.mp4') {
+      throw new Error(`esikatselun osoite puuttuu soittimesta: ${registry.get('media-sync-progress').textContent}`);
+    }
+  });
+  await step('playSyncPreview (raita)', async () => {
+    await context.playSyncPreview('speaker', '/x/mic.wav');
+    if (registry.get('media-sync-preview').src !== '/api/media/preview/abc123.mp4') {
+      throw new Error(`raitakuuntelun osoite puuttuu: ${registry.get('media-sync-progress').textContent}`);
+    }
   });
   await step('importSyncedMedia', () => context.importSyncedMedia());
   run('program range fields and marks', () => {

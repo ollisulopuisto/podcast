@@ -28,6 +28,57 @@ _current: ContextVar[str] = ContextVar("language", default=DEFAULT)
 
 # Avain -> kieli -> teksti. Nimeäminen: moduuli.asia.
 CATALOG: dict[str, dict[str, str]] = {
+    "export.package_bed_unmatched": {
+        "fi": "Musiikkipohjan tasoa ei soviteta puheeseen, koska "
+        "äänenkäsittely on pois päältä — pohja soi alkuperäisellä "
+        "voimakkuudella.",
+        "en": "The music bed level is not matched to speech because audio "
+        "processing is off - the bed plays at its original level.",
+    },
+    "media.inspect_first": {
+        "fi": "Tarkista mediatiedostot ensin.",
+        "en": "Inspect the media files first.",
+    },
+    "media.not_readable": {
+        "fi": "Mediatiedostoa ei voi lukea: {error}",
+        "en": "Media file not readable: {error}",
+    },
+    "media.needs_estimate": {
+        "fi": "Aja synkkausarvio ensin.",
+        "en": "Run the sync estimate first.",
+    },
+    "media.invalid_sync_window": {
+        "fi": "Virheellinen synkkausikkuna.",
+        "en": "Invalid sync window.",
+    },
+    "media.invalid_preview_kind": {
+        "fi": "Tuntematon esikatselun laji.",
+        "en": "Invalid preview kind.",
+    },
+    "media.choose_track": {
+        "fi": "Valitse esikatseltava raita.",
+        "en": "Choose which track to preview.",
+    },
+    "media.choose_reference": {
+        "fi": "Valitse kamera, jossa on viiteääni.",
+        "en": "Choose a camera with reference audio.",
+    },
+    "media.invalid_preview_key": {
+        "fi": "Virheellinen esikatseluavain.",
+        "en": "Invalid preview key.",
+    },
+    "media.preview_failed": {
+        "fi": "Esikatselun renderöinti epäonnistui: {error}",
+        "en": "Preview render failed: {error}",
+    },
+    "media.invalid_preview_name": {
+        "fi": "Virheellinen esikatselun nimi.",
+        "en": "Invalid preview name.",
+    },
+    "media.preview_not_found": {
+        "fi": "Esikatselua ei löydy.",
+        "en": "Preview not found.",
+    },
     "read.no_project": {
         "fi": "XML:stä ei löytynyt projektia eikä synkronoitua klippiä. "
         "Vie Final Cutista joko synkkaklippi tai projekti.",
