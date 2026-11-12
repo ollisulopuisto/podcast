@@ -769,7 +769,7 @@ def _execute_single(
         timer: threading.Timer | None = None
         if timeout is not None:
 
-            def _kill() -> None:
+            def _kill(process: subprocess.Popen = process) -> None:
                 nonlocal timed_out
                 timed_out = True
                 process.kill()
@@ -1120,7 +1120,9 @@ def run(
                 else:
                     trail.enter(stage)
 
-            def _subline(line: str) -> None:
+            def _subline(
+                line: str, i=i, total=total, base_pct=base_pct, step_span=step_span
+            ) -> None:
                 if trail is not None and (marked := stage_of_line(line)):
                     trail.enter(*marked)
                 if not on_progress:

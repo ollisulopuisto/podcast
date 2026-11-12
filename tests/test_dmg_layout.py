@@ -30,7 +30,7 @@ class CustomBundleNames(__import__("unittest").TestCase):
                 output = Path(td) / "Preview.dmg"
                 commands = []
 
-                def fake_run(command):
+                def fake_run(command, commands=commands, output=output):
                     commands.append(command)
                     if command[0] == "hdiutil":
                         output.write_bytes(b"fixture")

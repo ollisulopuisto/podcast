@@ -222,7 +222,7 @@ def run(
 
         if options.align and words:
             progress.log("  kohdistetaan sanojen alut…")
-            source = samples if samples is not None else (lambda: audio_io.decode(path))
+            source = samples if samples is not None else (lambda path=path: audio_io.decode(path))
             if backend.key == "orukeet":
                 words, summary = align.refine_segments(
                     result_raw,
