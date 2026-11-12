@@ -162,6 +162,18 @@ jobs:
           codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "dist/Podcast Magic.dmg"
           codesign --verify --verbose=2 "dist/Podcast Magic.dmg"
 
+      # Notarisointi Applen tunnuksilla, sama kuin build-autoraffkat.yml:ssä.
+      # Tagista ilman tunnuksia käännös kaatuu, koska julkaisu lupaa
+      # notarisoidun levykuvan; käsin ajettu käännös varoittaa ja jää pelkäksi
+      # allekirjoitetuksi artefaktiksi. Ajetaan ennen nimeämistä.
+      - name: Notarise and staple DMG (macOS)
+        if: matrix.platform == 'macos'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: LWSR8T5392
+        run: bash "$GITHUB_WORKSPACE/scripts/notarise_dmg.sh" "dist/Podcast Magic.dmg"
+
       # Mitä pakettiin oikeasti päätyi. Niputettu ffmpeg tulee ulkopuolelta ja
       # allekirjoitus voi rikkoutua kopioinnissa; kumpikin selviäisi ilman tätä
       # vasta käyttäjän koneelta. Arkkitehtuurien pitää täsmätä.
@@ -231,12 +243,10 @@ jobs:
         run: |
           cat > notes.md <<'NOTES'
           ### macOS
-          Sovellus ja levykuva on allekirjoitettu Developer ID:llä, mutta
-          niitä ei ole notarisoitu. Ensimmäisellä avauksella voi tarvita
-          oikean klikkauksen ja «Avaa».
+          Sovellus ja levykuva on allekirjoitettu Developer ID:llä ja
+          notarisoitu.
 
-          The app and disk image are Developer ID signed, but not notarised.
-          The first launch may still require right-clicking the app and choosing "Open".
+          The app and disk image are Developer ID signed and notarised.
 
           ### Windows & Linux
           Muiden alustojen paketit lisätään erikseen Mac-julkaisun jälkeen.
