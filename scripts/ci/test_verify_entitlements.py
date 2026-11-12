@@ -61,8 +61,10 @@ class Guard(unittest.TestCase):
     def test_cli_source_mode(self):
         with tempfile.TemporaryDirectory() as d:
             i, e = os.path.join(d, "i.plist"), os.path.join(d, "e.plist")
-            plistlib.dump({"NSContactsUsageDescription": "x"}, open(i, "wb"))
-            plistlib.dump({}, open(e, "wb"))
+            with open(i, "wb") as f:
+                plistlib.dump({"NSContactsUsageDescription": "x"}, f)
+            with open(e, "wb") as f:
+                plistlib.dump({}, f)
             self.assertEqual(v.main(["--info", i, "--entitlements", e]), 1)
 
 

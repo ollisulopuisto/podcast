@@ -65,7 +65,7 @@ def localized_keys(app):
             parsed = plistlib.loads(data)
         except Exception:
             text = data.decode("utf-16" if data[:2] in (b"\xff\xfe", b"\xfe\xff") else "utf-8", "replace")
-            parsed = {k: "" for k in strings_keys(text)}
+            parsed = dict.fromkeys(strings_keys(text), "")
         keys.update({k: v for k, v in parsed.items() if k in REQUIRED})
     return keys
 
