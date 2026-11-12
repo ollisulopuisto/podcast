@@ -10,6 +10,11 @@ FCPXML ulos, jossa kuva vaihtuu sen mukaan kuka puhuu. Tavallinen työnkulku
 kirjoittaa muokattavan Final Cut -aikajanan; **Renderöi video** tekee lisäksi
 MP4:n samasta leikkauksesta avaamatta Final Cutia.
 
+Final Cut on valinnainen myös ennen leikkausta: **Tuo media** synkkaa erilliset
+mikrofonitallenteet kameroihin äänen perusteella ja kirjoittaa
+lähdeprojektin itse, ja ohjelman alku- ja loppupisteet merkitään suoraan
+esikatselun aikajanalta.
+
 ![Aiempi käyttöliittymänäkymä: vanha raitojen asettelutapa, esikatselupalkki ja leikkauslista.](screenshot.png)
 
 *Kuvassa on aiempi raitojen asetustapa. Nykyisessä näkymässä puhujat

@@ -6,6 +6,11 @@ whoever is talking. The cut is decided from the microphone tracks. The normal
 workflow writes an editable Final Cut timeline; **Render video** also renders
 an MP4 of that edit without opening Final Cut Pro.
 
+Final Cut is optional for everything before the cut, too: **Import media**
+syncs separate microphone recordings to the cameras by their audio and writes
+the source project itself, and the programme's in and out points are set
+straight on the preview timeline.
+
 *[Suomenkielinen README](README.fi.md) · [Design notes](DESIGN.md) · [Roadmap](ROADMAP.md)*
 
 ![Earlier interface screenshot showing the previous track setup layout, with the preview bar and cut list below.](screenshot.png)
