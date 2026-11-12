@@ -7,6 +7,19 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+### Added
+- Media sync search window: automatic mode (starts at ±5 min, expands to
+  the full recording when the match is weak) plus manual presets of
+  ±5 min, ±30 min, ±2 h and full range.
+- Listen-before-import: render a short preview clip from the sync review -
+  a 10 s moment where everyone is talking, or a 5 s clip per microphone -
+  adjust the offset, listen again, and import when it sounds right.
+
+### Performance
+- Sync offset estimation is much faster: scoring is vectorized, so a
+  full-range search over two-hour recordings takes about a tenth of a
+  second instead of several seconds.
+
 ## [2026.11.12.1] - 2026-11-12
 
 ### Added
