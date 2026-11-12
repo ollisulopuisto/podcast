@@ -2154,12 +2154,20 @@ def create_app(state: AppState) -> FastAPI:
             raise HTTPException(400, "Run the sync estimate first.")
         if kind not in ("all", "speaker"):
             raise HTTPException(400, "Invalid preview kind.")
+        # Tyypit ennen normalisointia: JSON-kenttä voi olla muukin kuin
+        # merkkijono, eikä expanduser saa kaatua 500:ksi vaan vastata 400
+        # kuten ennenkin. «all»-esikatselussa targetia ei käytetä lainkaan.
+        if not isinstance(reference, str):
+            raise HTTPException(400, "Choose a camera with reference audio.")
+        if kind == "speaker" and not isinstance(target, str):
+            raise HTTPException(400, "Choose which track to preview.")
         # Polut normalisoidaan kuten inspect_mediassa: selain voi pitää
         # alkuperäiset (suhteelliset) polut, ja vertailun onnistuminen ei
         # saa riippua siitä kumpaan muotoon ne kirjoitettiin.
         paths = [os.path.abspath(os.path.expanduser(path)) for path in paths]
-        reference = os.path.abspath(os.path.expanduser(reference)) if reference else reference
-        target = os.path.abspath(os.path.expanduser(target)) if target else target
+        reference = os.path.abspath(os.path.expanduser(reference))
+        if kind == "speaker":
+            target = os.path.abspath(os.path.expanduser(target))
         shifts = {os.path.abspath(os.path.expanduser(path)): value
                   for path, value in shifts.items()}
         if kind == "speaker" and target not in paths:
