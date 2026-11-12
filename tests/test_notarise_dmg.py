@@ -81,6 +81,7 @@ class Notarise(unittest.TestCase):
 class WorkflowOrder(unittest.TestCase):
     def positions(self):
         text = WORKFLOW.read_text()
+
         def at(marker):
             i = text.find(marker)
             self.assertNotEqual(i, -1, marker)
