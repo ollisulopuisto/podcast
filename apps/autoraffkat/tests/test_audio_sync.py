@@ -196,30 +196,46 @@ def test_estimate_offset_returns_none_when_an_envelope_is_empty():
     ) is None
 
 
-def test_vectorized_scores_candidates_without_a_python_loop(monkeypatch):
-    # Vanha silmukka kävi jokaisen ehdokasviiveen läpi Pythonissa ja kutsui
-    # np.clipiä kerran per viive; vektorointi pisteyttää kaikki kerrallaan.
-    # Tämä on deterministinen työnmäärämitallus, ei kellonaikatesti: silmukka
-    # ylittää kynnyksen kymmenellä tuhannella kutsulla, vektori jää yhteen.
-    calls = 0
-    original_clip = np.clip
+def test_vectorized_scores_candidates_without_a_python_loop():
+    # Vanha silmukka kävi jokaisen ehdokasviiveen läpi Pythonissa; vektorointi
+    # pisteyttää kaikki kerrallaan. Vartiona kaikkien kutsujen määrä
+    # (sys.monitoring) pisteytyksen aikana, ei jonkin apurin osuma: myös
+    # min/max- tai millä tahansa apurilla kirjoitettu viivesilmukka tekee
+    # vähintään yhden kutsun per viive eli yli 5000, kun vektoroitu polku
+    # jää pariin tuhanteen FFT:n sisäisine kutsuineen. Deterministinen
+    # työnmäärämitallus, ei kellonaikatesti.
+    import sys
 
-    def counting_clip(*args, **kwargs):
+    calls = 0
+
+    def count_call(code, offset, callable_, arg):
         nonlocal calls
         calls += 1
-        return original_clip(*args, **kwargs)
 
-    monkeypatch.setattr(np, "clip", counting_clip)
+    monitoring = sys.monitoring
+    monitoring.use_tool_id(monitoring.PROFILER_ID, "sync-call-count")
+    monitoring.register_callback(
+        monitoring.PROFILER_ID, monitoring.events.CALL, count_call)
     rng = np.random.default_rng(17)
     reference = rng.normal(size=5000)
     source = np.zeros(5000)
     source[1000:] = reference[:-1000]
 
-    result = estimate_offset(
-        reference, source, hop_seconds=0.02,
-        max_shift_seconds=100.0, min_overlap_seconds=1.0,
-    )
+    monitoring.set_events(monitoring.PROFILER_ID, monitoring.events.CALL)
+    try:
+        result = estimate_offset(
+            reference, source, hop_seconds=0.02,
+            max_shift_seconds=100.0, min_overlap_seconds=1.0,
+        )
+    finally:
+        monitoring.set_events(monitoring.PROFILER_ID, 0)
+        monitoring.register_callback(monitoring.PROFILER_ID,
+                                     monitoring.events.CALL, None)
+        monitoring.free_tool_id(monitoring.PROFILER_ID)
 
     assert result is not None
     assert result.shift_seconds == pytest.approx(-20.0, abs=0.02)
-    assert calls < 10, f"pisteytys tehtiin {calls} np.clip-kutsulla eli viive kerrallaan"
+    assert calls < 4000, (
+        f"pisteytys teki {calls} funktiokutsua eli viiveet käytiin "
+        "Python-silmukassa"
+    )
