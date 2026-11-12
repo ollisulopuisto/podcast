@@ -1,7 +1,9 @@
 # autoraffkat
 
-FCPXML in, FCPXML out. The picture cuts to whoever is talking. Nothing is
-rendered.
+FCPXML in, FCPXML out. The picture cuts to whoever is talking. It also
+syncs separate microphones to the cameras without Final Cut (media import),
+sets programme in/out points, and renders the edit to video (ffmpeg, or
+AVFoundation on macOS) — no Final Cut required for any of these.
 
 Code, comments and docstrings are in **Finnish** — they are for the
 maintainers. Documentation and everything the user sees is in English and
