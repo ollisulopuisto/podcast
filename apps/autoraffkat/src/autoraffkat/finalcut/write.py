@@ -1514,7 +1514,8 @@ def _source_resources(
     frame_duration: Fraction | None = None,
     width: int = 1920,
     height: int = 1080,
-) -> tuple[str, str, str, dict[str, str], dict[str, str]]:
+    package: tuple[list, list] | None = None,
+) -> tuple[str, str, str, dict[str, str], dict[str, str], dict[str, str]]:
     """Lähde-XML:n ``<resources>``, versio, sekvenssin formaatti ja tilaääni-id:t.
 
     Multicam-määrittelyä ei rakenneta uudestaan vaan se kopioidaan: kulmien
@@ -1553,8 +1554,14 @@ def _source_resources(
         resources.append(_room_asset(source, res_id, target))
         room_ids[asset_id] = res_id
 
+    package_ids: dict[str, str] = {}
+    if package is not None:
+        package_ids = _package_assets(
+            package[0], package[1], resources, frame_duration or Fraction(1, 25)
+        )
+
     body = ET.tostring(resources, encoding="unicode")
-    return body, root.get("version", "1.10"), seq_format, room_ids, raw_angles
+    return body, root.get("version", "1.10"), seq_format, room_ids, raw_angles, package_ids
 
 
 def _room_lines(
@@ -1600,6 +1607,124 @@ def _room_lines(
                 f'duration="{frames_str(dur, frame_duration)}" '
                 f"audioRole={quoteattr(ROOM_ROLE)}/>"
             )
+    return lines
+
+
+def _package_asset(clip, res_id: str, fmt_id: str | None, frame_duration):
+    """Paketin ulkoisesta tiedostosta oma ``<asset>``-resurssi.
+
+    Toisin kuin tilaääni, paketin tiedostot eivät johdu lähteen assetista,
+    joten resurssi rakennetaan tyhjästä. Kortit ovat pelkkää kuvaa (alfa-
+    elokuvan mahdollinen ääni jätetään pois, ks. `_video_only`), pohjat
+    pelkkää ääntä.
+    """
+    from xml.etree import ElementTree as ET  # paikallinen: vain tämä tarvitsee
+
+    asset = ET.Element("asset")
+    asset.set("id", res_id)
+    asset.set("name", clip.name)
+    asset.set("start", "0s")
+    asset.set("duration", format_time(clip.duration))
+    if fmt_id is not None:
+        asset.set("hasVideo", "1")
+        asset.set("videoSources", "1")
+        asset.set("format", fmt_id)
+    else:
+        asset.set("hasAudio", "1")
+        asset.set("audioSources", "1")
+        asset.set("audioChannels", str(max(1, clip.channels)))
+        asset.set("audioRate", str(clip.rate))
+    ET.SubElement(asset, "media-rep", {"kind": "original-media", "src": file_url(clip.path)})
+    return asset
+
+
+def _package_assets(video, audio, resources, frame_duration) -> dict[str, str]:
+    """Paketin klippien resurssit kopioidun lohkon perään; palauttaa kind -> id."""
+    from xml.etree import ElementTree as ET  # paikallinen: vain tämä tarvitsee
+
+    ids: dict[str, str] = {}
+    for clip in video:
+        fmt = ET.SubElement(resources, "format")
+        fmt_id = _next_resource_id(resources)
+        fmt.set("id", fmt_id)
+        fmt.set("width", str(clip.width))
+        fmt.set("height", str(clip.height))
+        fmt.set("frameDuration", frames_str(1, frame_duration))
+        res_id = _next_resource_id(resources)
+        resources.append(_package_asset(clip, res_id, fmt_id, frame_duration))
+        ids[clip.kind] = res_id
+    for clip in audio:
+        res_id = _next_resource_id(resources)
+        resources.append(_package_asset(clip, res_id, None, frame_duration))
+        ids[clip.kind] = res_id
+    return ids
+
+
+def _package_lines(
+    video,
+    audio,
+    res_ids: dict[str, str],
+    frame_duration,
+    program_start,
+    parent_start_frames: int,
+) -> list[str]:
+    """Paketin kortit ja pohjat liitettyinä klippeinä. Sama aikasääntö kuin
+    tilaäänellä: offset on isäntäklipin paikallisessa aikapohjassa, ja
+    pohjan ``adjust-volume``-keyframet klipin omassa aikapohjassa."""
+    lines: list[str] = []
+
+    def placement(clip):
+        off = to_frames(clip.start - program_start, frame_duration)
+        dur = to_frames(clip.duration, frame_duration)
+        return off, dur
+
+    for clip in video:
+        if clip.kind not in res_ids:
+            continue
+        off, dur = placement(clip)
+        if dur <= 0:
+            continue
+        lines.append(
+            f'              <asset-clip ref="{res_ids[clip.kind]}" lane="{clip.lane}" '
+            f'offset="{frames_str(parent_start_frames + off, frame_duration)}" '
+            f"name={quoteattr(clip.name)} "
+            f'start="{frames_str(0, frame_duration)}" '
+            f'duration="{frames_str(dur, frame_duration)}"/>'
+        )
+    for clip in audio:
+        if clip.kind not in res_ids:
+            continue
+        off, dur = placement(clip)
+        if dur <= 0:
+            continue
+        attrs = (
+            f'              <asset-clip ref="{res_ids[clip.kind]}" lane="{clip.lane}" '
+            f'offset="{frames_str(parent_start_frames + off, frame_duration)}" '
+            f"name={quoteattr(clip.name)} "
+            f'start="{frames_str(0, frame_duration)}" '
+            f'duration="{frames_str(dur, frame_duration)}" '
+            f"audioRole={quoteattr(clip.role)}"
+        )
+        if not clip.curve:
+            lines.append(attrs + "/>")
+            continue
+        indent = "              "
+        lines.append(attrs + ">")
+        lines.append(f"{indent}  <adjust-volume>")
+        lines.append(f'{indent}    <param name="amount">')
+        lines.append(f"{indent}      <keyframeAnimation>")
+        for when, db in clip.curve:
+            local = to_frames(
+                Fraction(when).limit_denominator(48000) - clip.start, frame_duration
+            )
+            lines.append(
+                f'{indent}        <keyframe time="{frames_str(local, frame_duration)}" '
+                f'value="{clip.base_gain_db + db:g}dB"/>'
+            )
+        lines.append(f"{indent}      </keyframeAnimation>")
+        lines.append(f"{indent}    </param>")
+        lines.append(f"{indent}  </adjust-volume>")
+        lines.append(f"{indent}</asset-clip>")
     return lines
 
 
@@ -1972,8 +2097,14 @@ def build_multicam_fcpxml(
     reframer=None,
     shots: list | None = None,
     passthrough: list[str] | None = None,
+    package: tuple[list, list] | None = None,
 ) -> str:
     """Rakentaa monikameraleikkauksen: yksi ``<mc-clip>`` per kuva.
+
+    ``package`` on pari (kuvaklipit, ääniklipit) `package.py`:n suunnitel-
+    masta: tekstikortit kirjoitetaan reaktioiden yläpuolelle lanen 3 ja
+    musiikkipohjat vaimennuskäyröineen lanelle -4. Molemmat liitetään
+    ensimmäiseen kuvaklippiin, kuten tilaääni.
 
     ``passthrough``: raitojen avaimet joiden ääni soi lähteen tavoin vaikka
     niille ei ole mikkirooleja (``roles``-vapaa miksaus). Ilman tätä
@@ -2053,7 +2184,7 @@ def build_multicam_fcpxml(
     else:
         seq_width = reference.width if reference and reference.width else 1920
         seq_height = reference.height if reference and reference.height else 1080
-    resources, version, seq_format, room_ids, raw_angles = _source_resources(
+    resources, version, seq_format, room_ids, raw_angles, package_ids = _source_resources(
         timeline.source_path,
         redirects,
         room_jobs,
@@ -2061,11 +2192,13 @@ def build_multicam_fcpxml(
         frame_duration=frame_duration,
         width=seq_width,
         height=seq_height,
+        package=package,
     )
 
 
     body: list[str] = []
     attached_room = False
+    attached_package = False
     attached_reactions = False
     # Monikamerassa kulmien assetit ovat jo kopioidussa <resources>-lohkossa,
     # joten reaktioklippi viittaa niihin sellaisenaan eikä uutta resurssia
@@ -2248,6 +2381,16 @@ def build_multicam_fcpxml(
                 frame_duration,
                 program_start,
                 program_end,
+                to_frames(mc.source_at(at), frame_duration),
+            )
+        if not attached_package and package_ids:
+            attached_package = True
+            sources = sources + _package_lines(
+                package[0],
+                package[1],
+                package_ids,
+                frame_duration,
+                program_start,
                 to_frames(mc.source_at(at), frame_duration),
             )
         sources = sources + speaker_keyword
