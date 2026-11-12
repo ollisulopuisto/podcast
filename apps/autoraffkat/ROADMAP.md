@@ -301,6 +301,35 @@ everything in the browser.
   audio-only uploads, WASM dependency compatibility, and the MCP wrapper
   itself (not prototyped).
 
+### Tier plan (added 2026-11-12, revised pilot spec)
+
+Pilot constraints from Olli: the client has **no Final Cut** — only video
+files and maybe separate audio files — plus a slow uplink, a weak CPU and
+little free disk. The deliverable is therefore rendered MP4s (horizontal
+master + verticals + mixed audio), never XML to relink. Audio stems go up
+as **Opus, not MP3** (smallest encoder priming, best quality per bit, light
+wasm encoder); before launch, run the synthetic sync check: a known-offset
+pair, both Opus-encoded, must recover the offset within ±40 ms (encoder
+priming compensated on decode; untested until this runs).
+
+- **Fast tier — browser-only, proxy-grade, ~1 h turnaround.** The browser
+  extracts Opus audio stems and encodes 720p proxies with WebCodecs
+  hardware encode (weak-CPU friendly; wasm fallback is several× realtime
+  and is the biggest risk). Upload is ~2-2.5 GB per show-hour via resumable
+  chunks. The server runs the existing engine and returns proxy-grade MP4s.
+  Client does nothing but pick files.
+- **Full tier — full-quality re-render on top of the same decisions.** The
+  tier-1 cut is reused as an EDL-style decision list; the camera originals
+  upload in the background (tens of GB per episode), ideally through a
+  small desktop uploader app since a browser tab would have to stay open
+  for the whole transfer. The server re-renders at full quality from the
+  originals. Priced on what it actually costs: storage, egress, full-res
+  CPU encode.
+- **Risks:** tens of GB per episode of originals storage and its
+  retention/deletion policy; full-res CPU encode time unmeasured; edits the
+  client makes after the tier-1 delivery must be carried into the re-render
+  (the decision list must stay the single source of truth).
+
 ### Suomeksi: selain-SaaS (arviointi 2026-11-12)
 
 Ollin reunaehdot: kukaan ei lataa yli 10 gigaa videota verkkoon, asiakkaan
@@ -332,6 +361,38 @@ kone on hentoinen, kaiken pitää toimia selaimessa.
 - Halvin B:tä validoiva askel: aja nykyinen sovellus yhdellä VPS:llä, lisää
   minimaalinen latauslomake `/api/media/import`:iin syöttäväksi ja aja yksi
   oikea jakso läpi. Päiviä yksityiseen pilottiin.
+
+### Suomeksi: tasosuunnitelma (lisätty 2026-11-12, uudistettu pilottispeksi)
+
+Ollin pilotin reunaehdot: asiakkaalla **ei ole Final Cutia** — vain
+videotiedostot ja ehkä erilliset äänitiedostot — sekä hidas yhteyttä,
+hentoinen kone ja vähän levytilaa. Lopputuote on siis rendatut MP4:t
+(vaakamasteri + pystyversiot + miksatty ääni), ei koskaan linkitettävää
+XML:ää. Ääniraidat menevät verkkoon **Opuksena, ei MP3:na** (pienin
+enkooderin alku-viive, paras laatu per bitti, kevyt wasm-enkooderi); ennen
+julkaisua ajetaan synteettinen synkkatesti: tunnetun siirron pari, molemmat
+Opus-koodattuna, pitää palauttaa siirto ±40 ms sisällä (alkuviive
+korjautuu dekoodauksessa; testaamatta kunnes tämä on ajettu).
+
+- **Nopea taso — pelkkä selain, proxy-laatu, ~1 h kiertoaika.** Selain
+  poimii Opus-ääniraidat ja enkoodaa 720p-proxyt WebCodecsin
+  laitteistoenkoodauksella (ystävällinen heikoille koneille; wasm-varatie
+  on monta kertaa reaaliaikaa hitaampi ja suurin riski). Lataus on ~2-2,5
+  Gt per shown tunti jatkuvina palasina. Palvelin ajaa nykyisen moottorin
+  ja palauttaa proxy-laatuiset MP4:t. Asiakas vain valitsee tiedostot.
+- **Täysi taso — täyslaatuinen uudelleenrenderöinti samojen päätösten
+  päälle.** Ensimmäisen tason leikkaus toimii EDL-tyyppisenä
+  päätöslistana; kameroiden alkuperäiset latautuvat taustalla (kymmeniä
+  gigoja per jakso), mieluiten pienen työpöytälataajan kautta, koska
+  selainvälilehden pitäisi olla auki koko siirron ajan. Palvelin rendaa
+  uudelleen täydellä laadulla alkuperäisistä. Hinnoittelu sen mukaan mitä
+  oikeasti maksaa: säilytys, liikenne ulos, täysresoluutioinen
+  CPU-enkoodaus.
+- **Riskit:** kymmenien gigojen alkuperäissäilytys per jakso ja sen
+  säilytys-/poistopolitiikka; täysresoluutioisen CPU-enkoodauksen kesto
+  mittaamatta; ensimmäisen tason jälkeen tehdyt muokkaukset pitää viedä
+  mukana uudelleenrenderöintiin (päätöslistan on pysyttävä ainoana
+  totuutena).
 
 ## Inserts: stills and video on screen (slideshow / B-roll)
 
