@@ -1,5 +1,7 @@
 """Mediasynkan API pitää pitkän mittauksen taustatyönä ja näyttää tilan."""
 
+import os
+
 from fastapi.testclient import TestClient
 
 from autoraffkat import media_import
@@ -252,3 +254,81 @@ def test_media_preview_requires_inspected_paths(tmp_path, monkeypatch):
 
     client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
     assert client.post("/api/media/preview", json=payload).status_code == 200
+
+def test_media_preview_accepts_relative_paths(tmp_path, monkeypatch):
+    """Selain voi pitää alkuperäiset suhteelliset polut: ne normalisoidaan
+    kuten inspect_mediassa, joten kelvollinen valinta ei kärähdä 400:een."""
+    camera, microphone = _preview_harness(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+    client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
+
+    monkeypatch.chdir(tmp_path)
+    response = client.post(
+        "/api/media/preview",
+        json={
+            "paths": ["camera.mp4", "Peter.wav"],
+            "reference": "camera.mp4",
+            "shifts": {str(microphone): 0.0},
+            "kind": "all",
+        },
+    )
+    assert response.status_code == 200, response.json()
+
+
+def test_media_preview_errors_are_translated(tmp_path, monkeypatch):
+    """Esikatselun virheet tulevat käännösluettelosta: suomeksi kun suomi
+    on valittuna, englanniksi muuten."""
+    from autoraffkat import i18n
+
+    camera, microphone = _preview_harness(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+
+    token = i18n._current.set("fi")
+    try:
+        response = client.post(
+            "/api/media/preview",
+            json={
+                "paths": [str(camera), str(microphone)],
+                "reference": str(camera),
+                "shifts": {},
+                "kind": "all",
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == i18n.CATALOG["media.inspect_first"]["fi"]
+
+        # Lukemisvirhe inspectin jälkeen (tiedosto katoaa tai oikeudet
+        # menevät ennen statia): virhekin on suomeksi. inspect ja tilastot
+        # lavastetaan, jotta päästään juuri tähän haaraan.
+        from types import SimpleNamespace
+
+        client.post("/api/media/inspect", json={"paths": [str(camera), str(microphone)]})
+        monkeypatch.setattr(
+            server_app.media_import, "inspect_media",
+            lambda paths: [
+                SimpleNamespace(path=str(camera), has_video=True, has_audio=True),
+                SimpleNamespace(path=str(microphone), has_video=False, has_audio=True),
+            ],
+        )
+        real_stat = os.stat
+
+        def broken_stat(path, *args, **kwargs):
+            if str(path) == str(microphone):
+                raise OSError("poistettu")
+            return real_stat(path, *args, **kwargs)
+
+        monkeypatch.setattr(os, "stat", broken_stat)
+        response = client.post(
+            "/api/media/preview",
+            json={
+                "paths": [str(camera), str(microphone)],
+                "reference": str(camera),
+                "shifts": {},
+                "kind": "all",
+            },
+        )
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert detail.startswith("Mediatiedostoa ei voi lukea"), detail
+    finally:
+        i18n._current.reset(token)

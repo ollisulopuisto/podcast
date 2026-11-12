@@ -28,6 +28,14 @@ _current: ContextVar[str] = ContextVar("language", default=DEFAULT)
 
 # Avain -> kieli -> teksti. Nimeäminen: moduuli.asia.
 CATALOG: dict[str, dict[str, str]] = {
+    "media.inspect_first": {
+        "fi": "Tarkista mediatiedostot ensin.",
+        "en": "Inspect the media files first.",
+    },
+    "media.not_readable": {
+        "fi": "Mediatiedostoa ei voi lukea: {error}",
+        "en": "Media file not readable: {error}",
+    },
     "read.no_project": {
         "fi": "XML:stä ei löytynyt projektia eikä synkronoitua klippiä. "
         "Vie Final Cutista joko synkkaklippi tai projekti.",

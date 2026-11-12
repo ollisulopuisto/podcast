@@ -2154,6 +2154,14 @@ def create_app(state: AppState) -> FastAPI:
             raise HTTPException(400, "Run the sync estimate first.")
         if kind not in ("all", "speaker"):
             raise HTTPException(400, "Invalid preview kind.")
+        # Polut normalisoidaan kuten inspect_mediassa: selain voi pitää
+        # alkuperäiset (suhteelliset) polut, ja vertailun onnistuminen ei
+        # saa riippua siitä kumpaan muotoon ne kirjoitettiin.
+        paths = [os.path.abspath(os.path.expanduser(path)) for path in paths]
+        reference = os.path.abspath(os.path.expanduser(reference)) if reference else reference
+        target = os.path.abspath(os.path.expanduser(target)) if target else target
+        shifts = {os.path.abspath(os.path.expanduser(path)): value
+                  for path, value in shifts.items()}
         if kind == "speaker" and target not in paths:
             raise HTTPException(400, "Choose which track to preview.")
         with state.lock:
@@ -2162,7 +2170,7 @@ def create_app(state: AppState) -> FastAPI:
             # Esikatselu palauttaa rendattua sisältöä ladattavaksi, joten
             # mielivaltaisia polkuja ei hyväksytä: vain inspect-kutsussa
             # tarkistetut tiedostot kelpaavat.
-            raise HTTPException(400, "Inspect the media files first.")
+            raise HTTPException(400, t("media.inspect_first"))
         try:
             sources = media_import.inspect_media(paths)
         except media_import.MediaImportError as exc:
@@ -2200,7 +2208,7 @@ def create_app(state: AppState) -> FastAPI:
                 for path in ordered_paths
             }
         except OSError as exc:
-            raise HTTPException(400, f"Media file not readable: {exc}") from exc
+            raise HTTPException(400, t("media.not_readable", error=exc)) from exc
         key = media_import.preview_cache_key(
             ordered_paths, reference, shift_map, kind, target_key,
             start, duration, stamps=stamps,
