@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import math
-from itertools import pairwise
 
 import numpy as np
 
-from speechmix.envelopes import envelope_at
 from speechmix.masks import HOP, runs
 
 
@@ -66,31 +64,55 @@ def silence_envelopes(grid, settings) -> dict[str, list[tuple[float, float]]]:
     return {speaker.name: list(points) for speaker in grid.speakers}
 
 
+def _curve_values(curve: list, when: np.ndarray) -> np.ndarray:
+    """``envelope_at`` jokaiselle ``when``:n arvolle, samat laskutoimitukset.
+
+    Alkiot lasketaan samassa IEEE-järjestyksessä kuin skalaariversiossa
+    (vähennys, kerto, jako, plus), joten tulos on bittitarkasti sama —
+    vain haku ja silmukka on vektorisoitu. Käyrän ulkopuolella reunan arvo.
+    """
+    t = np.fromiter((p[0] for p in curve), dtype=np.float64, count=len(curve))
+    v = np.fromiter((p[1] for p in curve), dtype=np.float64, count=len(curve))
+    out = np.empty(len(when))
+    low, high = when <= t[0], when >= t[-1]
+    mid = ~(low | high)
+    out[low], out[high] = v[0], v[-1]
+    if mid.any():
+        w = when[mid]
+        idx = np.maximum(np.searchsorted(t, w, side="left"), 1)
+        t0, v0, t1, v1 = t[idx - 1], v[idx - 1], t[idx], v[idx]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            vals = v0 + (v1 - v0) * (w - t0) / (t1 - t0)
+        out[mid] = np.where(t1 <= t0, v1, vals)
+    return out
+
+
 def merge_envelopes(*layers) -> dict[str, list[tuple[float, float]]]:
     """Combine dB attenuation layers without stacking their depth."""
     names = {name for layer in layers for name in layer}
     merged = {}
     for name in names:
         curves = [layer[name] for layer in layers if layer.get(name)]
-        times = sorted({float(t) for curve in curves for t, _ in curve})
-        crossings = set()
+        times = np.array(
+            sorted({float(t) for curve in curves for t, _ in curve}))
+        values = np.stack([_curve_values(curve, times) for curve in curves])
+        crossings: set = set()
         # Between adjacent source keyframes every curve is linear. Preserve
         # intersections so interpolation of the merged lower envelope stays
         # exact when the stronger attenuation changes from one layer to another.
-        for left, right in pairwise(times):
-            values = [
-                (float(envelope_at(curve, left)), float(envelope_at(curve, right)))
-                for curve in curves
-            ]
-            for index, (start_a, end_a) in enumerate(values):
-                for start_b, end_b in values[index + 1:]:
-                    delta_start, delta_end = start_a - start_b, end_a - end_b
-                    if delta_start * delta_end < 0:
-                        fraction = delta_start / (delta_start - delta_end)
-                        crossings.add(left + (right - left) * fraction)
-        times = sorted((*times, *crossings))
-        merged[name] = [
-            (at, min(float(envelope_at(curve, at)) for curve in curves))
-            for at in times
-        ]
+        left, right = times[:-1], times[1:]
+        for a in range(len(curves)):
+            for b in range(a + 1, len(curves)):
+                delta_start = values[a, :-1] - values[b, :-1]
+                delta_end = values[a, 1:] - values[b, 1:]
+                flip = delta_start * delta_end < 0
+                if flip.any():
+                    fraction = (
+                        delta_start[flip] / (delta_start[flip] - delta_end[flip]))
+                    crossings.update(
+                        (left[flip] + (right[flip] - left[flip]) * fraction)
+                        .tolist())
+        at_all = np.sort(np.concatenate([times, np.fromiter(crossings, float)]))
+        lows = np.stack([_curve_values(curve, at_all) for curve in curves]).min(0)
+        merged[name] = list(zip(at_all.tolist(), lows.tolist(), strict=True))
     return merged
