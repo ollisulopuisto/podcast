@@ -257,3 +257,42 @@ def test_exported_result_has_status_live_region_accessible_label_and_copy_button
     # Hylätyn writeText-kutsun jälkeen yritetään vanhaa kopiointikomentoa
     # sen sijaan, että ilmoitettaisiin heti epäonnistumisesta.
     assert "if (!ok && document.execCommand)" in app
+
+
+TRAILER_SMOKE = Path(__file__).parent / "trailer_smoke.js"
+
+
+def _trailer_smoke(static, lang):
+    return subprocess.run(
+        ["node", str(TRAILER_SMOKE), str(static), lang],
+        capture_output=True, text=True, timeout=60)
+
+
+@needs_node
+@pytest.mark.parametrize("lang", ["fi", "en"])
+def test_trailer_page_runs_every_handler_without_errors(lang):
+    done = _trailer_smoke(STATIC, lang)
+    assert done.returncode == 0, done.stderr or done.stdout
+
+
+@needs_node
+def test_trailer_smoke_catches_a_stale_preview_and_an_undefined_variable(tmp_path):
+    """Vartio itse vartijalle: sama vika jonka Devin löysi, ja sekin jota ``node --check`` ei näe."""
+    stale = tmp_path / "stale"
+    shutil.copytree(STATIC, stale)
+    js = stale / "trailer.js"
+    text = js.read_text(encoding="utf-8")
+    marker = "      if (sel > i) sel += 1;\n      renderList();\n      showFrame();"
+    assert marker in text
+    js.write_text(text.replace(marker, "      if (sel > i) sel += 1;\n      renderList();", 1),
+                  encoding="utf-8")
+    assert _trailer_smoke(stale, "fi").returncode != 0
+
+    broken = tmp_path / "broken"
+    shutil.copytree(STATIC, broken)
+    js = broken / "trailer.js"
+    text = js.read_text(encoding="utf-8")
+    marker = "function drawComposite() {"
+    js.write_text(text.replace(marker, marker + "\n  puuttuvaMuuttuja.x;", 1),
+                  encoding="utf-8")
+    assert _trailer_smoke(broken, "fi").returncode != 0

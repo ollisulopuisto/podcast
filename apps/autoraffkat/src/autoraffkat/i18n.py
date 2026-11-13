@@ -175,6 +175,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "en": "The wide shot and the microphones share no common time. "
         "Check the roles and the sync in the source XML.",
     },
+    "trailer.plan_failed": {
+        "fi": "Videon käsittely epäonnistui.",
+        "en": "Processing the video failed.",
+    },
     "trailer.err.no_picture": {
         "fi": "{name}: ei kuvaa tai kestoa.",
         "en": "{name}: no picture or duration.",
@@ -528,6 +532,26 @@ CATALOG: dict[str, dict[str, str]] = {
               "tai käytä «Synkronoi klipit» -lähdettä.",
         "en": "Resolve export does not support a multicam source yet. Export "
               "for Final Cut, or use a «Synchronize Clips» source.",
+    },
+    "trailer.no_file": {
+        "fi": "Valitse videotiedosto.",
+        "en": "Choose a video file.",
+    },
+    "trailer.bad_number": {
+        "fi": "Arvo «{name}» ei kelpaa.",
+        "en": "The value “{name}” is not valid.",
+    },
+    "trailer.bad_choice": {
+        "fi": "Tuntematon kaista tai vientikohde.",
+        "en": "Unknown lane or export destination.",
+    },
+    "trailer.bad_pieces": {
+        "fi": "Palat eivät kelpaa: tyhjä lista, liian monta tai loppu ennen alkua.",
+        "en": "The pieces are not valid: empty, too many, or an end before its start.",
+    },
+    "trailer.too_many_exports": {
+        "fi": "Samalle trailerille on jo sata vientiä. Poista vanhoja.",
+        "en": "There are already a hundred exports for this trailer. Delete old ones.",
     },
     "audio.program_short": {
         "fi": "Masterointi jäi tavoitteesta: tavoite {target} LUFS, tulos {got}.",

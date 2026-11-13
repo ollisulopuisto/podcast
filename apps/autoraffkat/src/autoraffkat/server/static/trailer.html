@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="fi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>autoraffkat – trailer</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicon.png">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="header-top">
+    <div class="titles">
+      <h1 id="tr-name">—</h1>
+      <p id="tr-meta" class="muted"></p>
+    </div>
+    <div class="header-utilities"><a id="tr-back" class="ghost" href="/" data-t="trailer.back">Takaisin</a></div>
+  </div>
+  <div class="toolbar">
+    <div class="toolbar-group" role="group">
+      <button id="tr-open" class="ghost" data-t="trailer.open">Avaa trailer…</button>
+    </div>
+    <div id="tr-output" class="toolbar-group tr-output" role="group">
+      <span id="tr-dest" class="export-dest" role="radiogroup"></span>
+      <label class="tr-field"><span data-t="trailer.lane">Päällä avattaessa</span>
+        <select id="tr-lane">
+          <option value="top" data-t="trailer.lane.top">Yläpuolikas</option>
+          <option value="bottom" data-t="trailer.lane.bottom">Alapuolikas</option>
+          <option value="none" data-t="trailer.lane.none">Vain koko ruutu</option>
+        </select></label>
+      <button id="tr-export" class="primary" data-t="trailer.export" disabled>Vie FCPXML</button>
+    </div>
+  </div>
+</header>
+<div id="tr-status" class="status-line muted" role="status" aria-live="polite"></div>
+<div id="tr-banner" class="banner hidden" role="alert"></div>
+<div id="tr-exported" class="exported hidden" role="status" aria-live="polite"></div>
+<main class="tr-main">
+  <section class="panel tr-view" aria-labelledby="tr-view-title">
+    <h2 id="tr-view-title" data-t="trailer.framing">Kehystys</h2>
+    <p class="muted" data-t="trailer.framingHelp">Vedä kuvaa vaakasuunnassa siirtääksesi kohdetta. Vihreä laatikko on puolikas, sininen koko ruutu.</p>
+    <div class="tr-stage">
+      <div id="tr-frame" class="tr-frame" aria-label="Lähdekuva">
+        <img id="tr-img" alt="" draggable="false">
+        <div id="tr-box-full" class="tr-box tr-box-full"></div>
+        <div id="tr-box-half" class="tr-box tr-box-half"></div>
+      </div>
+      <canvas id="tr-comp" class="tr-comp" width="270" height="480" aria-label="Esikatselu"></canvas>
+    </div>
+  </section>
+  <section class="panel tr-splice" aria-labelledby="tr-splice-title">
+    <h2 id="tr-splice-title" data-t="trailer.splice">Pilkonta</h2>
+    <label class="tr-field"><span data-t="trailer.mode">Tapa</span>
+      <select id="tr-mode">
+        <option value="scenes" data-t="trailer.mode.scenes">Kohtauksen vaihdot</option>
+        <option value="every" data-t="trailer.mode.every">Tasavälein</option>
+      </select></label>
+    <label class="tr-field" id="tr-sens-row"><span data-t="trailer.sensitivity">Herkkyys</span>
+      <input id="tr-sens" type="range" min="10" max="80" value="30"><output id="tr-sens-out">0,30</output></label>
+    <label class="tr-field" id="tr-min-row"><span data-t="trailer.minLen">Lyhin pala (s)</span>
+      <input id="tr-min" type="number" min="0.3" max="30" step="0.1" value="1"></label>
+    <label class="tr-field hidden" id="tr-every-row"><span data-t="trailer.every">Joka (s)</span>
+      <input id="tr-every" type="number" min="0.5" max="600" step="0.5" value="3"></label>
+    <button id="tr-apply" class="ghost" data-t="trailer.apply" disabled>Pilko uudestaan</button>
+    <p class="muted" data-t="trailer.applyHelp">Uusi pilkonta poistaa käsin tehdyt kehykset.</p>
+    <h3 id="tr-count"></h3>
+    <ol id="tr-list" class="tr-list"></ol>
+  </section>
+</main>
+<script src="/static/i18n.js"></script>
+<script src="/static/trailer.js"></script>
+</body>
+</html>
