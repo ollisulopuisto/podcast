@@ -22,6 +22,8 @@ import functools
 import os
 import re
 import subprocess
+from dataclasses import dataclass
+from fractions import Fraction
 from itertools import pairwise
 
 import numpy as np
@@ -50,6 +52,43 @@ TIMEOUT = 1800
 
 class TrailerError(Exception):
     """Mittaus ei onnistunut."""
+
+
+@dataclass(frozen=True)
+class TrailerSource:
+    """Trailerin tiedot kirjoitusta varten: yksi kuvatiedosto."""
+
+    path: str
+    name: str
+    width: int
+    height: int
+    frame_duration: Fraction
+    duration: Fraction
+    has_audio: bool = False
+    audio_channels: int = 2
+    audio_rate: int = 48000
+
+
+def probe_source(path: str) -> TrailerSource:
+    """Lukee trailerin ffprobesta. Kuvaton tai pituudeton tiedosto on virhe."""
+    data = info(path) or {}
+    video = data.get("video") or {}
+    audio = data.get("audio") or {}
+    duration = data.get("duration")
+    fps = video.get("fps")
+    if not video or not duration or not fps or fps <= 0:
+        raise TrailerError(f"{os.path.basename(path)}: ei kuvaa tai kestoa")
+    return TrailerSource(
+        path=os.path.abspath(path),
+        name=os.path.splitext(os.path.basename(path))[0],
+        width=int(video.get("width") or 0),
+        height=int(video.get("height") or 0),
+        frame_duration=Fraction(1) / Fraction(str(fps)).limit_denominator(1000),
+        duration=Fraction(str(duration)).limit_denominator(1_000_000),
+        has_audio=bool(audio),
+        audio_channels=int(audio.get("channels") or 2),
+        audio_rate=int(audio.get("rate") or 48000),
+    )
 
 
 class _Kind:
@@ -272,3 +311,20 @@ def window(src_w: int, src_h: int, frame_w: int, frame_h: int,
     wx = min(max(x * src_w - ww / 2, 0.0), max(0.0, src_w - ww))
     wy = max(0.0, (src_h - wh) / 2)
     return wx, wy, ww, wh
+
+
+def plan(path: str, threshold: float = SCENE_DEFAULT, min_len: float = MIN_PIECE,
+         every: float | None = None) -> tuple[TrailerSource, list[tuple[float, float]], list[float]]:
+    """Trailer → (tiedot, palat, kohteen paikka palaa kohden).
+
+    ``every`` valitsee tasavälisen pilkonnan kohtausten sijaan. Kohde mitataan
+    aina: kehys tarvitaan kummassakin tilassa.
+    """
+    src = probe_source(path)
+    length = float(src.duration)
+    if every:
+        cuts = fixed_pieces(length, every)
+    else:
+        cuts = pieces(cut_points(scene_table(path), threshold, min_len, length), length)
+    table = saliency_table(path)
+    return src, cuts, [piece_x(table, a, b) for a, b in cuts]
