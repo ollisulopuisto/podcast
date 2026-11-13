@@ -188,7 +188,7 @@ def _blur(img: np.ndarray, r: int = 3) -> np.ndarray:
 
 def saliency_table(path: str) -> dict:
     """``{"times", "x", "y"}``: kohteen paikka ruudusta kahden ruudun sekuntinopeudella."""
-    return measure._cached(path, _Kind("subject", 1), lambda: _measure_subject(path))
+    return measure._cached(path, _Kind("subject", 2), lambda: _measure_subject(path))
 
 
 @functools.lru_cache(maxsize=4)
