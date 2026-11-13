@@ -1003,6 +1003,8 @@ class AppState:
                     (float(window[0]), float(window[1])) if window else None)
             except (TypeError, ValueError, IndexError):
                 self.preview_window = None
+        if payload.get("dialect") in ("fcp", "resolve"):
+            self.settings.export_dialect = payload["dialect"]
         if "program_range" in payload:
             marks = payload.get("program_range") or {}
             try:
@@ -1932,6 +1934,7 @@ def _state_json(state: AppState) -> dict:
         "languages": list(LANGUAGES),
         "audio": state.settings.audio.to_json(),
         "package": state.settings.package.to_json(),
+        "export_dialect": state.settings.export_dialect,
         # Mitatut oletukset käyttöliittymälle. Se merkitsee poikkeaman
         # suljetulle riville, ja poikkeaman on tultava samasta paikasta kuin
         # arvot itse — JavaScriptiin kirjoitettu kopio ajautuisi erilleen
@@ -2485,12 +2488,23 @@ def create_app(state: AppState) -> FastAPI:
         sitä mitä ruudulla näkyy eikä edellistä tallennettua tilaa.
         """
         want_render = bool((payload or {}).get("render"))
+        # Vientikohde: «resolve» = littanaan FCPXML 1.9 (DaVinci Resolve).
+        requested = (payload or {}).get("dialect")
+        if requested is not None and requested not in ("fcp", "resolve"):
+            raise HTTPException(400, t("export.bad_dialect"))
         if want_render and state.render_progress.get("running"):
             raise HTTPException(409, t("render.busy"))
         shot_list: list | None = [] if want_render else None
         with state.lock:
             if payload:
                 state.apply(payload)
+            dialect = state.settings.export_dialect
+            if (dialect == "resolve" and state.timeline is not None
+                    and state.timeline.multicams):
+                # Monikameralähteen littanaus (raidat -> osien tiedostot,
+                # ääniautomaatio, läpimenevä ääni) puuttuu vielä; hiljainen
+                # virheellinen vienti olisi pahempi kuin selvä kieltäytyminen.
+                raise HTTPException(400, t("export.resolve_multicam"))
             result = state.compute()
             if not result.get("ok"):
                 return JSONResponse(
@@ -2671,7 +2685,10 @@ def create_app(state: AppState) -> FastAPI:
                     # sanomatta: käyttäjä huomaa vasta Final Cutissa, ettei
                     # kuvakulmaa voi vaihtaa, ja syy (lähde on
                     # «Synkronoi klipit», ei monikameraklippi) ei näy siellä.
-                    warnings.append(t("export.flat_no_multicam"))
+                    # Resolve-viennissä littana on tarkoitus; neuvo luoda
+                    # monikameraklippi olisi ristiriidassa Resolve-vahdin kanssa.
+                    if dialect != "resolve":
+                        warnings.append(t("export.flat_no_multicam"))
                     xml = build_fcpxml(
                         {m.key: m for m in state.timeline.media},
                         segments,
@@ -2688,6 +2705,7 @@ def create_app(state: AppState) -> FastAPI:
                         tc_start=state.timeline.tc_start,
                         shots=shot_list,
                         package=package_plan,
+                        dialect=dialect,
                     )
                 write_fcpxml(out_path, xml)
                 state.remember(out_path)

@@ -8,6 +8,10 @@ and this project adheres to Calendar Versioning (CalVer).
 ## [Unreleased]
 
 ### Added
+- Export for DaVinci Resolve: the export request accepts `dialect: "resolve"`
+  and writes a flattened FCPXML 1.9 (assets use `src`, no `media-rep`), which
+  Resolve 17 can import. The toolbar has a Final Cut Pro / DaVinci Resolve
+  choice, remembered per project. Not verified against a real Resolve.
 - Cut on movement: an optional setting that snaps each cut to the nearest
   measured moment of movement in the outgoing angle, so the picture change
   lands inside motion instead of a freeze. Off by default; measured from

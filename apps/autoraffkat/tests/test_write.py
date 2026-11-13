@@ -2281,3 +2281,55 @@ def test_neighbouring_spans_of_different_shots_with_the_same_label_stay_apart():
         ("CLOSE_A.mp4", 0, 48),
         ("CLOSE_B.mp4", 48, 144),
     ]
+
+
+# ------------------------------------------------------------ Resolve-murre
+
+
+def _flat(fixture_dir, **kw):
+    tl = read_fcpxml(str(fixture_dir / "sync.fcpxml"))
+    segments = [
+        Segment("WIDE.mp4", "Laaja", 0.0, 3.3),
+        Segment("CLOSE_A.mp4", "Host", 3.3, 20.0),
+    ]
+    return build_fcpxml(
+        {m.key: m for m in tl.media}, segments,
+        [("MIC_A.wav", "Host"), ("MIC_B.wav", "Guest")],
+        tl.frame_duration, tl.start, tl.start + Fraction(20), "Testi", **kw)
+
+
+def test_resolve_dialect_writes_version_1_9(fixture_dir):
+    xml = _flat(fixture_dir, dialect="resolve")
+    assert ET.fromstring(xml).get("version") == "1.9"
+
+
+def test_resolve_dialect_puts_the_path_on_the_asset(fixture_dir):
+    """1.9:ssä lähde on assetin ``src``-attribuutti, ei ``<media-rep>``."""
+    root = ET.fromstring(_flat(fixture_dir, dialect="resolve"))
+    assets = root.findall("./resources/asset")
+    assert assets
+    for asset in assets:
+        assert asset.find("media-rep") is None
+        assert asset.get("src", "").startswith("file://")
+
+
+def test_default_dialect_still_writes_media_rep(fixture_dir):
+    root = ET.fromstring(_flat(fixture_dir))
+    assert root.get("version") == "1.10"
+    assert all(a.find("media-rep") is not None
+               for a in root.findall("./resources/asset"))
+
+
+def test_unknown_dialect_is_an_error(fixture_dir):
+    with pytest.raises(WriteError):
+        _flat(fixture_dir, dialect="premiere")
+
+
+def test_resolve_output_reads_back(fixture_dir, tmp_path):
+    """Round-trip: our own reader accepts the 1.9 shape (assetin ``src``)."""
+    xml = _flat(fixture_dir, dialect="resolve")
+    path = tmp_path / "resolve.fcpxml"
+    path.write_text(xml, encoding="utf-8")
+    again = read_fcpxml(str(path))
+    assert {m.key for m in again.media} >= {"WIDE.mp4", "CLOSE_A.mp4", "MIC_A.wav"}
+    assert all(m.path for m in again.media)

@@ -2746,6 +2746,7 @@ function payload() {
   state.tracks.forEach((m) => { tracks[m.key] = m.config; });
   return { tracks, globals: state.globals, audio: state.audio,
            package: state.package,
+           dialect: state.export_dialect || 'fcp',
            preview_window: previewWindow,
            program_range: { start: programRange[0], end: programRange[1] } };
 }
@@ -2936,7 +2937,7 @@ function banner(text, isError) {
    Finder — ja lauseen keskeltä sitä ei saa valituksi kaksoisklikkauksella.
    Kenttä valitsee sisältönsä kohdistuessa, ja Final Cut avataan suoraan
    napista, koska tuonti on viennin ainoa jatko. */
-function renderExported(path, said) {
+function renderExported(path, said, dialect) {
   const box = $('exported');
   box.textContent = '';
   box.classList.toggle('hidden', !path);
@@ -2990,7 +2991,9 @@ function renderExported(path, said) {
   show.style.margin = '0';
   show.textContent = T('export.reveal');
   show.addEventListener('click', () => sendPath('/api/reveal', path, show));
-  box.append(label, field, copyBtn, fcp, show);
+  /* Resolve ei avaudu Final Cutissa: vain tiedoston näyttö. */
+  if (dialect === 'resolve') box.append(label, field, copyBtn, show);
+  else box.append(label, field, copyBtn, fcp, show);
 }
 
 /* Yhteinen lähetys molemmille napeille: virhe kerrotaan, ei niellä.
@@ -3032,7 +3035,8 @@ async function exportXml() {
       const mixed = data.mixed ? T('app.exportedMix', { n: data.mixed }) : '';
       $('status').textContent = '';
       renderExported(data.path,
-                     T('app.exportedCuts', { cuts: data.cuts }) + mixed);
+                     T('app.exportedCuts', { cuts: data.cuts }) + mixed,
+                     state.export_dialect);
       /* Polkurivi näyttää mihin *seuraava* vienti menee: äsken kirjoitettua
          tiedostoa ei enää korvata. */
       if (data.next_path) { state.output_path = data.next_path; renderHeader(); }
@@ -3070,7 +3074,8 @@ async function renderVideo() {
       setBusy(button, false);
       return;
     }
-    renderExported(data.path, T('app.exportedCuts', { cuts: data.cuts }));
+    renderExported(data.path, T('app.exportedCuts', { cuts: data.cuts }),
+                   state.export_dialect);
     if (data.next_path) { state.output_path = data.next_path; renderHeader(); }
     banner((data.warnings || []).join('\n'));
     watchRender(button);
@@ -3120,6 +3125,7 @@ async function watchRender(button) {
 
 function renderHeader() {
   renderHistory();
+  renderExportDest();
   $('project-name').textContent = state.name || '—';
   const bits = [T(`kind.${state.kind}`), T('meta.fps', { fps: state.fps ?? '?' }),
                 T('meta.tracks', { n: state.tracks.length })];
@@ -3222,6 +3228,7 @@ function renderStatic() {
   document.querySelectorAll('[data-t]').forEach((el) => {
     el.textContent = T(el.dataset.t);
   });
+  renderExportDest();
   $('document-controls').setAttribute('aria-label', T('toolbar.documents'));
   $('mark-in').textContent = T('range.markIn');
   $('mark-out').textContent = T('range.markOut');
@@ -3264,7 +3271,8 @@ const SHORTCUTS = [
   { id: 'open', group: 'file', label: 'keys.open', combos: [{ mod: true, key: 'o' }],
     scope: ['page', 'sheet'], control: 'open', text: 'app.open', run: () => openXml() },
   { id: 'export', group: 'file', label: 'keys.export', combos: [{ mod: true, key: 'e' }],
-    scope: ['page', 'sheet'], control: 'export', text: 'app.export', run: () => exportXml() },
+    scope: ['page', 'sheet'], control: 'export', text: 'app.export',
+    run: () => exportXml() },
   { id: 'zoom', group: 'preview', label: 'keys.zoom', pointer: 'keys.wheel', scope: [] },
   { id: 'pan', group: 'preview', label: 'keys.pan', pointer: 'keys.drag', scope: [] },
   { id: 'whole', group: 'preview', label: 'keys.whole', pointer: 'keys.dblclick', scope: [] },
@@ -3428,6 +3436,38 @@ function trapFocus(e) {
 
 /* Näppäin näkyviin: <kbd>-vihje sen painikkeen kylkeen jonka se laukaisee,
    työkaluvihje («Vie XML (⌘E)») ja ruudunlukijalle aria-keyshortcuts. */
+/* Vientikohde: Final Cut (oletus) tai Resolve. Valinta lähtee mukana
+   vientipyynnössä ja palvelin muistaa sen projektille. */
+function renderExportDest() {
+  const host = $('export-dest');
+  if (!host) return;
+  host.textContent = '';
+  host.setAttribute('aria-label', T('export.dest.label'));
+  const current = state.export_dialect === 'resolve' ? 'resolve' : 'fcp';
+  ['fcp', 'resolve'].forEach((value) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ghost';
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(value === current));
+    b.textContent = T(`export.dest.${value}`);
+    b.addEventListener('click', () => {
+      state.export_dialect = value;
+      renderExportDest();
+      paintShortcutControls();
+      /* Tallennetaan heti: valinta ei saa palata Final Cutiin latauksessa. */
+      send().catch((err) => banner(err.message, true));
+    });
+    host.append(b);
+  });
+  if (current === 'resolve') {
+    const hint = document.createElement('span');
+    hint.className = 'export-dest-hint';
+    hint.textContent = T('export.dest.resolveHint');
+    host.append(hint);
+  }
+}
+
 function paintShortcutControls() {
   const mac = onMac();
   SHORTCUTS.filter((s) => s.control).forEach((s) => {
@@ -3437,7 +3477,9 @@ function paintShortcutControls() {
     /* Työn alla olevan painikkeen teksti on «Viedään…», eikä vihjettä
        piirretä sen päälle; setBusy kutsuu tätä kun työ on ohi. */
     if (!(el.classList && el.classList.contains('busy'))) {
-      el.textContent = T(s.text);
+      const textKey = (s.control === 'export' && state.export_dialect === 'resolve')
+        ? 'app.exportResolve' : s.text;
+      el.textContent = T(textKey);
       const kbd = document.createElement('kbd');
       kbd.textContent = keys;
       el.append(' ', kbd);

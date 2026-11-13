@@ -23,6 +23,7 @@ from autoraffkat.model import (
     Globals,
     TrackConfig,
 )
+from autoraffkat.project import ProjectSettings
 from autoraffkat.server.app import AppState, create_app
 
 
@@ -313,6 +314,21 @@ def test_wide_can_be_excluded_and_exported(scratch_xml):
     assert any("CLOSE_A.mp4" in s for s in media_srcs)
     assert any("CLOSE_B.mp4" in s for s in media_srcs)
     assert not any("WIDE.mp4" in s for s in media_srcs)
+
+    # Resolve-vienti: FCPXML 1.9, resurssien polku ``src``-attribuutissa
+    res = client.post("/api/export", json={"dialect": "resolve"}).json()
+    assert res["ok"], res.get("problems")
+    rroot = ET.fromstring(pathlib.Path(res["path"]).read_text(encoding="utf-8"))
+    assert rroot.get("version") == "1.9"
+    assert "warnings" not in res or not any("monikamera" in w.lower() or "multicam" in w.lower() for w in res.get("warnings", []))
+    assert not rroot.findall(".//media-rep")
+    assert any("CLOSE_A.mp4" in a.get("src", "") for a in rroot.findall(".//asset"))
+    assert client.post("/api/export", json={"dialect": "avid"}).status_code == 400
+    # Valinta muistetaan projektille: tilassa ja tallennetussa asetuksessa
+    assert client.get("/api/state").json()["export_dialect"] == "resolve"
+    assert ProjectSettings.from_json(state.settings.to_json()).export_dialect == "resolve"
+    client.post("/api/export", json={"dialect": "fcp"})
+    assert client.get("/api/state").json()["export_dialect"] == "fcp"
 
 
 
@@ -2075,3 +2091,45 @@ def test_program_in_out_range_reaches_xml_and_video_render(scratch_xml):
     root = ET.parse(exported["path"]).getroot()
     sequence = root.find(".//sequence")
     assert sequence.get("duration") == f"{expected[1] - expected[0]}s"
+
+
+def test_resolve_export_refuses_a_multicam_source(fixture_dir, tmp_path):
+    """Monikameralähteen Resolve-vienti kieltäytyy selvästi eikä kirjoita vajaata XML:ää."""
+    import shutil
+
+    import make_fixture
+
+    for name in ("WIDE.mp4", "CLOSE_A.mp4", "CLOSE_B.mp4", "MIC_A.wav", "MIC_B.wav"):
+        if (fixture_dir / name).exists():
+            shutil.copy(fixture_dir / name, tmp_path / name)
+    source = tmp_path / "synced.fcpxml"
+    make_fixture.write_synced_multicam_xml(str(source), str(tmp_path))
+    state = AppState(xml_path=str(source))
+    state.load()
+    client = TestClient(create_app(state))
+    res = client.post("/api/export", json={"dialect": "resolve"})
+    assert res.status_code == 400
+    from autoraffkat.i18n import t
+
+    assert res.json()["detail"] == t("export.resolve_multicam")
+    assert [p.name for p in tmp_path.glob("*.fcpxml")] == ["synced.fcpxml"]
+
+
+def test_resolve_choice_is_saved_by_settings_without_export(scratch_xml):
+    """Valinta tallentuu asetusten mukana, ei vasta viennissä."""
+    state = AppState(xml_path=str(scratch_xml()))
+    state.load()
+    client = TestClient(create_app(state))
+    from autoraffkat import project
+
+    client.post("/api/settings", json={"dialect": "resolve"})
+    # Luetaan levyltä, ei muistissa olevasta tilasta
+    assert project.load(state.xml_path).export_dialect == "resolve"
+    client.post("/api/settings", json={"tracks": {}})
+    assert project.load(state.xml_path).export_dialect == "resolve"
+
+
+def test_resolve_export_before_load_is_not_a_server_error(scratch_xml):
+    client = TestClient(create_app(AppState(xml_path=str(scratch_xml()))))
+    res = client.post("/api/export", json={"dialect": "resolve"})
+    assert res.status_code < 500
