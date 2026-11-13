@@ -112,3 +112,63 @@ def test_merging_preserves_the_crossing_of_two_fades():
     assert merged["Aino"] == pytest.approx([
         (0.0, -20.0), (1.0, -10.0), (2.0, -20.0),
     ])
+
+
+def _scalar_merge(*layers):
+    """Viittaus: alkuperäinen skalaarinen toteutus, ``envelope_at`` kutsuittain."""
+    from itertools import pairwise
+
+    from speechmix.envelopes import envelope_at
+
+    merged = {}
+    for name in {n for layer in layers for n in layer}:
+        curves = [layer[name] for layer in layers if layer.get(name)]
+        times = sorted({float(t) for curve in curves for t, _ in curve})
+        crossings = set()
+        for left, right in pairwise(times):
+            values = [(float(envelope_at(c, left)), float(envelope_at(c, right)))
+                      for c in curves]
+            for i, (sa, ea) in enumerate(values):
+                for sb, eb in values[i + 1:]:
+                    if (sa - sb) * (ea - eb) < 0:
+                        crossings.add(left + (right - left) * (sa - sb) / ((sa - sb) - (ea - eb)))
+        times = sorted((*times, *crossings))
+        merged[name] = [(at, min(float(envelope_at(c, at)) for c in curves))
+                        for at in times]
+    return merged
+
+
+def test_merging_an_empty_named_curve_returns_an_empty_curve():
+    assert silence.merge_envelopes({"Aino": []}) == {"Aino": []}
+    assert silence.merge_envelopes({"Aino": []}, {"Aino": []}) == {"Aino": []}
+
+
+def test_merging_matches_the_scalar_reference():
+    import random
+
+    rng = random.Random(11)
+    for _ in range(40):
+        layers = []
+        for _ in range(rng.choice([1, 2, 3])):
+            layer = {}
+            for name in ("A", "B"):
+                n = rng.randint(0, 60)
+                times = sorted(float(rng.randint(0, 30)) + rng.choice([0.0, 0.5])
+                               for _ in range(n))
+                layer[name] = [(t, rng.choice([0.0, -6.0, -12.0, -24.0]))
+                               for t in times]
+            layers.append(layer)
+        got, want = silence.merge_envelopes(*layers), _scalar_merge(*layers)
+        assert got.keys() == want.keys()
+        for name in want:
+            # Risteyskohdat voivat erota yhden ulpin: sama laskutoimitus,
+            # mutta numpyn ja Pythonin liukuluvut eivät aina pyöristy samoin.
+            flat = [x for point in got[name] for x in point]
+            ref = [x for point in want[name] for x in point]
+            assert len(flat) == len(ref)
+            assert flat == pytest.approx(ref, rel=1e-12, abs=1e-12)
+
+
+def test_merging_single_point_curves():
+    merged = silence.merge_envelopes({"A": [(1.0, -6.0)]}, {"A": [(2.0, -12.0)]})
+    assert merged == _scalar_merge({"A": [(1.0, -6.0)]}, {"A": [(2.0, -12.0)]})
