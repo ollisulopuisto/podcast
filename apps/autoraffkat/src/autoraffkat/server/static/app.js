@@ -2937,7 +2937,7 @@ function banner(text, isError) {
    Finder — ja lauseen keskeltä sitä ei saa valituksi kaksoisklikkauksella.
    Kenttä valitsee sisältönsä kohdistuessa, ja Final Cut avataan suoraan
    napista, koska tuonti on viennin ainoa jatko. */
-function renderExported(path, said) {
+function renderExported(path, said, dialect) {
   const box = $('exported');
   box.textContent = '';
   box.classList.toggle('hidden', !path);
@@ -2991,7 +2991,9 @@ function renderExported(path, said) {
   show.style.margin = '0';
   show.textContent = T('export.reveal');
   show.addEventListener('click', () => sendPath('/api/reveal', path, show));
-  box.append(label, field, copyBtn, fcp, show);
+  /* Resolve ei avaudu Final Cutissa: vain tiedoston näyttö. */
+  if (dialect === 'resolve') box.append(label, field, copyBtn, show);
+  else box.append(label, field, copyBtn, fcp, show);
 }
 
 /* Yhteinen lähetys molemmille napeille: virhe kerrotaan, ei niellä.
@@ -3033,7 +3035,8 @@ async function exportXml() {
       const mixed = data.mixed ? T('app.exportedMix', { n: data.mixed }) : '';
       $('status').textContent = '';
       renderExported(data.path,
-                     T('app.exportedCuts', { cuts: data.cuts }) + mixed);
+                     T('app.exportedCuts', { cuts: data.cuts }) + mixed,
+                     state.export_dialect);
       /* Polkurivi näyttää mihin *seuraava* vienti menee: äsken kirjoitettua
          tiedostoa ei enää korvata. */
       if (data.next_path) { state.output_path = data.next_path; renderHeader(); }
@@ -3071,7 +3074,8 @@ async function renderVideo() {
       setBusy(button, false);
       return;
     }
-    renderExported(data.path, T('app.exportedCuts', { cuts: data.cuts }));
+    renderExported(data.path, T('app.exportedCuts', { cuts: data.cuts }),
+                   state.export_dialect);
     if (data.next_path) { state.output_path = data.next_path; renderHeader(); }
     banner((data.warnings || []).join('\n'));
     watchRender(button);

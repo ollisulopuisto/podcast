@@ -2685,7 +2685,10 @@ def create_app(state: AppState) -> FastAPI:
                     # sanomatta: käyttäjä huomaa vasta Final Cutissa, ettei
                     # kuvakulmaa voi vaihtaa, ja syy (lähde on
                     # «Synkronoi klipit», ei monikameraklippi) ei näy siellä.
-                    warnings.append(t("export.flat_no_multicam"))
+                    # Resolve-viennissä littana on tarkoitus; neuvo luoda
+                    # monikameraklippi olisi ristiriidassa Resolve-vahdin kanssa.
+                    if dialect != "resolve":
+                        warnings.append(t("export.flat_no_multicam"))
                     xml = build_fcpxml(
                         {m.key: m for m in state.timeline.media},
                         segments,

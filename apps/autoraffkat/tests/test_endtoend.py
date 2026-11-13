@@ -320,6 +320,7 @@ def test_wide_can_be_excluded_and_exported(scratch_xml):
     assert res["ok"], res.get("problems")
     rroot = ET.fromstring(pathlib.Path(res["path"]).read_text(encoding="utf-8"))
     assert rroot.get("version") == "1.9"
+    assert "warnings" not in res or not any("monikamera" in w.lower() or "multicam" in w.lower() for w in res.get("warnings", []))
     assert not rroot.findall(".//media-rep")
     assert any("CLOSE_A.mp4" in a.get("src", "") for a in rroot.findall(".//asset"))
     assert client.post("/api/export", json={"dialect": "avid"}).status_code == 400
@@ -2119,10 +2120,13 @@ def test_resolve_choice_is_saved_by_settings_without_export(scratch_xml):
     state = AppState(xml_path=str(scratch_xml()))
     state.load()
     client = TestClient(create_app(state))
+    from autoraffkat import project
+
     client.post("/api/settings", json={"dialect": "resolve"})
-    assert client.get("/api/state").json()["export_dialect"] == "resolve"
+    # Luetaan levyltä, ei muistissa olevasta tilasta
+    assert project.load(state.xml_path).export_dialect == "resolve"
     client.post("/api/settings", json={"tracks": {}})
-    assert client.get("/api/state").json()["export_dialect"] == "resolve"
+    assert project.load(state.xml_path).export_dialect == "resolve"
 
 
 def test_resolve_export_before_load_is_not_a_server_error(scratch_xml):
