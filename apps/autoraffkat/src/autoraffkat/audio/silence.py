@@ -93,6 +93,9 @@ def merge_envelopes(*layers) -> dict[str, list[tuple[float, float]]]:
     merged = {}
     for name in names:
         curves = [layer[name] for layer in layers if layer.get(name)]
+        if not curves:
+            merged[name] = []
+            continue
         times = np.array(
             sorted({float(t) for curve in curves for t, _ in curve}))
         values = np.stack([_curve_values(curve, times) for curve in curves])
