@@ -180,3 +180,50 @@ def test_plan_to_fcpxml_on_a_synthetic_three_scene_clip(tmp_path):
     assert trailer.plan(path)[1] == cuts
     fixed = trailer.plan(path, every=3.0)[1]
     assert fixed[0] == (0.0, 3.0)
+
+
+def test_connected_lanes_use_a_video_only_asset_so_audio_is_not_doubled():
+    root = _doc()
+    assets = {a.get("id"): a for a in root.findall(".//asset")}
+    spine_ref = _spine(root)[0].get("ref")
+    assert assets[spine_ref].get("hasAudio") == "1"
+    lanes = [k for k in _spine(root)[0] if k.tag == "asset-clip"]
+    assert lanes
+    for lane in lanes:
+        assert lane.get("ref") != spine_ref
+        assert assets[lane.get("ref")].get("hasAudio") is None
+        assert assets[lane.get("ref")].get("src") == assets[spine_ref].get("src")
+
+
+def test_silent_source_keeps_a_single_asset():
+    root = _doc(src=_src(audio=False))
+    assert len(root.findall(".//asset")) == 1
+
+
+def test_ntsc_rates_from_ffprobe_floats_snap_to_the_exact_fraction(monkeypatch):
+    from autoraffkat import trailer
+    for fps, expect in [(29.97, Fraction(1001, 30000)),
+                        (23.976, Fraction(1001, 24000)),
+                        (59.94, Fraction(1001, 60000)),
+                        (25.0, Fraction(1, 25))]:
+        monkeypatch.setattr(trailer, "info", lambda p, fps=fps: {
+            "video": {"width": 1920, "height": 1080, "fps": fps},
+            "duration": 10.0, "audio": {}})
+        assert trailer.probe_source("/x/t.mp4").frame_duration == expect
+
+
+def test_export_errors_follow_the_language():
+    from autoraffkat import i18n
+    i18n.set_language("en")
+    try:
+        with pytest.raises(WriteError) as err:
+            _doc(pieces=[], xs=[])
+        assert "tyhj" not in str(err.value).lower()
+        assert str(err.value).startswith("The ") or "piece" in str(err.value).lower()
+        assert not str(err.value).startswith("trailer.")
+    finally:
+        i18n.set_language("fi")
+    with pytest.raises(WriteError) as err:
+        _doc(pieces=[], xs=[])
+    assert not str(err.value).startswith("trailer.")
+    assert "pala" in str(err.value).lower()

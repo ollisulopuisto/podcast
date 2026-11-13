@@ -30,6 +30,7 @@ import numpy as np
 
 from speechmix.binaries import get_binary_path
 
+from .i18n import t
 from .probe import info
 from .video import measure
 
@@ -69,6 +70,19 @@ class TrailerSource:
     audio_rate: int = 48000
 
 
+#: Tasataajuuksien NTSC-versiot: ffprobe-liukuluku (29,97) ei ole 30000/1001.
+_NTSC = (Fraction(24000, 1001), Fraction(30000, 1001), Fraction(48000, 1001),
+         Fraction(60000, 1001), Fraction(120000, 1001))
+
+
+def _frame_duration(fps: float) -> Fraction:
+    """Ruudun kesto tarkkana murtolukuna; NTSC-taajuudet napataan täsmälleen."""
+    for rate in _NTSC:
+        if abs(fps - float(rate)) < 0.005:
+            return 1 / rate
+    return Fraction(1) / Fraction(str(fps)).limit_denominator(1000)
+
+
 def probe_source(path: str) -> TrailerSource:
     """Lukee trailerin ffprobesta. Kuvaton tai pituudeton tiedosto on virhe."""
     data = info(path) or {}
@@ -77,13 +91,13 @@ def probe_source(path: str) -> TrailerSource:
     duration = data.get("duration")
     fps = video.get("fps")
     if not video or not duration or not fps or fps <= 0:
-        raise TrailerError(f"{os.path.basename(path)}: ei kuvaa tai kestoa")
+        raise TrailerError(t("trailer.err.no_picture", name=os.path.basename(path)))
     return TrailerSource(
         path=os.path.abspath(path),
         name=os.path.splitext(os.path.basename(path))[0],
         width=int(video.get("width") or 0),
         height=int(video.get("height") or 0),
-        frame_duration=Fraction(1) / Fraction(str(fps)).limit_denominator(1000),
+        frame_duration=_frame_duration(float(fps)),
         duration=Fraction(str(duration)).limit_denominator(1_000_000),
         has_audio=bool(audio),
         audio_channels=int(audio.get("channels") or 2),
@@ -120,7 +134,7 @@ def _measure_scenes(path: str) -> dict:
     proc = subprocess.run(cmd, capture_output=True, text=True,
                           stdin=subprocess.DEVNULL, timeout=TIMEOUT)
     if proc.returncode != 0:
-        raise TrailerError(f"{os.path.basename(path)}: kohtausmittaus epäonnistui")
+        raise TrailerError(t("trailer.err.scenes", name=os.path.basename(path)))
     times: list[float] = []
     scores: list[float] = []
     for line in proc.stderr.splitlines():
@@ -131,8 +145,8 @@ def _measure_scenes(path: str) -> dict:
         if m:
             scores.append(float(m.group(1)))
     if len(times) != len(scores):
-        raise TrailerError(
-            f"{os.path.basename(path)}: {len(times)} aikaleimaa, {len(scores)} pistettä")
+        raise TrailerError(t("trailer.err.scene_pairs", name=os.path.basename(path),
+                            times=len(times), scores=len(scores)))
     return {"times": np.asarray(times, dtype=np.float32),
             "score": np.asarray(scores, dtype=np.float32)}
 
@@ -147,17 +161,17 @@ def cut_points(table: dict, threshold: float = SCENE_DEFAULT,
     times = np.asarray(table["times"], dtype=np.float64)
     score = np.asarray(table["score"], dtype=np.float64)
     keep: list[tuple[float, float]] = []
-    for t, s in sorted(zip(times.tolist(), score.tolist(), strict=True)):
-        if s < threshold or t < min_len:
+    for at, s in sorted(zip(times.tolist(), score.tolist(), strict=True)):
+        if s < threshold or at < min_len:
             continue
-        if duration > 0 and duration - t < min_len:
+        if duration > 0 and duration - at < min_len:
             continue   # liian lähellä loppua: ei saa syrjäyttää käyttökelpoista
-        if keep and t - keep[-1][0] < min_len:
+        if keep and at - keep[-1][0] < min_len:
             if s > keep[-1][1]:
-                keep[-1] = (t, s)
+                keep[-1] = (at, s)
             continue
-        keep.append((t, s))
-    return [t for t, _ in keep]
+        keep.append((at, s))
+    return [at for at, _ in keep]
 
 
 def pieces(cuts: list[float], duration: float) -> list[tuple[float, float]]:
@@ -250,7 +264,7 @@ def _measure_subject(path: str) -> dict:
     meta = (info(path) or {}).get("video") or {}
     width, height = int(meta.get("width") or 0), int(meta.get("height") or 0)
     if not width or not height:
-        raise TrailerError(f"{os.path.basename(path)}: ei kuvaa")
+        raise TrailerError(t("trailer.err.no_picture", name=os.path.basename(path)))
     sh = max(2, int(round(SAL_W * height / width / 2)) * 2)
     ffmpeg = get_binary_path("ffmpeg")
     cmd = [
@@ -262,7 +276,7 @@ def _measure_subject(path: str) -> dict:
     proc = subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL,
                           timeout=TIMEOUT)
     if proc.returncode != 0:
-        raise TrailerError(f"{os.path.basename(path)}: ruutujen purku epäonnistui")
+        raise TrailerError(t("trailer.err.decode", name=os.path.basename(path)))
     # Ruutujen todelliset ajat: video voi alkaa myöhemmin kuin säiliö.
     stamps = [float(m.group(1)) for line in proc.stderr.decode("utf-8", "replace").splitlines()
               if "Parsed_showinfo" in line
@@ -270,7 +284,8 @@ def _measure_subject(path: str) -> dict:
     frame = SAL_W * sh
     count = len(proc.stdout) // frame
     if len(stamps) < count:
-        raise TrailerError(f"{os.path.basename(path)}: {count} ruutua, {len(stamps)} aikaleimaa")
+        raise TrailerError(t("trailer.err.stamps", name=os.path.basename(path),
+                                frames=count, stamps=len(stamps)))
     data = np.frombuffer(proc.stdout[:count * frame], dtype=np.uint8)
     xs = np.zeros(count, dtype=np.float32)
     ys = np.zeros(count, dtype=np.float32)

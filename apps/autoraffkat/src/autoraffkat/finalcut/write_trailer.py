@@ -19,10 +19,12 @@ yksi paikka.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from fractions import Fraction
 from xml.sax.saxutils import quoteattr
 
 from .. import layout as screen_layout
+from ..i18n import t
 from ..model import MediaItem
 from ..timeline import format_time, frames_str, to_frames
 from ..trailer import TrailerSource
@@ -83,20 +85,20 @@ def build_trailer_fcpxml(
 ) -> str:
     """FCPXML-merkkijono. ``xs`` on kohteen vaakapaikka (0–1) palaa kohden."""
     if dialect not in DIALECTS:
-        raise WriteError(f"unknown export dialect: {dialect}")
+        raise WriteError(t("trailer.err.dialect", value=dialect))
     if enabled_lane not in LANES:
-        raise WriteError(f"unknown lane: {enabled_lane}")
+        raise WriteError(t("trailer.err.lane", value=enabled_lane))
     if not pieces or len(pieces) != len(xs):
-        raise WriteError("pieces and subject positions must match and not be empty")
+        raise WriteError(t("trailer.err.pieces"))
     if not src.width or not src.height:
-        raise WriteError(f"{src.name}: source has no picture size")
+        raise WriteError(t("trailer.err.no_size", name=src.name))
     if dialect == DIALECT_RESOLVE:
         version = RESOLVE_VERSION
     fd = src.frame_duration
     total = to_frames(src.duration, fd)
     cells = _quantize(pieces, fd, total)
     if not cells:
-        raise WriteError("no piece is at least one frame long")
+        raise WriteError(t("trailer.err.no_cell"))
 
     counter = [0]
 
@@ -115,6 +117,16 @@ def build_trailer_fcpxml(
         audio_rate=src.audio_rate, audio_channels=src.audio_channels,
         placements=[], angle_ids=[])
     asset = _asset_lines(item, asset_id, src_format, dialect=dialect)
+    # Liitetyt kaistat saavat oman, äänettömän assetin: Final Cut soittaa
+    # äänellisen asset-clipin äänen vaikka srcEnable="video", ja päällä oleva
+    # puolikas kaksinkertaistaisi spinen äänen.
+    lane_asset_id = asset_id
+    if src.has_audio:
+        lane_asset_id = next_id()
+        asset += _asset_lines(
+            replace(item, name=f"{src.name} (video)", has_audio=False,
+                    audio_rate=0, audio_channels=0),
+            lane_asset_id, src_format, dialect=dialect)
 
     body: list[str] = []
     for index, a, b in cells:
@@ -132,7 +144,7 @@ def build_trailer_fcpxml(
         for lane, kind in ((1, "top"), (2, "bottom")):
             on = enabled_lane == kind
             c = [
-                f'ref="{asset_id}"', f'lane="{lane}"', f'offset="{start}"',
+                f'ref="{lane_asset_id}"', f'lane="{lane}"', f'offset="{start}"',
                 f"name={quoteattr(kind.capitalize() + ' ' + label)}",
                 f'start="{start}"', f'duration="{dur}"', 'srcEnable="video"',
             ]
