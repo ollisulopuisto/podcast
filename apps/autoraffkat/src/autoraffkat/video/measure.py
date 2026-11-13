@@ -430,6 +430,38 @@ def sample_table(path: str, detector: detect.Detector) -> dict:
                    sample=True)
 
 
+def _legacy_table(path: str, detector, crowd: bool, sample: bool) -> dict | None:
+    """Vanha, lajitunnisteeton indeksirivi irrotetun median taululle.
+
+    Vain kun media puuttuu ja ilmaisin kertoo tarvitsemansa sarakkeet
+    (``columns``): rivi ei tiedä minkä mittauksen taulu se on, joten väärän
+    lajin taulu hylätään sarakkeiden perusteella. Löydetty rivi kirjataan
+    uudelleen lajitunnisteella.
+    """
+    tag = getattr(detector, "tag", "")
+    columns = getattr(detector, "columns", ())
+    if not tag or not columns:
+        return None
+    try:
+        cache_key(path, detector, crowd, sample)
+        return None   # media on saatavilla: mitataan tuoreena
+    except OSError:
+        pass
+    key = _index().get(_index_name(path, crowd, sample))
+    target = cache_dir() / f"{key}.npz" if key else None
+    if target is None or not target.exists():
+        return None
+    try:
+        with np.load(target) as data:
+            if not all(c in data.files for c in columns):
+                return None
+            table = {name: data[name] for name in data.files}
+    except (OSError, ValueError):
+        return None
+    remember(path, key, crowd, sample, tag)
+    return table
+
+
 def _cached(path: str, detector: detect.Detector, compute,
             crowd: bool = False, sample: bool = False) -> dict:
     """Yhteinen levyvälimuisti ``table``lle ja ``sample_table``lle."""
@@ -447,6 +479,10 @@ def _cached(path: str, detector: detect.Detector, compute,
                 return {name: data[name] for name in data.files}
         except (OSError, ValueError):
             target.unlink(missing_ok=True)   # rikkinäinen välimuisti lasketaan uusiksi
+
+    legacy = _legacy_table(path, detector, crowd, sample)
+    if legacy is not None:
+        return legacy
 
     result = compute()
     if target is None:

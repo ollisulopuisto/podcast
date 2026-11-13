@@ -53,9 +53,10 @@ class TrailerError(Exception):
 
 
 class _Kind:
-    def __init__(self, name: str, version: int):
+    def __init__(self, name: str, version: int, columns: tuple[str, ...] = ()):
         self.name = name
         self.version = version
+        self.columns = columns
         # Polkuindeksin rivi mittauslajia kohti: muuten kohtaus- ja kohdetaulu
         # korvaavat toisensa ja irrotetulta levyltä latautuu väärä taulu.
         self.tag = f"{name}{version}"
@@ -66,7 +67,7 @@ class _Kind:
 
 def scene_table(path: str) -> dict:
     """``{"times", "score"}`` kaikista ruuduista joiden kohtauspiste ≥ lattia."""
-    return measure._cached(path, _Kind("scenes", 1), lambda: _measure_scenes(path))
+    return measure._cached(path, _Kind("scenes", 1, ("times", "score")), lambda: _measure_scenes(path))
 
 
 def _measure_scenes(path: str) -> dict:
@@ -188,7 +189,7 @@ def _blur(img: np.ndarray, r: int = 3) -> np.ndarray:
 
 def saliency_table(path: str) -> dict:
     """``{"times", "x", "y"}``: kohteen paikka ruudusta kahden ruudun sekuntinopeudella."""
-    return measure._cached(path, _Kind("subject", 2), lambda: _measure_subject(path))
+    return measure._cached(path, _Kind("subject", 2, ("times", "x", "y", "stamped")), lambda: _measure_subject(path))
 
 
 @functools.lru_cache(maxsize=4)
@@ -238,7 +239,9 @@ def _measure_subject(path: str) -> dict:
         x, y = subject_of(data[i * frame:(i + 1) * frame].reshape(sh, SAL_W))
         xs[i], ys[i] = x, y
     return {"times": np.asarray(stamps[:count], dtype=np.float32),
-            "x": xs, "y": ys}
+            "x": xs, "y": ys,
+            # v2: ajat ovat ruutujen omia (v1:n taulussa tätä saraketta ei ole)
+            "stamped": np.ones(1, dtype=np.uint8)}
 
 
 def piece_x(table: dict, start: float, end: float) -> float:

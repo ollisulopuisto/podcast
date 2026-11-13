@@ -8,9 +8,6 @@ and this project adheres to Calendar Versioning (CalVer).
 ## [Unreleased]
 
 ### Added
-- Trailer splicing engine (not wired to any export yet): scene-change cuts and a
-  subject position per piece, measured once and cached on disk. Groundwork for
-  the trailer-review square/vertical timeline.
 - Export for DaVinci Resolve: the export request accepts `dialect: "resolve"`
   and writes a flattened FCPXML 1.9 (assets use `src`, no `media-rep`), which
   Resolve 17 can import. The toolbar has a Final Cut Pro / DaVinci Resolve

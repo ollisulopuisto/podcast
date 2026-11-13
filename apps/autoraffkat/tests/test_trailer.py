@@ -138,3 +138,37 @@ def test_subject_samples_keep_the_time_of_a_video_that_starts_late(tmp_path):
          late], check=True)
     table = trailer.saliency_table(late)
     assert float(table["times"][0]) == pytest.approx(2.0, abs=0.3)
+
+
+@needs_ffmpeg
+def test_offline_tables_found_through_an_old_untagged_index_row(tmp_path, monkeypatch):
+    import json
+    import os
+
+    from autoraffkat.video import measure
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    monkeypatch.setattr(measure, "cache_dir", lambda: cache)
+    path = _synthetic(tmp_path / "t.mp4")
+    trailer.scene_table(path)
+    trailer.saliency_table(path)
+    index = json.loads((cache / measure.INDEX_NAME).read_text("utf-8"))
+    tagged = {k: v for k, v in index.items() if "@" in k}
+    assert len(tagged) == 2
+    plain = measure._index_name(path)
+    # vanha rivi: sama polku ilman lajitunnistetta, osoittaa kohtaustauluun
+    scenes_key = next(v for k, v in tagged.items() if "scenes" in k)
+    subject_key = next(v for k, v in tagged.items() if "subject" in k)
+    (cache / measure.INDEX_NAME).write_text(json.dumps({plain: scenes_key}), "utf-8")
+    os.remove(path)
+    assert "score" in trailer.scene_table(path)
+    # sama vanha rivi ei kelpaa kohdetaulun tilalle: sarakkeet eivät täsmää
+    (cache / measure.INDEX_NAME).write_text(json.dumps({plain: scenes_key}), "utf-8")
+    with pytest.raises((OSError, trailer.TrailerError)):
+        trailer.saliency_table(path)
+    # kohdetaulu ilman aikaleimamerkkiä (vanha versio) ei kelpaa myöskään
+    old = np.load(cache / f"{subject_key}.npz")
+    np.savez(cache / "old.npz", times=old["times"], x=old["x"], y=old["y"])
+    (cache / measure.INDEX_NAME).write_text(json.dumps({plain: "old"}), "utf-8")
+    with pytest.raises((OSError, trailer.TrailerError)):
+        trailer.saliency_table(path)
