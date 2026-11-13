@@ -111,15 +111,18 @@ def _index() -> dict:
         return {}
 
 
-def _index_name(path: str, crowd: bool = False, sample: bool = False) -> str:
+def _index_name(path: str, crowd: bool = False, sample: bool = False,
+                tag: str = "") -> str:
     variant = _variant(crowd, sample)
-    return os.path.abspath(path) + (f"#{variant}" if variant else "")
+    return (os.path.abspath(path) + (f"#{variant}" if variant else "")
+            + (f"@{tag}" if tag else ""))
 
 
-def remember(path: str, key: str, crowd: bool = False, sample: bool = False) -> None:
+def remember(path: str, key: str, crowd: bool = False, sample: bool = False,
+             tag: str = "") -> None:
     """Merkitsee polun viimeisimmän avaimen muistiin."""
     index = _index()
-    index[_index_name(path, crowd, sample)] = key
+    index[_index_name(path, crowd, sample, tag)] = key
     tmp = cache_dir() / (INDEX_NAME + ".tmp")
     try:
         tmp.write_text(json.dumps(index, ensure_ascii=False), "utf-8")
@@ -139,7 +142,8 @@ def known_key(path: str, detector: "detect.Detector", crowd: bool = False,
     try:
         return cache_key(path, detector, crowd, sample)
     except OSError:
-        return _index().get(_index_name(path, crowd, sample))
+        return _index().get(_index_name(path, crowd, sample,
+                                        getattr(detector, "tag", "")))
 
 
 def duration(path: str) -> float:
@@ -426,9 +430,42 @@ def sample_table(path: str, detector: detect.Detector) -> dict:
                    sample=True)
 
 
+def _legacy_table(path: str, detector, crowd: bool, sample: bool) -> dict | None:
+    """Vanha, lajitunnisteeton indeksirivi irrotetun median taululle.
+
+    Vain kun media puuttuu ja ilmaisin kertoo tarvitsemansa sarakkeet
+    (``columns``): rivi ei tiedä minkä mittauksen taulu se on, joten väärän
+    lajin taulu hylätään sarakkeiden perusteella. Löydetty rivi kirjataan
+    uudelleen lajitunnisteella.
+    """
+    tag = getattr(detector, "tag", "")
+    columns = getattr(detector, "columns", ())
+    if not tag or not columns:
+        return None
+    try:
+        cache_key(path, detector, crowd, sample)
+        return None   # media on saatavilla: mitataan tuoreena
+    except OSError:
+        pass
+    key = _index().get(_index_name(path, crowd, sample))
+    target = cache_dir() / f"{key}.npz" if key else None
+    if target is None or not target.exists():
+        return None
+    try:
+        with np.load(target) as data:
+            if not all(c in data.files for c in columns):
+                return None
+            table = {name: data[name] for name in data.files}
+    except (OSError, ValueError):
+        return None
+    remember(path, key, crowd, sample, tag)
+    return table
+
+
 def _cached(path: str, detector: detect.Detector, compute,
             crowd: bool = False, sample: bool = False) -> dict:
     """Yhteinen levyvälimuisti ``table``lle ja ``sample_table``lle."""
+    tag = getattr(detector, "tag", "")
     key = known_key(path, detector, crowd, sample)
     target = cache_dir() / f"{key}.npz" if key else None
     if target is not None and target.exists():
@@ -438,10 +475,14 @@ def _cached(path: str, detector: detect.Detector, compute,
                 # muuten vanhat mittaukset jäisivät ikuisesti indeksin
                 # ulkopuolelle, ja levyn irrottaminen veisi ne mukanaan.
                 # Yksi kytketty ajo riittää kirjaamaan koko välimuistin.
-                remember(path, target.stem, crowd, sample)
+                remember(path, target.stem, crowd, sample, tag)
                 return {name: data[name] for name in data.files}
         except (OSError, ValueError):
             target.unlink(missing_ok=True)   # rikkinäinen välimuisti lasketaan uusiksi
+
+    legacy = _legacy_table(path, detector, crowd, sample)
+    if legacy is not None:
+        return legacy
 
     result = compute()
     if target is None:
@@ -453,7 +494,7 @@ def _cached(path: str, detector: detect.Detector, compute,
         with open(tmp, "wb") as handle:
             np.savez(handle, **result)
         tmp.replace(target)
-        remember(path, target.stem, crowd, sample)
+        remember(path, target.stem, crowd, sample, tag)
     except OSError:
         tmp.unlink(missing_ok=True)
     return result
