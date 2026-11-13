@@ -175,6 +175,46 @@ CATALOG: dict[str, dict[str, str]] = {
         "en": "The wide shot and the microphones share no common time. "
         "Check the roles and the sync in the source XML.",
     },
+    "trailer.err.no_picture": {
+        "fi": "{name}: ei kuvaa tai kestoa.",
+        "en": "{name}: no picture or duration.",
+    },
+    "trailer.err.scenes": {
+        "fi": "{name}: kohtausmittaus epäonnistui.",
+        "en": "{name}: scene measurement failed.",
+    },
+    "trailer.err.scene_pairs": {
+        "fi": "{name}: {times} aikaleimaa, {scores} pistettä.",
+        "en": "{name}: {times} timestamps but {scores} scores.",
+    },
+    "trailer.err.decode": {
+        "fi": "{name}: ruutujen purku epäonnistui.",
+        "en": "{name}: frame extraction failed.",
+    },
+    "trailer.err.stamps": {
+        "fi": "{name}: {frames} ruutua, {stamps} aikaleimaa.",
+        "en": "{name}: {frames} frames but {stamps} timestamps.",
+    },
+    "trailer.err.dialect": {
+        "fi": "Tuntematon vientimuoto: {value}.",
+        "en": "Unknown export format: {value}.",
+    },
+    "trailer.err.lane": {
+        "fi": "Tuntematon kaista: {value}.",
+        "en": "Unknown lane: {value}.",
+    },
+    "trailer.err.pieces": {
+        "fi": "Palalista on tyhjä tai kohteen paikkoja on eri määrä kuin paloja.",
+        "en": "The piece list is empty or has a different count than the subject positions.",
+    },
+    "trailer.err.no_size": {
+        "fi": "{name}: kuvan kokoa ei tiedetä.",
+        "en": "{name}: the picture size is unknown.",
+    },
+    "trailer.err.no_cell": {
+        "fi": "Yksikään pala ei ole vähintään ruudun mittainen.",
+        "en": "No piece is at least one frame long.",
+    },
     "write.empty_cut": {
         "fi": "Leikkauslista on tyhjä.",
         "en": "The cut list is empty.",
