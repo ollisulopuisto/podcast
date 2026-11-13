@@ -2498,13 +2498,18 @@ def create_app(state: AppState) -> FastAPI:
         with state.lock:
             if payload:
                 state.apply(payload)
+            dialect = state.settings.export_dialect
+            if dialect == "resolve" and state.timeline.multicams:
+                # Monikameralähteen littanaus (raidat -> osien tiedostot,
+                # ääniautomaatio, läpimenevä ääni) puuttuu vielä; hiljainen
+                # virheellinen vienti olisi pahempi kuin selvä kieltäytyminen.
+                raise HTTPException(400, t("export.resolve_multicam"))
             result = state.compute()
             if not result.get("ok"):
                 return JSONResponse(
                     {"ok": False, "problems": result.get("problems", [])},
                     status_code=400,
                 )
-            dialect = state.settings.export_dialect
             _grid, program_start, program_end, decision = result["_grid"]
             program_start, program_end = state.resolve_program_range(program_start, program_end)
             assert state.timeline is not None
@@ -2651,7 +2656,7 @@ def create_app(state: AppState) -> FastAPI:
                     names = {t.key: t.name for t in state.timeline.tracks}
                     warnings.append(t("export.passthrough",
                                       names=", ".join(names[k] for k in passthrough)))
-                if state.timeline.multicams and dialect != "resolve":
+                if state.timeline.multicams:
                     # Monikamerassa ulos tulee monikameraleikkaus: kuvakulman
                     # voi vaihtaa Final Cutissa jälkikäteen.
                     xml = build_multicam_fcpxml(
@@ -2679,8 +2684,7 @@ def create_app(state: AppState) -> FastAPI:
                     # sanomatta: käyttäjä huomaa vasta Final Cutissa, ettei
                     # kuvakulmaa voi vaihtaa, ja syy (lähde on
                     # «Synkronoi klipit», ei monikameraklippi) ei näy siellä.
-                    if dialect != "resolve":
-                        warnings.append(t("export.flat_no_multicam"))
+                    warnings.append(t("export.flat_no_multicam"))
                     xml = build_fcpxml(
                         {m.key: m for m in state.timeline.media},
                         segments,

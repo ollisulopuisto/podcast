@@ -483,6 +483,12 @@ CATALOG: dict[str, dict[str, str]] = {
         "fi": "Tuntematon vientikohde. Sallitut: fcp, resolve.",
         "en": "Unknown export destination. Allowed: fcp, resolve.",
     },
+    "export.resolve_multicam": {
+        "fi": "Resolve-vienti ei vielä tue monikameralähdettä. Vie Final Cutille "
+              "tai käytä «Synkronoi klipit» -lähdettä.",
+        "en": "Resolve export does not support a multicam source yet. Export "
+              "for Final Cut, or use a «Synchronize Clips» source.",
+    },
     "audio.program_short": {
         "fi": "Masterointi jäi tavoitteesta: tavoite {target} LUFS, tulos {got}.",
         "en": "Mastering fell short: target {target} LUFS, got {got}.",

@@ -2090,3 +2090,25 @@ def test_program_in_out_range_reaches_xml_and_video_render(scratch_xml):
     root = ET.parse(exported["path"]).getroot()
     sequence = root.find(".//sequence")
     assert sequence.get("duration") == f"{expected[1] - expected[0]}s"
+
+
+def test_resolve_export_refuses_a_multicam_source(fixture_dir, tmp_path):
+    """Monikameralähteen Resolve-vienti kieltäytyy selvästi eikä kirjoita vajaata XML:ää."""
+    import shutil
+
+    import make_fixture
+
+    for name in ("WIDE.mp4", "CLOSE_A.mp4", "CLOSE_B.mp4", "MIC_A.wav", "MIC_B.wav"):
+        if (fixture_dir / name).exists():
+            shutil.copy(fixture_dir / name, tmp_path / name)
+    source = tmp_path / "synced.fcpxml"
+    make_fixture.write_synced_multicam_xml(str(source), str(tmp_path))
+    state = AppState(xml_path=str(source))
+    state.load()
+    client = TestClient(create_app(state))
+    res = client.post("/api/export", json={"dialect": "resolve"})
+    assert res.status_code == 400
+    from autoraffkat.i18n import t
+
+    assert res.json()["detail"] == t("export.resolve_multicam")
+    assert [p.name for p in tmp_path.glob("*.fcpxml")] == ["synced.fcpxml"]
