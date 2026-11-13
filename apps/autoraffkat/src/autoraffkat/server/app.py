@@ -2499,7 +2499,8 @@ def create_app(state: AppState) -> FastAPI:
             if payload:
                 state.apply(payload)
             dialect = state.settings.export_dialect
-            if dialect == "resolve" and state.timeline.multicams:
+            if (dialect == "resolve" and state.timeline is not None
+                    and state.timeline.multicams):
                 # Monikameralähteen littanaus (raidat -> osien tiedostot,
                 # ääniautomaatio, läpimenevä ääni) puuttuu vielä; hiljainen
                 # virheellinen vienti olisi pahempi kuin selvä kieltäytyminen.

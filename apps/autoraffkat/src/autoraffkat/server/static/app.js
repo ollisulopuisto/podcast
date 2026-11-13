@@ -2746,6 +2746,7 @@ function payload() {
   state.tracks.forEach((m) => { tracks[m.key] = m.config; });
   return { tracks, globals: state.globals, audio: state.audio,
            package: state.package,
+           dialect: state.export_dialect || 'fcp',
            preview_window: previewWindow,
            program_range: { start: programRange[0], end: programRange[1] } };
 }
@@ -3025,7 +3026,7 @@ async function exportXml() {
     const response = await fetch('/api/export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...payload(), dialect: state.export_dialect || 'fcp' }),
+      body: JSON.stringify(payload()),
     });
     const data = await response.json();
     if (response.ok && data.ok) {
@@ -3062,7 +3063,7 @@ async function renderVideo() {
     const response = await fetch('/api/export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...payload(), render: true, dialect: state.export_dialect || 'fcp' }),
+      body: JSON.stringify({ ...payload(), render: true }),
     });
     const data = await response.json();
     if (!response.ok || !data.ok) {
@@ -3450,6 +3451,8 @@ function renderExportDest() {
       state.export_dialect = value;
       renderExportDest();
       paintShortcutControls();
+      /* Tallennetaan heti: valinta ei saa palata Final Cutiin latauksessa. */
+      send().catch((err) => banner(err.message, true));
     });
     host.append(b);
   });

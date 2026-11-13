@@ -2112,3 +2112,20 @@ def test_resolve_export_refuses_a_multicam_source(fixture_dir, tmp_path):
 
     assert res.json()["detail"] == t("export.resolve_multicam")
     assert [p.name for p in tmp_path.glob("*.fcpxml")] == ["synced.fcpxml"]
+
+
+def test_resolve_choice_is_saved_by_settings_without_export(scratch_xml):
+    """Valinta tallentuu asetusten mukana, ei vasta viennissä."""
+    state = AppState(xml_path=str(scratch_xml()))
+    state.load()
+    client = TestClient(create_app(state))
+    client.post("/api/settings", json={"dialect": "resolve"})
+    assert client.get("/api/state").json()["export_dialect"] == "resolve"
+    client.post("/api/settings", json={"tracks": {}})
+    assert client.get("/api/state").json()["export_dialect"] == "resolve"
+
+
+def test_resolve_export_before_load_is_not_a_server_error(scratch_xml):
+    client = TestClient(create_app(AppState(xml_path=str(scratch_xml()))))
+    res = client.post("/api/export", json={"dialect": "resolve"})
+    assert res.status_code < 500
