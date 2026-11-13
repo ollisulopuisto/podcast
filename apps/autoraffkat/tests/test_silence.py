@@ -163,7 +163,10 @@ def test_merging_matches_the_scalar_reference():
         for name in want:
             # Risteyskohdat voivat erota yhden ulpin: sama laskutoimitus,
             # mutta numpyn ja Pythonin liukuluvut eivät aina pyöristy samoin.
-            assert got[name] == pytest.approx(want[name], rel=1e-12, abs=1e-12)
+            flat = [x for point in got[name] for x in point]
+            ref = [x for point in want[name] for x in point]
+            assert len(flat) == len(ref)
+            assert flat == pytest.approx(ref, rel=1e-12, abs=1e-12)
 
 
 def test_merging_single_point_curves():
