@@ -697,6 +697,20 @@ function renderGlobals() {
     body: (body, mark) => { reactionsBody(body, mark, video, reacting); },
   }).row);
 
+  /* Leikkaus liikkeeseen: jo päätetty leikkaus siirretään lähimpään
+     mitattuun liikehetkeen, jolloin kuvan vaihto osuu liikkeen sisälle
+     eikä pysähdyksiin. Mittaus on osa videomittausta. */
+  rows.append(settingRow({
+    key: 'cut_on_movement',
+    label: T('cutmovement.title'),
+    hint: T('cutmovement.hint'),
+    value: state.globals.cut_on_movement ? T('panning.on') : T('audio.off'),
+    toggle: {
+      checked: state.globals.cut_on_movement,
+      onChange: (on) => { state.globals.cut_on_movement = on; renderGlobals(); schedule(0); },
+    },
+  }).row);
+
   /* Panorointi. Sama mittaus kuin reaktiokuvilla — istumajärjestys tulee
      kuvasta — mutta oma rivinsä, koska kyse on äänen paikasta eikä siitä
      mitä ruudulla näkyy. Tiedostoihin ei kosketa: tämä on Final Cutin oma

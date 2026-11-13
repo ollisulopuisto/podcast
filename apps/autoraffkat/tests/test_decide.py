@@ -1230,3 +1230,106 @@ def test_an_edit_does_not_leave_a_flash_after_it_either():
     segments = decide(grid, g).segments
     for seg in segments[:-1]:
         assert seg.duration >= g.min_shot - 1e-6, angles(segments)
+
+
+def test_cut_snaps_to_measured_movement():
+    """Leikkaus siirtyy lähimpään mitattuun liikehetkeen ulottuvan sisällä."""
+    g = Globals(min_shot=1.0, lead=0.0, confirm=0.2, min_overlap=0.4, wide_every=0.0)
+    grid = grid_for([(2, 8)], [(10, 16)])
+    marks = np.zeros((1, grid.n), dtype=bool)
+    marks[0, int(10.6 / HOP)] = True
+
+    d = decide(grid, g, motion=(["CA"], marks))
+
+    assert angles(d.segments) == [(0.0, "W"), (2.0, "CA"), (10.6, "CB"), (39.0, "W")]
+
+
+def test_cut_stays_without_movement_in_reach():
+    """Ilman liikettä ulottuvalla leikkaus pysyy paikallaan."""
+    g = Globals(min_shot=1.0, lead=0.0, confirm=0.2, min_overlap=0.4, wide_every=0.0)
+    grid = grid_for([(2, 8)], [(10, 16)])
+    marks = np.zeros((1, grid.n), dtype=bool)
+    marks[0, int(20.0 / HOP)] = True
+
+    d = decide(grid, g, motion=(["CA"], marks))
+
+    assert angles(d.segments) == [(0.0, "W"), (2.0, "CA"), (10.0, "CB"), (39.0, "W")]
+
+
+def test_movement_of_other_angle_does_not_move_cut():
+    """Vain ruudulla olevan kulman liike siirtää leikkausta."""
+    g = Globals(min_shot=1.0, lead=0.0, confirm=0.2, min_overlap=0.4, wide_every=0.0)
+    grid = grid_for([(2, 8)], [(10, 16)])
+    marks = np.zeros((1, grid.n), dtype=bool)
+    marks[0, int(10.6 / HOP)] = True
+
+    d = decide(grid, g, motion=(["CB"], marks))
+
+    assert angles(d.segments) == [(0.0, "W"), (2.0, "CA"), (10.0, "CB"), (39.0, "W")]
+
+
+def test_movement_snap_respects_min_shot():
+    """Siirto ei saa jättää kumpaakaan kuvaa alle vähimmäiskeston."""
+    from autoraffkat.decide import _movement_snap
+    from autoraffkat.model import Segment
+
+    g = Globals(min_shot=1.0)
+    grid = grid_for([(2, 8)], [(10, 16)])
+    segments = [Segment("CA", "A", 2.0, 10.0), Segment("CB", "B", 10.0, 11.5)]
+    marks = np.zeros((1, grid.n), dtype=bool)
+    marks[0, int(10.6 / HOP)] = True  # jättäisi CB:lle 0.9 s < min_shot
+
+    out = _movement_snap(segments, g, (["CA"], marks), grid)
+
+    assert (out[0].end, out[1].start) == (10.0, 10.0)
+
+
+def test_movement_snap_moves_both_sides_of_boundary():
+    from autoraffkat.decide import _movement_snap
+    from autoraffkat.model import Segment
+
+    g = Globals(min_shot=1.0)
+    grid = grid_for([(2, 8)], [(10, 16)])
+    segments = [Segment("CA", "A", 2.0, 10.0), Segment("CB", "B", 10.0, 16.0)]
+    marks = np.zeros((1, grid.n), dtype=bool)
+    marks[0, int(10.6 / HOP)] = True
+
+    out = _movement_snap(segments, g, (["CA"], marks), grid)
+
+    assert (out[0].end, out[1].start) == (10.6, 10.6)
+
+
+def test_movement_snap_does_not_extend_into_missing_footage():
+    """Leikkaus ei aikaistu kameraan jolla ei ole vielä kuvaa."""
+    from autoraffkat.decide import _movement_snap
+    from autoraffkat.model import Segment
+
+    g = Globals(min_shot=1.0)
+    grid = grid_for([(2, 8)], [(10, 16)])
+    # CB:n kuva alkaa vasta 10.0: sitä aiempi aika on pois käytöstä.
+    grid.speakers[1].available = np.zeros(grid.n, dtype=bool)
+    grid.speakers[1].available[int(10.0 / HOP):] = True
+    segments = [Segment("CA", "A", 2.0, 10.0), Segment("CB", "B", 10.0, 16.0)]
+    marks = np.zeros((1, grid.n), dtype=bool)
+    marks[0, int(9.4 / HOP)] = True  # CA:n liike juuri ennen leikkausta
+
+    out = _movement_snap(segments, g, (["CA"], marks), grid)
+
+    assert (out[0].end, out[1].start) == (10.0, 10.0)
+
+
+def test_movement_snap_allowed_when_footage_covers_extension():
+    """Siirto sallitaan kun venyvällä kuvalla on aineistoa koko lisävälillä."""
+    from autoraffkat.decide import _movement_snap
+    from autoraffkat.model import Segment
+
+    g = Globals(min_shot=1.0)
+    grid = grid_for([(2, 8)], [(10, 16)])
+    grid.speakers[0].available = np.ones(grid.n, dtype=bool)
+    segments = [Segment("CA", "A", 2.0, 10.0), Segment("CB", "B", 10.0, 16.0)]
+    marks = np.zeros((1, grid.n), dtype=bool)
+    marks[0, int(10.6 / HOP)] = True  # myöhäistys: CA venyy [10.0, 10.6)
+
+    out = _movement_snap(segments, g, (["CA"], marks), grid)
+
+    assert (out[0].end, out[1].start) == (10.6, 10.6)

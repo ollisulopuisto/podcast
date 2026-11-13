@@ -172,7 +172,12 @@ class AppState:
     # Mitattujen reaktiohetkien välimuisti, ks. reaction_marks.
     _marks: object = None
     _marks_key: tuple | None = None
+    # Mitattujen liikehetkien välimuisti, ks. motion_marks.
+    _motion: object = None
+    _motion_key: tuple | None = None
     video_tables: dict = field(default_factory=dict)
+    # Liiketaulukot (``video/motion.py``) leikkausta liikkeeseen varten.
+    motion_tables: dict = field(default_factory=dict)
     # Laajojen ja ryhmäkuvien joukkotaulukot (kaikki kasvot), pystyvientiä
     # varten. Erillään, koska lähikuvan taulukko pitää vain suurimman.
     crowd_tables: dict = field(default_factory=dict)
@@ -253,8 +258,10 @@ class AppState:
         self.audio_preview_running = False
         self.video_tables = {}
         self.crowd_tables = {}
+        self.motion_tables = {}
         self.video_errors = {}
         self._marks_key = None
+        self._motion_key = None
         self.video_progress.update({"done": 0, "total": 0, "current": "",
                                     "fraction": 0.0, "running": False})
         self.progress = {"done": 0, "total": 0, "current": "", "ready": False}
@@ -567,7 +574,8 @@ class AppState:
         molemmat kutsuvat pitää ne samassa tahdissa, sen sijaan että
         kolmas ominaisuus unohtuisi samalla tavalla vielä kerran.
         """
-        return self.settings.globals.reactions or self.settings.globals.vertical
+        globals_ = self.settings.globals
+        return globals_.reactions or globals_.vertical or globals_.cut_on_movement
 
     def video_missing(self) -> bool:
         """Tarvitseeko jokin päällä oleva ominaisuus mittauksen jota ei ole.
@@ -579,6 +587,8 @@ class AppState:
         """
         if not self._wants_video_measurement():
             return False
+        if self.settings.globals.cut_on_movement and not self.motion_tables:
+            return True
         if not self.video_tables:
             return True
         if not self.settings.globals.vertical or self.crowd_tables:
@@ -614,6 +624,7 @@ class AppState:
         purku on minuutteja, ja useimmiten käyttäjä ei halua reaktiokuvia.
         """
         from ..video import analyse as video_analyse
+        from ..video import motion as video_motion
 
         assert self.timeline is not None and self.analysis is not None
         try:
@@ -622,7 +633,9 @@ class AppState:
             files = video_analyse.close_up_files(grid, roles, self.timeline)
             crowd_files = (video_analyse.crowd_files(roles, self.timeline)
                            if self.settings.globals.vertical else [])
-            whole = len(files) + len(crowd_files)
+            motion_files = (self._motion_files(grid)
+                            if self.settings.globals.cut_on_movement else [])
+            whole = len(files) + len(crowd_files) + len(motion_files)
             with self.lock:
                 self.video_progress.update({"total": whole, "done": 0,
                                             "fraction": 0.0, "running": True})
@@ -644,20 +657,34 @@ class AppState:
             return lambda fraction: report((offset + fraction * count) / max(1, whole))
 
         try:
+            # Liike ensin: se on pelkkä ffmpeg-ajo ja valmistuu minuuteissa
+            # kasvopurkuun verrattuna, joten pelkkää leikkausta liikkeeseen
+            # tarvitseva ei jää odottamaan Visionia.
+            motion_tables: dict = {}
+            if motion_files:
+                motion_tables, motion_errors = video_motion.tables(
+                    motion_files,
+                    progress=part(0, len(motion_files)))
+                errors0 = dict(motion_errors)
+            else:
+                errors0 = {}
             tables, errors = video_analyse.tables(
                 grid, roles, self.timeline, self.settings.globals,
-                progress=part(0, len(files)))
+                progress=part(len(motion_files), len(files)))
+            errors = {**errors0, **errors}
             crowd: dict = {}
             if crowd_files:
                 crowd, crowd_errors = video_analyse.crowd_tables(
                     roles, self.timeline, self.settings.globals,
-                    progress=part(len(files), len(crowd_files)))
+                    progress=part(len(motion_files) + len(files), len(crowd_files)))
                 errors = {**errors, **crowd_errors}
             with self.lock:
                 self.video_tables = tables
                 self.crowd_tables = crowd
+                self.motion_tables = motion_tables
                 self.video_errors = errors
                 self._marks_key = None
+                self._motion_key = None
         except Exception as exc:  # taustasäie ei saa kaatua hiljaa
             with self.lock:
                 self.video_errors = {"video": str(exc)}
@@ -749,6 +776,45 @@ class AppState:
                                       float(program_start))
         self._marks_key = key
         return self._marks
+
+    def _motion_angle_items(self, grid) -> dict:
+        """Kulma (raidan avain) -> sen media-alkiot liikemittausta varten."""
+        keys = {lane.close_key for lane in grid.speakers if lane.close_key}
+        if grid.wide_key:
+            keys.add(grid.wide_key)
+        keys.update(shot.key for shot in getattr(grid, "groups", ()) or ())
+        # Kaikki valittavat kuvat, ei vain puhujien ensisijaiset lähikuvat:
+        # päätös saa valita myös toisen lähikuvan samalle puhujalle, ja
+        # senkin liike pitää olla mitattuna tai sen leikkaukset jäävät
+        # napsauttamatta.
+        keys.update(shot.key for shot in getattr(grid, "shots", ()) or ())
+        return {key: list(self.timeline.track_media(key)) for key in sorted(keys)}
+
+    def _motion_files(self, grid) -> list:
+        """(media-avain, polku) kaikista kulmina käytetyistä videotiedostoista."""
+        seen: dict = {}
+        for items in self._motion_angle_items(grid).values():
+            for item in items:
+                if item.path and item.has_video and item.key not in seen:
+                    seen[item.key] = item.path
+        return list(seen.items())
+
+    def motion_marks(self, grid, program_start):
+        """Mitatut liikehetket taulukkona, välimuistitettuna kuten reaktiot."""
+        from ..video import motion as video_motion
+
+        globals_ = self.settings.globals
+        if not globals_.cut_on_movement or not self.motion_tables:
+            return None
+        key = (id(self.motion_tables), len(self.motion_tables),
+               float(program_start))
+        if self._motion_key == key:
+            return self._motion
+        self._motion = video_motion.marks(
+            self._motion_angle_items(grid), self.motion_tables, grid,
+            float(program_start))
+        self._motion_key = key
+        return self._motion
 
     def reaction_lane(self, grid, roles, program_start, decision=None) -> list:
         """``(alku, loppu, puhujan indeksi)`` esikatselupalkkia varten.
@@ -1082,6 +1148,14 @@ class AppState:
             # mittausnapin painamista ensin, on ominaisuus joka näyttää
             # rikkuneelta.
             if g.vertical and not was and self.video_missing():
+                self.start_measure_video()
+        if "cut_on_movement" in raw:
+            was = g.cut_on_movement
+            g.cut_on_movement = bool(raw["cut_on_movement"])
+            # Sama sääntö kuin muissakaan kytkimissä: päälle laittaminen
+            # käynnistää mittauksen, koska ilman sitä asetus vaikuttaisi
+            # hiljaa rikkoutuneelta.
+            if g.cut_on_movement and not was and self.video_missing():
                 self.start_measure_video()
         if "wide_reactions" in raw:
             g.wide_reactions = bool(raw["wide_reactions"])
@@ -1422,7 +1496,9 @@ class AppState:
         # aikaa on kulunut, mittaus että jotain tapahtuu. Taulukkona, koska
         # päätöskerros ei lue tiedostoja.
         marks = self.reaction_marks(grid, roles, program_start)
-        decision = decide(grid, self.settings.globals, marks=marks)
+        motion = self.motion_marks(grid, program_start)
+        decision = decide(grid, self.settings.globals, marks=marks,
+                          motion=motion)
         lane = self.reaction_lane(grid, roles, program_start, decision)
         names = [speaker.name for speaker in grid.speakers]
         seats_view = self.seats_view(grid, roles)
@@ -2508,6 +2584,13 @@ def create_app(state: AppState) -> FastAPI:
                     warnings.append(t("video.none_measured")
                                     if not state.video_tables
                                     else t("video.no_candidates"))
+
+                # Leikkaus liikkeeseen päällä mutta mittaamatta: vienti
+                # käyttää alkuperäisiä leikkauksia sanomatta mitään — sama
+                # vikaluokka kuin reaktioiden «päällä mutta tyhjä».
+                if (state.settings.globals.cut_on_movement
+                        and not state.motion_tables):
+                    warnings.append(t("export.motion_unmeasured"))
 
                 # Pystyviennin kehystys: sama kahden tyhjän tapauksen sääntö.
                 # Mittaamaton jakso saa letterboxin, mutta kokonaan hiljainen

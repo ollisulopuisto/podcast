@@ -178,6 +178,15 @@ class Globals:
     reaction_lead: float = 0.4
     reaction_spacing: float = 25.0    # lyhin väli kahden välillä, s
 
+    # Leikkaus liikkeeseen: leikkauskohta siirretään lähimpään mitattuun
+    # liikehetkeen lyhyen ulottuvan sisällä (``decide.MOTION_REACH``),
+    # jolloin leikkaus kätkeytyy liikkeeseen kuten leikkaaja tekisi
+    # silmällään. Oletus pois: päällä jokainen leikkaus voi siirtyä
+    # avainruudun verran, ja pois päältä leikkaus on täsmälleen entisensä.
+    # Ulottuva ja kynnys ovat vakioita eivätkä säätimiä — ks.
+    # ``video/motion.py``n docstring.
+    cut_on_movement: bool = False
+
     # Panorointi. Paikka mitataan kuvasta (``staging.py``) ja kirjoitetaan
     # Final Cutin omaksi ``adjust-panner``iksi kulmakohtaisesti — tiedostoja
     # ei kosketa, joten leikkaaja saa muuttaa sen jälkikäteen. Leveys on

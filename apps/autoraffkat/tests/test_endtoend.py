@@ -1538,7 +1538,7 @@ def test_exported_reactions_are_placed_against_the_exported_cut(scratch_xml,
     with_marks = []
     real_decide = app_module.decide
 
-    def spy_decide(grid, g, marks=None):
+    def spy_decide(grid, g, marks=None, motion=None):
         decision = real_decide(grid, g)
         if marks is not None:
             with_marks.append(decision)
