@@ -479,6 +479,10 @@ CATALOG: dict[str, dict[str, str]] = {
               "Clip» — not «Synchronize Clips», which only makes attached "
               "lanes.",
     },
+    "export.bad_dialect": {
+        "fi": "Tuntematon vientikohde. Sallitut: fcp, resolve.",
+        "en": "Unknown export destination. Allowed: fcp, resolve.",
+    },
     "audio.program_short": {
         "fi": "Masterointi jäi tavoitteesta: tavoite {target} LUFS, tulos {got}.",
         "en": "Mastering fell short: target {target} LUFS, got {got}.",

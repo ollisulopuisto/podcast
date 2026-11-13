@@ -2485,6 +2485,10 @@ def create_app(state: AppState) -> FastAPI:
         sitä mitä ruudulla näkyy eikä edellistä tallennettua tilaa.
         """
         want_render = bool((payload or {}).get("render"))
+        # Vientikohde: «resolve» = littanaan FCPXML 1.9 (DaVinci Resolve).
+        dialect = (payload or {}).get("dialect") or "fcp"
+        if dialect not in ("fcp", "resolve"):
+            raise HTTPException(400, t("export.bad_dialect"))
         if want_render and state.render_progress.get("running"):
             raise HTTPException(409, t("render.busy"))
         shot_list: list | None = [] if want_render else None
@@ -2643,7 +2647,7 @@ def create_app(state: AppState) -> FastAPI:
                     names = {t.key: t.name for t in state.timeline.tracks}
                     warnings.append(t("export.passthrough",
                                       names=", ".join(names[k] for k in passthrough)))
-                if state.timeline.multicams:
+                if state.timeline.multicams and dialect != "resolve":
                     # Monikamerassa ulos tulee monikameraleikkaus: kuvakulman
                     # voi vaihtaa Final Cutissa jälkikäteen.
                     xml = build_multicam_fcpxml(
@@ -2671,7 +2675,8 @@ def create_app(state: AppState) -> FastAPI:
                     # sanomatta: käyttäjä huomaa vasta Final Cutissa, ettei
                     # kuvakulmaa voi vaihtaa, ja syy (lähde on
                     # «Synkronoi klipit», ei monikameraklippi) ei näy siellä.
-                    warnings.append(t("export.flat_no_multicam"))
+                    if dialect != "resolve":
+                        warnings.append(t("export.flat_no_multicam"))
                     xml = build_fcpxml(
                         {m.key: m for m in state.timeline.media},
                         segments,
@@ -2688,6 +2693,7 @@ def create_app(state: AppState) -> FastAPI:
                         tc_start=state.timeline.tc_start,
                         shots=shot_list,
                         package=package_plan,
+                        dialect=dialect,
                     )
                 write_fcpxml(out_path, xml)
                 state.remember(out_path)

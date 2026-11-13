@@ -46,6 +46,14 @@ STANDARD_HEIGHTS = {480, 540, 576, 720, 1080, 1440, 2160, 4320}
 RAW_TAG = "raw"
 
 
+# Vientimurteet. Final Cut saa uusimman FCPXML:n; Resolve-murre kirjoittaa
+# 1.9:n, jonka sekä Resolve 17 että uudemmat lukevat.
+DIALECT_FCP = "fcp"
+DIALECT_RESOLVE = "resolve"
+DIALECTS = (DIALECT_FCP, DIALECT_RESOLVE)
+RESOLVE_VERSION = "1.9"
+
+
 class WriteError(Exception):
     """Leikkausta ei voi kirjoittaa."""
 
@@ -114,7 +122,8 @@ class _Formats:
 
 
 def _asset_lines(
-    item: MediaItem, res_id: str, format_id: str | None, path: str = "", name: str = ""
+    item: MediaItem, res_id: str, format_id: str | None, path: str = "",
+    name: str = "", dialect: str = DIALECT_FCP,
 ) -> list[str]:
     """Yhden median ``<asset>``-resurssi ``<media-rep>``-lapsineen.
 
@@ -141,8 +150,14 @@ def _asset_lines(
         attrs += ['hasVideo="1"', f'videoSources="{max(1, item.video_sources)}"']
         if format_id:
             attrs.append(f'format="{format_id}"')
-    lines = ["    <asset " + " ".join(attrs) + ">"]
     src = file_url(path) if path else (item.src or file_url(item.path))
+    if dialect == DIALECT_RESOLVE:
+        # FCPXML 1.9: lähde on assetin oma ``src``, ``<media-rep>`` on
+        # vasta 1.10:ssä (Resolve 17 ei lue 1.10:tä lainkaan).
+        if src:
+            attrs.append(f"src={quoteattr(src)}")
+        return ["    <asset " + " ".join(attrs) + "/>"]
+    lines = ["    <asset " + " ".join(attrs) + ">"]
     if src:
         lines.append(f'      <media-rep kind="original-media" src={quoteattr(src)}/>')
     lines.append("    </asset>")
@@ -451,8 +466,12 @@ def build_fcpxml(
     tc_start: Fraction = ZERO,
     shots: list | None = None,
     package: tuple[list, list] | None = None,
+    dialect: str = DIALECT_FCP,
 ) -> str:
     """Rakentaa FCPXML-merkkijonon.
+
+    ``dialect`` valitsee kohdeohjelman: ``resolve`` kirjoittaa FCPXML 1.9:n
+    (assetin ``src``, ei ``<media-rep>``) DaVinci Resolvea varten.
 
     ``package`` on `package.py`:n suunnitelman pari (kuvaklipit, ääniklipit):
     kortit lanen 3 ja pohjat käyröineen lanen -4 kirjoitetaan samoin kuin
@@ -472,6 +491,10 @@ def build_fcpxml(
     Spinen suorat lapset ovat sen aikapohjassa, joten se lisätään takaisin
     niiden ``offset``iin — sama sääntö kuin ``build_multicam_fcpxml``issa.
     """
+    if dialect not in DIALECTS:
+        raise WriteError(f"unknown export dialect: {dialect}")
+    if dialect == DIALECT_RESOLVE:
+        version = RESOLVE_VERSION
     replacements = replacements or {}
     room = room or []
     if not segments:
@@ -525,6 +548,10 @@ def build_fcpxml(
     res_ids: dict[str, str] = {}
     fmt_ids: dict[str, str | None] = {}
     asset_lines: list[str] = []
+
+    def asset_for(*args):
+        return _asset_lines(*args, dialect=dialect)
+
     mic_keys = {k for k, _ in mic_tracks}
     for key in needed:
         item = media_by_key.get(key)
@@ -541,7 +568,7 @@ def build_fcpxml(
         asset_item = (
             _video_only(item) if (key not in mic_keys and item.has_video) else item
         )
-        asset_lines += _asset_lines(
+        asset_lines += asset_for(
             asset_item, res_ids[key], fmt_id, replacements.get(key, "")
         )
 
@@ -559,7 +586,7 @@ def build_fcpxml(
         if item is None or key not in replacements:
             continue
         raw_ids[key] = next_id()
-        asset_lines += _asset_lines(
+        asset_lines += asset_for(
             item, raw_ids[key], fmt_ids.get(key), "", f"{item.name} {RAW_TAG}"
         )
 
@@ -571,7 +598,7 @@ def build_fcpxml(
         if item is None:
             continue
         room_ids[key] = next_id()
-        asset_lines += _asset_lines(
+        asset_lines += asset_for(
             _audio_only(item), room_ids[key], None, path, f"{item.name} tilaääni"
         )
 
@@ -600,7 +627,7 @@ def build_fcpxml(
                 asset_duration=clip.duration, has_video=True,
                 width=clip.width, height=clip.height, video_sources=1,
             )
-            asset_lines += _asset_lines(
+            asset_lines += asset_for(
                 item, package_ids[clip.kind], fmt_id, clip.path, clip.name
             )
         for clip in package[1]:
@@ -610,7 +637,7 @@ def build_fcpxml(
                 asset_duration=clip.duration, has_audio=True,
                 audio_channels=clip.channels, audio_rate=clip.rate,
             )
-            asset_lines += _asset_lines(
+            asset_lines += asset_for(
                 item, package_ids[clip.kind], None, clip.path, clip.name
             )
 

@@ -314,6 +314,15 @@ def test_wide_can_be_excluded_and_exported(scratch_xml):
     assert any("CLOSE_B.mp4" in s for s in media_srcs)
     assert not any("WIDE.mp4" in s for s in media_srcs)
 
+    # Resolve-vienti: FCPXML 1.9, resurssien polku ``src``-attribuutissa
+    res = client.post("/api/export", json={"dialect": "resolve"}).json()
+    assert res["ok"], res.get("problems")
+    rroot = ET.fromstring(pathlib.Path(res["path"]).read_text(encoding="utf-8"))
+    assert rroot.get("version") == "1.9"
+    assert not rroot.findall(".//media-rep")
+    assert any("CLOSE_A.mp4" in a.get("src", "") for a in rroot.findall(".//asset"))
+    assert client.post("/api/export", json={"dialect": "avid"}).status_code == 400
+
 
 
 
