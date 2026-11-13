@@ -787,3 +787,21 @@ dialog.sheet::backdrop { background: rgba(8, 9, 11, .62); }
 .range-handle { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); }
 .range-handle::before { content: ''; position: absolute; top: 0; left: -5px; width: 12px; height: 12px; border-radius: 3px; background: var(--accent); }
 #bar { cursor: crosshair; }
+
+/* Trailer-sivu */
+.tr-main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 16px; padding: 0 16px 24px; }
+.tr-stage { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.tr-frame { position: relative; flex: 1 1 360px; max-width: 720px; touch-action: none; cursor: ew-resize; background: #000; line-height: 0; }
+.tr-frame img { width: 100%; height: auto; display: block; user-select: none; }
+.tr-box { position: absolute; top: 0; bottom: 0; pointer-events: none; box-sizing: border-box; }
+.tr-box-half { border: 2px solid #3ddc84; }
+.tr-box-full { border: 2px solid #4da3ff; }
+.tr-comp { width: 202px; height: 360px; background: #111; border: 1px solid var(--line); }
+.tr-field { display: inline-flex; align-items: center; gap: 8px; margin: 4px 0; }
+.tr-output { flex-wrap: wrap; }
+.tr-list { list-style: none; padding: 0; margin: 8px 0 0; max-height: 50vh; overflow-y: auto; }
+.tr-piece { display: flex; gap: 4px; align-items: center; margin-bottom: 4px; }
+.tr-piece.selected .tr-piece-main { border-color: #4da3ff; }
+.tr-piece-main { flex: 1; text-align: left; font-variant-numeric: tabular-nums; }
+@media (max-width: 900px) { .tr-main { grid-template-columns: 1fr; } }
+.header-utilities a.ghost, #tr-back { color: inherit; text-decoration: none; }

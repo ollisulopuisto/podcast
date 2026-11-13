@@ -80,6 +80,7 @@ from ..model import (
 from ..paths import get_resource_path
 from ..preview import build as build_preview
 from ..video import speech as visual_speech
+from . import trailer_api
 
 STATIC_DIR = get_resource_path("server/static")
 
@@ -2904,6 +2905,18 @@ def create_app(state: AppState) -> FastAPI:
             return exp_res
         except HTTPException as exc:
             return _v1_error(exc.status_code, "EXPORT_ERROR", exc.detail)
+
+    def _versioned(name: str) -> str:
+        html = (STATIC_DIR / name).read_text(encoding="utf-8")
+        for asset in ("trailer.js", "i18n.js", "style.css", "favicon.png",
+                      "favicon.svg", "favicon.ico"):
+            static_file = STATIC_DIR / asset
+            if static_file.exists():
+                stamp = int(static_file.stat().st_mtime)
+                html = html.replace(f"/static/{asset}", f"/static/{asset}?v={stamp}")
+        return html
+
+    trailer_api.register(app, state, STATIC_DIR, _versioned)
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app
