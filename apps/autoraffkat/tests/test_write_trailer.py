@@ -182,6 +182,12 @@ def test_plan_to_fcpxml_on_a_synthetic_three_scene_clip(tmp_path):
     assert fixed[0] == (0.0, 3.0)
 
 
+def _asset_url(asset):
+    """Median osoite: FCP-murtumassa media-repissä, Resolven 1.9:ssä src-attribuutissa."""
+    rep = asset.find("media-rep")
+    return rep.get("src") if rep is not None else asset.get("src")
+
+
 def test_connected_lanes_use_a_video_only_asset_so_audio_is_not_doubled():
     root = _doc()
     assets = {a.get("id"): a for a in root.findall(".//asset")}
@@ -192,7 +198,9 @@ def test_connected_lanes_use_a_video_only_asset_so_audio_is_not_doubled():
     for lane in lanes:
         assert lane.get("ref") != spine_ref
         assert assets[lane.get("ref")].get("hasAudio") is None
-        assert assets[lane.get("ref")].get("src") == assets[spine_ref].get("src")
+        url = _asset_url(assets[lane.get("ref")])
+        assert url == "file:///media/trailer.mp4"
+        assert url == _asset_url(assets[spine_ref])
 
 
 def test_silent_source_keeps_a_single_asset():
