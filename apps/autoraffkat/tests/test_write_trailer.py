@@ -205,6 +205,8 @@ def test_ntsc_rates_from_ffprobe_floats_snap_to_the_exact_fraction(monkeypatch):
     for fps, expect in [(29.97, Fraction(1001, 30000)),
                         (23.976, Fraction(1001, 24000)),
                         (59.94, Fraction(1001, 60000)),
+                        (119.88, Fraction(1001, 120000)),
+                        (23.98, Fraction(50, 1199)),
                         (25.0, Fraction(1, 25))]:
         monkeypatch.setattr(trailer, "info", lambda p, fps=fps: {
             "video": {"width": 1920, "height": 1080, "fps": fps},

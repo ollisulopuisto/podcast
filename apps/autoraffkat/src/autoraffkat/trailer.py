@@ -78,7 +78,7 @@ _NTSC = (Fraction(24000, 1001), Fraction(30000, 1001), Fraction(48000, 1001),
 def _frame_duration(fps: float) -> Fraction:
     """Ruudun kesto tarkkana murtolukuna; NTSC-taajuudet napataan täsmälleen."""
     for rate in _NTSC:
-        if abs(fps - float(rate)) < 0.005:
+        if abs(fps - float(rate)) < 0.001:
             return 1 / rate
     return Fraction(1) / Fraction(str(fps)).limit_denominator(1000)
 
