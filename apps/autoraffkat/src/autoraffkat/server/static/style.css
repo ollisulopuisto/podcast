@@ -69,6 +69,10 @@ p { margin: 0; }
   padding-left: 14px;
   border-left: 1px solid var(--line);
 }
+.export-dest { display: inline-flex; align-items: center; gap: 4px; }
+.export-dest button { min-height: 36px; white-space: nowrap; }
+.export-dest button[aria-checked="true"] { font-weight: 600; border-color: var(--accent, currentColor); }
+.export-dest-hint { flex-basis: 100%; font-size: 0.85em; color: var(--muted, #888); }
 .render-controls { display: inline-flex; align-items: center; gap: 8px; }
 
 /* Historiahaara näyttää samalta kuin muu työkalurivi, myös macOS:n omalla

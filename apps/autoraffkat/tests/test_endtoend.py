@@ -23,6 +23,7 @@ from autoraffkat.model import (
     Globals,
     TrackConfig,
 )
+from autoraffkat.project import ProjectSettings
 from autoraffkat.server.app import AppState, create_app
 
 
@@ -322,6 +323,11 @@ def test_wide_can_be_excluded_and_exported(scratch_xml):
     assert not rroot.findall(".//media-rep")
     assert any("CLOSE_A.mp4" in a.get("src", "") for a in rroot.findall(".//asset"))
     assert client.post("/api/export", json={"dialect": "avid"}).status_code == 400
+    # Valinta muistetaan projektille: tilassa ja tallennetussa asetuksessa
+    assert client.get("/api/state").json()["export_dialect"] == "resolve"
+    assert ProjectSettings.from_json(state.settings.to_json()).export_dialect == "resolve"
+    client.post("/api/export", json={"dialect": "fcp"})
+    assert client.get("/api/state").json()["export_dialect"] == "fcp"
 
 
 

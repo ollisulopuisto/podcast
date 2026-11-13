@@ -268,6 +268,7 @@ class ProjectSettings:
     language: str = ""  # "" = järjestelmän mukaan
     range_start: str | None = None
     range_end: str | None = None
+    export_dialect: str = "fcp"  # vientikohde: "fcp" tai "resolve"
 
     def config_for(self, key: str) -> TrackConfig:
         """Raidan asetukset, oletuksilla luotuna jos raitaa ei ole ennen nähty."""
@@ -285,6 +286,7 @@ class ProjectSettings:
             "package": self.package.to_json(),
             "language": self.language,
             "program_range": {"start": self.range_start, "end": self.range_end},
+            "export_dialect": self.export_dialect,
             "tracks": {k: v.to_json() for k, v in self.tracks.items()},
         }
 
@@ -322,6 +324,10 @@ class ProjectSettings:
             language=str(data.get("language") or ""),
             range_start=_range_value((data.get("program_range") or {}).get("start")),
             range_end=_range_value((data.get("program_range") or {}).get("end")),
+            export_dialect=(
+                data.get("export_dialect")
+                if data.get("export_dialect") in ("fcp", "resolve") else "fcp"
+            ),
         )
 
 

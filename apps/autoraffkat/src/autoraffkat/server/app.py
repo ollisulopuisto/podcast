@@ -1003,6 +1003,8 @@ class AppState:
                     (float(window[0]), float(window[1])) if window else None)
             except (TypeError, ValueError, IndexError):
                 self.preview_window = None
+        if payload.get("dialect") in ("fcp", "resolve"):
+            self.settings.export_dialect = payload["dialect"]
         if "program_range" in payload:
             marks = payload.get("program_range") or {}
             try:
@@ -1932,6 +1934,7 @@ def _state_json(state: AppState) -> dict:
         "languages": list(LANGUAGES),
         "audio": state.settings.audio.to_json(),
         "package": state.settings.package.to_json(),
+        "export_dialect": state.settings.export_dialect,
         # Mitatut oletukset käyttöliittymälle. Se merkitsee poikkeaman
         # suljetulle riville, ja poikkeaman on tultava samasta paikasta kuin
         # arvot itse — JavaScriptiin kirjoitettu kopio ajautuisi erilleen
@@ -2486,8 +2489,8 @@ def create_app(state: AppState) -> FastAPI:
         """
         want_render = bool((payload or {}).get("render"))
         # Vientikohde: «resolve» = littanaan FCPXML 1.9 (DaVinci Resolve).
-        dialect = (payload or {}).get("dialect") or "fcp"
-        if dialect not in ("fcp", "resolve"):
+        requested = (payload or {}).get("dialect")
+        if requested is not None and requested not in ("fcp", "resolve"):
             raise HTTPException(400, t("export.bad_dialect"))
         if want_render and state.render_progress.get("running"):
             raise HTTPException(409, t("render.busy"))
@@ -2501,6 +2504,7 @@ def create_app(state: AppState) -> FastAPI:
                     {"ok": False, "problems": result.get("problems", [])},
                     status_code=400,
                 )
+            dialect = state.settings.export_dialect
             _grid, program_start, program_end, decision = result["_grid"]
             program_start, program_end = state.resolve_program_range(program_start, program_end)
             assert state.timeline is not None
