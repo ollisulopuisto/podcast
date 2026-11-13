@@ -18,6 +18,7 @@ kaistalle (puolikas tai koko ruutu).
 
 from __future__ import annotations
 
+import functools
 import os
 import re
 import subprocess
@@ -55,6 +56,9 @@ class _Kind:
     def __init__(self, name: str, version: int):
         self.name = name
         self.version = version
+        # Polkuindeksin rivi mittauslajia kohti: muuten kohtaus- ja kohdetaulu
+        # korvaavat toisensa ja irrotetulta levyltä latautuu väärä taulu.
+        self.tag = f"{name}{version}"
 
 
 # ------------------------------------------------------------------ pilkonta
@@ -106,15 +110,14 @@ def cut_points(table: dict, threshold: float = SCENE_DEFAULT,
     for t, s in sorted(zip(times.tolist(), score.tolist(), strict=True)):
         if s < threshold or t < min_len:
             continue
+        if duration > 0 and duration - t < min_len:
+            continue   # liian lähellä loppua: ei saa syrjäyttää käyttökelpoista
         if keep and t - keep[-1][0] < min_len:
             if s > keep[-1][1]:
                 keep[-1] = (t, s)
             continue
         keep.append((t, s))
-    cuts = [t for t, _ in keep]
-    if duration > 0:
-        cuts = [t for t in cuts if duration - t >= min_len]
-    return cuts
+    return [t for t, _ in keep]
 
 
 def pieces(cuts: list[float], duration: float) -> list[tuple[float, float]]:
@@ -188,6 +191,21 @@ def saliency_table(path: str) -> dict:
     return measure._cached(path, _Kind("subject", 1), lambda: _measure_subject(path))
 
 
+@functools.lru_cache(maxsize=4)
+def _passthrough(ffmpeg: str) -> tuple[str, str]:
+    """Ei ruutujen kahdennusta ulostulossa: aikaleimoja ja ruutuja yksi yhteen.
+
+    Uudessa ffmpegissä ``-fps_mode``, vanhassa ``-vsync``.
+    """
+    try:
+        helptext = subprocess.run([ffmpeg, "-hide_banner", "-h", "full"],
+                                  capture_output=True, text=True, timeout=60,
+                                  stdin=subprocess.DEVNULL).stdout
+    except (OSError, subprocess.SubprocessError):
+        helptext = ""
+    return ("-fps_mode", "passthrough") if "-fps_mode" in helptext else ("-vsync", "0")
+
+
 def _measure_subject(path: str) -> dict:
     meta = (info(path) or {}).get("video") or {}
     width, height = int(meta.get("width") or 0), int(meta.get("height") or 0)
@@ -196,24 +214,30 @@ def _measure_subject(path: str) -> dict:
     sh = max(2, int(round(SAL_W * height / width / 2)) * 2)
     ffmpeg = get_binary_path("ffmpeg")
     cmd = [
-        ffmpeg, "-nostdin", "-v", "error", "-i", path,
-        "-vf", f"fps={SAMPLE_FPS},scale={SAL_W}:{sh},format=gray",
-        "-an", "-frames:v", str(MAX_SAMPLES),
+        ffmpeg, "-nostdin", "-v", "info", "-i", path,
+        "-vf", f"fps={SAMPLE_FPS},showinfo,scale={SAL_W}:{sh},format=gray",
+        "-an", *_passthrough(ffmpeg), "-frames:v", str(MAX_SAMPLES),
         "-f", "rawvideo", "-pix_fmt", "gray", "-",
     ]
     proc = subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL,
                           timeout=TIMEOUT)
     if proc.returncode != 0:
         raise TrailerError(f"{os.path.basename(path)}: ruutujen purku epäonnistui")
+    # Ruutujen todelliset ajat: video voi alkaa myöhemmin kuin säiliö.
+    stamps = [float(m.group(1)) for line in proc.stderr.decode("utf-8", "replace").splitlines()
+              if "Parsed_showinfo" in line
+              for m in [re.search(r"pts_time:\s*([-\d.]+)", line)] if m]
     frame = SAL_W * sh
     count = len(proc.stdout) // frame
+    if len(stamps) < count:
+        raise TrailerError(f"{os.path.basename(path)}: {count} ruutua, {len(stamps)} aikaleimaa")
     data = np.frombuffer(proc.stdout[:count * frame], dtype=np.uint8)
     xs = np.zeros(count, dtype=np.float32)
     ys = np.zeros(count, dtype=np.float32)
     for i in range(count):
         x, y = subject_of(data[i * frame:(i + 1) * frame].reshape(sh, SAL_W))
         xs[i], ys[i] = x, y
-    return {"times": (np.arange(count) / SAMPLE_FPS).astype(np.float32),
+    return {"times": np.asarray(stamps[:count], dtype=np.float32),
             "x": xs, "y": ys}
 
 

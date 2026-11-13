@@ -106,3 +106,35 @@ def test_saliency_table_follows_the_box_from_left_to_right(tmp_path):
     table = trailer.saliency_table(path)
     xs = [trailer.piece_x(table, a, b) for a, b in [(0.0, 2.0), (2.0, 4.0), (4.0, 6.0)]]
     assert xs[0] < 0.35 < 0.4 < xs[1] < 0.6 < 0.65 < xs[2]
+
+
+def test_a_cut_too_close_to_the_end_does_not_displace_a_usable_one():
+    table = {"times": np.array([8.4, 9.2]), "score": np.array([0.5, 0.9])}
+    assert trailer.cut_points(table, 0.3, 1.0, 10.0) == [8.4]
+
+
+@needs_ffmpeg
+def test_scene_and_subject_tables_are_found_separately_when_the_media_is_gone(
+        tmp_path, monkeypatch):
+    from autoraffkat.video import measure
+    monkeypatch.setattr(measure, "cache_dir", lambda: tmp_path / "cache")
+    (tmp_path / "cache").mkdir()
+    path = _synthetic(tmp_path / "t.mp4")
+    trailer.scene_table(path)
+    trailer.saliency_table(path)
+    import os
+    os.remove(path)
+    assert "score" in trailer.scene_table(path)
+    assert "x" in trailer.saliency_table(path)
+
+
+@needs_ffmpeg
+def test_subject_samples_keep_the_time_of_a_video_that_starts_late(tmp_path):
+    src = _synthetic(tmp_path / "t.mp4")
+    late = str(tmp_path / "late.mkv")
+    subprocess.run(
+        ["ffmpeg", "-y", "-v", "error", "-i", src, "-f", "lavfi", "-i",
+         "sine=d=8", "-vf", "setpts=PTS+2/TB", "-c:v", "libx264", "-c:a", "aac",
+         late], check=True)
+    table = trailer.saliency_table(late)
+    assert float(table["times"][0]) == pytest.approx(2.0, abs=0.3)
