@@ -100,3 +100,47 @@ def test_runs_handles_empty_and_all_true_masks():
     assert activity._runs(np.array([True, True], dtype=bool)) == [(0, 2)]
     assert activity._runs(np.array([False, False], dtype=bool)) == []
     assert activity._runs(np.array([True], dtype=bool)) == [(0, 1)]
+
+
+def _runs_by_frame(on):
+    """Vanha, ruutu kerrallaan kulkeva toteutus: vertailukohta."""
+    out = []
+    i = 0
+    n = len(on)
+    while i < n:
+        if on[i]:
+            j = i
+            while j < n and on[j]:
+                j += 1
+            out.append((i, j))
+            i = j
+        else:
+            i += 1
+    return out
+
+
+def test_runs_matches_the_frame_loop_and_is_much_faster_on_a_long_timeline():
+    """Tämä oli aiemmin punainen: ruutusilmukka ei läpäise nopeusehtoa.
+
+    Ei absoluuttisia aikoja: sama kone mittaa molemmat peräkkäin ja ehto on
+    suhde. 77 minuutin aikajana, jossa puhetta ja taukoja vuorotellen.
+    """
+    import time
+
+    rng = np.random.default_rng(7)
+    n = int(77 * 60 / HOP_SEC)
+    lengths = rng.integers(3, 60, size=n // 20)
+    on = np.repeat(np.arange(len(lengths)) % 2 == 0, lengths)[:n]
+    assert len(on) > 100_000
+    assert activity._runs(on) == _runs_by_frame(on)
+
+    def best(fn):
+        times = []
+        for _ in range(5):
+            start = time.perf_counter()
+            fn(on)
+            times.append(time.perf_counter() - start)
+        return min(times)
+
+    # mitattu ~60x; vaatimus 5x jättää reilusti varaa kuormitetulle koneelle
+    assert best(activity._runs) * 5 < best(_runs_by_frame)
