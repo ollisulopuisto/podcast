@@ -87,3 +87,60 @@ def test_threshold_is_over_the_tracks_own_floor(tmp_path):
     quiet[int(2 / HOP_SEC):int(4 / HOP_SEC)] = -60.0
     (span,) = _intervals(session, {"a.wav": quiet}, tracks=["Olli"])
     assert abs(span[0] - 2.0) <= 2 * HOP_SEC
+
+
+def test_runs_finds_every_true_span():
+    """Run boundaries are exact: the vectorised form must keep the old spans."""
+    on = np.array([False, True, True, False, True, False, False], dtype=bool)
+    assert activity._runs(on) == [(1, 3), (4, 5)]
+
+
+def test_runs_handles_empty_and_all_true_masks():
+    assert activity._runs(np.array([], dtype=bool)) == []
+    assert activity._runs(np.array([True, True], dtype=bool)) == [(0, 2)]
+    assert activity._runs(np.array([False, False], dtype=bool)) == []
+    assert activity._runs(np.array([True], dtype=bool)) == [(0, 1)]
+
+
+def _runs_by_frame(on):
+    """Vanha, ruutu kerrallaan kulkeva toteutus: vertailukohta."""
+    out = []
+    i = 0
+    n = len(on)
+    while i < n:
+        if on[i]:
+            j = i
+            while j < n and on[j]:
+                j += 1
+            out.append((i, j))
+            i = j
+        else:
+            i += 1
+    return out
+
+
+def test_runs_matches_the_frame_loop_and_is_much_faster_on_a_long_timeline():
+    """Tämä oli aiemmin punainen: ruutusilmukka ei läpäise nopeusehtoa.
+
+    Ei absoluuttisia aikoja: sama kone mittaa molemmat peräkkäin ja ehto on
+    suhde. 77 minuutin aikajana, jossa puhetta ja taukoja vuorotellen.
+    """
+    import time
+
+    rng = np.random.default_rng(7)
+    n = int(77 * 60 / HOP_SEC)
+    lengths = rng.integers(3, 60, size=n // 20)
+    on = np.repeat(np.arange(len(lengths)) % 2 == 0, lengths)[:n]
+    assert len(on) > 100_000
+    assert activity._runs(on) == _runs_by_frame(on)
+
+    def best(fn):
+        times = []
+        for _ in range(5):
+            start = time.perf_counter()
+            fn(on)
+            times.append(time.perf_counter() - start)
+        return min(times)
+
+    # mitattu ~60x; vaatimus 5x jättää reilusti varaa kuormitetulle koneelle
+    assert best(activity._runs) * 5 < best(_runs_by_frame)
