@@ -2151,7 +2151,10 @@ def create_app(state: AppState) -> FastAPI:
         if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
             raise HTTPException(400, "Choose media files first.")
         try:
-            sources = media_import.inspect_media(paths)
+            # Vajaa valinta kelpaa: paneeli aukeaa, jotta puuttuva laji
+            # voidaan lisätä toisesta hakemistosta. Arviointi ja tuonti
+            # vaativat täyden valinnan omassa tarkistuksessaan.
+            sources = media_import.inspect_media(paths, require_both=False)
         except media_import.MediaImportError as exc:
             raise HTTPException(400, str(exc)) from exc
         with state.lock:

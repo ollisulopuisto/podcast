@@ -241,10 +241,14 @@ const context = {
     devicePixelRatio: 2,
   },
   getComputedStyle: () => ({ getPropertyValue: () => '#123456' }),
-  fetch: async (url) => {
-    const key = Object.keys(routes).find((r) => String(url).startsWith(r));
+  fetch: async (url, opts) => {
+    /* Pisin reitti voittaa: '/api/pick' on '/api/pick-media'n etuliite,
+       joten ensimmäinen osuma olisi väärä reitti. */
+    const key = Object.keys(routes).sort((a, b) => b.length - a.length)
+      .find((r) => String(url).startsWith(r));
     if (!key) throw new Error(`savutesti: tuntematon reitti ${url}`);
-    return { ok: true, json: async () => routes[key](), text: async () => '' };
+    const body = opts && opts.body ? JSON.parse(opts.body) : undefined;
+    return { ok: true, json: async () => routes[key](body), text: async () => '' };
   },
   setTimeout: () => 0,
   clearTimeout: () => {},
@@ -574,6 +578,55 @@ async function asyncPaths() {
       ], references: ['/x/camera.mp4'], reference: '/x/camera.mp4', result: null,
     };`, context);
     context.renderMediaSync();
+  });
+  /* Kamerat ja mikit eri hakemistoissa: ensimmäinen poiminta on vain
+     kameroita, ja paneelin pitää avautua silloinkin, jotta mikrofonit
+     voidaan lisätä toisesta hakemistosta. Arviointi on estetty kunnes
+     valinta on täysi. */
+  await step('openMedia (vajaa valinta)', async () => {
+    routes['/api/media/inspect'] = (body) => ({
+      sources: body.paths.map((p) => ({
+        path: p, name: p,
+        has_video: p.includes('camera'), has_audio: true,
+      })),
+      references: body.paths.filter((p) => p.includes('camera')),
+    });
+    await context.openMedia(['/x/camera.mp4', '/x/camera-b.mp4']);
+    if (registry.get('media-sync').classList.contains('hidden')) {
+      throw new Error('pelkkä kameravalinta ei avannut synkkauspaneelia');
+    }
+    if (!registry.get('media-sync-estimate').disabled) {
+      throw new Error('arvioinnin pitää olla estetty ilman mikrofonia');
+    }
+    if (!registry.get('media-sync-listen').disabled) {
+      throw new Error('kuuntelun pitää olla estetty vajaalla valinnalla');
+    }
+    const rowListen = registry.get('media-sync-sources').children
+      .flatMap((row) => row.children)
+      .find((el) => el.tagName === 'BUTTON');
+    if (!rowListen || !rowListen.disabled) {
+      throw new Error('raitakuuntelun pitää olla estetty vajaalla valinnalla');
+    }
+  });
+  await step('addMediaFiles', async () => {
+    let inspected = null;
+    const inspect = routes['/api/media/inspect'];
+    routes['/api/media/inspect'] = (body) => { inspected = body.paths; return inspect(body); };
+    routes['/api/pick-media'] = () => ({ paths: ['/y/camera2.mp4', '/x/mic.wav'] });
+    await context.addMediaFiles();
+    if (!inspected || inspected.length !== 4 || !inspected.includes('/y/camera2.mp4')) {
+      throw new Error(`lisäys ei vienyt yhdistettyjä polkuja inspectiin: ${JSON.stringify(inspected)}`);
+    }
+    const count = vm.runInContext('mediaImport.paths.length', context);
+    const reference = vm.runInContext('mediaImport.reference', context);
+    if (count !== 4) throw new Error(`mediaImport.paths ei päivittynyt: ${count}`);
+    if (reference !== '/x/camera.mp4') throw new Error(`viite vaihtui lisäyksessä: ${reference}`);
+    if (registry.get('media-sync-estimate').disabled) {
+      throw new Error('arvioinnin pitää olla sallittu täydellä valinnalla');
+    }
+    if (registry.get('media-sync-listen').disabled) {
+      throw new Error('kuuntelun pitää olla sallittu täydellä valinnalla');
+    }
   });
   await step('estimateMediaSync', async () => {
     const originalTimeout = context.setTimeout;

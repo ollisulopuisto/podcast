@@ -40,6 +40,22 @@ def test_media_inspect_returns_sync_reference_candidates(tmp_path, monkeypatch):
     assert [item["name"] for item in response.json()["sources"]] == ["camera", "Peter"]
 
 
+def test_media_inspect_accepts_an_incomplete_selection(tmp_path, monkeypatch):
+    """Kamerat ja mikit eri hakemistoissa: ensimmäinen poiminta on jompaa
+    kumpaa lajia, ja paneelin pitää avautua lisäystä varten. Arviointi ja
+    aikajanan luonti vaativat edelleen täyden valinnan."""
+    camera, microphone = _media(tmp_path, monkeypatch)
+    client = TestClient(create_app(AppState(xml_path="")))
+
+    only_camera = client.post("/api/media/inspect", json={"paths": [str(camera)]})
+    only_microphone = client.post("/api/media/inspect", json={"paths": [str(microphone)]})
+
+    assert only_camera.status_code == 200
+    assert only_camera.json()["references"] == [str(camera)]
+    assert only_microphone.status_code == 200
+    assert only_microphone.json()["references"] == []
+
+
 def test_media_estimate_status_reports_completed_review(tmp_path, monkeypatch):
     camera, microphone = _media(tmp_path, monkeypatch)
 
