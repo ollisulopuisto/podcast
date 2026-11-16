@@ -476,6 +476,7 @@ function shotCoverage(media, speakers) {
   };
   addButton.addEventListener('click', add);
   addPerson.addEventListener('keydown', (event) => {
+    if (event.isComposing || event.keyCode === 229) return;
     if (event.key === 'Enter') add();
   });
   addRow.append(addPerson, addButton);
