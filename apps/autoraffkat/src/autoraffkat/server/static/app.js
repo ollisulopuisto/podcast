@@ -3715,6 +3715,14 @@ function renderMediaSync() {
     option.selected = path === mediaImport.reference;
     reference.append(option);
   });
+  /* Vajaa valinta (vain kameroita tai vain mikrofoneja) avaa paneelin,
+     jotta puuttuva laji lisätään Lisää tiedostoja -napilla. Arviointi,
+     tuonti ja kuuntelu sallitaan vasta kun valinnassa on sekä viitekamera
+     että erillinen mikrofoni, kuten palvelimen tarkistus vaatii. */
+  const hasReference = mediaImport.references.length > 0;
+  const hasMicrophone = mediaImport.sources.some(
+    (source) => source.has_audio && !source.has_video);
+  const complete = hasReference && hasMicrophone;
   const list = $('media-sync-sources');
   list.replaceChildren();
   mediaImport.sources.filter((item) => item.path !== mediaImport.reference).forEach((source) => {
@@ -3748,21 +3756,15 @@ function renderMediaSync() {
       listen.type = 'button';
       listen.className = 'ghost';
       listen.textContent = T('sync.listen');
+      listen.disabled = !complete;
       listen.addEventListener('click', () => playSyncPreview('speaker', source.path));
       row.append(listen);
     }
     list.append(row);
   });
-  /* Vajaa valinta (vain kameroita tai vain mikrofoneja) avaa paneelin,
-     jotta puuttuva laji lisätään Lisää tiedostoja -napilla. Arviointi ja
-     tuonti sallitaan vasta kun valinnassa on sekä viitekamera että
-     erillinen mikrofoni, kuten palvelimen tarkistus vaatii. */
-  const hasReference = mediaImport.references.length > 0;
-  const hasMicrophone = mediaImport.sources.some(
-    (source) => source.has_audio && !source.has_video);
-  const complete = hasReference && hasMicrophone;
   $('media-sync-estimate').disabled = !complete;
   $('media-sync-import').disabled = !complete;
+  $('media-sync-listen').disabled = !complete;
   $('media-sync-progress').textContent = complete ? ''
     : !hasReference && !hasMicrophone
       ? `${T('sync.needCamera')} ${T('sync.needMic')}`

@@ -591,12 +591,21 @@ async function asyncPaths() {
       })),
       references: body.paths.filter((p) => p.includes('camera')),
     });
-    await context.openMedia(['/x/camera.mp4']);
+    await context.openMedia(['/x/camera.mp4', '/x/camera-b.mp4']);
     if (registry.get('media-sync').classList.contains('hidden')) {
       throw new Error('pelkkä kameravalinta ei avannut synkkauspaneelia');
     }
     if (!registry.get('media-sync-estimate').disabled) {
       throw new Error('arvioinnin pitää olla estetty ilman mikrofonia');
+    }
+    if (!registry.get('media-sync-listen').disabled) {
+      throw new Error('kuuntelun pitää olla estetty vajaalla valinnalla');
+    }
+    const rowListen = registry.get('media-sync-sources').children
+      .flatMap((row) => row.children)
+      .find((el) => el.tagName === 'BUTTON');
+    if (!rowListen || !rowListen.disabled) {
+      throw new Error('raitakuuntelun pitää olla estetty vajaalla valinnalla');
     }
   });
   await step('addMediaFiles', async () => {
@@ -605,15 +614,18 @@ async function asyncPaths() {
     routes['/api/media/inspect'] = (body) => { inspected = body.paths; return inspect(body); };
     routes['/api/pick-media'] = () => ({ paths: ['/y/camera2.mp4', '/x/mic.wav'] });
     await context.addMediaFiles();
-    if (!inspected || inspected.length !== 3 || !inspected.includes('/y/camera2.mp4')) {
+    if (!inspected || inspected.length !== 4 || !inspected.includes('/y/camera2.mp4')) {
       throw new Error(`lisäys ei vienyt yhdistettyjä polkuja inspectiin: ${JSON.stringify(inspected)}`);
     }
     const count = vm.runInContext('mediaImport.paths.length', context);
     const reference = vm.runInContext('mediaImport.reference', context);
-    if (count !== 3) throw new Error(`mediaImport.paths ei päivittynyt: ${count}`);
+    if (count !== 4) throw new Error(`mediaImport.paths ei päivittynyt: ${count}`);
     if (reference !== '/x/camera.mp4') throw new Error(`viite vaihtui lisäyksessä: ${reference}`);
     if (registry.get('media-sync-estimate').disabled) {
       throw new Error('arvioinnin pitää olla sallittu täydellä valinnalla');
+    }
+    if (registry.get('media-sync-listen').disabled) {
+      throw new Error('kuuntelun pitää olla sallittu täydellä valinnalla');
     }
   });
   await step('estimateMediaSync', async () => {
