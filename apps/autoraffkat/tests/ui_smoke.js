@@ -595,6 +595,28 @@ async function asyncPaths() {
     if (registry.get('media-sync').classList.contains('hidden')) {
       throw new Error('pelkkä kameravalinta ei avannut synkkauspaneelia');
     }
+    /* Vale-DOM:in querySelectorAll palauttaa oletuksena tyhjän, joten
+       siirtojen talteenotto ja palautus eivät ajauduisi lainkaan (Devin-
+       huomio). Tälle listalle tehdään oikea toteutus, jotta säilyvyys
+       tulee aidosti testatuksi. */
+    const sourcesList = registry.get('media-sync-sources');
+    sourcesList.querySelectorAll = (selector) => {
+      const found = [];
+      const walk = (el) => (el.children || []).forEach((child) => {
+        if (selector === 'input[data-media-path]' && child.tagName === 'INPUT'
+            && child.dataset && child.dataset.mediaPath) {
+          found.push(child);
+        }
+        walk(child);
+      });
+      walk(sourcesList);
+      return found;
+    };
+    /* Käsin syötetty siirto: pitää säilyä lisäyksen yli. */
+    const offsetInput = sourcesList.querySelectorAll('input[data-media-path]')
+      .find((input) => input.dataset.mediaPath === '/x/camera-b.mp4');
+    if (!offsetInput) throw new Error('siirtokenttää ei löytynyt raidoilta');
+    offsetInput.value = '1.25';
     if (!registry.get('media-sync-estimate').disabled) {
       throw new Error('arvioinnin pitää olla estetty ilman mikrofonia');
     }
@@ -626,6 +648,12 @@ async function asyncPaths() {
     }
     if (registry.get('media-sync-listen').disabled) {
       throw new Error('kuuntelun pitää olla sallittu täydellä valinnalla');
+    }
+    const kept = registry.get('media-sync-sources')
+      .querySelectorAll('input[data-media-path]')
+      .find((input) => input.dataset.mediaPath === '/x/camera-b.mp4');
+    if (!kept || kept.value !== '1.25') {
+      throw new Error(`käsin syötetty siirto ei säilynyt lisäyksessä: ${kept && kept.value}`);
     }
   });
   await step('estimateMediaSync', async () => {
