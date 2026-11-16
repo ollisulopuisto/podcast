@@ -3620,8 +3620,11 @@ async function openXml(path) {
   if (state.progress && state.progress.ready) send();
 }
 
-async function openMedia(paths) {
-  if (!paths && window.pywebview && window.pywebview.api) {
+/* Median valitsin: natiivi-ikkunassa pywebview, selaimessa palvelimen
+   Finder-dialogi. Molemmat palauttavat polkuja tai tyhjän listan. */
+async function pickMediaPaths() {
+  let paths = null;
+  if (window.pywebview && window.pywebview.api) {
     try { paths = await window.pywebview.api.open_media_dialog(); }
     catch (err) { console.error(err); }
   }
@@ -3629,13 +3632,18 @@ async function openMedia(paths) {
     try {
       const response = await fetch('/api/pick-media', { method: 'POST' });
       const data = await response.json();
-      if (data.unavailable) { banner(T('sync.noPicker'), true); return; }
+      if (data.unavailable) { banner(T('sync.noPicker'), true); return []; }
       paths = data.paths || [];
     } catch (err) {
       banner(T('app.readFailed', { error: err.message }), true);
-      return;
+      return [];
     }
   }
+  return paths || [];
+}
+
+async function openMedia(paths) {
+  if (!paths) paths = await pickMediaPaths();
   if (!paths || paths.length === 0) return;
   try {
     const response = await fetch('/api/media/inspect', {
@@ -3649,6 +3657,47 @@ async function openMedia(paths) {
     $('media-sync').classList.remove('hidden');
     banner('');
     renderMediaSync();
+  } catch (err) {
+    banner(err.message || T('app.readFailed', { error: err.message }), true);
+  }
+}
+
+/* Lisää tiedostoja nykyiseen valintaan: valitsin avautuu uudestaan, koska
+   yhdessä Finder-ikkunassa ei voi poimia tiedostoja useasta hakemistosta.
+   Käsin syötetyt siirrot säilyvät yli uudelleenpiirron. */
+async function addMediaFiles() {
+  if (!mediaImport) { await openMedia(); return; }
+  const added = await pickMediaPaths();
+  if (!added || added.length === 0) return;
+  const merged = [...new Set([...mediaImport.paths, ...added])];
+  if (merged.length === mediaImport.paths.length) return;
+  const manual = {};
+  $('media-sync-sources').querySelectorAll('input[data-media-path]').forEach((input) => {
+    manual[input.dataset.mediaPath] = input.value;
+  });
+  try {
+    const response = await fetch('/api/media/inspect', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths: merged }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Could not inspect media.');
+    mediaImport.paths = merged;
+    mediaImport.sources = data.sources;
+    mediaImport.references = data.references;
+    if (!data.references.includes(mediaImport.reference)) {
+      mediaImport.reference = data.references[0];
+    }
+    if (mediaImport.result && mediaImport.result.tracks) {
+      mediaImport.result.tracks = mediaImport.result.tracks.filter(
+        (item) => merged.includes(item.path));
+    }
+    renderMediaSync();
+    $('media-sync-sources').querySelectorAll('input[data-media-path]').forEach((input) => {
+      if (manual[input.dataset.mediaPath] !== undefined) {
+        input.value = manual[input.dataset.mediaPath];
+      }
+    });
   } catch (err) {
     banner(err.message || T('app.readFailed', { error: err.message }), true);
   }
@@ -3712,6 +3761,7 @@ async function estimateMediaSync() {
   const button = $('media-sync-estimate');
   setBusy(button, true, T('sync.estimating'));
   $('media-sync-reference').disabled = true;
+  $('media-sync-add').disabled = true;
   try {
     const response = await fetch('/api/media/estimate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -3743,6 +3793,7 @@ async function estimateMediaSync() {
     $('media-sync-progress').textContent = T('sync.estimateFailed', { error: err.message });
   } finally {
     $('media-sync-reference').disabled = false;
+    $('media-sync-add').disabled = false;
     setBusy(button, false);
   }
 }
@@ -3903,6 +3954,7 @@ $('bar').addEventListener('click', (event) => {
 });
 $('open').addEventListener('click', () => openXml());
 $('open-media').addEventListener('click', () => openMedia());
+$('media-sync-add').addEventListener('click', () => addMediaFiles());
 $('media-sync-close').addEventListener('click', () => $('media-sync').classList.add('hidden'));
 $('media-sync-reference').addEventListener('change', (event) => {
   if (mediaImport) {

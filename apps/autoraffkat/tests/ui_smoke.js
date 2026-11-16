@@ -241,10 +241,14 @@ const context = {
     devicePixelRatio: 2,
   },
   getComputedStyle: () => ({ getPropertyValue: () => '#123456' }),
-  fetch: async (url) => {
-    const key = Object.keys(routes).find((r) => String(url).startsWith(r));
+  fetch: async (url, opts) => {
+    /* Pisin reitti voittaa: '/api/pick' on '/api/pick-media'n etuliite,
+       joten ensimmäinen osuma olisi väärä reitti. */
+    const key = Object.keys(routes).sort((a, b) => b.length - a.length)
+      .find((r) => String(url).startsWith(r));
     if (!key) throw new Error(`savutesti: tuntematon reitti ${url}`);
-    return { ok: true, json: async () => routes[key](), text: async () => '' };
+    const body = opts && opts.body ? JSON.parse(opts.body) : undefined;
+    return { ok: true, json: async () => routes[key](body), text: async () => '' };
   },
   setTimeout: () => 0,
   clearTimeout: () => {},
@@ -574,6 +578,28 @@ async function asyncPaths() {
       ], references: ['/x/camera.mp4'], reference: '/x/camera.mp4', result: null,
     };`, context);
     context.renderMediaSync();
+  });
+  /* Kamerat ja mikit eri hakemistoissa: Lisää tiedostoja -nappi yhdistää
+     uuden valinnan nykyiseen ja inspect saa kaikki polut yhdessä. */
+  await step('addMediaFiles', async () => {
+    let inspected = null;
+    routes['/api/pick-media'] = () => ({ paths: ['/y/camera2.mp4', '/x/mic.wav'] });
+    routes['/api/media/inspect'] = (body) => {
+      inspected = body.paths;
+      return { sources: [
+        { path: '/x/camera.mp4', name: 'Camera', has_video: true, has_audio: true },
+        { path: '/x/mic.wav', name: 'Mic', has_video: false, has_audio: true },
+        { path: '/y/camera2.mp4', name: 'Camera2', has_video: true, has_audio: true },
+      ], references: ['/x/camera.mp4', '/y/camera2.mp4'] };
+    };
+    await context.addMediaFiles();
+    if (!inspected || inspected.length !== 3 || !inspected.includes('/y/camera2.mp4')) {
+      throw new Error(`lisäys ei vienyt yhdistettyjä polkuja inspectiin: ${JSON.stringify(inspected)}`);
+    }
+    const count = vm.runInContext('mediaImport.paths.length', context);
+    const reference = vm.runInContext('mediaImport.reference', context);
+    if (count !== 3) throw new Error(`mediaImport.paths ei päivittynyt: ${count}`);
+    if (reference !== '/x/camera.mp4') throw new Error(`viite vaihtui lisäyksessä: ${reference}`);
   });
   await step('estimateMediaSync', async () => {
     const originalTimeout = context.setTimeout;
