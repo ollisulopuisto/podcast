@@ -3653,7 +3653,7 @@ async function openMedia(paths) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'Could not inspect media.');
     mediaImport = { paths, sources: data.sources, references: data.references,
-                    reference: data.references[0], result: null };
+                    reference: data.references[0] || null, result: null };
     $('media-sync').classList.remove('hidden');
     banner('');
     renderMediaSync();
@@ -3753,11 +3753,24 @@ function renderMediaSync() {
     }
     list.append(row);
   });
-  $('media-sync-progress').textContent = '';
+  /* Vajaa valinta (vain kameroita tai vain mikrofoneja) avaa paneelin,
+     jotta puuttuva laji lisätään Lisää tiedostoja -napilla. Arviointi ja
+     tuonti sallitaan vasta kun valinnassa on sekä viitekamera että
+     erillinen mikrofoni, kuten palvelimen tarkistus vaatii. */
+  const hasReference = mediaImport.references.length > 0;
+  const hasMicrophone = mediaImport.sources.some(
+    (source) => source.has_audio && !source.has_video);
+  const complete = hasReference && hasMicrophone;
+  $('media-sync-estimate').disabled = !complete;
+  $('media-sync-import').disabled = !complete;
+  $('media-sync-progress').textContent = complete ? ''
+    : !hasReference && !hasMicrophone
+      ? `${T('sync.needCamera')} ${T('sync.needMic')}`
+      : !hasReference ? T('sync.needCamera') : T('sync.needMic');
 }
 
 async function estimateMediaSync() {
-  if (!mediaImport) return;
+  if (!mediaImport || !mediaImport.reference) return;
   const button = $('media-sync-estimate');
   setBusy(button, true, T('sync.estimating'));
   $('media-sync-reference').disabled = true;
@@ -3841,7 +3854,7 @@ async function playSyncPreview(kind, target) {
 }
 
 async function importSyncedMedia() {
-  if (!mediaImport) return;
+  if (!mediaImport || !mediaImport.reference) return;
   const button = $('media-sync-import');
   setBusy(button, true, T('sync.importing'));
   const shifts = collectSyncOffsets();

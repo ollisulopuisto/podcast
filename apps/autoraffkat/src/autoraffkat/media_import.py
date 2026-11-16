@@ -51,10 +51,18 @@ class MediaSource:
     audio_rate: int = 0
 
 
-def inspect_media(paths: list[str]) -> list[MediaSource]:
-    """Tarkista valitut mediat ja vaaditut tahdistusraidat."""
+def inspect_media(paths: list[str], *, require_both: bool = True) -> list[MediaSource]:
+    """Tarkista valitut mediat ja vaaditut tahdistusraidat.
+
+    ``require_both=False`` sallii vajaat valinnat (vain kameroita tai vain
+    mikrofoneja), jotta käyttöliittymä voi avata synkkauspaneelin ja
+    käyttäjä lisätä puuttuvan lajin toisesta hakemistosta. Arviointi ja
+    aikajanan luonti käyttävät oletusta eli vaativat täyden valinnan.
+    """
     unique = list(dict.fromkeys(os.path.abspath(os.path.expanduser(p)) for p in paths))
-    if len(unique) < 2:
+    if require_both and len(unique) < 2:
+        raise MediaImportError("Choose at least one camera and one microphone file.")
+    if not unique:
         raise MediaImportError("Choose at least one camera and one microphone file.")
 
     sources: list[MediaSource] = []
@@ -90,10 +98,11 @@ def inspect_media(paths: list[str]) -> list[MediaSource]:
             )
         )
 
-    if not any(source.has_video and source.has_audio for source in sources):
-        raise MediaImportError("Choose a camera file with reference audio.")
-    if not any(source.has_audio and not source.has_video for source in sources):
-        raise MediaImportError("Choose at least one separate microphone recording.")
+    if require_both:
+        if not any(source.has_video and source.has_audio for source in sources):
+            raise MediaImportError("Choose a camera file with reference audio.")
+        if not any(source.has_audio and not source.has_video for source in sources):
+            raise MediaImportError("Choose at least one separate microphone recording.")
     return sources
 
 
