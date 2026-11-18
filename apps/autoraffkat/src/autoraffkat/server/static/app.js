@@ -3517,8 +3517,20 @@ function nativeUsable(cmd, arg) {
   return !!el && !el.disabled && !(el.classList && el.classList.contains('hidden'));
 }
 
+/* Trailer-sivulla ei ole `__autoraffkatNativeRun`ia, mutta natiivi valikko säilyy
+   sivun vaihdossa. Ennen siirtymää valikon kohdat kytketään pois käytöstä, jotta ne
+   eivät jää päälle ilman käsittelijää; takaisin tullessa `startNativeMenu` piirtää ne. */
+function nativeDisable() {
+  const api = typeof window !== 'undefined' && window.pywebview ? window.pywebview.api : null;
+  if (!api || typeof api.set_native_menu !== 'function' || typeof nativeMenuSpec !== 'function') {
+    return;
+  }
+  Promise.resolve(api.set_native_menu(nativeMenuSpec({ ...nativeEnv(), usable: () => false })))
+    .catch(() => {});
+}
+
 function nativeRun(cmd, arg) {
-  if (cmd === 'trailer') window.location.href = '/trailer';
+  if (cmd === 'trailer') { nativeDisable(); window.location.href = '/trailer'; }
   else if (cmd === 'export-dest') setExportDest(arg);
   else if (cmd === 'history-goto') moveHistory('goto', arg);
   else nativeButton(cmd).click();
