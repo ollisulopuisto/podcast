@@ -578,3 +578,16 @@ sekunteina ja `decide.py` ei tiedä käyttöliittymästä mitään. Tarvitaan:
 4. leikkauskohdissa lähteen vaihto, koska yksi `<video>` ei voi näyttää kahta
    kameraa — käytännössä kaksi päällekkäistä elementtiä, joista toista
    esiladataan
+
+## Synkkapaneelin aikajana
+
+Mediasynkan paneeli näyttää jokaisen äänitiedoston omana palkkinaan valittuun
+kameraan nähden yhteisellä aika-asteikolla. Palkin paikka on siirto (oikealle
+= myöhemmäksi, vasemmalle = aikaisemmaksi). Asettelu lasketaan puhtaassa
+funktiossa, jotta sen voi testata ilman selainta: lukukelvottomat tai
+järjettömät siirrot (ei-numeerinen, alueen ulkopuolinen) rajataan tai
+näytetään arvioimattomina, eikä niitä piirretä paneelin ulkopuolelle.
+Tilanimikkeet (hyvä, tarkista, ei arvioitu, ei löytynyt, käsin) tulevat
+arvion korrelaatiosta ja käsin muokkauksen lipusta, ja jokainen nimike sekä
+kaavion saavutettavuuskuvaus kulkevat käännöstaulukoiden kautta.
+Tiedostonimet päätyvät sivulle tekstinä, eivät merkkauksena.

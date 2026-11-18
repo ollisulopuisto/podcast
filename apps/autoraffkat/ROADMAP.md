@@ -208,6 +208,8 @@ Phase 2 (drift) is not built.
   simultaneous speech / dominant mic). Listen → adjust the offset field →
   re-preview → import. syncstart ships the same idea as zoomed correlation
   diagrams; ears are the accepted fallback when confidence is low.
+- Sync panel timeline (done): bars per file against the camera with status
+  labels, so offsets are readable before listening or importing.
 
 **Phase 2 — clock drift (Olli 2026-11-12: assume no drift by default; an
 opt-in toggle, off).**

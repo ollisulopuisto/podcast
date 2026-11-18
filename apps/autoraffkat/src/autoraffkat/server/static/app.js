@@ -3698,9 +3698,130 @@ async function addMediaFiles() {
         input.value = manual[input.dataset.mediaPath];
       }
     });
+    renderSyncTimeline();
   } catch (err) {
     banner(err.message || T('app.readFailed', { error: err.message }), true);
   }
+}
+
+/* Aikajananäkymä: jokainen tiedosto on palkki vertailukameran palkin alla.
+   Palkin paikka on siirto, joten pariutus näkyy ilman lukuja. Asettelu on
+   erillinen puhdas funktio, jotta se voidaan testata ilman selainta. */
+const SYNC_GOOD_CORRELATION = 0.4;
+const SYNC_MAX_SHIFT_S = 1e7;
+
+function syncTimelineLayout(items) {
+  const clean = items.map((item) => {
+    const shift = Number(item.shift);
+    const duration = Number(item.duration);
+    return {
+      ...item,
+      shift: item.reference || !Number.isFinite(shift) ? 0
+        : Math.max(-SYNC_MAX_SHIFT_S, Math.min(SYNC_MAX_SHIFT_S, shift)),
+      duration: Number.isFinite(duration) && duration > 0 ? duration : 0,
+    };
+  });
+  /* Akseli kattaa vain siirrot, ei tuntien pituisia tiedostoja: muuten
+     muutaman sekunnin siirto ei näkyisi lainkaan. Palkit jatkuvat oikean
+     reunan yli ja leikkautuvat siihen. */
+  const shifts = clean.map((item) => item.shift);
+  const low = Math.min(0, ...shifts);
+  const high = Math.max(0, ...shifts);
+  const pad = Math.max(2, 0.2 * (high - low));
+  const start = low < 0 ? low - pad : 0;
+  const end = high + pad;
+  const span = end - start;
+  return {
+    zero: 100 * (0 - start) / span,
+    span,
+    items: clean.map((item) => {
+      const left = 100 * (item.shift - start) / span;
+      return {
+        ...item,
+        left,
+        width: Math.max(0.5, Math.min(100 * item.duration / span, 100 - left)),
+      };
+    }),
+  };
+}
+
+function syncOffsetLabel(value) {
+  const text = (value < 0 ? '−' : '+') + Math.abs(value).toFixed(2);
+  return (LANG === 'fi' ? text.replace('.', ',') : text) + ' s';
+}
+
+function syncRowStatus(estimate, value, resultReady) {
+  if (!resultReady) return 'none';
+  if (!estimate || estimate.shift_seconds === null || estimate.shift_seconds === undefined) {
+    return Number(value) === 0 ? 'notFound' : 'manual';
+  }
+  if (Math.abs(Number(estimate.shift_seconds) - Number(value)) > 0.005) return 'manual';
+  return Number(estimate.correlation) >= SYNC_GOOD_CORRELATION ? 'good' : 'check';
+}
+
+function renderSyncTimeline() {
+  const box = $('media-sync-timeline');
+  if (!box || !mediaImport) return;
+  box.replaceChildren();
+  const list = $('media-sync-sources');
+  const inputs = list.querySelectorAll ? list.querySelectorAll('input[data-media-path]') : [];
+  const values = {};
+  inputs.forEach((input) => { values[input.dataset.mediaPath] = Number(input.value); });
+  const byPath = (path) => mediaImport.sources.find((item) => item.path === path);
+  const reference = byPath(mediaImport.reference);
+  if (!reference) return;
+  const ready = !!(mediaImport.result && mediaImport.result.tracks);
+  const rows = [{ path: reference.path, name: reference.name, duration: reference.duration,
+                  shift: 0, reference: true, status: '' }];
+  mediaImport.sources.filter((item) => item.has_audio && item.path !== reference.path)
+    .forEach((source) => {
+      const value = Number.isFinite(values[source.path]) ? values[source.path] : 0;
+      const estimate = ready && mediaImport.result.tracks.find((item) => item.path === source.path);
+      rows.push({ path: source.path, name: source.name, duration: source.duration,
+                  shift: value, reference: false,
+                  status: syncRowStatus(estimate, value, ready) });
+    });
+  const layout = syncTimelineLayout(rows);
+  box.setAttribute('aria-label', T('sync.timelineAria', {
+    count: rows.length - 1, camera: reference.name,
+  }));
+  const title = document.createElement('h3');
+  title.textContent = T('sync.timelineTitle');
+  const help = document.createElement('p');
+  help.textContent = T('sync.timelineHelp');
+  box.append(title, help);
+  const scale = document.createElement('p');
+  scale.className = 'sync-tl-scale';
+  scale.textContent = T('sync.timelineScale', { span: layout.span.toFixed(1) });
+  layout.items.forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'sync-tl-row';
+    const name = document.createElement('span');
+    name.className = 'sync-tl-name';
+    name.textContent = item.name;
+    if (item.reference) {
+      const tag = document.createElement('small');
+      tag.textContent = `· ${T('sync.clock')}`;
+      name.append(tag);
+    }
+    const track = document.createElement('div');
+    track.className = 'sync-tl-track';
+    const zero = document.createElement('div');
+    zero.className = 'sync-tl-zero';
+    zero.style.left = `${layout.zero}%`;
+    const bar = document.createElement('div');
+    bar.className = `sync-tl-bar ${item.reference ? 'tl-ref' : `tl-${item.status}`}`;
+    bar.style.left = `${item.left}%`;
+    bar.style.width = `${item.width}%`;
+    bar.textContent = syncOffsetLabel(item.shift);
+    track.append(zero, bar);
+    const status = document.createElement('span');
+    status.className = 'sync-tl-status';
+    status.textContent = item.reference ? '' : T(`sync.status.${item.status}`);
+    row.append(name, track, status);
+    box.append(row);
+  });
+  box.append(scale);
 }
 
 function renderMediaSync() {
@@ -3737,13 +3858,14 @@ function renderMediaSync() {
       hint.textContent = `r=${Number.isFinite(score) ? score.toFixed(2) : '—'}`;
       if (estimate.window_expanded) hint.textContent += ` · ${T('sync.expanded')}`;
     } else {
-      hint.textContent = source.has_audio ? T('sync.noEstimate') : T('sync.noEstimate');
+      hint.textContent = mediaImport.result ? T('sync.noEstimate') : T('sync.notYet');
     }
     name.append(hint);
     const shiftLabel = document.createElement('label');
     shiftLabel.textContent = T('sync.offset');
     const input = document.createElement('input');
     input.type = 'number'; input.step = '0.01'; input.dataset.mediaPath = source.path;
+    input.addEventListener('input', renderSyncTimeline);
     input.value = estimate && estimate.shift_seconds !== null
       ? Number(estimate.shift_seconds).toFixed(2) : '0';
     shiftLabel.append(input);
@@ -3762,6 +3884,7 @@ function renderMediaSync() {
     }
     list.append(row);
   });
+  renderSyncTimeline();
   $('media-sync-estimate').disabled = !complete;
   $('media-sync-import').disabled = !complete;
   $('media-sync-listen').disabled = !complete;

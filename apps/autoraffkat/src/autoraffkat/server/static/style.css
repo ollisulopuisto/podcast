@@ -775,6 +775,24 @@ dialog.sheet::backdrop { background: rgba(8, 9, 11, .62); }
 .sync-source input { width: 100%; }
 .sync-source small { display: block; color: var(--muted); }
 .sync-actions { justify-content: flex-end; }
+.sync-timeline { margin: 14px 0 6px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 7px; }
+.sync-timeline h3 { margin: 0 0 4px; }
+.sync-timeline p { margin: 0 0 12px; color: var(--muted); }
+.sync-tl-row { display: grid; grid-template-columns: minmax(120px, 190px) 1fr 110px; gap: 12px; align-items: center; margin: 6px 0; }
+.sync-tl-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sync-tl-name small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.sync-tl-track { position: relative; height: 30px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+.sync-tl-zero { position: absolute; top: -3px; bottom: -3px; width: 0; border-left: 1px dashed var(--muted); }
+.sync-tl-bar { position: absolute; top: 3px; bottom: 3px; border-radius: 4px; min-width: 4px; overflow: hidden; white-space: nowrap; font-size: 12px; font-weight: 700; line-height: 22px; padding: 0 6px; color: #0d1117; background: var(--accent); }
+/* Luokat tl-*: pelkkä .check/.good osuisi muihin sääntöihin. */
+.sync-tl-bar.tl-good { background: var(--sp2); }
+.sync-tl-bar.tl-check { background: var(--warn); }
+.sync-tl-bar.tl-none { background: var(--wide); color: var(--text); }
+.sync-tl-bar.tl-notFound { background: var(--error); }
+.sync-tl-bar.tl-manual { background: var(--sp3); }
+.sync-tl-scale { margin: 8px 0 0; font-size: 12px; }
+.sync-tl-status { font-size: 13px; color: var(--muted); }
+@media (max-width: 720px) { .sync-tl-row { grid-template-columns: 1fr; gap: 3px; } }
 @media (max-width: 720px) { .sync-source { grid-template-columns: 1fr; gap: 6px; } }
 
 .range-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
