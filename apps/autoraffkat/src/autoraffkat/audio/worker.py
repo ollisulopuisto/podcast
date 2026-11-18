@@ -18,13 +18,11 @@ luettavissa myös terminaalista, kun jokin menee pieleen.
 from __future__ import annotations
 
 import json
-import os
 import sys
 import traceback
 
 from ..activity import app_activity
 from ..stdio import restore_stdio
-
 
 _restore_stdio = restore_stdio
 

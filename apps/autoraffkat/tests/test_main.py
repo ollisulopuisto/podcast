@@ -53,7 +53,6 @@ def test_main_direct_script_execution():
 def test_plugin_editor_is_an_internal_command(monkeypatch):
     """Pakattu sovellus käynnistää liitännäisikkunan lapsen tällä komennolla."""
     import speechmix.editor as ed
-
     from autoraffkat.__main__ import main
 
     monkeypatch.setattr(ed, "main", lambda: 7)
