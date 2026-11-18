@@ -29,6 +29,11 @@ def main(argv: list[str] | None = None) -> int:
 
         return audio_worker_main()
 
+    if argv == ["--plugin-editor"]:
+        from speechmix.editor import main as plugin_editor_main
+
+        return plugin_editor_main()
+
     if argv == ["--selftest-jit"]:
         from autoraffkat.selftest import main as selftest_main
 

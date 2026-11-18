@@ -59,6 +59,19 @@ class EditorResult:
     params: dict = field(default_factory=dict)
 
 
+def editor_command() -> list[str]:
+    """Lapsiprosessin komento.
+
+    Pakattu sovellus ei ole Python-tulkki: ``sys.executable -m`` annettaisiin
+    sovelluksen omalle komentoriville, joka kaatuu ``unrecognized arguments:
+    -m``. Pakattu binääri käynnistää ikkunan sisäisellä komennolla
+    ``--plugin-editor`` (ks. ``autoraffkat.__main__``).
+    """
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--plugin-editor"]
+    return [sys.executable, "-m", "speechmix.editor"]
+
+
 def open_editor(
     path: str,
     params: dict | None = None,
@@ -80,7 +93,7 @@ def open_editor(
     }
     try:
         child = subprocess.run(
-            [sys.executable, "-m", "speechmix.editor"],
+            editor_command(),
             input=json.dumps(spec),
             capture_output=True,
             text=True,

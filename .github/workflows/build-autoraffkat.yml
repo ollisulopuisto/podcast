@@ -133,6 +133,11 @@ jobs:
             echo "$ents" | grep -q "com.apple.security.cs.$k" || { echo "::error::entitlement $k missing from signed app"; exit 1; }
           done
           dist/autoraffkat.app/Contents/MacOS/autoraffkat --selftest-jit
+          # Liitännäisikkunan lapsi: pakattu binääri ei saa antaa `-m`:ää
+          # omalle komentoriville. Tyhjä polku antaa «failed»-rivin, ei ikkunaa.
+          out=$(echo '{"plugin_path": "", "params": {}, "state": null}' | dist/autoraffkat.app/Contents/MacOS/autoraffkat --plugin-editor || true)
+          echo "$out"
+          echo "$out" | grep -q '"kind": "failed"' || { echo "::error::--plugin-editor child did not answer"; exit 1; }
 
       # Arkkitehtuuri nimeen, jotta Releaseen mahtuu myöhemmin toinenkin.
       - name: Name the image by architecture
