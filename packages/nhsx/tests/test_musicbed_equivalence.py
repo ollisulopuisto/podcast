@@ -63,3 +63,10 @@ def test_interpolation_keeps_scalar_rounding_at_half_centibel():
     actual = musicbed.curve(*args)
     assert actual[197][1] == -5.92
     assert actual == scalar_curve(*args)
+
+
+def test_fall_interpolation_does_not_precompute_the_slope():
+    args = (0.011666666666666667, 3.85, [(-20.0, -5.84), (10.0, 20.0)])
+    actual = musicbed.curve(*args)
+    assert actual[0] == (0.0, -0.1)
+    assert actual == scalar_curve(*args)

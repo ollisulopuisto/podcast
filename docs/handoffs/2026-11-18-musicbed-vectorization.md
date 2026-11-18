@@ -6,7 +6,7 @@ original delta with the scaled endpoint, so digital silence starts on the
 same sample as before vectorization.
 
 Exact-output tests uncovered another difference: NumPy's slope-first interp
-rounds some public results differently (-5.93 instead of -5.92). The batch
+rounds some public results differently (-0.11 instead of -0.10). The batch
 lookup now uses searchsorted and the original multiply-then-divide order.
 The scalar curve and interpolation from pre-PR main are frozen in a test
 oracle, with 450 seeded timelines exercised in both cold-open modes, plus
@@ -14,7 +14,7 @@ focused overlap, endpoint and rounding regressions. Both reported failures
 were observed red before repair. Replacing the new interpolation with
 np.interp was also checked to fail the rounding regression.
 
-Validation: nhsx 55 passed; repository ruff check clean. Root workspace
+Validation: nhsx 56 passed; repository ruff check clean. Root workspace
 contracts: 267 passed, 3 skipped, 16 subtests passed, one failure because zsh
 is unavailable in this Linux environment. No test was weakened or skipped
 by this patch. Mac/app suites await the existing CI workflow.
