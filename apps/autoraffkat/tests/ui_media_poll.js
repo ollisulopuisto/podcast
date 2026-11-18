@@ -21,7 +21,7 @@ function makeElement(tag) {
   return {
     tagName: (tag || 'div').toUpperCase(),
     children: [], dataset: {}, style: {}, className: '', innerHTML: '', textContent: '',
-    append() {}, appendChild(c) { return c; }, addEventListener() {}, setAttribute() {},
+    append() {}, appendChild(c) { return c; }, handlers: {}, addEventListener(type, fn) { this.handlers[type] = fn; }, setAttribute() {},
     classList: { add() {}, remove() {}, toggle() {} },
     getBoundingClientRect: () => ({ left: 0, top: 0, right: 100, bottom: 20,
                                     width: 100, height: 20, x: 0, y: 0 }),
@@ -90,5 +90,12 @@ vm.runInContext(`
   assert.ok(shown.includes(vm.runInContext("T('sync.pollFailed')", context)),
             'seurannan päättävä virhe ei käytä käännettyä viestiä: ' + shown);
   assert.ok(!shown.includes('State poll failed'), 'käännös puuttuu suomesta');
+  /* Vertailukameran vaihto nollaa kentät, joten käsin muokkauksen merkki
+     ei saa jäädä (Devin-arvio 2026-11-18). */
+  vm.runInContext("mediaImport.edited = { '/b.wav': true }", context);
+  registry.get('media-sync-reference').handlers.change({ target: { value: '/c.mp4' } });
+  assert.deepEqual(
+    JSON.parse(vm.runInContext('JSON.stringify(mediaImport.edited)', context)), {},
+    'vertailukameran vaihto jätti käsin muokkauksen merkin');
   console.log('media poll: error responses are retried');
 })().catch((err) => { console.error(err); process.exit(1); });

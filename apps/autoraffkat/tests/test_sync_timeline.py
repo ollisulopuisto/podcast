@@ -14,11 +14,9 @@ SCRIPT = r"""
 const fs = require('fs');
 const vm = require('vm');
 const src = fs.readFileSync(process.argv[process.argv.length - 1], 'utf8');
-const start = src.indexOf('const SYNC_GOOD_CORRELATION');
-const end = src.indexOf('function renderSyncTimeline');
 const ctx = { LANG: 'fi', out: {} };
 vm.createContext(ctx);
-vm.runInContext(src.slice(start, end), ctx);
+vm.runInContext(src, ctx);
 vm.runInContext(`
   out.layout = syncTimelineLayout([
     { name: 'cam', duration: 100, shift: 5, reference: true },
@@ -52,7 +50,7 @@ def result():
     if shutil.which("node") is None:
         pytest.skip("node puuttuu")
     proc = subprocess.run(
-        ["node", "-e", SCRIPT, str(STATIC / "app.js")],
+        ["node", "-e", SCRIPT, str(STATIC / "sync_timeline.js")],
         capture_output=True, text=True, check=True,
     )
     return json.loads(proc.stdout)
@@ -123,3 +121,12 @@ def test_timeline_container_keeps_children_readable_to_screen_readers():
     line = next(row for row in html.splitlines() if 'id="media-sync-timeline"' in row)
     assert 'role="group"' in line
     assert 'role="img"' not in line
+
+
+def test_sync_timeline_module_loads_before_app_and_is_versioned():
+    """Puhtaat funktiot ovat omassa tiedostossaan; sivun on ladattava se ennen
+    app.js:ää, ja versiotunniste kattaa sen (muuten selain tarjoaisi vanhan)."""
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    assert html.index("/static/sync_timeline.js") < html.index("/static/app.js")
+    server = (STATIC.parent / "app.py").read_text(encoding="utf-8")
+    assert '"sync_timeline.js"' in server

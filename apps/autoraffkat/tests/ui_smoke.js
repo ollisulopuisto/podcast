@@ -7,7 +7,7 @@
  * `busy`-muuttujaan, jolloin koko piirto keskeytyi ja "Lue uudestaan" jäi
  * ikuisesti kehräämään.
  *
- * Tämä lataa i18n.js:n ja app.js:n valeselaimeen ja ajaa jokaisen
+ * Tämä lataa i18n.js:n, sync_timeline.js:n ja app.js:n valeselaimeen ja ajaa jokaisen
  * piirtofunktion oikealla palvelimen tuottamalla tilarakenteella. Mikä tahansa
  * ajonaikainen virhe kaataa testin.
  *
@@ -270,7 +270,7 @@ const context = {
 context.globalThis = context;
 vm.createContext(context);
 
-for (const name of ['i18n.js', 'app.js']) {
+for (const name of ['i18n.js', 'sync_timeline.js', 'app.js']) {
   vm.runInContext(fs.readFileSync(path.join(staticDir, name), 'utf8'), context,
                   { filename: name });
 }
