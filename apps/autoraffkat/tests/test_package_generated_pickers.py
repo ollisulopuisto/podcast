@@ -14,6 +14,14 @@ from autoraffkat.server import app as server_app
 from autoraffkat.server.app import AppState, create_app
 
 
+# Windowsissa `sh`-skripti ei ole ajettava eikä POSIX-polut (/Users/..) ole
+# absoluuttisia; nämä testit feikkaavat macOS/Linux-ympäristön, joten ne
+# ajetaan vain POSIX-alustoilla.
+posix_only = pytest.mark.skipif(
+    sys.platform == "win32", reason="feikkaa POSIX-ympäristön (sh-skripti, /-polut)"
+)
+
+
 def _fake_cli(path, help_text="render-alpha  Render captions"):
     path.write_text(f"#!/bin/sh\necho '{help_text}'\n", encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
@@ -26,6 +34,7 @@ def _clean_env(monkeypatch):
     monkeypatch.setattr(pkg, "_GENERATED_CACHE", {"at": 0.0, "value": False})
 
 
+@posix_only
 def test_find_tekstitys_uses_the_app_bundle_cli_when_path_has_none(tmp_path, monkeypatch):
     """Asennettu Tekstitys.app tuo vain TekstitysCLI:n paketin sisään."""
     cli = _fake_cli(tmp_path / "TekstitysCLI")
@@ -67,6 +76,7 @@ def test_old_tekstitys_without_render_alpha_is_unavailable(tmp_path, monkeypatch
     assert pkg.generated_source_available() is False
 
 
+@posix_only
 def test_generated_card_is_rendered_with_the_bundle_cli(tmp_path, monkeypatch):
     """Ilman löytöä kortti jäi hiljaa pois; nyt ajetaan paketin CLI."""
     cli = _fake_cli(tmp_path / "TekstitysCLI")
@@ -141,6 +151,7 @@ def test_pick_file_endpoint_without_a_picker_says_unavailable(monkeypatch):
     }
 
 
+@posix_only
 def test_native_file_on_macos_asks_for_one_file_and_returns_an_absolute_path(monkeypatch):
     prompts = []
 
@@ -165,6 +176,7 @@ def test_native_file_cancel_returns_none(monkeypatch):
     assert pick.native_file("", "Valitse", force=True) is None
 
 
+@posix_only
 def test_native_file_on_a_kde_only_linux_uses_kdialog(monkeypatch):
     """has_native_picker() hyväksyy kdialogin, joten myös yhden tiedoston
     valinnan on toimittava ilman zenityä ja tkinteriä (Devin-arvio 2026-11-18)."""
@@ -208,6 +220,7 @@ def test_applescript_location_escapes_quotes_and_backslashes():
     assert pick._applescript_location("") == ""
 
 
+@posix_only
 def test_native_file_and_many_escape_the_start_directory_on_macos(tmp_path, monkeypatch):
     evil = tmp_path / 'x" & (do shell script "id") & "'
     evil.mkdir()
