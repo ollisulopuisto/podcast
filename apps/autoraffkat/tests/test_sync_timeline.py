@@ -51,7 +51,7 @@ def result():
         pytest.skip("node puuttuu")
     proc = subprocess.run(
         ["node", "-e", SCRIPT, str(STATIC / "sync_timeline.js")],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True, encoding="utf-8", check=True,
     )
     return json.loads(proc.stdout)
 

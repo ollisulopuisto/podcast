@@ -14,10 +14,29 @@ from autoraffkat.server import app as server_app
 from autoraffkat.server.app import AppState, create_app
 
 
-def _fake_cli(path, help_text="render-alpha  Render captions"):
-    path.write_text(f"#!/bin/sh\necho '{help_text}'\n", encoding="utf-8")
+def _fake_cli(path, monkeypatch, help_text="render-alpha  Render captions"):
+    """Feikkikomento, joka toimii kaikilla alustoilla: tiedosto on olemassa
+    (ja ajettava POSIXissa), mutta ``--help`` vastataan korvatulla
+    subprocess.runilla, koska sh-skriptiä ei voi ajaa Windowsissa."""
+    import subprocess
+
+    path.write_text("#!/bin/sh\n", encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
-    return str(path)
+    cli = str(path)
+    real_run = subprocess.run
+
+    class Helped:
+        returncode = 0
+        stdout = help_text
+        stderr = ""
+
+    def fake_help(cmd, **kw):
+        if cmd and cmd[0] == cli and "--help" in cmd:
+            return Helped()
+        return real_run(cmd, **kw)
+
+    monkeypatch.setattr(subprocess, "run", fake_help)
+    return cli
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +47,7 @@ def _clean_env(monkeypatch):
 
 def test_find_tekstitys_uses_the_app_bundle_cli_when_path_has_none(tmp_path, monkeypatch):
     """Asennettu Tekstitys.app tuo vain TekstitysCLI:n paketin sisään."""
-    cli = _fake_cli(tmp_path / "TekstitysCLI")
+    cli = _fake_cli(tmp_path / "TekstitysCLI", monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: None)
     monkeypatch.setattr(pkg, "TEKSTITYS_APP_CLI", (str(tmp_path / "puuttuu"), cli))
 
@@ -37,7 +56,7 @@ def test_find_tekstitys_uses_the_app_bundle_cli_when_path_has_none(tmp_path, mon
 
 
 def test_find_tekstitys_prefers_the_environment_override(tmp_path, monkeypatch):
-    own = _fake_cli(tmp_path / "oma")
+    own = _fake_cli(tmp_path / "oma", monkeypatch)
     monkeypatch.setenv(pkg.TEKSTITYS_ENV, own)
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/tekstitys")
 
@@ -60,7 +79,7 @@ def test_missing_tekstitys_is_reported_not_found(tmp_path, monkeypatch):
 
 
 def test_old_tekstitys_without_render_alpha_is_unavailable(tmp_path, monkeypatch):
-    cli = _fake_cli(tmp_path / "TekstitysCLI", "burn  transcribe")
+    cli = _fake_cli(tmp_path / "TekstitysCLI", monkeypatch, "burn  transcribe")
     monkeypatch.setattr("shutil.which", lambda name: None)
     monkeypatch.setattr(pkg, "TEKSTITYS_APP_CLI", (cli,))
 
@@ -69,7 +88,7 @@ def test_old_tekstitys_without_render_alpha_is_unavailable(tmp_path, monkeypatch
 
 def test_generated_card_is_rendered_with_the_bundle_cli(tmp_path, monkeypatch):
     """Ilman löytöä kortti jäi hiljaa pois; nyt ajetaan paketin CLI."""
-    cli = _fake_cli(tmp_path / "TekstitysCLI")
+    cli = _fake_cli(tmp_path / "TekstitysCLI", monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: None)
     monkeypatch.setattr(pkg, "TEKSTITYS_APP_CLI", (cli,))
     import subprocess
@@ -152,7 +171,7 @@ def test_native_file_on_macos_asks_for_one_file_and_returns_an_absolute_path(mon
     monkeypatch.setattr(pick, "_osascript", fake_osascript)
     monkeypatch.setattr(pick, "_ensure_foreground", lambda: True)
 
-    assert pick.native_file("", "Valitse alku", force=True) == "/Users/x/alku.mov"
+    assert pick.native_file("", "Valitse alku", force=True) == os.path.abspath("/Users/x/alku.mov")
     assert "multiple selections" not in prompts[0]
     assert '"Valitse alku"' in prompts[0]
 
@@ -184,7 +203,7 @@ def test_native_file_on_a_kde_only_linux_uses_kdialog(monkeypatch):
     monkeypatch.setattr(pick.shutil, "which", lambda name: "/usr/bin/kdialog" if name == "kdialog" else None)
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    assert pick.native_file("", "Valitse alku", force=True) == "/home/x/alku.mov"
+    assert pick.native_file("", "Valitse alku", force=True) == os.path.abspath("/home/x/alku.mov")
     assert seen[0][0] == "kdialog" and "--getopenfilename" in seen[0]
 
 
@@ -208,16 +227,19 @@ def test_applescript_location_escapes_quotes_and_backslashes():
     assert pick._applescript_location("") == ""
 
 
-def test_native_file_and_many_escape_the_start_directory_on_macos(tmp_path, monkeypatch):
-    evil = tmp_path / 'x" & (do shell script "id") & "'
-    evil.mkdir()
+def test_native_file_and_many_escape_the_start_directory_on_macos(monkeypatch):
+    # Lainausmerkillistä kansiota ei voi luoda Windowsissa, joten kansion
+    # olemassaolo feikataan eikä sitä luoda levylle.
+    evil = '/tmp/x" & (do shell script "id") & "'
+    monkeypatch.setattr(pick.os.path, "isdir", lambda p: True)
+    monkeypatch.setattr(pick.os.path, "exists", lambda p: True)
     scripts = []
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(pick, "_osascript", lambda s: scripts.append(s) or "")
     monkeypatch.setattr(pick, "_ensure_foreground", lambda: True)
 
-    pick.native_file(str(evil), "Valitse", force=True)
-    pick.native_many(str(evil), force=True)
+    pick.native_file(evil, "Valitse", force=True)
+    pick.native_many(evil, force=True)
 
     assert len(scripts) == 2
     for script in scripts:
