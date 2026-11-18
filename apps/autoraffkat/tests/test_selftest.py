@@ -41,3 +41,23 @@ def test_plugin_editor_command_restores_unset_streams():
     first = json.loads(done.stdout.splitlines()[0])
     assert first["kind"] == "failed", done.stderr
     assert done.returncode == 1
+
+
+def test_plugin_load_reports_a_library_that_cannot_be_loaded(capsys, tmp_path):
+    assert selftest.plugin_load(str(tmp_path / "puuttuu.vst3")) == 1
+    assert "selftest-plugin-load: failed" in capsys.readouterr().err
+
+
+def test_plugin_load_succeeds_when_the_library_loads(capsys, monkeypatch):
+    import ctypes
+
+    loaded = []
+    monkeypatch.setattr(ctypes, "CDLL", lambda path: loaded.append(path))
+
+    assert selftest.plugin_load("/x/Fake") == 0
+    assert loaded == ["/x/Fake"]
+    assert "selftest-plugin-load: ok" in capsys.readouterr().out
+
+
+def test_plugin_load_is_an_internal_command(capsys, tmp_path):
+    assert main(["--selftest-plugin-load", str(tmp_path / "puuttuu.vst3")]) == 1

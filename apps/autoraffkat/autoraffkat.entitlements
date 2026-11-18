@@ -5,11 +5,20 @@
   <!-- Ääniketju kääntää silmukkansa numballa. llvmlite varaa suoritettavaa
        muistia (MAP_JIT), ja hardened runtime tappaa prosessin
        (CODESIGNING, Invalid Page) ilman näitä kahta.
-       Tarkoituksella ei disable-library-validation: kolmannen osapuolen
-       liitännäisen lataus voi tarvita sitä, mutta sitä ei ole todistettu. -->
+       disable-library-validation: käyttäjän VST3/AU-liitännäiset (esim.
+       Accentize dxRevive, tiimi PZJLTV4C46) on allekirjoittanut muu tiimi kuin
+       meidän (LWSR8T5392). Hardened runtime hylkää ne ilman tätä oikeutta
+       («Unable to scan plugin»). Seuraus: sovellus lataa minkä tahansa
+       kirjaston tai liitännäisen allekirjoittajasta riippumatta, kuten
+       liitännäisisännät yleensä. Olli hyväksyi muutoksen 2026-11-18.
+       Todistus: GitHubin ajuri ei pakota kirjastovalidointia ad hoc
+       -allekirjoituksilla (kokeiltu), joten CI:ssä on vain oikeuden
+       olemassaolon testi ja julkaisukäännöksen selftest-plugin-load-askel. -->
   <key>com.apple.security.cs.allow-jit</key>
   <true/>
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
   <true/>
 </dict>
 </plist>

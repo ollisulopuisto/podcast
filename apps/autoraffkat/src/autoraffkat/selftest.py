@@ -30,3 +30,23 @@ def main() -> int:
         return 1
     print("selftest-jit: ok")
     return 0
+
+
+def plugin_load(path: str) -> int:
+    """``autoraffkat --selftest-plugin-load POLKU``: lataa kolmannen osapuolen
+    kirjaston samalla tavalla kuin liitännäisen lataus (dlopen).
+
+    Hardened runtimen kirjastovalidointi estää muun kuin saman tiimin tai
+    Applen allekirjoittaman kirjaston latauksen. Pakattu sovellus lataa
+    käyttäjän VST3/AU-liitännäiset (muiden tiimien allekirjoittamia), joten
+    CI ajaa tämän allekirjoittamattomalla (ad hoc) testikirjastolla.
+    """
+    import ctypes
+
+    try:
+        ctypes.CDLL(path)
+    except OSError as exc:
+        print(f"selftest-plugin-load: failed: {exc}", file=sys.stderr)
+        return 1
+    print("selftest-plugin-load: ok")
+    return 0

@@ -127,11 +127,11 @@ jobs:
       # pakotus ei pure (sama savutesti meni läpi myös ilman oikeuksia, ajo
       # 44357183846), joten tämä askel todistaa että polku toimii pakatussa
       # sovelluksessa, ja alla oleva tarkistus että oikeudet ovat allekirjoituksessa.
-      - name: Signed app carries the JIT entitlements
+      - name: Signed app carries the JIT and plug-in entitlements
         run: |
           set -euo pipefail
           ents=$(codesign -d --entitlements :- dist/autoraffkat.app 2>/dev/null)
-          for k in allow-jit allow-unsigned-executable-memory; do
+          for k in allow-jit allow-unsigned-executable-memory disable-library-validation; do
             printf '%s' "$ents" | grep -q "com.apple.security.cs.$k" || { echo "::error::entitlement $k missing from signed app"; exit 1; }
           done
 
@@ -149,6 +149,15 @@ jobs:
           echo "$out"
           test "$rc" -eq 1
           printf '%s\n' "$out" | head -n1 | python3 -c 'import json,sys; m=json.loads(sys.stdin.readline()); assert m["kind"]=="failed", m'
+
+          # Kolmannen osapuolen liitännäinen: ad hoc -allekirjoitettu dylib ei
+          # kuulu meidän tiimillemme. Pakattu (Developer ID, hardened runtime)
+          # sovellus saa ladata sen vain disable-library-validationilla.
+          mkdir -p "$RUNNER_TEMP/plug/Fake.vst3/Contents/MacOS"
+          echo 'int plugin_marker(void) { return 42; }' > "$RUNNER_TEMP/plug/plug.c"
+          clang -dynamiclib -o "$RUNNER_TEMP/plug/Fake.vst3/Contents/MacOS/Fake" "$RUNNER_TEMP/plug/plug.c"
+          codesign --force --sign - "$RUNNER_TEMP/plug/Fake.vst3"
+          "$app" --selftest-plugin-load "$RUNNER_TEMP/plug/Fake.vst3/Contents/MacOS/Fake"
 
       # Arkkitehtuuri nimeen, jotta Releaseen mahtuu myöhemmin toinenkin.
       - name: Name the image by architecture
