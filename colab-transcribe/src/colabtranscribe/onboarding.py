@@ -44,6 +44,10 @@ def colab_env(env: dict | None = None) -> dict:
     # 10 sekunnin hiljainen jakso Googlen puolella kaataa ajon virheeseen
     # "TimeoutError: Timeout waiting for reply" (käyttäjäraportti 2026-11-18).
     # Vastausten odotus saa olla kaksi minuuttia; ympäristön arvo voittaa.
+    # Sama vakio kattaa lukitussa asiakkaassa myös ytimen käynnistyksen ja
+    # HTTP-/WebSocket-yhteydet, joten jumiutunut käynnistys raportoituu vasta
+    # kahden minuutin kuluttua kymmenen sekunnin sijaan - hyväksytty hinta:
+    # hitaankaan vastaukseen ei saa kuolla (Devin-arvio 2026-11-18).
     env.setdefault("REQUEST_TIMEOUT", "120")
     bundled = bundled_colab()
     if bundled:
