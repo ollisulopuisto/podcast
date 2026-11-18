@@ -257,3 +257,13 @@ def test_the_old_shortcuts_still_work(run):
     assert sc["ctrlShiftE"] == 2, "vaihto+Ctrl+E vei ennenkin"
     assert sc["ctrlOFromField"] == {"opens": 1, "prevented": True}
     assert sc["cmdEFromSheet"] == {"exports": 1, "closed": True}
+
+
+@needs_node
+def test_shift_tells_apart_the_command_pairs(run):
+    """⌘R lataa uudestaan ja ⇧⌘R renderöi; ⌘Z kumoaa ja ⇧⌘Z tekee uudelleen."""
+    pairs = run["scenarios"]["shiftPairs"]
+    assert pairs["cmdR"] == ["reload"]
+    assert pairs["cmdShiftR"] == ["render"]
+    assert pairs["cmdZ"] == ["undo"]
+    assert pairs["cmdShiftZ"] == ["redo"]

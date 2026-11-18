@@ -227,6 +227,7 @@ const context = {
   window: {
     addEventListener(type, fn) { (windowHandlers[type] = windowHandlers[type] || []).push(fn); },
     devicePixelRatio: 1,
+    location: { href: '' },
   },
   getComputedStyle: () => ({ getPropertyValue: () => '#123456' }),
   fetch: async () => ({ ok: true, json: async () => JSON.parse(JSON.stringify(minimalState)),
@@ -238,7 +239,7 @@ const context = {
 };
 context.globalThis = context;
 vm.createContext(context);
-for (const name of ['i18n.js', 'sync_timeline.js', 'app.js']) {
+for (const name of ['i18n.js', 'sync_timeline.js', 'native_menu.js', 'app.js']) {
   vm.runInContext(fs.readFileSync(path.join(staticDir, name), 'utf8'), context, { filename: name });
 }
 
@@ -495,6 +496,17 @@ const sheetOpen = () => !!sheet().open || sheet().attributes.open !== undefined;
   closeAll();
   sc.redrawAllRendersStatic = /function redrawAll\(\)\s*\{\s*renderStatic\(\);/.test(
     fs.readFileSync(path.join(staticDir, 'app.js'), 'utf8'));
+
+  /* Vaihto erottaa parit: ⌘R / ⇧⌘R ja ⌘Z / ⇧⌘Z. Mitataan mikä rivi osuu. */
+  const rowFor = (init) => {
+    const e = { key: 'x', metaKey: true, ctrlKey: false, altKey: false, shiftKey: false, ...init };
+    const hit = ev('SHORTCUTS').filter((r) => (r.combos || []).some((c) => context.matchesCombo(c, e)));
+    return hit.map((r) => r.id);
+  };
+  sc.shiftPairs = {
+    cmdR: rowFor({ key: 'r' }), cmdShiftR: rowFor({ key: 'r', shiftKey: true }),
+    cmdZ: rowFor({ key: 'z' }), cmdShiftZ: rowFor({ key: 'z', shiftKey: true }),
+  };
 
   out.scenarios = sc;
   out.keydownListeners = Object.keys(windowHandlers).includes('keydown')

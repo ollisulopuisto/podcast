@@ -1,0 +1,123 @@
+'use strict';
+
+/* macOS-valikkorivin sisältö ja sen ajo. Puhtaat funktiot omassa tiedostossaan, jotta
+   testi lataa ne sellaisenaan (kuten sync_timeline.js). Käyttää vain argumenttina
+   annettua `env`iä; app.js antaa sen. Natiivi valikko ei omista mitään: jokainen kohta
+   on työkalurivin nappi tai sen valinta, ja valittuna se painaa samaa nappia
+   (`runNativeChoice`), joten nappi, näppäin ja valikko kutsuvat yhtä käsittelijää. */
+
+/* Valikot ja niiden kohdat. `cmd` on komento (nappi tai erikoiskomento, ks. app.js
+   `nativeUsable`), `label` käännösavain, `keys` pikanäppäinrivin id (`SHORTCUTS`), josta
+   näppäinvihje luetaan. `native` merkitsee kohdan jonka pywebviewin oma natiivikohta
+   korvaa (leikepöytä toimii tekstikentissä vain natiivina). */
+const NATIVE_MENUS = [
+  { id: 'file', label: 'menu.file', items: [
+    { cmd: 'open-media', label: 'app.openMedia', keys: 'openMedia' },
+    { cmd: 'open', label: 'app.open', keys: 'open' },
+    { cmd: 'reload', label: 'app.reload', keys: 'reload' },
+    { cmd: 'relink', label: 'app.relink' },
+    { sep: true },
+    { cmd: 'export', label: 'app.export', keys: 'export' },
+    { submenu: 'menu.exportTo', items: [
+      { cmd: 'export-dest', arg: 'fcp', label: 'export.dest.fcp', radio: true },
+      { cmd: 'export-dest', arg: 'resolve', label: 'export.dest.resolve', radio: true },
+    ] },
+    { sep: true },
+    { cmd: 'trailer', label: 'menu.trailer', keys: 'trailer' },
+  ] },
+  { id: 'edit', label: 'menu.edit', items: [
+    { cmd: 'history-undo', label: 'history.undo', keys: 'undo' },
+    { cmd: 'history-redo', label: 'history.redo', keys: 'redo' },
+    { history: true, submenu: 'menu.history' },
+    { sep: true },
+    { cmd: 'edit.cut', label: 'menu.cut', native: true },
+    { cmd: 'edit.copy', label: 'menu.copy', native: true },
+    { cmd: 'edit.paste', label: 'menu.paste', native: true },
+    { cmd: 'edit.select_all', label: 'menu.selectAll', native: true },
+    { sep: true },
+    { cmd: 'mark-in', label: 'range.markIn' },
+    { cmd: 'mark-out', label: 'range.markOut' },
+    { cmd: 'range-clear', label: 'range.clear' },
+  ] },
+  { id: 'audio', label: 'menu.audio', items: [
+    { cmd: 'mix', label: 'audio.run', keys: 'mix' },
+    { cmd: 'render', label: 'app.render', keys: 'render' },
+    { cmd: 'render-stop', label: 'menu.renderStop', keys: 'renderStop' },
+  ] },
+  { id: 'view', label: 'menu.view', items: [
+    { cmd: 'shortcuts', label: 'keys.button', keys: 'help' },
+  ] },
+  { id: 'help', label: 'menu.help', items: [
+    { cmd: 'shortcuts', label: 'keys.button', keys: 'help' },
+  ] },
+];
+
+/* Komennot jotka toimivat vaikka pikanäppäinikkuna (modaali) on auki: vain sen oma
+   avaus ja sulku. Muu jätetään koskematta, jotta valikko ei muokkaa projektia ikkunan
+   takaa. */
+const NATIVE_WHILE_SHEET = new Set(['shortcuts']);
+
+/* Valikon speksi: `{id, label, items}`-lista, jonka `native_menu.py` piirtää. `env`:
+   `T(key)`, `keysText(rowId)`, `usable(cmd, arg)`, `checked(cmd, arg)`,
+   `history()` (lista `{id, label, current}`), `sheetOpen()`. */
+function nativeMenuSpec(env, menus = NATIVE_MENUS) {
+  const sheet = env.sheetOpen();
+  const build = (entries) => {
+    const out = [];
+    entries.forEach((entry) => {
+      if (entry.sep) {
+        out.push({ kind: 'separator' });
+      } else if (entry.history) {
+        const items = env.history().map((node) => ({
+          kind: 'item', id: 'history-goto', arg: String(node.id), label: node.label,
+          keys: '', enabled: !sheet, checked: !!node.current,
+        }));
+        if (items.length) out.push({ kind: 'submenu', label: env.T(entry.submenu), items });
+      } else if (entry.submenu) {
+        out.push({ kind: 'submenu', label: env.T(entry.submenu), items: build(entry.items) });
+      } else {
+        const item = {
+          kind: 'item', id: entry.cmd, label: env.T(entry.label),
+          keys: entry.keys ? env.keysText(entry.keys) : '',
+          enabled: !entry.native && env.usable(entry.cmd, entry.arg)
+            && (!sheet || NATIVE_WHILE_SHEET.has(entry.cmd)),
+        };
+        if (entry.arg !== undefined) item.arg = entry.arg;
+        if (entry.radio) item.checked = !!env.checked(entry.cmd, entry.arg);
+        out.push(item);
+      }
+    });
+    return out;
+  };
+  return menus.map((menu) => ({ id: menu.id, label: env.T(menu.label), items: build(menu.items) }));
+}
+
+/* Valittu natiivi kohta ajetaan kuten napin painallus. Palauttaa true kun komento
+   ajettiin. Pikanäppäinikkunan ollessa auki muu kuin sen oma komento hylätään. */
+function runNativeChoice(choice, env) {
+  if (!choice || typeof choice.id !== 'string') return false;
+  if (env.sheetOpen() && !NATIVE_WHILE_SHEET.has(choice.id)) return false;
+  if (!env.usable(choice.id, choice.arg)) return false;
+  env.run(choice.id, choice.arg === undefined ? null : choice.arg);
+  return true;
+}
+
+/* Pitää natiivin valikon ajan tasalla: `push()` lähettää speksin kun se muuttui,
+   `push(true)` (kun ikkuna saa kohdistuksen) heti ja aina. Vain kohdistuksen saanut
+   ikkuna lähettää, koska valikkorivi kuuluu etumaiselle ikkunalle. Ei tee mitään ilman
+   kääreen `set_native_menu`a, joten selainvälilehti ei muutu. */
+function createNativeMenuSync({ getSpec, getApi, hasFocus }) {
+  let last = '';
+  return {
+    push(force = false) {
+      const api = getApi();
+      if (!api || typeof api.set_native_menu !== 'function' || !hasFocus()) return false;
+      const spec = getSpec();
+      const text = JSON.stringify(spec);
+      if (!force && text === last) return false;
+      last = text;
+      Promise.resolve(api.set_native_menu(spec)).catch(() => { last = ''; });
+      return true;
+    },
+  };
+}

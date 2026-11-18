@@ -2019,6 +2019,7 @@ def create_app(state: AppState) -> FastAPI:
         for name in (
             "app.js",
             "sync_timeline.js",
+            "native_menu.js",
             "i18n.js",
             "style.css",
             "favicon.ico",

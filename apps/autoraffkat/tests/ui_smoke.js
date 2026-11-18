@@ -239,6 +239,7 @@ const context = {
   window: {
     addEventListener(type, fn) { (windowHandlers[type] = windowHandlers[type] || []).push(fn); },
     devicePixelRatio: 2,
+    location: { href: '' },
   },
   getComputedStyle: () => ({ getPropertyValue: () => '#123456' }),
   fetch: async (url, opts) => {
@@ -270,7 +271,7 @@ const context = {
 context.globalThis = context;
 vm.createContext(context);
 
-for (const name of ['i18n.js', 'sync_timeline.js', 'app.js']) {
+for (const name of ['i18n.js', 'sync_timeline.js', 'native_menu.js', 'app.js']) {
   vm.runInContext(fs.readFileSync(path.join(staticDir, name), 'utf8'), context,
                   { filename: name });
 }
@@ -283,6 +284,9 @@ const NEVER_CALLED_OK = new Set([
   'boot',        // ajetaan app.js:n latauksessa, ennen käärimistä
   'setLang',     // kutsutaan suoraan testistä ennen käärimistä
   'T',           // sama
+  // Natiivivalikon apurit: tests/test_native_menu_js.py ajaa ne omassa harnessissaan.
+  'nativeMenuSpec', 'runNativeChoice', 'nativeButton', 'nativeUsable',
+  'nativeRun', 'pressNative', 'nativeEnv',
 ]);
 
 for (const name of Object.keys(context)) {
