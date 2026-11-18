@@ -3806,7 +3806,7 @@ async function estimateMediaSync() {
            epäonnistunut kysely: se kuuluu uudelleenyrityksen piiriin eikä saa
            nollata laskuria (Devin-arvio 2026-11-18). */
         if (!pollResponse.ok || !pollData || !pollData.media_sync) {
-          throw new Error('State poll failed.');
+          throw new Error(T('sync.pollFailed'));
         }
         job = pollData.media_sync;
       } catch (pollErr) {

@@ -82,5 +82,13 @@ vm.runInContext(`
   assert.deepEqual(
     JSON.parse(vm.runInContext('JSON.stringify(mediaImport.result)', context)),
     { tracks: [] }, 'valmis tulos ei liittynyt virhevastausten jälkeen');
+  /* Viisi peräkkäistä virhettä päättää seurannan käännetyllä viestillä. */
+  stateCalls = 0;
+  stateReplies.splice(0, stateReplies.length, { ok: false, body: { detail: 'down' } });
+  await vm.runInContext('estimateMediaSync()', context);
+  const shown = registry.get('media-sync-progress').textContent;
+  assert.ok(shown.includes(vm.runInContext("T('sync.pollFailed')", context)),
+            'seurannan päättävä virhe ei käytä käännettyä viestiä: ' + shown);
+  assert.ok(!shown.includes('State poll failed'), 'käännös puuttuu suomesta');
   console.log('media poll: error responses are retried');
 })().catch((err) => { console.error(err); process.exit(1); });
