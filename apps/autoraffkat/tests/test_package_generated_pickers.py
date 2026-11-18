@@ -200,3 +200,26 @@ def test_native_file_kdialog_cancel_returns_none(monkeypatch):
     monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: Done())
 
     assert pick.native_file("", "Valitse", force=True) is None
+
+
+def test_applescript_location_escapes_quotes_and_backslashes():
+    out = pick._applescript_location('/tmp/a"b\\c')
+    assert out == 'default location POSIX file "/tmp/a\\"b\\\\c"'
+    assert pick._applescript_location("") == ""
+
+
+def test_native_file_and_many_escape_the_start_directory_on_macos(tmp_path, monkeypatch):
+    evil = tmp_path / 'x" & (do shell script "id") & "'
+    evil.mkdir()
+    scripts = []
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(pick, "_osascript", lambda s: scripts.append(s) or "")
+    monkeypatch.setattr(pick, "_ensure_foreground", lambda: True)
+
+    pick.native_file(str(evil), "Valitse", force=True)
+    pick.native_many(str(evil), force=True)
+
+    assert len(scripts) == 2
+    for script in scripts:
+        assert 'x\\" & (do shell script \\"id\\")' in script
+        assert 'x" & (do shell' not in script

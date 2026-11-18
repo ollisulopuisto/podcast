@@ -16,7 +16,7 @@ over. The package panel's intro, outro, credits and music beds are picked with
 the system file dialog. **Generated text** cards are rendered by Tekstitys
 (`render-alpha`): autoraffkat finds it on `PATH`, in
 `/Applications/Tekstitys.app` or `~/Applications`, or at the path in
-`AUTORAFFKAT_TEKSTITYS`, and the panel says so when it is missing. The sync panel draws a timeline of
+`AUTORAFFKAT_TEKSTITYS`, and the panel says so when it is missing. The variable names a program that autoraffkat runs, so set it only to a Tekstitys CLI you trust. The sync panel draws a timeline of
 how each audio file lines up with the chosen camera, so the estimated offsets and any file that needs a second
 look are visible before you import.
 

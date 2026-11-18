@@ -20,7 +20,7 @@ Paketin alku, loppu, tekstit ja musiikkipohjat valitaan järjestelmän
 tiedostoikkunalla. **Generoitu teksti** -kortit renderöi Tekstitys
 (`render-alpha`): autoraffkat etsii sen PATHista, kansioista
 `/Applications/Tekstitys.app` ja `~/Applications` tai polusta
-`AUTORAFFKAT_TEKSTITYS`, ja paneeli kertoo jos sitä ei löydy.
+`AUTORAFFKAT_TEKSTITYS`, ja paneeli kertoo jos sitä ei löydy. Muuttuja nimeää ohjelman, jonka autoraffkat ajaa, joten aseta se vain Tekstitys-CLI:hin, johon luotat.
 Synkkapaneeli piirtää aikajanan siitä, miten kukin äänitiedosto asettuu
 valittuun kameraan nähden, joten arvioidut siirrot ja tarkistusta kaipaavat
 tiedostot näkyvät ennen tuontia.

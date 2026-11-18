@@ -190,6 +190,18 @@ end try
 """
 
 
+def _applescript_location(directory: str) -> str:
+    """``default location``-lause, jossa polku on escapattu AppleScript-merkkijonoon.
+
+    Kansion nimessä voi olla lainausmerkki tai kenoviiva (polku tulee avatusta
+    projektista), joten ne escapataan eikä polkua liitetä sellaisenaan koodiin.
+    """
+    if not directory:
+        return ""
+    safe = directory.replace("\\", "\\\\").replace('"', '\\"')
+    return f'default location POSIX file "{safe}"'
+
+
 def _osascript(script: str) -> str | None:
     """Ajaa AppleScriptin. Palauttaa tulosteen tai ``None`` jos ei onnistu."""
     try:
@@ -234,7 +246,7 @@ def native_many(directory: str = "", force: bool = False) -> list[str]:
         return []
     if sys.platform == "darwin":
         _ensure_foreground()
-        start = f'default location POSIX file "{directory}"' if directory else ""
+        start = _applescript_location(directory)
         output = _osascript(_CHOOSE_FILES.format(start=start))
         paths = output.splitlines() if output else []
     elif sys.platform.startswith("linux") and shutil.which("zenity"):
@@ -267,7 +279,7 @@ def native_file(directory: str = "", title: str = "Valitse tiedosto", force: boo
     path = ""
     if sys.platform == "darwin":
         _ensure_foreground()
-        start = f'default location POSIX file "{start_dir}"' if start_dir else ""
+        start = _applescript_location(start_dir)
         prompt = '"' + title.replace("\\", "").replace('"', "") + '"'
         path = _osascript(_CHOOSE_MEDIA_FILE.format(prompt=prompt, start=start)) or ""
     elif sys.platform.startswith("linux") and shutil.which("zenity"):
@@ -386,7 +398,7 @@ def _pick_macos(mode: str, directory: str = "") -> str | None:
         if mode == "file"
         else '"Valitse mediatiedostojen kansio"'
     )
-    start = f'default location POSIX file "{directory}"' if directory else ""
+    start = _applescript_location(directory)
     templates = (_CHOOSE_FILE, _CHOOSE_FOLDER) if mode == "file" else (_CHOOSE_FOLDER,)
     for template in templates:
         _ensure_foreground()
