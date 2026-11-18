@@ -60,11 +60,11 @@ def test_the_window_never_leaves_the_source():
 
 def test_a_centred_square_matches_the_stack_export_numbers():
     """Sama laskenta kuin ``write._square_lines``: neliö 1080×1080,
-    keskipiste 540 px ylös keskeltä = 28,125 %, rajaus 21,875 % per puoli."""
+    keskipiste 540 px ylös keskeltä = 28,125 %, rajaus 38,889 % korkeudesta per puoli (420 px)."""
     panel = layout.Panel(0, -120, 1080, 1080)
     fcp = layout.fcp_panel(panel, (420, 0, 1080, 1080), 1920, 1080)
-    assert fcp.left == pytest.approx(21.875)
-    assert fcp.right == pytest.approx(21.875)
+    assert fcp.left == pytest.approx(38.889, abs=1e-3)
+    assert fcp.right == pytest.approx(38.889, abs=1e-3)
     assert fcp.top == pytest.approx(0)
     assert fcp.bottom == pytest.approx(0)
     assert fcp.scale == pytest.approx(1.0)
@@ -104,3 +104,20 @@ def test_the_stack_is_two_panels_that_fill_the_screen_without_a_gap():
     assert (bottom.x, bottom.y, bottom.w, bottom.h) == (0, 960, 1080, 960)
     fcp = layout.fcp_panel(top, layout.window_of(1920, 1080, 1080, 960), 1920, 1080)
     assert fcp.pos_y == pytest.approx(25.0)
+
+
+def test_crop_is_percent_of_the_source_height_not_width():
+    """Final Cutin crop-rect on prosentteja lähteen KORKEUDESTA (Apple DTD).
+    Käyttäjäraportti 2026-11-18: 1920×1080-lähteen ikkuna alkoi 392 px:stä,
+    mutta Final Cut näytti vasemmalle 220,5 px, koska luku oli prosentteja
+    leveydestä (20,42 % × 1080 = 220,5)."""
+    panel = layout.stack_panel(1)
+    window = (392.0, 0.0, 1215.0, 1080.0)
+    fcp = layout.fcp_panel(panel, window, 1920, 1080)
+    assert fcp.left / 100 * 1080 == pytest.approx(392.0)
+    assert fcp.right / 100 * 1080 == pytest.approx(1920 - 392.0 - 1215.0)
+    assert fcp.top == pytest.approx(0)
+    # Pystyakselilla sama yksikkö: 100 px ylhäältä = 100 / 1080 %.
+    tall = layout.fcp_panel(panel, (0.0, 100.0, 1215.0, 880.0), 1920, 1080)
+    assert tall.top / 100 * 1080 == pytest.approx(100.0)
+    assert tall.bottom / 100 * 1080 == pytest.approx(100.0)

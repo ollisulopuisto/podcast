@@ -883,8 +883,8 @@ def test_a_vertical_reaction_shot_is_filled_and_framed(fixture_dir):
     assert source.find("adjust-conform").get("type") == "none"
     crop = source.find("adjust-crop/crop-rect")
     # Keskitetty ikkuna: 1215×1080 lähteestä (1080×960 paneeli, täyttö 0,8889).
-    assert abs(float(crop.get("left")) - 18.359) < 0.01
-    assert abs(float(crop.get("right")) - 18.359) < 0.01
+    assert abs(float(crop.get("left")) - 32.639) < 0.01
+    assert abs(float(crop.get("right")) - 32.639) < 0.01
     assert abs(float(crop.get("top"))) < 0.01
     assert abs(float(crop.get("bottom"))) < 0.01
     assert abs(abs(_stack_y(source)) - 25.0) < 0.01
@@ -905,8 +905,8 @@ def test_a_stack_half_follows_the_face_not_the_centre(fixture_dir):
                 if "reaktio" in (c.get("name") or ""))
     crop = clip.find("mc-source/adjust-crop/crop-rect")
     window = layout.window_of(1920, 1080, 1080, 960, 1.5, 20.0, 0.0)
-    assert abs(float(crop.get("left")) - window[0] / 1920 * 100) < 0.01
-    assert abs(float(crop.get("right")) - (1920 - window[0] - window[2]) / 1920 * 100) < 0.01
+    assert abs(float(crop.get("left")) - window[0] / 1080 * 100) < 0.01
+    assert abs(float(crop.get("right")) - (1920 - window[0] - window[2]) / 1080 * 100) < 0.01
     assert abs(float(crop.get("left")) - float(crop.get("right"))) > 1.0
 
 
@@ -937,7 +937,7 @@ def test_two_videos_on_screen_stack_into_two_squares(fixture_dir):
     Ruudun korkeus on 1920 px ja paneelin 960 px, joten keskipisteet ovat
     ±480 px = ±25 % (1 % = 19.2 px). Ne eivät mene päällekkäin eivätkä
     jätä väliin rakoa. Kehystäjän ollessa keskellä lähteestä jää näkyviin
-    1215 px: 18.359 % pois kummaltakin reunalta.
+    1215 px: 32.639 % pois kummaltakin reunalta.
     """
     spans = [("Guest", 8.0, 9.6, 2.1), ("Guest", 20.0, 21.6, 2.1)]
     _, xml = _with_reactions(fixture_dir, spans,
@@ -951,8 +951,8 @@ def test_two_videos_on_screen_stack_into_two_squares(fixture_dir):
         source = clip.find("mc-source")
         crop = source.find("adjust-crop/crop-rect")
         assert crop is not None, "reaktiokuvaa ei rajattu neliöksi"
-        assert abs(float(crop.get("left")) - 18.359) < 0.01
-        assert abs(float(crop.get("right")) - 18.359) < 0.01
+        assert abs(float(crop.get("left")) - 32.639) < 0.01
+        assert abs(float(crop.get("right")) - 32.639) < 0.01
         assert abs(float(crop.get("top"))) < 0.01
         assert abs(float(crop.get("bottom"))) < 0.01
         y = _stack_y(source)
@@ -2041,7 +2041,7 @@ def test_layout_wide_top_puts_the_closeup_in_the_lower_panel(fixture_dir):
     assert source.find("adjust-conform").get("type") == "none"
     crop = source.find("adjust-crop/crop-rect")
     assert abs(float(crop.get("left")) - float(crop.get("right"))) < 0.01
-    assert abs(float(crop.get("left")) - (1920 - 889.0) / 2 / 1920 * 100) < 0.1
+    assert abs(float(crop.get("left")) - (1920 - 889.0) / 2 / 1080 * 100) < 0.1
     scale, px, py = _transform_of(source)
     assert abs(scale - 1080 / 889.0) < 0.001
     assert abs(px) < 0.01
@@ -2206,8 +2206,8 @@ def test_auto_layout_reactions_follow_their_host(fixture_dir, auto_numbers):
         key=lambda c: parse_time(c.get("offset")))
     assert [c.get("lane") for c in reactions] == ["2", "1"]
     exchange, hold = (c.find("mc-source/adjust-crop/crop-rect") for c in reactions)
-    assert abs(float(exchange.get("left")) - 26.8) < 0.1         # 1080×1312 -paneeli
-    assert abs(float(hold.get("left")) - 18.359) < 0.01          # pinon 1080×960 -paneeli
+    assert abs(float(exchange.get("left")) - 47.64) < 0.1         # 1080×1312 -paneeli
+    assert abs(float(hold.get("left")) - 32.639) < 0.01          # pinon 1080×960 -paneeli
 
 
 def test_auto_layout_records_panels_only_where_they_are_drawn(fixture_dir, auto_numbers):
@@ -2333,3 +2333,11 @@ def test_resolve_output_reads_back(fixture_dir, tmp_path):
     again = read_fcpxml(str(path))
     assert {m.key for m in again.media} >= {"WIDE.mp4", "CLOSE_A.mp4", "MIC_A.wav"}
     assert all(m.path for m in again.media)
+
+
+def test_square_fallback_crop_is_percent_of_height():
+    """Vara-neliö: 420 px per puoli 1920×1080-lähteestä = 38,889 % korkeudesta."""
+    from autoraffkat.finalcut import write as fw
+
+    text = "\n".join(fw._square_lines(1, ""))
+    assert 'left="38.88' in text and 'right="38.88' in text
