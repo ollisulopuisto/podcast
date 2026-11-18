@@ -9,7 +9,10 @@ an MP4 of that edit without opening Final Cut Pro.
 Final Cut is optional for everything before the cut, too: **Import media**
 syncs separate microphone recordings to the cameras by their audio and writes
 the source project itself, and the programme's in and out points are set
-straight on the preview timeline.
+straight on the preview timeline. Cameras and microphones often sit in
+different folders: pressing **Import media** again adds the new picks to the
+open selection instead of replacing it, and the panel's **Close** starts
+over.
 
 *[Suomenkielinen README](README.fi.md) · [Design notes](DESIGN.md) · [Roadmap](ROADMAP.md)*
 
