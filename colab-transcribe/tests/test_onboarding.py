@@ -129,9 +129,9 @@ def test_check_environment_is_ready_only_when_all_required_ok(monkeypatch, tmp_p
 
 
 def test_colab_env_raises_the_kernel_reply_timeout():
-    """The CLI's kernel client waits only REQUEST_TIMEOUT seconds (default 10)
-    for any websocket reply; one slow stretch on Google's side must not kill a
-    run (user report 2026-11-18). The environment's own value still wins."""
+    """CLI:n ydinasiakas odottaa jokaista websocket-vastausta vain
+    REQUEST_TIMEOUT sekuntia (oletus 10): yksi hidas jakso Googlen päällä ei
+    saa kaataa ajoa (käyttäjäraportti 2026-11-18). Ympäristön oma arvo voittaa."""
     assert colab_env({})["REQUEST_TIMEOUT"] == "120"
     assert colab_env({"REQUEST_TIMEOUT": "30"})["REQUEST_TIMEOUT"] == "30"
 

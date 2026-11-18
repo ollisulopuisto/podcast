@@ -448,9 +448,9 @@ def test_run_retries_on_connection_lost_and_succeeds(monkeypatch):
 
 
 def test_run_retries_on_reply_timeout_and_succeeds(monkeypatch):
-    """The kernel client's 10 s reply wait (user report 2026-11-18): one slow
-    answer from Google's side must not kill the run - same retry as a lost
-    connection."""
+    """Ydinasiakkaan 10 sekunnin vastausodotus (käyttäjäraportti 2026-11-18):
+    yksi hidas vastaus Googlen päästä ei saa lopettaa ajoa - sama
+    uudelleenyritys kuin yhteyskatkolla."""
     import io
 
     attempts = 0
