@@ -133,11 +133,13 @@ def test_colab_env_raises_the_kernel_reply_timeout():
     REQUEST_TIMEOUT sekuntia (oletus 10): yksi hidas jakso Googlen päällä ei
     saa kaataa ajoa (käyttäjäraportti 2026-11-18). Ympäristön oma arvo voittaa.
     Vakio kattaa lukitussa asiakkaassa myös ytimen käynnistyksen ja
-    HTTP-/WebSocket-yhteydet: jumiutunut käynnistys raportoituu kahdessa
-    minuutissa kymmenen sekunnin sijaan, mikä on hyväksytty (Devin-arvio
-    2026-11-18)."""
-    assert colab_env({})["REQUEST_TIMEOUT"] == "120"
-    assert colab_env({"REQUEST_TIMEOUT": "30"})["REQUEST_TIMEOUT"] == "30"
+    HTTP-/WebSocket-yhteydet, joten korotus rajataan vastauksia odottaviin
+    exec-komentoihin: muut komennot pitävät asiakkaan 10 sekunnin oletuksen
+    (Devin-arvio 2026-11-18)."""
+    assert colab_env({}, long_replies=True)["REQUEST_TIMEOUT"] == "120"
+    assert colab_env({"REQUEST_TIMEOUT": "30"}, long_replies=True)[
+        "REQUEST_TIMEOUT"] == "30"
+    assert "REQUEST_TIMEOUT" not in colab_env({})
 
 
 def test_run_options_reads_environment_variables(monkeypatch):

@@ -481,6 +481,34 @@ def test_run_retries_on_reply_timeout_and_succeeds(monkeypatch):
     assert any("yritetään uudelleen" in line for line in logs)
 
 
+def test_only_exec_commands_get_the_raised_reply_timeout(monkeypatch):
+    """Korotettu REQUEST_TIMEOUT koskee vain vastauksia odottavia
+    exec-komentoja: istunnon hallinta ja muut komennot pitävät
+    ydinasiakkaan 10 sekunnin oletuksen, jotta jumiutunut käynnistys tai
+    HTTP-pyyntö ei odota kahta minuuttia (Devin-arvio 2026-11-18)."""
+    import io
+
+    envs = []
+
+    class OkProcess:
+        def __init__(self, cmd, **kwargs):
+            envs.append(kwargs["env"])
+            self.stdin = io.StringIO()
+            self.stdout = ["ok\n"]
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", OkProcess)
+    logs = []
+    driver.run(
+        [["colab", "exec", "-s", "whisper", "ls /content"], ["colab", "ls"]],
+        logs.append,
+    )
+    assert envs[0]["REQUEST_TIMEOUT"] == "120"
+    assert "REQUEST_TIMEOUT" not in envs[1]
+
+
 def test_run_reports_actionable_hint_on_persistent_reply_timeout(monkeypatch):
     import io
 

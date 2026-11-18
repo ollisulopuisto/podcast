@@ -34,21 +34,26 @@ def colab_binary() -> str | None:
     return bundled_colab() or shutil.which("colab")
 
 
-def colab_env(env: dict | None = None) -> dict:
+def colab_env(env: dict | None = None, *, long_replies: bool = False) -> dict:
     """Ympäristö jossa ``colab`` löytyy: oman ympäristön ``bin`` PATHin
     alkuun. Komennot pysyvät muodossa ``colab ...``, joten ``--dry-run``
-    näyttää täsmälleen sen mitä ajetaan."""
+    näyttää täsmälleen sen mitä ajetaan.
+
+    ``long_replies=True`` vastauksia odottaville exec-komennoille: ytimen
+    hiljainen jakso saa kestää kaksi minuuttia. Muille komennoille jää
+    asiakkaan oletus."""
     env = dict(os.environ if env is None else env)
-    # Colab CLI:n kernel-asiakas odottaa jokaista WebSocket-vastausta vain
-    # REQUEST_TIMEOUT sekuntia (oletus 10), lyhyetkin komennot: yksi yli
-    # 10 sekunnin hiljainen jakso Googlen puolella kaataa ajon virheeseen
-    # "TimeoutError: Timeout waiting for reply" (käyttäjäraportti 2026-11-18).
-    # Vastausten odotus saa olla kaksi minuuttia; ympäristön arvo voittaa.
-    # Sama vakio kattaa lukitussa asiakkaassa myös ytimen käynnistyksen ja
-    # HTTP-/WebSocket-yhteydet, joten jumiutunut käynnistys raportoituu vasta
-    # kahden minuutin kuluttua kymmenen sekunnin sijaan - hyväksytty hinta:
-    # hitaankaan vastaukseen ei saa kuolla (Devin-arvio 2026-11-18).
-    env.setdefault("REQUEST_TIMEOUT", "120")
+    if long_replies:
+        # Colab CLI:n kernel-asiakas odottaa jokaista WebSocket-vastausta vain
+        # REQUEST_TIMEOUT sekuntia (oletus 10), lyhyetkin komennot: yksi yli
+        # 10 sekunnin hiljainen jakso Googlen puolella kaataa ajon virheeseen
+        # "TimeoutError: Timeout waiting for reply" (käyttäjäraportti
+        # 2026-11-18). Vastausten odotus saa olla kaksi minuuttia; ympäristön
+        # arvo voittaa. Sama vakio kattaa lukitussa asiakkaassa myös ytimen
+        # käynnistyksen ja HTTP-/WebSocket-yhteydet, joten korotus annetaan
+        # vain exec-komennoille - muutoin jumiutunut käynnistys tai
+        # HTTP-pyyntö odottaisi kahta minuuttia (Devin-arvio 2026-11-18).
+        env.setdefault("REQUEST_TIMEOUT", "120")
     bundled = bundled_colab()
     if bundled:
         env["PATH"] = os.pathsep.join(

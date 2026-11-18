@@ -736,7 +736,7 @@ def _execute_single(
     # ``colab`` uvx:n ympäristöstä, jos se on siellä (``onboarding.colab_env``).
     from .onboarding import colab_env
 
-    env = colab_env()
+    env = colab_env(long_replies=is_colab_exec)
     env["COLAB_CLI_NO_BROWSER"] = "1"
 
     for attempt in range(max_retries + 1):
