@@ -121,6 +121,15 @@ jobs:
           python3 "$GITHUB_WORKSPACE/scripts/ci/test_verify_entitlements.py"
           python3 "$GITHUB_WORKSPACE/scripts/ci/verify_entitlements.py" dist/autoraffkat.app
 
+      # Käynnistä allekirjoitettu paketti ja aja ääniketjun JIT-polku.
+      # Hardened runtime tappaa llvmlite-varauksen ilman JIT-oikeuksia
+      # (EXC_BAD_ACCESS, CODESIGNING, Invalid Page), eikä mikään yllä oleva
+      # vaihe huomaa sitä.
+      - name: Smoke test signed app (numba JIT)
+        run: |
+          codesign -d --entitlements :- dist/autoraffkat.app 2>/dev/null || true
+          dist/autoraffkat.app/Contents/MacOS/autoraffkat --selftest-jit
+
       # Arkkitehtuuri nimeen, jotta Releaseen mahtuu myöhemmin toinenkin.
       - name: Name the image by architecture
         run: mv dist/autoraffkat.dmg "dist/autoraffkat-${{ steps.inside.outputs.arch }}.dmg"
