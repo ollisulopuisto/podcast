@@ -7,12 +7,6 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
-### Fixed
-- Final Cut export: the crop (`crop-rect`) is now written as a percentage of the
-  source height on all four edges, as the FCPXML format defines it. It was
-  written as a percentage of the width, so every vertical and trailer clip was
-  cropped about 44 % too little on the sides (käyttäjäraportti 2026-11-18).
-
 ### Added
 - Package panel: intro, outro and credits files and the music beds are
   chosen with the system file dialog instead of typed paths. The field shows
