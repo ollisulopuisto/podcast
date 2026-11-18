@@ -679,6 +679,66 @@ async function asyncPaths() {
     }
   });
   await step('importSyncedMedia', () => context.importSyncedMedia());
+  /* Olli: «file import still bugs out. i have wav and mp4 files in diferet
+     directories so i gotta import them twice, and it looks like the second
+     import wipes the first one?» Kamerat ja mikit ovat eri hakemistoissa,
+     joten Tuo media -nappia painetaan kahdesti; toisen poiminnan pitää
+     YHDISTÄÄ auki olevaan synkkausvalintaan kuten Lisää tiedostoja -nappi,
+     ei aloittaa alusta. Painike testataan sen oikean klikkikäsittelijän
+     kautta, jotta myös kytkentä testaantuu eikä vain funktio. */
+  const fireClick = async (id) => {
+    const el = registry.get(id);
+    for (const fn of (el._handlers.click || [])) {
+      await fn.call(el, { target: el, preventDefault() {}, stopPropagation() {} });
+    }
+  };
+  await step('toinen Tuo media -poiminta yhdistää ensimmäiseen', async () => {
+    routes['/api/pick-media'] = () => ({ paths: ['/hakemisto-a/kamera.mp4'] });
+    await fireClick('open-media');
+    let paths = vm.runInContext('mediaImport.paths', context);
+    if (!paths || paths.length !== 1) {
+      throw new Error(`ensimmäinen poiminta ei avannut valintaa: ${JSON.stringify(paths)}`);
+    }
+    let inspected = null;
+    const inspect = routes['/api/media/inspect'];
+    routes['/api/media/inspect'] = (body) => { inspected = body.paths; return inspect(body); };
+    /* Toinen hakemisto: pelkkä mikrofoni. Aiemmat kamerat pitää säilyä. */
+    routes['/api/pick-media'] = () => ({ paths: ['/hakemisto-b/mikki.wav'] });
+    await fireClick('open-media');
+    paths = vm.runInContext('mediaImport.paths', context);
+    if (!paths || paths.length !== 2
+        || !paths.includes('/hakemisto-a/kamera.mp4')
+        || !paths.includes('/hakemisto-b/mikki.wav')) {
+      throw new Error(`toinen poiminta pyyhki ensimmäisen: ${JSON.stringify(paths)}`);
+    }
+    if (!inspected || inspected.length !== 2) {
+      throw new Error(`inspect ei saanut yhdistettyjä polkuja: ${JSON.stringify(inspected)}`);
+    }
+    /* Sama tiedosto uudestaan: ei kaksoiskappaletta eikä pyyhintää. */
+    routes['/api/pick-media'] = () => ({ paths: ['/hakemisto-b/mikki.wav'] });
+    await fireClick('open-media');
+    paths = vm.runInContext('mediaImport.paths', context);
+    if (!paths || paths.length !== 2) {
+      throw new Error(`saman tiedoston uusintapoiminta muutti valintaa: ${JSON.stringify(paths)}`);
+    }
+  });
+  await step('Sulje hylkää tuontivalinnan', async () => {
+    await fireClick('media-sync-close');
+    const session = vm.runInContext('mediaImport', context);
+    if (session !== null) {
+      throw new Error('Sulje-painike jätti tuontivalinnan jäljelle');
+    }
+    if (!registry.get('media-sync').classList.contains('hidden')) {
+      throw new Error('paneeli jäi näkyviin sulkemisen jälkeen');
+    }
+    /* Sulkemisen jälkeen Tuo media aloittaa puhtaalta pöydältä. */
+    routes['/api/pick-media'] = () => ({ paths: ['/c/uusi.mp4'] });
+    await fireClick('open-media');
+    const paths = vm.runInContext('mediaImport.paths', context);
+    if (!paths || paths.length !== 1 || paths[0] !== '/c/uusi.mp4') {
+      throw new Error(`sulkemisen jälkeinen poiminta ei aloittanut alusta: ${JSON.stringify(paths)}`);
+    }
+  });
   run('program range fields and marks', () => {
     vm.runInContext(`latest = { program: { start: 100, end: 120, duration: 20,
       range_start: 100, range_end: 120, range_marked: false }, preview: {} };

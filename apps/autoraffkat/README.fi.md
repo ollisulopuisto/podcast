@@ -13,7 +13,9 @@ MP4:n samasta leikkauksesta avaamatta Final Cutia.
 Final Cut on valinnainen myös ennen leikkausta: **Tuo media** synkkaa erilliset
 mikrofonitallenteet kameroihin äänen perusteella ja kirjoittaa
 lähdeprojektin itse, ja ohjelman alku- ja loppupisteet merkitään suoraan
-esikatselun aikajanalta.
+esikatselun aikajanalta. Kamerat ja mikit ovat usein eri hakemistoissa:
+**Tuo media** -napin uusi painallus lisää poimitut tiedostot auki olevaan
+valintaan eikä korvaa sitä, ja paneelin **Sulje** aloittaa alusta.
 
 ![Aiempi käyttöliittymänäkymä: vanha raitojen asettelutapa, esikatselupalkki ja leikkauslista.](screenshot.png)
 

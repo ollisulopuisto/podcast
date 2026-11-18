@@ -3777,6 +3777,10 @@ async function estimateMediaSync() {
   setBusy(button, true, T('sync.estimating'));
   $('media-sync-reference').disabled = true;
   $('media-sync-add').disabled = true;
+  /* Päänäkymän Tuo media -nappikin on lisäysnappi (ks. alhaalla), joten se
+     on pois käytöstä arvioinnin ajan samasta syystä: polut eivät saa
+     vaihtua kesken ajon. */
+  $('open-media').disabled = true;
   try {
     const response = await fetch('/api/media/estimate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -3799,8 +3803,12 @@ async function estimateMediaSync() {
       }
       if (job.error) throw new Error(job.error);
       if (job.ready) {
-        mediaImport.result = job.result;
-        renderMediaSync();
+        /* Paneelin voi sulkea arvioinnin aikanakin: Sulje hylkää koko
+           valinnan, joten myöhästyvää tulosta ei enää liitetä mihinkään. */
+        if (mediaImport) {
+          mediaImport.result = job.result;
+          renderMediaSync();
+        }
         break;
       }
     }
@@ -3809,6 +3817,7 @@ async function estimateMediaSync() {
   } finally {
     $('media-sync-reference').disabled = false;
     $('media-sync-add').disabled = false;
+    $('open-media').disabled = false;
     setBusy(button, false);
   }
 }
@@ -3968,9 +3977,20 @@ $('bar').addEventListener('click', (event) => {
   setProgramMark(rangeMode, at);
 });
 $('open').addEventListener('click', () => openXml());
-$('open-media').addEventListener('click', () => openMedia());
+/* Päänäkymän Tuo media -nappi on sama toiminto kuin paneelin Lisää
+   tiedostoja -nappi: auki olevaan synkkausvalintaan se YHDISTÄÄ uudet
+   tiedostot, ei aloita alusta. Kamerat ja mikrofonit ovat usein eri
+   hakemistoissa, ja käyttäjä painelee luontevasti samaa nappia kahdesti —
+   jos toinen painallus aloittaisi alusta, ensimmäinen poiminta häviäisi
+   äänekkäästi. Aloitus alusta on paneelin Sulje-nappi. */
+$('open-media').addEventListener('click', () => addMediaFiles());
 $('media-sync-add').addEventListener('click', () => addMediaFiles());
-$('media-sync-close').addEventListener('click', () => $('media-sync').classList.add('hidden'));
+$('media-sync-close').addEventListener('click', () => {
+  /* Sulkeminen hylkää koko tuontivalinnan: Tuo media yhdistää auki olevaan
+     valintaan, joten aloitus alusta tapahtuu sulkemalla paneeli ensin. */
+  mediaImport = null;
+  $('media-sync').classList.add('hidden');
+});
 $('media-sync-reference').addEventListener('change', (event) => {
   if (mediaImport) {
     mediaImport.reference = event.target.value;
