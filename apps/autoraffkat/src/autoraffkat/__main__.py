@@ -39,6 +39,11 @@ def main(argv: list[str] | None = None) -> int:
 
         return plugin_editor_main()
 
+    if len(argv) == 2 and argv[0] == "--selftest-plugin-load":
+        from autoraffkat.selftest import plugin_load
+
+        return plugin_load(argv[1])
+
     if argv == ["--selftest-jit"]:
         from autoraffkat.selftest import main as selftest_main
 
