@@ -26,7 +26,7 @@ kutsujan: se riippuu pohjatiedoston voimakkuudesta.
 
 from __future__ import annotations
 
-from itertools import pairwise
+import numpy as np
 
 from .fades import SILENCE_DB
 
@@ -81,17 +81,6 @@ DROP = ((0.0, 0.0), (0.3, -3.5), (0.8, -6.5), (1.2, -8.0), (1.8, TAIL_UNDER_DB))
 
 #: Käyrän pistetiheys. ``fades.segments`` taittaa luiskat vain näihin.
 STEP_S = 0.05
-
-
-def _interp(shape, t: float, scale: float = 1.0) -> float:
-    """Muodon arvo hetkellä ``t``; ``scale`` venyttää aikaa."""
-    pts = [(a * scale, b) for a, b in shape]
-    if t <= pts[0][0]:
-        return pts[0][1]
-    for (t0, d0), (t1, d1) in pairwise(pts):
-        if t <= t1:
-            return d0 + (d1 - d0) * (t - t0) / (t1 - t0)
-    return pts[-1][1]
 
 
 def _gap(start: float, end: float, speech):
@@ -154,18 +143,55 @@ def curve(start: float, end: float, speech, cold_open: bool = False):
         fall_scale = (fall_end - fall_from) / FALL[-1][0]
         floor = 0.0
 
-    def level(t: float) -> float:
-        if t < plateau:
-            if t >= rise_from:
-                return _interp(rise, t - rise_from)
-            return COLD_OPEN_UNDER_DB if cold_open else SILENCE_DB
-        if drop_from is not None and t >= drop_from and t < fall_from:
-            return _interp(DROP, t - drop_from)
-        if t >= fall_from:
-            fallen = floor + _interp(FALL, t - fall_from, fall_scale)
-            past = t - fall_from > FALL[-1][0] * fall_scale
-            return SILENCE_DB if past else fallen
-        return 0.0
-
+    # Evaluate the scalar branches over the query grid, keeping their priority.
     count = int((end - start) / STEP_S) + 1
-    return [(i * STEP_S, round(level(start + i * STEP_S), 2)) for i in range(count)]
+    tt_rel = np.arange(count, dtype=np.float64) * STEP_S
+    tt = start + tt_rel  # absolute time, like level(start + i * STEP_S)
+
+    def interp(shape_t, shape_d, x):
+        # Preserve the scalar multiply-then-divide order. np.interp computes
+        # slopes first, which can change the public two-decimal result.
+        right = np.searchsorted(shape_t, x, side="left").clip(1, len(shape_t) - 1)
+        t0, t1 = shape_t[right - 1], shape_t[right]
+        d0, d1 = shape_d[right - 1], shape_d[right]
+        values = d0 + (d1 - d0) * (x - t0) / (t1 - t0)
+        return np.where(
+            x <= shape_t[0], shape_d[0],
+            np.where(x > shape_t[-1], shape_d[-1], values),
+        )
+
+    rise_t = np.array([a for a, _ in rise], dtype=np.float64)
+    rise_d = np.array([b for _, b in rise], dtype=np.float64)
+    drop_t = np.array([a for a, _ in DROP], dtype=np.float64)
+    drop_d = np.array([b for _, b in DROP], dtype=np.float64)
+    fall_t = np.array([a for a, _ in FALL], dtype=np.float64)
+    fall_d = np.array([b for _, b in FALL], dtype=np.float64)
+
+    base = COLD_OPEN_UNDER_DB if cold_open else SILENCE_DB
+    level = np.zeros(count, dtype=np.float64)
+
+    # t < rise_from: constant floor (cold open or silence).
+    level[tt < rise_from] = base
+
+    # rise_from <= t < plateau: rise ramp.
+    rise_region = (tt >= rise_from) & (tt < plateau)
+    if rise_region.any():
+        level[rise_region] = interp(rise_t, rise_d, tt[rise_region] - rise_from)
+
+    # plateau <= t < fall_from with an active drop: DROP ramp.
+    if drop_from is not None:
+        drop_region = (tt >= plateau) & (tt >= drop_from) & (tt < fall_from)
+        if drop_region.any():
+            level[drop_region] = interp(drop_t, drop_d, tt[drop_region] - drop_from)
+
+    # After both plateau and fall_from: FALL ramp, beyond the last
+    # fall point the bed goes to digital silence.
+    fall_region = (tt >= plateau) & (tt >= fall_from)
+    if fall_region.any():
+        ts = tt[fall_region] - fall_from
+        fallen = floor + interp(fall_t * fall_scale, fall_d, ts)
+        fallen[ts > fall_t[-1] * fall_scale] = SILENCE_DB
+        level[fall_region] = fallen
+
+    # Everything left (plateau with no drop, before the fall) is already 0.0.
+    return [(float(t), round(float(v), 2)) for t, v in zip(tt_rel, level, strict=True)]
