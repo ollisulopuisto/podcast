@@ -13,7 +13,6 @@ from autoraffkat import pick
 from autoraffkat.server import app as server_app
 from autoraffkat.server.app import AppState, create_app
 
-
 # Windowsissa `sh`-skripti ei ole ajettava eikä POSIX-polut (/Users/..) ole
 # absoluuttisia; nämä testit feikkaavat macOS/Linux-ympäristön, joten ne
 # ajetaan vain POSIX-alustoilla.
