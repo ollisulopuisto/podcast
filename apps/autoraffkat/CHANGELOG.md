@@ -8,6 +8,12 @@ and this project adheres to Calendar Versioning (CalVer).
 ## [Unreleased]
 
 ### Added
+- Package panel: intro, outro and credits files and the music beds are
+  chosen with the system file dialog instead of typed paths. The field shows
+  the chosen path and cannot be typed into; Choose and Clear sit beside it.
+- Package panel: *Generated text* now tells you when Tekstitys is missing
+  (a note under the card and a tag on the option) instead of dropping the
+  card silently at export.
 - Sync panel timeline: the media sync panel draws every audio file as a bar
   against the chosen camera, so the estimated offsets (right = later, left =
   earlier) can be read at a glance, with a status label per file (good,
@@ -27,6 +33,12 @@ and this project adheres to Calendar Versioning (CalVer).
 - Listen-before-import: render a short preview clip from the sync review -
   a 10 s moment where everyone is talking, or a 5 s clip per microphone -
   adjust the offset, listen again, and import when it sounds right.
+
+### Fixed
+- Generated text found no Tekstitys on a normal install: the installed app
+  only ships `Tekstitys.app/Contents/MacOS/TekstitysCLI`, which is not on
+  `PATH`. autoraffkat now looks at `AUTORAFFKAT_TEKSTITYS`, `PATH`, then
+  `/Applications` and `~/Applications` (needs a Tekstitys with `render-alpha`).
 
 ### Performance
 - Sync offset estimation is much faster: scoring is vectorized, so a

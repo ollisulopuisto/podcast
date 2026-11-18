@@ -30,3 +30,17 @@ def test_media_sync_poll_retries_error_responses():
     )
     assert done.returncode == 0, done.stderr or done.stdout
     assert "error responses are retried" in done.stdout
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node missing")
+def test_package_paths_use_native_pickers():
+    """Paketin tiedostopolut valitaan ikkunalla eikä kirjoiteta, ja puuttuva
+    Tekstitys näkyy Generoitu teksti -valinnassa."""
+    here = Path(__file__).parent
+    app = here.parent / "src/autoraffkat/server/static/app.js"
+    done = subprocess.run(
+        ["node", str(here / "ui_package_picker.js"), str(app)],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert done.returncode == 0, done.stderr or done.stdout
+    assert "native file pickers" in done.stdout

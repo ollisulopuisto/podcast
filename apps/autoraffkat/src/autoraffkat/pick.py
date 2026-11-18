@@ -171,6 +171,15 @@ on error number -128
 end try
 """
 
+_CHOOSE_MEDIA_FILE = """
+try
+    set f to choose file with prompt {prompt} {start}
+    return POSIX path of f
+on error number -128
+    return ""
+end try
+"""
+
 _CHOOSE_FOLDER = """
 try
     set f to choose folder with prompt {prompt} {start}
@@ -179,6 +188,18 @@ on error number -128
     return ""
 end try
 """
+
+
+def _applescript_location(directory: str) -> str:
+    """``default location``-lause, jossa polku on escapattu AppleScript-merkkijonoon.
+
+    Kansion nimessä voi olla lainausmerkki tai kenoviiva (polku tulee avatusta
+    projektista), joten ne escapataan eikä polkua liitetä sellaisenaan koodiin.
+    """
+    if not directory:
+        return ""
+    safe = directory.replace("\\", "\\\\").replace('"', '\\"')
+    return f'default location POSIX file "{safe}"'
 
 
 def _osascript(script: str) -> str | None:
@@ -225,7 +246,7 @@ def native_many(directory: str = "", force: bool = False) -> list[str]:
         return []
     if sys.platform == "darwin":
         _ensure_foreground()
-        start = f'default location POSIX file "{directory}"' if directory else ""
+        start = _applescript_location(directory)
         output = _osascript(_CHOOSE_FILES.format(start=start))
         paths = output.splitlines() if output else []
     elif sys.platform.startswith("linux") and shutil.which("zenity"):
@@ -245,13 +266,69 @@ def native_many(directory: str = "", force: bool = False) -> list[str]:
     return [os.path.abspath(os.path.expanduser(path)) for path in paths if path]
 
 
-def _pick_windows_many(directory: str = "") -> list[str]:
+def native_file(directory: str = "", title: str = "Valitse tiedosto", force: bool = False) -> str | None:
+    """Yhden mediatiedoston valintaikkuna (paketin kortit ja musiikkipohjat).
+
+    Palauttaa absoluuttisen polun tai ``None`` kun käyttäjä perui tai ikkunaa
+    ei saatu auki. Otsikko tulee kutsujalta, joten kehote ei puhu FCPXML:stä
+    eikä kameroista.
+    """
+    if not force and not interactive():
+        return None
+    start_dir = directory if directory and os.path.isdir(directory) else ""
+    path = ""
+    if sys.platform == "darwin":
+        _ensure_foreground()
+        start = _applescript_location(start_dir)
+        prompt = '"' + title.replace("\\", "").replace('"', "") + '"'
+        path = _osascript(_CHOOSE_MEDIA_FILE.format(prompt=prompt, start=start)) or ""
+    elif sys.platform.startswith("linux") and shutil.which("zenity"):
+        cmd = ["zenity", "--file-selection", f"--title={title}"]
+        if start_dir:
+            cmd.append(f"--filename={os.path.abspath(start_dir)}/")
+        try:
+            done = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            path = done.stdout.strip() if done.returncode == 0 else ""
+        except (OSError, subprocess.TimeoutExpired):
+            path = ""
+    elif sys.platform.startswith("linux") and shutil.which("kdialog"):
+        # Pelkkä KDE-kone: ilman tätä haaraa ikkuna ei aukeaisi, vaikka
+        # has_native_picker() hyväksyy kdialogin (Devin-arvio 2026-11-18).
+        cmd = ["kdialog", "--title", title, "--getopenfilename", start_dir or "."]
+        try:
+            done = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            path = done.stdout.strip() if done.returncode == 0 else ""
+        except (OSError, subprocess.TimeoutExpired):
+            path = ""
+    elif sys.platform == "win32":
+        paths = _pick_windows_many(start_dir, multiple=False)
+        path = paths[0] if paths else ""
+    else:
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            root = tk.Tk()
+            root.withdraw()
+            with contextlib.suppress(Exception):
+                root.attributes("-topmost", True)
+                root.focus_force()
+            path = filedialog.askopenfilename(initialdir=start_dir or None, title=title)
+            root.destroy()
+        except Exception:
+            path = ""
+    if not path:
+        return None
+    return os.path.abspath(os.path.expanduser(path))
+
+
+def _pick_windows_many(directory: str = "", multiple: bool = True) -> list[str]:
     """Windowsin monivalinta PowerShellillä."""
     escaped = directory.replace("'", "''") if directory and os.path.exists(directory) else ""
     script = (
         "Add-Type -AssemblyName System.Windows.Forms;"
         "$f=New-Object System.Windows.Forms.OpenFileDialog;"
-        "$f.Multiselect=$true;"
+        f"$f.Multiselect=${'true' if multiple else 'false'};"
         f"$f.InitialDirectory='{escaped}';"
         "if($f.ShowDialog() -eq 'OK'){$f.FileNames}"
     )
@@ -321,7 +398,7 @@ def _pick_macos(mode: str, directory: str = "") -> str | None:
         if mode == "file"
         else '"Valitse mediatiedostojen kansio"'
     )
-    start = f'default location POSIX file "{directory}"' if directory else ""
+    start = _applescript_location(directory)
     templates = (_CHOOSE_FILE, _CHOOSE_FOLDER) if mode == "file" else (_CHOOSE_FOLDER,)
     for template in templates:
         _ensure_foreground()

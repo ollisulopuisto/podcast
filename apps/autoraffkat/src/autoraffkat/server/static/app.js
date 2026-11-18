@@ -956,6 +956,7 @@ function watchSpeech() {
   speechTimer = setTimeout(async () => {
     try {
       const data = await (await fetch('/api/state')).json();
+      noteGeneratedAvailability(data);
       const was = state.speech && state.speech.running;
       noteSpeech(data.speech);
       if (data.speech && data.speech.running) {
@@ -1141,6 +1142,7 @@ function watchVideo() {
   const tick = async () => {
     try {
       const data = await (await fetch('/api/state')).json();
+      noteGeneratedAvailability(data);
       state.video = data.video;      // samasta syystä: vain edistyminen
       renderGlobals();
       if (data.video && data.video.progress && data.video.progress.running) {
@@ -1420,6 +1422,17 @@ function rowReset(keys) {
   return { button, refresh };
 }
 
+/* Tilavastaukset päivittävät vain omia kenttiään, joten Tekstityksen
+   saatavuus (generated_available) luetaan niistä erikseen: työkalun voi
+   asentaa kesken istunnon, ja paneelin varoituksen pitää väistyä ilman
+   sivun latausta (Devin-arvio 2026-11-18). */
+function noteGeneratedAvailability(data) {
+  if (!data || typeof data.generated_available !== 'boolean') return;
+  if (state.generated_available === data.generated_available) return;
+  state.generated_available = data.generated_available;
+  if ($('package-panel')) renderPackage();
+}
+
 function renderPackage() {
   const host = $('package-panel');
   if (!host) return;
@@ -1453,6 +1466,45 @@ function renderPackage() {
     el.addEventListener('change', () => { onChange(el.value); schedule(0); });
     return el;
   };
+  /* Tiedostopolku valitaan natiivilla valintaikkunalla, ei kirjoiteta:
+     kenttä näyttää valitun polun mutta ei ota tekstiä vastaan. Ikkunan avaa
+     palvelin (/api/pick-file), koska selaimen tiedostovalitsin ei anna polkua. */
+  const pathField = (value, title, onChange) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'path-field';
+    const shown = document.createElement('input');
+    shown.type = 'text'; shown.readOnly = true; shown.value = value || '';
+    shown.placeholder = T('package.notChosen');
+    shown.title = value || '';
+    const choose = document.createElement('button');
+    choose.type = 'button'; choose.className = 'ghost small';
+    choose.textContent = T('package.choose');
+    choose.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/pick-file', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
+        });
+        const data = await res.json();
+        if (data.unavailable) { banner(T('app.noPicker'), true); return; }
+        if (!data.path) return;          // käyttäjä perui
+        onChange(data.path);
+        renderPackage();
+        schedule(0);
+      } catch (err) {
+        banner(T('app.readFailed', { error: err.message }), true);
+      }
+    });
+    wrap.append(shown, choose);
+    if (value) {
+      const clear = document.createElement('button');
+      clear.type = 'button'; clear.className = 'ghost small';
+      clear.textContent = T('package.clear');
+      clear.addEventListener('click', () => { onChange(''); renderPackage(); schedule(0); });
+      wrap.append(clear);
+    }
+    return wrap;
+  };
   const numberField = (value, onChange) => {
     const el = document.createElement('input');
     el.type = 'number'; el.min = '1'; el.step = '0.5'; el.value = value;
@@ -1473,11 +1525,13 @@ function renderPackage() {
     box.append(field(T('package.mode'), select([
       ['off', T('package.modeOff')],
       ['file', T('package.modeFile')],
-      ['generated', T('package.modeGenerated')],
+      ['generated', state.generated_available === false
+        ? `${T('package.modeGenerated')} (${T('package.unavailableTag')})`
+        : T('package.modeGenerated')],
     ], card.mode, (v) => { card.mode = v; })));
     if (card.mode === 'file') {
       box.append(field(T('package.file'),
-        textField(card.path, T('package.fileHint'), (v) => { card.path = v; })));
+        pathField(card.path, T('package.file'), (v) => { card.path = v; })));
     } else if (card.mode === 'generated') {
       box.append(field(T('package.text'),
         textField(card.text, T('package.textHint'), (v) => { card.text = v; })));
@@ -1485,7 +1539,9 @@ function renderPackage() {
         numberField(card.duration, (v) => { card.duration = parseFloat(v) || card.duration; })));
       const note = document.createElement('p');
       note.className = 'muted small';
-      note.textContent = T('package.generatedNote');
+      note.textContent = state.generated_available === false
+        ? T('package.generatedMissing') : T('package.generatedNote');
+      if (state.generated_available === false) note.classList.add('warn');
       box.append(note);
     }
     return box;
@@ -1514,12 +1570,12 @@ function renderPackage() {
   ], pk.beds.mode, (v) => { pk.beds.mode = v; })));
   if (pk.beds.mode === 'intro_outro') {
     bedsBox.append(field(T('package.bedIntro'),
-      textField(pk.beds.intro_path, T('package.fileHint'), (v) => { pk.beds.intro_path = v; })));
+      pathField(pk.beds.intro_path, T('package.bedIntro'), (v) => { pk.beds.intro_path = v; })));
     bedsBox.append(field(T('package.bedOutro'),
-      textField(pk.beds.outro_path, T('package.fileHint'), (v) => { pk.beds.outro_path = v; })));
+      pathField(pk.beds.outro_path, T('package.bedOutro'), (v) => { pk.beds.outro_path = v; })));
   } else if (pk.beds.mode === 'throughout') {
     bedsBox.append(field(T('package.bedThroughout'),
-      textField(pk.beds.throughout_path, T('package.fileHint'), (v) => { pk.beds.throughout_path = v; })));
+      pathField(pk.beds.throughout_path, T('package.bedThroughout'), (v) => { pk.beds.throughout_path = v; })));
   }
   if (pk.beds.mode !== 'off') {
     const toggle = document.createElement('label');
@@ -2232,6 +2288,7 @@ function watchMix(announce) {
   clearInterval(mixTimer);
   mixTimer = setInterval(async () => {
     const data = await (await fetch('/api/state')).json();
+    noteGeneratedAvailability(data);
     state.mix = data.mix;
     renderAudio();
   renderPackage();
@@ -3166,6 +3223,7 @@ function watchProgress() {
   }
   progressTimer = setInterval(async () => {
     const data = await (await fetch('/api/state')).json();
+    noteGeneratedAvailability(data);
     state.progress = data.progress;
     state.tracks.forEach((m) => {
       const fresh = data.tracks.find((x) => x.key === m.key);

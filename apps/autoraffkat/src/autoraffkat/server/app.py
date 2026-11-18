@@ -1913,6 +1913,8 @@ def movement_styles() -> tuple[str, ...]:
 
 def _state_json(state: AppState) -> dict:
     """Koko tila käyttöliittymälle: raidat, roolit, säätimet ja edistyminen."""
+    from ..package import generated_source_available_cached
+
     timeline = state.timeline
     tracks = (
         [_track_json(state, t) for t in timeline.tracks] if timeline is not None else []
@@ -1940,6 +1942,9 @@ def _state_json(state: AppState) -> dict:
         "languages": list(LANGUAGES),
         "audio": state.settings.audio.to_json(),
         "package": state.settings.package.to_json(),
+        # Generoidut kortit tarvitsevat Tekstityksen: käyttöliittymä kertoo
+        # puutteesta heti eikä vasta vientivaroituksena.
+        "generated_available": generated_source_available_cached(),
         "export_dialect": state.settings.export_dialect,
         # Mitatut oletukset käyttöliittymälle. Se merkitsee poikkeaman
         # suljetulle riville, ja poikkeaman on tultava samasta paikasta kuin
@@ -2449,6 +2454,21 @@ def create_app(state: AppState) -> FastAPI:
             return {"paths": [], "unavailable": True}
         start = os.path.dirname(state.xml_path) if state.xml_path else ""
         return {"paths": pick.native_many(start, force=True)}
+
+    @app.post("/api/pick-file")
+    def pick_file(payload: dict | None = None):
+        """Yhden mediatiedoston valintaikkuna: paketin kortit ja pohjat.
+
+        Otsikko tulee asiakkaalta, joten se rajataan lyhyeksi tekstiksi eikä
+        mene sellaisenaan AppleScriptiin (lainausmerkit ja kenoviivat pois).
+        """
+        if not pick.has_native_picker():
+            return {"path": "", "unavailable": True}
+        raw = (payload or {}).get("title")
+        title = raw if isinstance(raw, str) else ""
+        title = "".join(ch for ch in title if ch.isprintable() and ch not in '"\\')[:80]
+        start = os.path.dirname(state.xml_path) if state.xml_path else ""
+        return {"path": pick.native_file(start, title or "Valitse tiedosto", force=True) or ""}
 
     @app.post("/api/pick-folder")
     def pick_folder():

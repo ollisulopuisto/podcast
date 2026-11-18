@@ -10,6 +10,7 @@ mittaamia käyriä (nhsx.musicbed).
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, field
 from fractions import Fraction
 from pathlib import Path
@@ -34,6 +35,16 @@ BED_ROLE = "music.Musiikkipohja"
 # Tekstityksen render-alpha-vientipääte (tekstitys PR #78, tarvitaan vasta kun
 # se on mergetty; siihen asti generoitu tila raportoidaan käyttökelvottomaksi).
 TEKSTITYS_RENDER_ALPHA = "render-alpha"
+
+# Asennettu Tekstitys.app tuo komentorivin vain nimellä TekstitysCLI paketin
+# sisällä (Contents/MacOS), ei PATHiin. Pelkkä `which tekstitys` ei siksi löydä
+# sitä DMG-asennuksesta, ja generoitu kortti jäi hiljaa pois (käyttäjäraportti
+# 2026-11-18). Ympäristömuuttuja ohittaa kaiken muun.
+TEKSTITYS_ENV = "AUTORAFFKAT_TEKSTITYS"
+TEKSTITYS_APP_CLI = (
+    "/Applications/Tekstitys.app/Contents/MacOS/TekstitysCLI",
+    "~/Applications/Tekstitys.app/Contents/MacOS/TekstitysCLI",
+)
 
 
 @dataclass
@@ -414,13 +425,11 @@ def materialize_generated(
     (tekstitys #78): ilman sitä jokainen generoitu kortti on yksi ongelma
     eikä mitään ajeta.
     """
-    import os
-    import shutil
     import subprocess
 
     result = PackageSettings.from_json(settings.to_json())
     problems: list[str] = []
-    exe = shutil.which("tekstitys")
+    exe = find_tekstitys()
     if exe is None or not generated_source_available():
         for card in (result.intro, result.outro, result.credits):
             if card.mode == "generated" and card.text.strip():
@@ -478,16 +487,39 @@ def materialize_generated(
     return result, problems
 
 
+def find_tekstitys() -> str | None:
+    """Tekstityksen komentorivi: ympäristömuuttuja, PATH, sitten sovelluspaketti.
+
+    Palauttaa polun tai None. Ympäristömuuttujan polku kelpaa vain jos se on
+    ajettava tiedosto; muuten jatketaan hakua, jotta virheellinen arvo ei
+    sulje pois toimivaa asennusta.
+    """
+    import shutil
+
+    override = os.environ.get(TEKSTITYS_ENV, "").strip()
+    if override:
+        path = os.path.expanduser(override)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    found = shutil.which("tekstitys")
+    if found:
+        return found
+    for candidate in TEKSTITYS_APP_CLI:
+        path = os.path.expanduser(candidate)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
+
+
 def generated_source_available() -> bool:
     """Onko generoitujen tekstien lähde (Tekstitys render-alpha) käytettävissä?
 
     Tekstityksen alfa-vienti on erillisessä PR:ssä; siihen asti kutsuja
     raportoi generoidun tilan käyttökelvottomaksi eikä yritä ajaa mitään.
     """
-    import shutil
     import subprocess
 
-    exe = shutil.which("tekstitys")
+    exe = find_tekstitys()
     if exe is None:
         return False
     try:
@@ -497,6 +529,25 @@ def generated_source_available() -> bool:
     except (OSError, subprocess.TimeoutExpired):
         return False
     return TEKSTITYS_RENDER_ALPHA in out.stdout
+
+
+_GENERATED_CACHE: dict[str, float | bool] = {"at": 0.0, "value": False}
+
+
+def generated_source_available_cached(max_age: float = 30.0) -> bool:
+    """generated_source_available() lyhyellä välimuistilla.
+
+    Tilakysely tehdään jatkuvasti, eikä jokaisella kerralla saa käynnistää
+    Tekstitystä (``--help``). Asennus tai ympäristömuuttuja huomataan
+    puolessa minuutissa.
+    """
+    import time
+
+    now = time.monotonic()
+    if _GENERATED_CACHE["at"] == 0.0 or now - float(_GENERATED_CACHE["at"]) > max_age:
+        _GENERATED_CACHE["value"] = generated_source_available()
+        _GENERATED_CACHE["at"] = now
+    return bool(_GENERATED_CACHE["value"])
 
 
 def speech_spans(grid) -> list[tuple[float, float]]:
