@@ -451,3 +451,28 @@ def test_the_bridge_draws_the_menu_and_runs_a_chosen_command_in_its_window(monke
 
 def test_a_bridge_without_a_window_ignores_a_chosen_command():
     gui.DesktopApi()._run_native_command({"id": "app.save"})
+
+
+def test_the_command_sent_to_the_page_is_limited_to_a_bounded_id_and_arg():
+    scripts = []
+    done = threading.Event()
+    bridge = gui.DesktopApi()
+    bridge.window = SimpleNamespace(
+        evaluate_js=lambda script: (scripts.append(script), done.set())
+    )
+    bridge._run_native_command(
+        {"id": "x" * 500, "arg": "y" * 500, "extra": "ei mene sivulle", "n": 5}
+    )
+    assert done.wait(2)
+    sent = json.loads(scripts[0].split("(", 1)[1].rsplit(")", 1)[0])
+    assert sent == {"id": "x" * native_menu.MAX_LABEL, "arg": "y" * native_menu.MAX_LABEL}
+
+
+def test_a_command_without_a_string_id_is_not_sent():
+    scripts = []
+    bridge = gui.DesktopApi()
+    bridge.window = SimpleNamespace(evaluate_js=lambda script: scripts.append(script))
+    bridge._run_native_command({"arg": "a"})
+    bridge._run_native_command({"id": 5})
+    bridge._run_native_command("open")
+    assert scripts == []

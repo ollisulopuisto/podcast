@@ -118,10 +118,19 @@ class DesktopApi:
         Omassa säikeessään, koska ``evaluate_js`` odottaa sivua eikä saa odottaa
         pääsäikeessä."""
         window = self.window
-        if window is None:
+        if window is None or not isinstance(choice, dict):
+            return
+        # Vain ``id`` ja ``arg`` merkkijonoina ja rajattuina: valikon speksi on jo
+        # rajattu, mutta sivulle menevä komento ei saa kasvaa rajatta.
+        clean: dict[str, str] = {}
+        for key in ("id", "arg"):
+            value = choice.get(key)
+            if isinstance(value, str):
+                clean[key] = value[: native_menu.MAX_LABEL]
+        if "id" not in clean:
             return
         run = "window.__autoraffkatNativeRun"
-        script = f"{run} && {run}({json.dumps(choice)})"
+        script = f"{run} && {run}({json.dumps(clean)})"
 
         def go() -> None:
             try:
