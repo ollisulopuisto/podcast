@@ -38,7 +38,7 @@ vm.runInContext(`
     syncRowStatus(est, 2.0, true), syncRowStatus({ shift_seconds: null }, 0, true),
     syncRowStatus({ shift_seconds: null }, 3, true), syncRowStatus(est, 1.0, false),
     syncRowStatus(undefined, 0, true), syncRowStatus(undefined, 2.5, false, true),
-    syncRowStatus(est, 1.0, true, true),
+    syncRowStatus(est, 1.0, true, true), syncRowStatus({ shift_seconds: null }, 0, true, true),
   ];
 `, ctx);
 console.log(JSON.stringify(ctx.out));
@@ -93,6 +93,7 @@ def test_row_status_classification(result):
         "none",    # arvion jälkeen lisätty tiedosto: ei tietuetta, ei "ei löytynyt"
         "manual",  # käsin syötetty siirto ennen arviota
         "manual",  # käsin muokkaus voittaa myös tuoreen arvion
+        "manual",  # käsin kirjoitettu 0 epäonnistuneen arvion jälkeen
     ]
 
 
