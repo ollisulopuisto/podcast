@@ -447,6 +447,62 @@ def test_run_retries_on_connection_lost_and_succeeds(monkeypatch):
     assert any("yritetään uudelleen" in line for line in logs)
 
 
+def test_run_retries_on_reply_timeout_and_succeeds(monkeypatch):
+    """The kernel client's 10 s reply wait (user report 2026-11-18): one slow
+    answer from Google's side must not kill the run - same retry as a lost
+    connection."""
+    import io
+
+    attempts = 0
+
+    class SlowKernelProcess:
+        def __init__(self, cmd, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            self.stdin = io.StringIO()
+            if attempts == 1:
+                self.stdout = ["TimeoutError: Timeout waiting for reply\n"]
+                self._code = 1
+            else:
+                self.stdout = ["Success\n"]
+                self._code = 0
+
+        def wait(self):
+            return self._code
+
+    monkeypatch.setattr(subprocess, "Popen", SlowKernelProcess)
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    logs = []
+    code = driver.run(
+        [["colab", "exec", "-s", "whisper", "ls /content"]], logs.append
+    )
+    assert code == 0
+    assert attempts == 2
+    assert any("yritetään uudelleen" in line for line in logs)
+
+
+def test_run_reports_actionable_hint_on_persistent_reply_timeout(monkeypatch):
+    import io
+
+    class SlowKernelProcess:
+        def __init__(self, cmd, **kwargs):
+            self.stdin = io.StringIO()
+            self.stdout = ["TimeoutError: Timeout waiting for reply\n"]
+
+        def wait(self):
+            return 1
+
+    monkeypatch.setattr(subprocess, "Popen", SlowKernelProcess)
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    logs = []
+    code = driver.run(
+        [["colab", "exec", "-s", "whisper", "ls /content"]], logs.append
+    )
+    assert code != 0
+    assert any("Timeout waiting for reply" in line for line in logs)
+    assert any("colab stop -s whisper" in line for line in logs)
+
+
 def test_run_reports_actionable_hint_on_persistent_connection_lost(monkeypatch):
     import io
 

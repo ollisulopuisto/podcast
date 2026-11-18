@@ -39,6 +39,12 @@ def colab_env(env: dict | None = None) -> dict:
     alkuun. Komennot pysyvät muodossa ``colab ...``, joten ``--dry-run``
     näyttää täsmälleen sen mitä ajetaan."""
     env = dict(os.environ if env is None else env)
+    # Colab CLI:n kernel-asiakas odottaa jokaista WebSocket-vastausta vain
+    # REQUEST_TIMEOUT sekuntia (oletus 10), lyhyetkin komennot: yksi yli
+    # 10 sekunnin hiljainen jakso Googlen puolella kaataa ajon virheeseen
+    # "TimeoutError: Timeout waiting for reply" (käyttäjäraportti 2026-11-18).
+    # Vastausten odotus saa olla kaksi minuuttia; ympäristön arvo voittaa.
+    env.setdefault("REQUEST_TIMEOUT", "120")
     bundled = bundled_colab()
     if bundled:
         env["PATH"] = os.pathsep.join(

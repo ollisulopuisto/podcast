@@ -780,6 +780,7 @@ def _execute_single(
         has_kernel_error = False
         has_precondition_error = False
         has_connection_lost_error = False
+        has_reply_timeout = False
         try:
             for line in process.stdout:
                 stripped = line.rstrip("\n")
@@ -802,6 +803,13 @@ def _execute_single(
                     or "Read timed out" in stripped
                 ):
                     has_connection_lost_error = True
+                # Colab CLI:n kernel-asiakkaan 10 s:n vastausodotus
+                # (jupyter_kernel_client.REQUEST_TIMEOUT): yksi hidas
+                # välityspalvelimen tai ytimen vastaus kaataa komennon,
+                # vaikka ajo olisi kunnossa. Sama uudelleenyritys kuin
+                # yhteyskatkolla (käyttäjäraportti 2026-11-18).
+                if "Timeout waiting for reply" in stripped:
+                    has_reply_timeout = True
                 if "accounts.google.com/o/oauth2" in stripped:
                     for token in stripped.split():
                         if "accounts.google.com/o/oauth2" in token:
@@ -844,19 +852,33 @@ def _execute_single(
                 f"Tunnuksellasi on jo aktiivinen Colab-istunto. Voit vapauttaa sen ajamalla: colab stop -s {sess_name}"
             )
 
-        if has_connection_lost_error:
+        if has_connection_lost_error or has_reply_timeout:
             if attempt < max_retries:
                 continue
-            log(
-                "Virhe: Yhteys Colab-virtuaalikoneeseen katkesi (Connection was lost)."
-            )
-            log(
-                "Tämä johtuu yleensä verkkokatkoksesta tai välityspalvelimen aikakatkaisusta."
-            )
-            log(
-                "Colab-istunto on todennäköisesti edelleen käynnissä pilvessä. Voit jatkaa ajoa suoraan komennolla:"
-            )
-            log("  uv run colab-transcribe")
+            if has_reply_timeout:
+                sess_name = "whisper"
+                if "-s" in command:
+                    idx = command.index("-s")
+                    if idx + 1 < len(command):
+                        sess_name = command[idx + 1]
+                log("Virhe: Colabin ydin ei vastannut ajoissa (Timeout waiting for reply).")
+                log(
+                    "Kyse on yleensä tilapäisestä hitaudesta Colabin tai verkon päässä - yritä ajoa uudelleen."
+                )
+                log(
+                    f"Jos virhe toistuu, istunto voi olla jumiutunut. Voit vapauttaa sen ajamalla: colab stop -s {sess_name}"
+                )
+            else:
+                log(
+                    "Virhe: Yhteys Colab-virtuaalikoneeseen katkesi (Connection was lost)."
+                )
+                log(
+                    "Tämä johtuu yleensä verkkokatkoksesta tai välityspalvelimen aikakatkaisusta."
+                )
+                log(
+                    "Colab-istunto on todennäköisesti edelleen käynnissä pilvessä. Voit jatkaa ajoa suoraan komennolla:"
+                )
+                log("  uv run colab-transcribe")
 
         if code != 0:
             log(f"Komento palautti {code}, lopetetaan: {shlex.join(command)}")

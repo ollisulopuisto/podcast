@@ -16,6 +16,7 @@ from colabtranscribe.onboarding import (
     check_credentials,
     check_environment,
     check_helper_apps,
+    colab_env,
 )
 from colabtranscribe.options import RunOptions
 
@@ -125,6 +126,14 @@ def test_check_environment_is_ready_only_when_all_required_ok(monkeypatch, tmp_p
     monkeypatch.setattr("shutil.which", lambda cmd: None)
     report2 = check_environment()
     assert report2.is_ready is False
+
+
+def test_colab_env_raises_the_kernel_reply_timeout():
+    """The CLI's kernel client waits only REQUEST_TIMEOUT seconds (default 10)
+    for any websocket reply; one slow stretch on Google's side must not kill a
+    run (user report 2026-11-18). The environment's own value still wins."""
+    assert colab_env({})["REQUEST_TIMEOUT"] == "120"
+    assert colab_env({"REQUEST_TIMEOUT": "30"})["REQUEST_TIMEOUT"] == "30"
 
 
 def test_run_options_reads_environment_variables(monkeypatch):
