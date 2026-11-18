@@ -6,6 +6,7 @@ import json
 
 from conftest import needs_ffmpeg
 
+from autoraffkat import stdio
 from autoraffkat.audio import worker
 from autoraffkat.model import ROLE_CLOSE, ROLE_MIC, ROLE_WIDE, AudioSettings, TrackConfig
 from autoraffkat.project import ProjectSettings
@@ -26,7 +27,7 @@ def test_worker_reconnects_missing_windowed_stdio_to_subprocess_pipes(monkeypatc
     monkeypatch.setattr(worker.sys, "stdin", None)
     monkeypatch.setattr(worker.sys, "stdout", None)
     monkeypatch.setattr(worker.sys, "stderr", None)
-    monkeypatch.setattr(worker.os, "fdopen", lambda fd, *args, **kwargs: streams[fd])
+    monkeypatch.setattr(stdio.os, "fdopen", lambda fd, *args, **kwargs: streams[fd])
 
     worker._restore_stdio()
 

@@ -130,7 +130,7 @@ exe = EXE(
     argv_emulation=False,
     target_arch=None,
     codesign_identity=os.environ.get("APPLE_SIGNING_IDENTITY"),
-    entitlements_file=None,
+    entitlements_file=str(BASE_DIR / "autoraffkat.entitlements") if sys.platform == "darwin" else None,
     icon=icon_path,
 )
 
@@ -157,6 +157,8 @@ if sys.platform == "darwin":
         name="autoraffkat.app",
         icon=darwin_icon,
         bundle_identifier="com.sulopuis.autoraffkat",
+        codesign_identity=os.environ.get("APPLE_SIGNING_IDENTITY"),
+        entitlements_file=str(BASE_DIR / "autoraffkat.entitlements"),
         info_plist={
             "CFBundleName": "autoraffkat",
             "CFBundleDisplayName": "autoraffkat",

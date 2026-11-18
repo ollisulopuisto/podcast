@@ -235,3 +235,19 @@ def test_the_two_ends_agree(monkeypatch):
 
     result = editor.read_result(out.getvalue(), "")
     assert base64.b64decode(result.state) == b"Studio 2"
+
+
+# --------------------------------------------------------------------------
+# Lapsen käynnistyskomento
+# --------------------------------------------------------------------------
+
+
+def test_the_child_command_is_a_module_run_from_source(monkeypatch):
+    monkeypatch.delattr("sys.frozen", raising=False)
+    assert editor.editor_command()[1:] == ["-m", "speechmix.editor"]
+
+
+def test_the_child_command_is_an_internal_command_when_frozen(monkeypatch):
+    """Pakattu binääri ei tunne ``-m``:ää (dxRevive-ikkuna ei auennut)."""
+    monkeypatch.setattr("sys.frozen", True, raising=False)
+    assert editor.editor_command()[1:] == ["--plugin-editor"]

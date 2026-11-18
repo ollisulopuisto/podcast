@@ -29,6 +29,21 @@ def main(argv: list[str] | None = None) -> int:
 
         return audio_worker_main()
 
+    if argv == ["--plugin-editor"]:
+        from autoraffkat.stdio import restore_stdio
+        from speechmix.editor import main as plugin_editor_main
+
+        # Windows-paketissa (console=False) virrat ovat None: kytke ne ennen
+        # kuin editori lukee tehtävänsä stdinistä.
+        restore_stdio()
+
+        return plugin_editor_main()
+
+    if argv == ["--selftest-jit"]:
+        from autoraffkat.selftest import main as selftest_main
+
+        return selftest_main()
+
     argv = list(argv)
     if argv[:1] == ["render-clips"]:
         from autoraffkat.cli_clips import main as render_clips_main

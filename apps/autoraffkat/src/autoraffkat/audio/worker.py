@@ -18,24 +18,13 @@ luettavissa myös terminaalista, kun jokin menee pieleen.
 from __future__ import annotations
 
 import json
-import os
 import sys
 import traceback
 
 from ..activity import app_activity
+from ..stdio import restore_stdio
 
-
-def _restore_stdio() -> None:
-    """Palauta lapsiprosessin putket pakatun windowed-sovelluksen stdoutille."""
-    for name, fd, mode in (
-        ("stdin", 0, "r"),
-        ("stdout", 1, "w"),
-        ("stderr", 2, "w"),
-    ):
-        if getattr(sys, name) is None:
-            stream = os.fdopen(fd, mode, encoding="utf-8",
-                               buffering=1 if mode == "w" else -1)
-            setattr(sys, name, stream)
+_restore_stdio = restore_stdio
 
 
 @app_activity("Process audio")
