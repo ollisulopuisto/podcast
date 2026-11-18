@@ -3800,7 +3800,15 @@ async function estimateMediaSync() {
          törmäisi käynnissä olevaan arvioon). */
       let job;
       try {
-        job = (await (await fetch('/api/state')).json()).media_sync;
+        const pollResponse = await fetch('/api/state');
+        const pollData = await pollResponse.json();
+        /* HTTP- tai JSON-virhevastaus ilman media_sync-tilaa on yhtä lailla
+           epäonnistunut kysely: se kuuluu uudelleenyrityksen piiriin eikä saa
+           nollata laskuria (Devin-arvio 2026-11-18). */
+        if (!pollResponse.ok || !pollData || !pollData.media_sync) {
+          throw new Error('State poll failed.');
+        }
+        job = pollData.media_sync;
       } catch (pollErr) {
         pollFailures += 1;
         if (pollFailures >= 5) throw pollErr;

@@ -523,3 +523,51 @@ def test_media_estimate_clears_running_on_base_exception(tmp_path, monkeypatch):
     status = client.get("/api/state").json()["media_sync"]
     assert status["running"] is False
     assert status["error"] == "stop"
+
+
+def test_media_estimate_second_request_during_thread_start_gets_409(tmp_path, monkeypatch):
+    """Käynnistämättömän säikeen is_alive() on False. Rekisteröinnin ja
+    käynnistyksen välissä tullut kilpaileva pyyntö ei saa luulla säiettä
+    kuolleeksi eikä käynnistää toista arviota (Devin-arvio 2026-11-18)."""
+    camera, microphone = _media(tmp_path, monkeypatch)
+    import threading
+
+    real_thread = threading.Thread
+    spawned = []
+    outcome = {}
+    racers = []
+
+    class RacingThread:
+        def __init__(self, *, target, daemon, name):
+            self.started = False
+            spawned.append(self)
+
+        def start(self):
+            # Rekisteröinnin jälkeen, ennen kuin säie on käynnissä: toinen
+            # pyyntö tulee eri säikeestä, kun lukko on vielä ensimmäisellä.
+            if len(spawned) == 1:
+                def second():
+                    outcome["status"] = client.post(
+                        "/api/media/estimate",
+                        json=_estimate_body(camera, microphone, "full"),
+                    ).status_code
+
+                racer = real_thread(target=second)
+                racers.append(racer)
+                racer.start()
+                racer.join(timeout=0.5)
+            self.started = True
+
+        def is_alive(self):
+            return self.started
+
+    monkeypatch.setattr(server_app.threading, "Thread", RacingThread)
+    client = TestClient(create_app(AppState(xml_path="")))
+
+    first = client.post("/api/media/estimate", json=_estimate_body(camera, microphone))
+
+    for racer in racers:
+        racer.join(timeout=5)
+    assert first.status_code == 202
+    assert len(spawned) == 1
+    assert outcome["status"] == 409

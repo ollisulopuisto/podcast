@@ -2242,8 +2242,11 @@ def create_app(state: AppState) -> FastAPI:
 
         thread = threading.Thread(target=work, name="media-sync-estimate", daemon=True)
         with state.lock:
+            # Käynnistys lukon alla: käynnistämättömän säikeen is_alive() on
+            # False, joten kilpaileva pyyntö luulisi sitä kuolleeksi ja
+            # käynnistäisi toisen arvion (Devin-arvio 2026-11-18).
             state.media_sync_thread = thread
-        thread.start()
+            thread.start()
         return {"accepted": True}
 
     @app.post("/api/media/preview")
