@@ -20,9 +20,9 @@ def test_selftest_is_an_internal_command(capsys):
 
 
 def test_plugin_editor_command_restores_unset_streams():
-    """Windowed (console=False) Windows build: sys.stdin/out/err are None.
+    """Ikkunoitu (console=False) Windows-build: sys.stdin/out/err ovat None.
 
-    The child must reconnect the pipes before the editor reads its job.
+    Lapsiprosessin täytyy yhdistää putket uudelleen ennen kuin editori lukee työnsä.
     """
     import json
     import subprocess
