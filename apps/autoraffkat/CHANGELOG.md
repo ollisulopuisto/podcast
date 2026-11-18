@@ -8,6 +8,11 @@ and this project adheres to Calendar Versioning (CalVer).
 ## [Unreleased]
 
 ### Added
+- Sync panel timeline: the media sync panel draws every audio file as a bar
+  against the chosen camera, so the estimated offsets (right = later, left =
+  earlier) can be read at a glance, with a status label per file (good,
+  check, not estimated, not found, manual) and a scale. Bars follow manual
+  offset edits.
 - Export for DaVinci Resolve: the export request accepts `dialect: "resolve"`
   and writes a flattened FCPXML 1.9 (assets use `src`, no `media-rep`), which
   Resolve 17 can import. The toolbar has a Final Cut Pro / DaVinci Resolve

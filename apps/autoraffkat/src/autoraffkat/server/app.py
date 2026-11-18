@@ -2013,6 +2013,7 @@ def create_app(state: AppState) -> FastAPI:
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         for name in (
             "app.js",
+            "sync_timeline.js",
             "i18n.js",
             "style.css",
             "favicon.ico",

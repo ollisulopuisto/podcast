@@ -618,3 +618,15 @@ history means no fixed app-imposed count, not unlimited physical storage.
 Settings requests are serialized because aborting a fetch cannot cancel an
 already accepted server write. Local history does not wait for or merge edits
 based on remote completion. Earlier responses cannot overwrite newer UI state.
+
+## Sync panel timeline
+
+The media sync panel shows one bar per audio file against the chosen camera
+on a shared time scale. Bar position is the offset (right = later, left =
+earlier). The layout is computed in a pure function so it can be tested
+without a browser: unreadable or absurd offsets (non-numeric, out of range)
+are clamped or shown as not estimated, never drawn off the panel. Status
+labels (good, check, not estimated, not found, manual) come from the
+estimate's correlation and the manual-edit flag, and every label and the
+chart's accessible description go through the translation tables. File
+names reach the page as text, never as markup.

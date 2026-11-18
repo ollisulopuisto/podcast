@@ -3698,9 +3698,76 @@ async function addMediaFiles() {
         input.value = manual[input.dataset.mediaPath];
       }
     });
+    renderSyncTimeline();
   } catch (err) {
     banner(err.message || T('app.readFailed', { error: err.message }), true);
   }
+}
+
+function renderSyncTimeline() {
+  const box = $('media-sync-timeline');
+  if (!box || !mediaImport) return;
+  box.replaceChildren();
+  const list = $('media-sync-sources');
+  const inputs = list.querySelectorAll ? list.querySelectorAll('input[data-media-path]') : [];
+  const values = {};
+  inputs.forEach((input) => { values[input.dataset.mediaPath] = Number(input.value); });
+  const byPath = (path) => mediaImport.sources.find((item) => item.path === path);
+  const reference = byPath(mediaImport.reference);
+  if (!reference) return;
+  const ready = !!(mediaImport.result && mediaImport.result.tracks);
+  const rows = [{ path: reference.path, name: reference.name, duration: reference.duration,
+                  shift: 0, reference: true, status: '' }];
+  mediaImport.sources.filter((item) => item.has_audio && item.path !== reference.path)
+    .forEach((source) => {
+      const value = Number.isFinite(values[source.path]) ? values[source.path] : 0;
+      const estimate = ready && mediaImport.result.tracks.find((item) => item.path === source.path);
+      rows.push({ path: source.path, name: source.name, duration: source.duration,
+                  shift: value, reference: false,
+                  status: syncRowStatus(estimate, value, ready,
+                                        !!(mediaImport.edited && mediaImport.edited[source.path])) });
+    });
+  const layout = syncTimelineLayout(rows);
+  box.setAttribute('aria-label', T('sync.timelineAria', {
+    count: rows.length - 1, camera: reference.name,
+  }));
+  const title = document.createElement('h3');
+  title.textContent = T('sync.timelineTitle');
+  const help = document.createElement('p');
+  help.textContent = T('sync.timelineHelp');
+  box.append(title, help);
+  const scale = document.createElement('p');
+  scale.className = 'sync-tl-scale';
+  scale.textContent = T('sync.timelineScale', { span: layout.span.toFixed(1) });
+  layout.items.forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'sync-tl-row';
+    const name = document.createElement('span');
+    name.className = 'sync-tl-name';
+    name.textContent = item.name;
+    if (item.reference) {
+      const tag = document.createElement('small');
+      tag.textContent = `· ${T('sync.clock')}`;
+      name.append(tag);
+    }
+    const track = document.createElement('div');
+    track.className = 'sync-tl-track';
+    const zero = document.createElement('div');
+    zero.className = 'sync-tl-zero';
+    zero.style.left = `${layout.zero}%`;
+    const bar = document.createElement('div');
+    bar.className = `sync-tl-bar ${item.reference ? 'tl-ref' : `tl-${item.status}`}`;
+    bar.style.left = `${item.left}%`;
+    bar.style.width = `${item.width}%`;
+    bar.textContent = syncOffsetLabel(item.shift);
+    track.append(zero, bar);
+    const status = document.createElement('span');
+    status.className = 'sync-tl-status';
+    status.textContent = item.reference ? '' : T(`sync.status.${item.status}`);
+    row.append(name, track, status);
+    box.append(row);
+  });
+  box.append(scale);
 }
 
 function renderMediaSync() {
@@ -3737,13 +3804,18 @@ function renderMediaSync() {
       hint.textContent = `r=${Number.isFinite(score) ? score.toFixed(2) : '—'}`;
       if (estimate.window_expanded) hint.textContent += ` · ${T('sync.expanded')}`;
     } else {
-      hint.textContent = source.has_audio ? T('sync.noEstimate') : T('sync.noEstimate');
+      hint.textContent = mediaImport.result ? T('sync.noEstimate') : T('sync.notYet');
     }
     name.append(hint);
     const shiftLabel = document.createElement('label');
     shiftLabel.textContent = T('sync.offset');
     const input = document.createElement('input');
     input.type = 'number'; input.step = '0.01'; input.dataset.mediaPath = source.path;
+    input.addEventListener('input', () => {
+      if (!mediaImport.edited) mediaImport.edited = {};
+      mediaImport.edited[source.path] = true;
+      renderSyncTimeline();
+    });
     input.value = estimate && estimate.shift_seconds !== null
       ? Number(estimate.shift_seconds).toFixed(2) : '0';
     shiftLabel.append(input);
@@ -3762,6 +3834,7 @@ function renderMediaSync() {
     }
     list.append(row);
   });
+  renderSyncTimeline();
   $('media-sync-estimate').disabled = !complete;
   $('media-sync-import').disabled = !complete;
   $('media-sync-listen').disabled = !complete;
@@ -3826,6 +3899,7 @@ async function estimateMediaSync() {
            valinnan, joten myöhästyvää tulosta ei enää liitetä mihinkään. */
         if (mediaImport) {
           mediaImport.result = job.result;
+          mediaImport.edited = {};
           renderMediaSync();
         }
         break;
@@ -4014,6 +4088,10 @@ $('media-sync-reference').addEventListener('change', (event) => {
   if (mediaImport) {
     mediaImport.reference = event.target.value;
     mediaImport.result = null;
+    /* Siirrot ovat suhteessa vertailukameraan, ja renderMediaSync nollaa
+       kentät: käsin muokkauksen merkki ei saa jäädä vanhan kameran jäljiltä
+       (Devin-arvio 2026-11-18). */
+    mediaImport.edited = {};
     renderMediaSync();
   }
 });

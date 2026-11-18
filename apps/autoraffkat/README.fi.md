@@ -16,6 +16,9 @@ lähdeprojektin itse, ja ohjelman alku- ja loppupisteet merkitään suoraan
 esikatselun aikajanalta. Kamerat ja mikit ovat usein eri hakemistoissa:
 **Tuo media** -napin uusi painallus lisää poimitut tiedostot auki olevaan
 valintaan eikä korvaa sitä, ja paneelin **Sulje** aloittaa alusta.
+Synkkapaneeli piirtää aikajanan siitä, miten kukin äänitiedosto asettuu
+valittuun kameraan nähden, joten arvioidut siirrot ja tarkistusta kaipaavat
+tiedostot näkyvät ennen tuontia.
 
 ![Aiempi käyttöliittymänäkymä: vanha raitojen asettelutapa, esikatselupalkki ja leikkauslista.](screenshot.png)
 
