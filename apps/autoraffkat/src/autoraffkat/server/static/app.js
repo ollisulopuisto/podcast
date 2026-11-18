@@ -3792,10 +3792,29 @@ async function estimateMediaSync() {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'Estimate failed.');
+    let pollFailures = 0;
     while (true) {
       await new Promise((resolve) => setTimeout(resolve, 800));
-      const status = await (await fetch('/api/state')).json();
-      const job = status.media_sync;
+      /* Yksittäinen epäonnistunut kysely ei saa katkaista seurantaa: palvelimen
+         työ jatkuu, ja katkaisu jättäisi napin päälle (ja seuraava painallus
+         törmäisi käynnissä olevaan arvioon). */
+      let job;
+      try {
+        const pollResponse = await fetch('/api/state');
+        const pollData = await pollResponse.json();
+        /* HTTP- tai JSON-virhevastaus ilman media_sync-tilaa on yhtä lailla
+           epäonnistunut kysely: se kuuluu uudelleenyrityksen piiriin eikä saa
+           nollata laskuria (Devin-arvio 2026-11-18). */
+        if (!pollResponse.ok || !pollData || !pollData.media_sync) {
+          throw new Error(T('sync.pollFailed'));
+        }
+        job = pollData.media_sync;
+      } catch (pollErr) {
+        pollFailures += 1;
+        if (pollFailures >= 5) throw pollErr;
+        continue;
+      }
+      pollFailures = 0;
       if (job.current) {
         $('media-sync-progress').textContent = T('sync.progress', {
           name: job.current, percent: Math.round(job.fraction * 100),

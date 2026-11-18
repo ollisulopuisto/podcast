@@ -47,6 +47,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "fi": "Aja synkkausarvio ensin.",
         "en": "Run the sync estimate first.",
     },
+    "media.sync_busy": {
+        "fi": "Toinen synkka-arvio on vielä käynnissä. Odota sen valmistumista.",
+        "en": "A different sync estimate is still running. Wait for it to finish.",
+    },
     "media.invalid_sync_window": {
         "fi": "Virheellinen synkkausikkuna.",
         "en": "Invalid sync window.",

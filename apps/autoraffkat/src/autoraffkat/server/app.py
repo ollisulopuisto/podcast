@@ -162,6 +162,11 @@ class AppState:
         "running": False, "fraction": 0.0, "current": "", "ready": False,
         "error": "", "result": None,
     })
+    # Käynnissä olevan arvion säie ja sen pyyntö (polut, kamera, ikkuna):
+    # "running" ei yksin riitä, koska kuollut säie jättäisi sen ikuisesti
+    # päälle ja jokainen uusi arvio saisi 409:n.
+    media_sync_thread: object = None
+    media_sync_request: object = None
     language: str = field(default_factory=i18n.detect)
     inherited_from: str = ""  # mistä roolit perittiin, "" jos ei mistään
     # Kuvan mittaukset media-avaimittain, ja mitä jäi mittaamatta. Erillään
@@ -2198,13 +2203,25 @@ def create_app(state: AppState) -> FastAPI:
         valid_references = {source.path for source in sources if source.has_video and source.has_audio}
         if reference not in valid_references:
             raise HTTPException(400, "Choose a camera with reference audio.")
+        request_key = (tuple(paths), reference, window)
         with state.lock:
             if state.media_sync["running"]:
-                raise HTTPException(409, "A sync estimate is already running.")
+                thread = state.media_sync_thread
+                # None = säiettä ollaan juuri käynnistämässä.
+                alive = thread is None or getattr(thread, "is_alive", lambda: True)()
+                if alive:
+                    if state.media_sync_request == request_key:
+                        # Sama arvio on jo käynnissä (esim. sivu ladattiin
+                        # uudelleen kesken ajon): liitytään siihen.
+                        return {"accepted": True, "attached": True}
+                    raise HTTPException(409, t("media.sync_busy"))
+                # Säie on kuollut jättämättä tilaa siivottuna: vapautetaan.
             state.media_sync = {
                 "running": True, "fraction": 0.0, "current": "", "ready": False,
                 "error": "", "result": None,
             }
+            state.media_sync_request = request_key
+            state.media_sync_thread = None
 
         def report(current, fraction):
             with state.lock:
@@ -2219,11 +2236,17 @@ def create_app(state: AppState) -> FastAPI:
                     state.media_sync.update(
                         running=False, fraction=1.0, current="", ready=True, result=result
                     )
-            except Exception as exc:
+            except BaseException as exc:
                 with state.lock:
-                    state.media_sync.update(running=False, error=str(exc), current="")
+                    state.media_sync.update(running=False, error=str(exc) or type(exc).__name__, current="")
 
-        threading.Thread(target=work, name="media-sync-estimate", daemon=True).start()
+        thread = threading.Thread(target=work, name="media-sync-estimate", daemon=True)
+        with state.lock:
+            # Käynnistys lukon alla: käynnistämättömän säikeen is_alive() on
+            # False, joten kilpaileva pyyntö luulisi sitä kuolleeksi ja
+            # käynnistäisi toisen arvion (Devin-arvio 2026-11-18).
+            state.media_sync_thread = thread
+            thread.start()
         return {"accepted": True}
 
     @app.post("/api/media/preview")
