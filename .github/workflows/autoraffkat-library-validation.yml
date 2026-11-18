@@ -1,9 +1,11 @@
 name: autoraffkat library validation
 
-# Todistaa hardened runtimen kirjastovalidoinnin: Developer ID -allekirjoitettu
-# isäntä, jolla on sovelluksen oikeudet, ei saa ladata toisen tiimin (tässä
-# ad hoc) allekirjoittamaa kirjastoa ilman disable-library-validation-oikeutta.
-# Käyttäjän VST3/AU-liitännäiset ovat muiden tiimien allekirjoittamia.
+# Todistaa hardened runtimen kirjastovalidoinnin: hardened runtime -isäntä,
+# jolla on sovelluksen oikeudet, ei saa ladata toisen allekirjoittajan
+# kirjastoa ilman disable-library-validation-oikeutta. Käyttäjän VST3/AU-
+# liitännäiset ovat muiden tiimien allekirjoittamia.
+# Ei salaisuuksia: kaikki allekirjoitus on ad hoc (`--sign -`), joten tämä
+# toimii pull_requestissa eikä koske julkaisuallekirjoitukseen.
 on:
   pull_request:
     paths:
@@ -20,26 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Import Developer ID certificate
-        env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          set -euo pipefail
-          test -n "$BUILD_CERTIFICATE_BASE64"
-          KEYCHAIN_PATH="$RUNNER_TEMP/podcast-signing.keychain-db"
-          CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
-          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 -D -o "$CERTIFICATE_PATH"
-          export KEYCHAIN_PATH="$KEYCHAIN_PATH" CERTIFICATE_PATH="$CERTIFICATE_PATH"
-          export KEYCHAIN_PASSWORD="$KEYCHAIN_PASSWORD" P12_PASSWORD="$P12_PASSWORD"
-          python3 "$GITHUB_WORKSPACE/scripts/macos_ci_credentials.py" import-certificate
-          security list-keychains -d user -s "$KEYCHAIN_PATH"
-          rm -f "$CERTIFICATE_PATH"
-
       - name: Host with the shipped entitlements loads a third-party-signed plug-in
-        env:
-          ID: "Developer ID Application: Olli Sulopuisto (LWSR8T5392)"
         run: |
           set -euo pipefail
           mkdir t && cd t
@@ -62,13 +45,13 @@ jobs:
 
           # Pohja: hardened runtime ilman oikeuksia. Kirjastovalidointi estää latauksen.
           cp host host_plain
-          codesign --force --options runtime --sign "$ID" host_plain
+          codesign --force --options runtime --sign - host_plain
           set +e; ./host_plain Fake.vst3/Contents/MacOS/Fake; base=$?; set -e
           echo "baseline (no entitlements) exit=$base"
 
           # Sovelluksen oikeudet sellaisinaan, kuten ne toimitetaan.
           cp host host_app
-          codesign --force --options runtime --entitlements "$GITHUB_WORKSPACE/apps/autoraffkat/autoraffkat.entitlements" --sign "$ID" host_app
+          codesign --force --options runtime --entitlements "$GITHUB_WORKSPACE/apps/autoraffkat/autoraffkat.entitlements" --sign - host_app
           codesign -d --entitlements :- host_app 2>/dev/null | grep -o 'com.apple.security.cs.[a-z-]*' || true
           set +e; ./host_app Fake.vst3/Contents/MacOS/Fake; app=$?; set -e
           echo "shipped entitlements exit=$app"
@@ -77,7 +60,3 @@ jobs:
             echo "::warning::runner does not enforce library validation (baseline loaded); result proves nothing"
           fi
           test "$app" -eq 0 || { echo "::error::shipped entitlements cannot load a third-party-signed plug-in"; exit 1; }
-
-      - name: Remove signing keychain
-        if: always()
-        run: security delete-keychain "$RUNNER_TEMP/podcast-signing.keychain-db" || true
