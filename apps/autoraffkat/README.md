@@ -12,8 +12,12 @@ the source project itself, and the programme's in and out points are set
 straight on the preview timeline. Cameras and microphones often sit in
 different folders: pressing **Import media** again adds the new picks to the
 open selection instead of replacing it, and the panel's **Close** starts
-over. The sync panel draws a timeline of how each audio file lines up with
-the chosen camera, so the estimated offsets and any file that needs a second
+over. The package panel's intro, outro, credits and music beds are picked with
+the system file dialog. **Generated text** cards are rendered by Tekstitys
+(`render-alpha`): autoraffkat finds it on `PATH`, in
+`/Applications/Tekstitys.app` or `~/Applications`, or at the path in
+`AUTORAFFKAT_TEKSTITYS`, and the panel says so when it is missing. The sync panel draws a timeline of
+how each audio file lines up with the chosen camera, so the estimated offsets and any file that needs a second
 look are visible before you import.
 
 *[Suomenkielinen README](README.fi.md) · [Design notes](DESIGN.md) · [Roadmap](ROADMAP.md)*
