@@ -127,7 +127,11 @@ jobs:
       # vaihe huomaa sitä.
       - name: Smoke test signed app (numba JIT)
         run: |
-          codesign -d --entitlements :- dist/autoraffkat.app 2>/dev/null || true
+          ents=$(codesign -d --entitlements :- dist/autoraffkat.app 2>/dev/null || true)
+          echo "$ents"
+          for k in allow-jit allow-unsigned-executable-memory disable-library-validation; do
+            echo "$ents" | grep -q "com.apple.security.cs.$k" || { echo "::error::entitlement $k missing from signed app"; exit 1; }
+          done
           dist/autoraffkat.app/Contents/MacOS/autoraffkat --selftest-jit
 
       # Arkkitehtuuri nimeen, jotta Releaseen mahtuu myöhemmin toinenkin.
