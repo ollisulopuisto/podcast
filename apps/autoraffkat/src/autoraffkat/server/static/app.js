@@ -956,6 +956,7 @@ function watchSpeech() {
   speechTimer = setTimeout(async () => {
     try {
       const data = await (await fetch('/api/state')).json();
+      noteGeneratedAvailability(data);
       const was = state.speech && state.speech.running;
       noteSpeech(data.speech);
       if (data.speech && data.speech.running) {
@@ -1141,6 +1142,7 @@ function watchVideo() {
   const tick = async () => {
     try {
       const data = await (await fetch('/api/state')).json();
+      noteGeneratedAvailability(data);
       state.video = data.video;      // samasta syystä: vain edistyminen
       renderGlobals();
       if (data.video && data.video.progress && data.video.progress.running) {
@@ -1418,6 +1420,17 @@ function rowReset(keys) {
     schedule(0);
   });
   return { button, refresh };
+}
+
+/* Tilavastaukset päivittävät vain omia kenttiään, joten Tekstityksen
+   saatavuus (generated_available) luetaan niistä erikseen: työkalun voi
+   asentaa kesken istunnon, ja paneelin varoituksen pitää väistyä ilman
+   sivun latausta (Devin-arvio 2026-11-18). */
+function noteGeneratedAvailability(data) {
+  if (!data || typeof data.generated_available !== 'boolean') return;
+  if (state.generated_available === data.generated_available) return;
+  state.generated_available = data.generated_available;
+  if ($('package-panel')) renderPackage();
 }
 
 function renderPackage() {
@@ -2275,6 +2288,7 @@ function watchMix(announce) {
   clearInterval(mixTimer);
   mixTimer = setInterval(async () => {
     const data = await (await fetch('/api/state')).json();
+    noteGeneratedAvailability(data);
     state.mix = data.mix;
     renderAudio();
   renderPackage();
@@ -3209,6 +3223,7 @@ function watchProgress() {
   }
   progressTimer = setInterval(async () => {
     const data = await (await fetch('/api/state')).json();
+    noteGeneratedAvailability(data);
     state.progress = data.progress;
     state.tracks.forEach((m) => {
       const fresh = data.tracks.find((x) => x.key === m.key);

@@ -839,6 +839,14 @@ async function asyncPaths() {
     vm.runInContext('state = __state;', context);
     step(`watchProgress(ready=${ready})`, () => context.watchProgress());
   }
+  /* Tekstityksen saatavuus tulee tilavastauksista: muutos piirtää paketin
+     uudelleen, sama arvo ja kentätön vastaus eivät. */
+  step('noteGeneratedAvailability', () => {
+    for (const value of [false, true, true]) {
+      context.noteGeneratedAvailability({ generated_available: value });
+    }
+    context.noteGeneratedAvailability({});
+  });
 }
 
 async function step(label, fn) {

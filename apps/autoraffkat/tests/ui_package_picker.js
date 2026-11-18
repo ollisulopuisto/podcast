@@ -127,5 +127,17 @@ vm.runInContext(`
   const after = all().filter((n) => n.tagName === 'P').map((n) => n.textContent);
   assert.ok(!after.some((t) => t.includes('AUTORAFFKAT_TEKSTITYS')),
             'varoitus jäi näkyviin vaikka Tekstitys löytyy');
+  /* Tilavastaus kesken istunnon: Tekstitys asennetaan, varoitus väistyy ilman
+     sivun latausta (Devin-arvio 2026-11-18). */
+  vm.runInContext('state.generated_available = false; renderPackage();', context);
+  assert.ok(all().filter((n) => n.tagName === 'P')
+    .some((n) => n.textContent.includes('AUTORAFFKAT_TEKSTITYS')));
+  vm.runInContext('noteGeneratedAvailability({ generated_available: true });', context);
+  assert.ok(!all().filter((n) => n.tagName === 'P')
+    .some((n) => n.textContent.includes('AUTORAFFKAT_TEKSTITYS')),
+    'varoitus jäi näkyviin kun tilavastaus kertoi Tekstityksen löytyvän');
+  vm.runInContext('noteGeneratedAvailability({ progress: {} });', context);
+  assert.equal(vm.runInContext('state.generated_available', context), true,
+    'tilavastaus ilman kenttää ei saa nollata saatavuutta');
   console.log('package panel: native file pickers and generated-text notice');
 })().catch((err) => { console.error(err); process.exit(1); });

@@ -279,6 +279,15 @@ def native_file(directory: str = "", title: str = "Valitse tiedosto", force: boo
             path = done.stdout.strip() if done.returncode == 0 else ""
         except (OSError, subprocess.TimeoutExpired):
             path = ""
+    elif sys.platform.startswith("linux") and shutil.which("kdialog"):
+        # Pelkkä KDE-kone: ilman tätä haaraa ikkuna ei aukeaisi, vaikka
+        # has_native_picker() hyväksyy kdialogin (Devin-arvio 2026-11-18).
+        cmd = ["kdialog", "--title", title, "--getopenfilename", start_dir or "."]
+        try:
+            done = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            path = done.stdout.strip() if done.returncode == 0 else ""
+        except (OSError, subprocess.TimeoutExpired):
+            path = ""
     elif sys.platform == "win32":
         paths = _pick_windows_many(start_dir, multiple=False)
         path = paths[0] if paths else ""

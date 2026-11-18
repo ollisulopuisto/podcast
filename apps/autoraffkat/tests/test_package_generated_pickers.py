@@ -163,3 +163,40 @@ def test_native_file_cancel_returns_none(monkeypatch):
     monkeypatch.setattr(pick, "_ensure_foreground", lambda: True)
 
     assert pick.native_file("", "Valitse", force=True) is None
+
+
+def test_native_file_on_a_kde_only_linux_uses_kdialog(monkeypatch):
+    """has_native_picker() hyväksyy kdialogin, joten myös yhden tiedoston
+    valinnan on toimittava ilman zenityä ja tkinteriä (Devin-arvio 2026-11-18)."""
+    import subprocess
+
+    seen = []
+
+    class Done:
+        returncode = 0
+        stdout = "/home/x/alku.mov\n"
+
+    def fake_run(cmd, **kw):
+        seen.append(cmd)
+        return Done()
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(pick.shutil, "which", lambda name: "/usr/bin/kdialog" if name == "kdialog" else None)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert pick.native_file("", "Valitse alku", force=True) == "/home/x/alku.mov"
+    assert seen[0][0] == "kdialog" and "--getopenfilename" in seen[0]
+
+
+def test_native_file_kdialog_cancel_returns_none(monkeypatch):
+    import subprocess
+
+    class Done:
+        returncode = 1
+        stdout = ""
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(pick.shutil, "which", lambda name: "/usr/bin/kdialog" if name == "kdialog" else None)
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: Done())
+
+    assert pick.native_file("", "Valitse", force=True) is None
