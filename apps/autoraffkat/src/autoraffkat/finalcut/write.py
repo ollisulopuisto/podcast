@@ -1862,9 +1862,11 @@ REACTION_LANE = 1
 # Vara-neliö pinolle kun lähteen kokoa ei tiedetä (muuten pinon puolikas on
 # ``layout.stack_panel`` ja kehystetään kasvoihin): kaksi 1080 px neliötä
 # 1920 px korkean kuvan päällä. Lähde on 1920×1080, joten neliö jättää 420 px
-# = 21.875 % pois kummaltakin reunalta (crop-rect on prosentteja leveydestä,
-# oletettu, ei mitattu). Keskipisteet ovat ±540 px = ±28.125 % (1 % = 19.2 px).
+# = 21.875 % leveydestä (``Shot.crop``, renderöinti) pois kummaltakin reunalta.
+# Final Cutin crop-rect on prosentteja KORKEUDESTA: 420 / 1080 = 38.889 %
+# (``SQUARE_CROP_FCP``). Keskipisteet ovat ±540 px = ±28.125 % (1 % = 19.2 px).
 SQUARE_CROP = 21.875
+SQUARE_CROP_FCP = 420 / 1080 * 100
 SQUARE_Y = 28.125
 
 
@@ -1936,8 +1938,8 @@ def _square_lines(sign: int, indent: str) -> list[str]:
     täyttöä), reunat rajattu ja kuva ``sign`` × ``SQUARE_Y`` ylös tai alas."""
     return [
         f'{indent}<adjust-crop mode="crop">',
-        f'{indent}  <crop-rect left="{_number(SQUARE_CROP)}" top="0" '
-        f'right="{_number(SQUARE_CROP)}" bottom="0"/>',
+        f'{indent}  <crop-rect left="{_number(SQUARE_CROP_FCP)}" top="0" '
+        f'right="{_number(SQUARE_CROP_FCP)}" bottom="0"/>',
         f'{indent}</adjust-crop>',
         f'{indent}<adjust-conform type="none"/>',
         f'{indent}<adjust-transform position="0 {_number(sign * SQUARE_Y)}"/>',

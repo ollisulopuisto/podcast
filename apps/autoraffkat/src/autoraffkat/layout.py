@@ -142,10 +142,11 @@ def fcp_panel(panel: Panel, window: tuple[float, float, float, float],
     päähän; sijainti on paneelin keskipisteen ja sen erotus. Prosentit ovat
     projektin korkeudesta kuten Final Cutin oma sijainti.
 
-    **Oletus, ei vielä tuotu Final Cutiin:** rajauksen yksikkö (prosentti
-    leveydestä vasemmalle ja oikealle, korkeudesta ylös ja alas) ja se, että
-    skaalaus pyörii rajaamattoman klipin keskipisteen ympäri. Symmetrinen
-    rajaus keskellä ei riipu jälkimmäisestä.
+    **Rajauksen yksikkö** on prosenttia lähteen KORKEUDESTA kaikilla neljällä
+    reunalla (Applen FCPXML-dokumentaatio; käyttäjäraportti 2026-11-18: Final
+    Cut näytti 20,42 % leveydestä luettuna 220,5 px eikä 392 px). **Oletus,
+    ei vielä tuotu Final Cutiin:** skaalaus pyörii rajaamattoman klipin
+    keskipisteen ympäri. Symmetrinen rajaus keskellä ei riipu siitä.
     """
     wx, wy, ww, wh = window
     scale = panel.w / ww
@@ -156,8 +157,8 @@ def fcp_panel(panel: Panel, window: tuple[float, float, float, float],
     dest_y = project_h / 2 - cy
     unit = project_h / 100.0
     return FcpPanel(
-        left=wx / src_w * 100,
-        right=(src_w - wx - ww) / src_w * 100,
+        left=wx / src_h * 100,
+        right=(src_w - wx - ww) / src_h * 100,
         top=wy / src_h * 100,
         bottom=(src_h - wy - wh) / src_h * 100,
         scale=scale,
