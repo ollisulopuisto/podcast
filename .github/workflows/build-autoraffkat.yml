@@ -260,6 +260,22 @@ jobs:
       - name: Build Windows app
         run: uv run python scripts/build_app.py --clean
 
+      # Windows-paketti on console=False: virrat ovat None ellei lapsi kytke
+      # niitä takaisin. Anna liitännäisikkunan lapselle tehtävä putkessa;
+      # tyhjä polku antaa «failed»-rivin, ei ikkunaa.
+      - name: Smoke test frozen plug-in editor child (piped streams)
+        shell: pwsh
+        working-directory: apps/autoraffkat
+        run: |
+          '{"plugin_path": "", "params": {}, "state": null}' | Set-Content -NoNewline job.json
+          $p = Start-Process -FilePath dist/autoraffkat/autoraffkat.exe -ArgumentList '--plugin-editor' -RedirectStandardInput job.json -RedirectStandardOutput out.txt -RedirectStandardError err.txt -Wait -PassThru
+          Write-Host "exit code $($p.ExitCode)"
+          Get-Content out.txt
+          Get-Content err.txt
+          if ($p.ExitCode -ne 1) { throw "expected exit code 1 from the failed job, got $($p.ExitCode)" }
+          $line = (Get-Content out.txt | Select-Object -First 1) | ConvertFrom-Json
+          if ($line.kind -ne 'failed') { throw "child did not answer with a failed line" }
+
       - name: Report what is inside
         shell: pwsh
         run: |
