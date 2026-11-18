@@ -139,6 +139,26 @@ jobs:
           echo "$out"
           echo "$out" | grep -q '"kind": "failed"' || { echo "::error::--plugin-editor child did not answer"; exit 1; }
 
+      - name: Hardened-runtime check (flags, then re-sign a copy with runtime)
+        env:
+          APPLE_SIGNING_IDENTITY: "Developer ID Application: Olli Sulopuisto (LWSR8T5392)"
+        run: |
+          codesign -dvv dist/autoraffkat.app 2>&1 | grep -i "flags\|identifier\|Authority\|Runtime" || true
+          codesign -dvv dist/autoraffkat.app/Contents/MacOS/autoraffkat 2>&1 | grep -i "flags\|Runtime" || true
+          rm -rf "$RUNNER_TEMP/hr.app"
+          ditto dist/autoraffkat.app "$RUNNER_TEMP/hr.app"
+          ENT=""
+          if [ -f autoraffkat.entitlements ]; then ENT="--entitlements autoraffkat.entitlements"; fi
+          echo "re-signing copy with --options runtime $ENT"
+          codesign --force --deep --options runtime --timestamp $ENT --sign "$APPLE_SIGNING_IDENTITY" "$RUNNER_TEMP/hr.app"
+          codesign -dvv "$RUNNER_TEMP/hr.app" 2>&1 | grep -i "flags" || true
+          set +e
+          "$RUNNER_TEMP/hr.app/Contents/MacOS/autoraffkat" --selftest-jit
+          rc=$?
+          echo "HARDENED_SELFTEST_RC=$rc"
+          if [ -n "$ENT" ]; then exit $rc; fi
+          exit 0
+
       # Arkkitehtuuri nimeen, jotta Releaseen mahtuu myöhemmin toinenkin.
       - name: Name the image by architecture
         run: mv dist/autoraffkat.dmg "dist/autoraffkat-${{ steps.inside.outputs.arch }}.dmg"
