@@ -59,24 +59,10 @@ TAIL_S = 2.8
 #: kohinaisilla kohdilla (END t 6,2–7,1) MID-pohjan samat pisteet 9 s
 #: myöhemmin. Ei raised-cosine eikä suora: alussa jyrkempi.
 RISE = (
-    (0.0, -67.6),
-    (0.5, -52.9),
-    (1.0, -48.0),
-    (1.5, -43.6),
-    (2.0, -39.1),
-    (2.5, -35.2),
-    (3.0, -31.4),
-    (3.5, -28.0),
-    (4.0, -24.6),
-    (4.5, -21.6),
-    (5.0, -18.9),
-    (5.5, -16.8),
-    (6.0, -14.8),
-    (6.5, -12.6),
-    (7.0, -10.7),
-    (7.5, -6.8),
-    (8.0, -2.9),
-    (8.5, 0.0),
+    (0.0, -67.6), (0.5, -52.9), (1.0, -48.0), (1.5, -43.6), (2.0, -39.1),
+    (2.5, -35.2), (3.0, -31.4), (3.5, -28.0), (4.0, -24.6), (4.5, -21.6),
+    (5.0, -18.9), (5.5, -16.8), (6.0, -14.8), (6.5, -12.6), (7.0, -10.7),
+    (7.5, -6.8), (8.0, -2.9), (8.5, 0.0),
 )
 #: Kylmän alun nousu, (s, dB tasanteeseen nähden), tasanne 10 s kohdalla.
 #: Abletonilla tehty pohja (vikis s12 ja vieras.als, sokkotesti vst s13e03:
@@ -86,14 +72,8 @@ RISE = (
 COLD_RISE = ((0.0, COLD_OPEN_UNDER_DB), (8.0, -8.0), (10.0, 0.0))
 #: Lasku tasanteelta. END-pohja t 13,1–16,2 s. Kiihtyy loppua kohti.
 FALL = (
-    (0.0, 0.0),
-    (0.4, -3.6),
-    (0.9, -6.7),
-    (1.4, -9.8),
-    (1.9, -14.7),
-    (2.4, -22.4),
-    (2.9, -32.3),
-    (3.1, -37.1),
+    (0.0, 0.0), (0.4, -3.6), (0.9, -6.7), (1.4, -9.8), (1.9, -14.7),
+    (2.4, -22.4), (2.9, -32.3), (3.1, -37.1),
 )
 #: Painuminen juontajan alle. INTRO-pohja t 23,9–25,7 s tasoitettuna;
 #: alkuperäinen on transienttien kohdalla ±1,5 dB kohinainen.
@@ -147,7 +127,8 @@ def curve(start: float, end: float, speech, cold_open: bool = False):
 
     limit = end - END_MARGIN_S
     tail = (
-        next_word is not None and limit - next_word >= DROP[-1][0] + TAIL_S + FALL[-1][0]
+        next_word is not None
+        and limit - next_word >= DROP[-1][0] + TAIL_S + FALL[-1][0]
     )
     if tail:
         drop_from = next_word - DROP_LEAD_S
@@ -162,18 +143,22 @@ def curve(start: float, end: float, speech, cold_open: bool = False):
         fall_scale = (fall_end - fall_from) / FALL[-1][0]
         floor = 0.0
 
-    # Vectorized over the whole query grid instead of one linear-scan
-    # _interp() per time point. Each shape is converted to arrays once and
-    # every point is looked up with np.interp in C, which is ~2.3-2.9x faster
-    # on a ~100 s bed (~2000 points; measured 1.707 -> 0.589 ms) and
-    # bit-identical to the scalar version (np.interp matches the left/right
-    # clamp and knot behaviour of the old pairwise scan).
+    # Evaluate the scalar branches over the query grid, keeping their priority.
     count = int((end - start) / STEP_S) + 1
     tt_rel = np.arange(count, dtype=np.float64) * STEP_S
     tt = start + tt_rel  # absolute time, like level(start + i * STEP_S)
 
     def interp(shape_t, shape_d, x):
-        return np.interp(x, shape_t, shape_d)
+        # Preserve the scalar multiply-then-divide order. np.interp computes
+        # slopes first, which can change the public two-decimal result.
+        right = np.searchsorted(shape_t, x, side="left").clip(1, len(shape_t) - 1)
+        t0, t1 = shape_t[right - 1], shape_t[right]
+        d0, d1 = shape_d[right - 1], shape_d[right]
+        values = d0 + (d1 - d0) * (x - t0) / (t1 - t0)
+        return np.where(
+            x <= shape_t[0], shape_d[0],
+            np.where(x > shape_t[-1], shape_d[-1], values),
+        )
 
     rise_t = np.array([a for a, _ in rise], dtype=np.float64)
     rise_d = np.array([b for _, b in rise], dtype=np.float64)
@@ -199,13 +184,13 @@ def curve(start: float, end: float, speech, cold_open: bool = False):
         if drop_region.any():
             level[drop_region] = interp(drop_t, drop_d, tt[drop_region] - drop_from)
 
-    # t >= fall_from: FALL ramp (stretched by fall_scale), beyond the last
+    # After both plateau and fall_from: FALL ramp, beyond the last
     # fall point the bed goes to digital silence.
-    fall_region = tt >= fall_from
+    fall_region = (tt >= plateau) & (tt >= fall_from)
     if fall_region.any():
-        ts = (tt[fall_region] - fall_from) / fall_scale
-        fallen = floor + interp(fall_t, fall_d, ts)
-        fallen[ts > fall_t[-1]] = SILENCE_DB
+        ts = tt[fall_region] - fall_from
+        fallen = floor + interp(fall_t * fall_scale, fall_d, ts)
+        fallen[ts > fall_t[-1] * fall_scale] = SILENCE_DB
         level[fall_region] = fallen
 
     # Everything left (plateau with no drop, before the fall) is already 0.0.
