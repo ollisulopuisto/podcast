@@ -123,41 +123,32 @@ jobs:
 
       # Käynnistä allekirjoitettu paketti ja aja ääniketjun JIT-polku.
       # Hardened runtime tappaa llvmlite-varauksen ilman JIT-oikeuksia
-      # (EXC_BAD_ACCESS, CODESIGNING, Invalid Page), eikä mikään yllä oleva
-      # vaihe huomaa sitä.
-      - name: Smoke test signed app (numba JIT)
+      # (EXC_BAD_ACCESS, CODESIGNING, Invalid Page). Huom: GitHubin ajurissa
+      # pakotus ei pure (sama savutesti meni läpi myös ilman oikeuksia, ajo
+      # 44357183846), joten tämä askel todistaa että polku toimii pakatussa
+      # sovelluksessa, ja alla oleva tarkistus että oikeudet ovat allekirjoituksessa.
+      - name: Signed app carries the JIT entitlements
         run: |
-          ents=$(codesign -d --entitlements :- dist/autoraffkat.app 2>/dev/null || true)
-          echo "$ents"
-          for k in allow-jit allow-unsigned-executable-memory disable-library-validation; do
-            echo "$ents" | grep -q "com.apple.security.cs.$k" || { echo "::error::entitlement $k missing from signed app"; exit 1; }
+          set -euo pipefail
+          ents=$(codesign -d --entitlements :- dist/autoraffkat.app 2>/dev/null)
+          for k in allow-jit allow-unsigned-executable-memory; do
+            printf '%s' "$ents" | grep -q "com.apple.security.cs.$k" || { echo "::error::entitlement $k missing from signed app"; exit 1; }
           done
-          dist/autoraffkat.app/Contents/MacOS/autoraffkat --selftest-jit
+
+      - name: Smoke test frozen app (numba JIT, plug-in editor child)
+        run: |
+          set -euo pipefail
+          app=dist/autoraffkat.app/Contents/MacOS/autoraffkat
+          "$app" --selftest-jit
           # Liitännäisikkunan lapsi: pakattu binääri ei saa antaa `-m`:ää
           # omalle komentoriville. Tyhjä polku antaa «failed»-rivin, ei ikkunaa.
-          out=$(echo '{"plugin_path": "", "params": {}, "state": null}' | dist/autoraffkat.app/Contents/MacOS/autoraffkat --plugin-editor || true)
-          echo "$out"
-          echo "$out" | grep -q '"kind": "failed"' || { echo "::error::--plugin-editor child did not answer"; exit 1; }
-
-      - name: Hardened-runtime check (flags, then re-sign a copy with runtime)
-        env:
-          APPLE_SIGNING_IDENTITY: "Developer ID Application: Olli Sulopuisto (LWSR8T5392)"
-        run: |
-          codesign -dvv dist/autoraffkat.app 2>&1 | grep -i "flags\|identifier\|Authority\|Runtime" || true
-          codesign -dvv dist/autoraffkat.app/Contents/MacOS/autoraffkat 2>&1 | grep -i "flags\|Runtime" || true
-          rm -rf "$RUNNER_TEMP/hr.app"
-          ditto dist/autoraffkat.app "$RUNNER_TEMP/hr.app"
-          ENT=""
-          if [ -f autoraffkat.entitlements ]; then ENT="--entitlements autoraffkat.entitlements"; fi
-          echo "re-signing copy with --options runtime $ENT"
-          codesign --force --deep --options runtime --timestamp $ENT --sign "$APPLE_SIGNING_IDENTITY" "$RUNNER_TEMP/hr.app"
-          codesign -dvv "$RUNNER_TEMP/hr.app" 2>&1 | grep -i "flags" || true
           set +e
-          "$RUNNER_TEMP/hr.app/Contents/MacOS/autoraffkat" --selftest-jit
+          out=$(echo '{"plugin_path": "", "params": {}, "state": null}' | "$app" --plugin-editor)
           rc=$?
-          echo "HARDENED_SELFTEST_RC=$rc"
-          if [ -n "$ENT" ]; then exit $rc; fi
-          exit 0
+          set -e
+          echo "$out"
+          test "$rc" -eq 1
+          printf '%s\n' "$out" | head -n1 | python3 -c 'import json,sys; m=json.loads(sys.stdin.readline()); assert m["kind"]=="failed", m'
 
       # Arkkitehtuuri nimeen, jotta Releaseen mahtuu myöhemmin toinenkin.
       - name: Name the image by architecture

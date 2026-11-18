@@ -4,15 +4,12 @@
 <dict>
   <!-- Ääniketju kääntää silmukkansa numballa. llvmlite varaa suoritettavaa
        muistia (MAP_JIT), ja hardened runtime tappaa prosessin
-       (CODESIGNING, Invalid Page) ilman näitä kahta. -->
+       (CODESIGNING, Invalid Page) ilman näitä kahta.
+       Tarkoituksella ei disable-library-validation: kolmannen osapuolen
+       liitännäisen lataus voi tarvita sitä, mutta sitä ei ole todistettu. -->
   <key>com.apple.security.cs.allow-jit</key>
   <true/>
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-  <true/>
-  <!-- Niputetut dylibit (libllvmlite, pedalboard, numpy) ovat PyInstallerin
-       allekirjoittamia samalla tunnuksella, mutta kirjastovalidointi
-       kaatuu helposti kun ne ladataan ctypesillä. -->
-  <key>com.apple.security.cs.disable-library-validation</key>
   <true/>
 </dict>
 </plist>
