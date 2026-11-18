@@ -447,6 +447,90 @@ def test_run_retries_on_connection_lost_and_succeeds(monkeypatch):
     assert any("yritetään uudelleen" in line for line in logs)
 
 
+def test_run_retries_on_reply_timeout_and_succeeds(monkeypatch):
+    """Ydinasiakkaan 10 sekunnin vastausodotus (käyttäjäraportti 2026-11-18):
+    yksi hidas vastaus Googlen päästä ei saa lopettaa ajoa - sama
+    uudelleenyritys kuin yhteyskatkolla."""
+    import io
+
+    attempts = 0
+
+    class SlowKernelProcess:
+        def __init__(self, cmd, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            self.stdin = io.StringIO()
+            if attempts == 1:
+                self.stdout = ["TimeoutError: Timeout waiting for reply\n"]
+                self._code = 1
+            else:
+                self.stdout = ["Success\n"]
+                self._code = 0
+
+        def wait(self):
+            return self._code
+
+    monkeypatch.setattr(subprocess, "Popen", SlowKernelProcess)
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    logs = []
+    code = driver.run(
+        [["colab", "exec", "-s", "whisper", "ls /content"]], logs.append
+    )
+    assert code == 0
+    assert attempts == 2
+    assert any("yritetään uudelleen" in line for line in logs)
+
+
+def test_only_exec_commands_get_the_raised_reply_timeout(monkeypatch):
+    """Korotettu REQUEST_TIMEOUT koskee vain vastauksia odottavia
+    exec-komentoja: istunnon hallinta ja muut komennot pitävät
+    ydinasiakkaan 10 sekunnin oletuksen, jotta jumiutunut käynnistys tai
+    HTTP-pyyntö ei odota kahta minuuttia (Devin-arvio 2026-11-18)."""
+    import io
+
+    envs = []
+
+    class OkProcess:
+        def __init__(self, cmd, **kwargs):
+            envs.append(kwargs["env"])
+            self.stdin = io.StringIO()
+            self.stdout = ["ok\n"]
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", OkProcess)
+    logs = []
+    driver.run(
+        [["colab", "exec", "-s", "whisper", "ls /content"], ["colab", "ls"]],
+        logs.append,
+    )
+    assert envs[0]["REQUEST_TIMEOUT"] == "120"
+    assert "REQUEST_TIMEOUT" not in envs[1]
+
+
+def test_run_reports_actionable_hint_on_persistent_reply_timeout(monkeypatch):
+    import io
+
+    class SlowKernelProcess:
+        def __init__(self, cmd, **kwargs):
+            self.stdin = io.StringIO()
+            self.stdout = ["TimeoutError: Timeout waiting for reply\n"]
+
+        def wait(self):
+            return 1
+
+    monkeypatch.setattr(subprocess, "Popen", SlowKernelProcess)
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    logs = []
+    code = driver.run(
+        [["colab", "exec", "-s", "whisper", "ls /content"]], logs.append
+    )
+    assert code != 0
+    assert any("Timeout waiting for reply" in line for line in logs)
+    assert any("colab stop -s whisper" in line for line in logs)
+
+
 def test_run_reports_actionable_hint_on_persistent_connection_lost(monkeypatch):
     import io
 
