@@ -3323,7 +3323,8 @@ function renderStatic() {
      esikatselun rulla ja veto kerrottiin vasta lähennetyn tilan rivillä,
      eli vasta kun ne oli jo löydetty. */
 const SHORTCUTS = [
-  { id: 'undo', group: 'history', label: 'history.undo', combos: [{ mod: true, key: 'z' }],
+  { id: 'undo', group: 'history', label: 'history.undo',
+    combos: [{ mod: true, shift: false, key: 'z' }],
     scope: ['page'], control: 'history-undo', text: 'history.undo', run: () => moveHistory('undo') },
   { id: 'redo', group: 'history', label: 'history.redo', combos: [{ mod: true, shift: true, key: 'z' }],
     scope: ['page'], control: 'history-redo', text: 'history.redo', run: () => moveHistory('redo') },
@@ -3332,6 +3333,25 @@ const SHORTCUTS = [
   { id: 'export', group: 'file', label: 'keys.export', combos: [{ mod: true, key: 'e' }],
     scope: ['page', 'sheet'], control: 'export', text: 'app.export',
     run: () => exportXml() },
+  { id: 'openMedia', group: 'file', label: 'keys.openMedia',
+    combos: [{ mod: true, shift: true, key: 'i' }],
+    scope: ['page', 'sheet'], control: 'open-media', text: 'app.openMedia',
+    run: () => pressNative('open-media') },
+  { id: 'reload', group: 'file', label: 'keys.reload',
+    combos: [{ mod: true, shift: false, key: 'r' }],
+    scope: ['page', 'sheet'], control: 'reload', text: 'app.reload',
+    run: () => pressNative('reload') },
+  { id: 'trailer', group: 'file', label: 'keys.trailer',
+    combos: [{ mod: true, shift: true, key: 't' }],
+    scope: ['page', 'sheet'], run: () => pressNative('trailer') },
+  { id: 'mix', group: 'output', label: 'keys.mix', combos: [{ mod: true, key: 'Enter' }],
+    scope: ['page'], run: () => pressNative('mix') },
+  { id: 'render', group: 'output', label: 'keys.render',
+    combos: [{ mod: true, shift: true, key: 'r' }],
+    scope: ['page'], control: 'render', text: 'app.render', run: () => pressNative('render') },
+  { id: 'renderStop', group: 'output', label: 'keys.renderStop',
+    combos: [{ mod: true, key: '.' }],
+    scope: ['page'], run: () => pressNative('render-stop') },
   { id: 'zoom', group: 'preview', label: 'keys.zoom', pointer: 'keys.wheel', scope: [] },
   { id: 'pan', group: 'preview', label: 'keys.pan', pointer: 'keys.drag', scope: [] },
   { id: 'whole', group: 'preview', label: 'keys.whole', pointer: 'keys.dblclick', scope: [] },
@@ -3343,7 +3363,7 @@ const SHORTCUTS = [
 ];
 
 /* Ryhmät tehtävän mukaan ja tässä järjestyksessä ohjeikkunaan. */
-const SHORTCUT_GROUPS = ['file', 'history', 'preview', 'help'];
+const SHORTCUT_GROUPS = ['file', 'history', 'output', 'preview', 'help'];
 
 let shortcutReturn = null;      // kohdistus ennen ohjeikkunan avausta
 
@@ -3367,14 +3387,17 @@ function comboText(combo, mac) {
   else if (key === 'Escape') key = 'Esc';
   else if (key.length === 1) key = key.toUpperCase();
   if (!combo.mod) return key;
-  return mac ? `⌘${key}` : `Ctrl+${key}`;
+  if (key === 'Enter') key = mac ? '↩' : 'Enter';
+  if (mac) return `${combo.shift ? '⇧' : ''}⌘${key}`;
+  return `Ctrl+${combo.shift ? 'Shift+' : ''}${key}`;
 }
 
 /* aria-keyshortcuts: molemmat muuntimet, koska molemmat toimivat. */
 function ariaKeys(entry) {
   return (entry.combos || []).map((c) => {
     const key = c.key === ' ' ? 'Space' : (c.key.length === 1 ? c.key.toUpperCase() : c.key);
-    return c.mod ? `Meta+${key} Control+${key}` : key;
+    const shift = c.shift ? 'Shift+' : '';
+    return c.mod ? `Meta+${shift}${key} Control+${shift}${key}` : key;
   }).join(' ');
 }
 
@@ -3385,6 +3408,9 @@ function matchesCombo(combo, e) {
   const mod = !!(e.metaKey || e.ctrlKey);
   if (!!combo.mod !== mod) return false;
   if (!combo.mod && e.altKey) return false;
+  /* Vaihto ratkaisee vain kun rivi sanoo sen: `shift: true` vaatii sen, `false` kieltää
+     sen (⌘R lataa uudestaan, ⇧⌘R renderöi), ja ilman kenttää se ei ratkaise. */
+  if (combo.mod && combo.shift !== undefined && !!combo.shift !== !!e.shiftKey) return false;
   return String(e.key || '').toLowerCase() === combo.key.toLowerCase();
 }
 
@@ -3469,6 +3495,96 @@ function restoreShortcutFocus() {
   if (back && back.focus) back.focus();
 }
 
+/* ---------------------------------------------------------- natiivi valikko */
+
+/* macOS-valikkorivi (native_menu.js): sama toiminto kuin napilla ja näppäimellä.
+   Komento on napin id, tai erikoiskomento (`mix`, `trailer`, `export-dest`,
+   `history-goto`, `shortcuts`). Käytettävyys luetaan napista itsestään, joten valikko ei
+   voi sallia mitä nappi ei salli. */
+function nativeButton(cmd) {
+  if (cmd === 'mix') {
+    const wrap = $('mix-run');
+    return wrap && wrap.querySelector ? wrap.querySelector('button') : null;
+  }
+  return $(cmd);
+}
+
+function nativeUsable(cmd, arg) {
+  if (cmd === 'trailer') return true;
+  if (cmd === 'export-dest') return !!state && (arg === 'fcp' || arg === 'resolve');
+  if (cmd === 'history-goto') return !!state;
+  const el = nativeButton(cmd);
+  return !!el && !el.disabled && !(el.classList && el.classList.contains('hidden'));
+}
+
+/* Trailer-sivulla ei ole `__autoraffkatNativeRun`ia, mutta natiivi valikko säilyy
+   sivun vaihdossa. Ennen siirtymää valikon kohdat kytketään pois käytöstä, jotta ne
+   eivät jää päälle ilman käsittelijää; takaisin tullessa `startNativeMenu` piirtää ne. */
+function nativeDisable() {
+  const api = typeof window !== 'undefined' && window.pywebview ? window.pywebview.api : null;
+  if (!api || typeof api.set_native_menu !== 'function' || typeof nativeMenuSpec !== 'function') {
+    return;
+  }
+  Promise.resolve(api.set_native_menu(nativeMenuSpec({ ...nativeEnv(), usable: () => false })))
+    .catch(() => {});
+}
+
+function nativeRun(cmd, arg) {
+  if (cmd === 'trailer') { nativeDisable(); window.location.href = '/trailer'; }
+  else if (cmd === 'export-dest') setExportDest(arg);
+  else if (cmd === 'history-goto') moveHistory('goto', arg);
+  else nativeButton(cmd).click();
+}
+
+/* Pikanäppäinrivin `run` käyttää samaa polkua kuin valikko. */
+function pressNative(cmd) {
+  if (nativeUsable(cmd)) nativeRun(cmd);
+}
+
+function nativeEnv() {
+  return {
+    T,
+    keysText: (id) => {
+      const row = SHORTCUTS.find((s) => s.id === id);
+      return row && row.combos ? comboText(row.combos[0], onMac()) : '';
+    },
+    usable: nativeUsable,
+    checked: (cmd, arg) => cmd === 'export-dest'
+      && (state && state.export_dialect === 'resolve' ? 'resolve' : 'fcp') === arg,
+    history: () => {
+      const select = $('history-branches');
+      return select ? Array.from(select.options || []).map((option) => ({
+        id: option.value,
+        label: String(option.textContent).replace(/\s*✓$/, ''),
+        current: option.value === select.value,
+      })) : [];
+    },
+    sheetOpen: shortcutsOpen,
+    run: nativeRun,
+  };
+}
+
+/* Käynnistyksessä (boot): native_menu.js on ladattu vasta app.js:n kanssa, ja pienet
+   testimittarit lataavat pelkän app.js:n ja leikkaavat boot():n pois. */
+function startNativeMenu() {
+  if (typeof createNativeMenuSync !== 'function') return;
+  const nativeSync = createNativeMenuSync({
+    getSpec: () => nativeMenuSpec(nativeEnv()),
+    getApi: () => (typeof window !== 'undefined' && window.pywebview
+      ? window.pywebview.api : null),
+    hasFocus: () => typeof document.hasFocus !== 'function' || document.hasFocus(),
+  });
+
+  /* Valikko tulee Pythonilta takaisin tänne (`gui.py`); ikkuna, joka sai valinnan, ajaa sen. */
+  window.__autoraffkatNativeRun = (choice) => runNativeChoice(choice, nativeEnv());
+
+  /* Pidetään valikko ajan tasalla kyselemällä: nappien tila muuttuu monessa paikassa
+     (työ alkaa, tiedostot puuttuvat, historia liikkuu), ja kysely lähettää vain muutoksen. */
+  setInterval(() => nativeSync.push(false), 750);
+  window.addEventListener('focus', () => nativeSync.push(true));
+  window.addEventListener('pywebviewready', () => nativeSync.push(true));
+}
+
 function toggleShortcuts() {
   if (shortcutsOpen()) closeShortcuts(); else openShortcuts();
 }
@@ -3495,6 +3611,15 @@ function trapFocus(e) {
 
 /* Näppäin näkyviin: <kbd>-vihje sen painikkeen kylkeen jonka se laukaisee,
    työkaluvihje («Vie XML (⌘E)») ja ruudunlukijalle aria-keyshortcuts. */
+/* Vientikohteen vaihto: radionappi ja natiivi valikko kutsuvat tätä. */
+function setExportDest(value) {
+  state.export_dialect = value;
+  renderExportDest();
+  paintShortcutControls();
+  /* Tallennetaan heti: valinta ei saa palata Final Cutiin latauksessa. */
+  send().catch((err) => banner(err.message, true));
+}
+
 /* Vientikohde: Final Cut (oletus) tai Resolve. Valinta lähtee mukana
    vientipyynnössä ja palvelin muistaa sen projektille. */
 function renderExportDest() {
@@ -3510,13 +3635,7 @@ function renderExportDest() {
     b.setAttribute('role', 'radio');
     b.setAttribute('aria-checked', String(value === current));
     b.textContent = T(`export.dest.${value}`);
-    b.addEventListener('click', () => {
-      state.export_dialect = value;
-      renderExportDest();
-      paintShortcutControls();
-      /* Tallennetaan heti: valinta ei saa palata Final Cutiin latauksessa. */
-      send().catch((err) => banner(err.message, true));
-    });
+    b.addEventListener('click', () => setExportDest(value));
     host.append(b);
   });
   if (current === 'resolve') {
@@ -4101,6 +4220,7 @@ async function boot() {
   setLang(state.language || 'fi');
   renderStatic();
   renderLanguage();
+  startNativeMenu();
   if (state.error) { banner(state.error, true); return; }
   renderHeader();
   renderTracks();

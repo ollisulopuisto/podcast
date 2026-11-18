@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import socket
 import sys
 import threading
@@ -10,8 +12,10 @@ from typing import Any
 
 import uvicorn
 
-from . import paths
+from . import native_menu, paths
 from .server.app import AppState, create_app
+
+log = logging.getLogger("autoraffkat.gui")
 
 #: Valikkorivin, Dockin ja ikkunan nimi. Sama merkkijono kuin specin
 #: ``CFBundleName``, jotta pakattu ja lähteestä ajettu näyttävät samalta.
@@ -102,6 +106,39 @@ class DesktopApi:
             file_types=file_types,
         )
         return list(result) if result else []
+
+    def set_native_menu(self, spec: Any) -> bool:
+        """Sivun valikko macOS-valikkorivinä (``native_menu``). Viimeisenä kutsunut
+        ikkuna omistaa rivin; sivu kutsuu vain kohdistuksen ollessa sillä. Muualla
+        kuin macOS:llä False."""
+        return native_menu.install(spec, self._run_native_command)
+
+    def _run_native_command(self, choice: dict) -> None:
+        """Natiivi valikon kohta valittiin: komento ajetaan tämän ikkunan sivulla.
+        Omassa säikeessään, koska ``evaluate_js`` odottaa sivua eikä saa odottaa
+        pääsäikeessä."""
+        window = self.window
+        if window is None or not isinstance(choice, dict):
+            return
+        # Vain ``id`` ja ``arg`` merkkijonoina ja rajattuina: valikon speksi on jo
+        # rajattu, mutta sivulle menevä komento ei saa kasvaa rajatta.
+        clean: dict[str, str] = {}
+        for key in ("id", "arg"):
+            value = choice.get(key)
+            if isinstance(value, str):
+                clean[key] = value[: native_menu.MAX_LABEL]
+        if "id" not in clean:
+            return
+        run = "window.__autoraffkatNativeRun"
+        script = f"{run} && {run}({json.dumps(clean)})"
+
+        def go() -> None:
+            try:
+                window.evaluate_js(script)
+            except Exception as e:  # ikkuna on voinut sulkeutua
+                log.debug("natiivin valikon komento: %s", e)
+
+        threading.Thread(target=go, daemon=True).start()
 
     def open_file_dialog(self) -> str | None:
         """Avaa natiivin tiedostonvalintadialogin."""

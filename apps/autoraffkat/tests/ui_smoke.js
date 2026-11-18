@@ -102,6 +102,7 @@ function makeElement(tag) {
       return new Proxy({}, { get: () => () => {}, set: () => true });
     },
     focus() {},
+    click() { this.clicks = (this.clicks || 0) + 1; },
     /* Oikeassa <input>:issä on select(); ilman tätä kentän
        kohdistuskäsittelijä kaatuisi tyngässä eikä oikeassa selaimessa. */
     select() {},
@@ -239,6 +240,7 @@ const context = {
   window: {
     addEventListener(type, fn) { (windowHandlers[type] = windowHandlers[type] || []).push(fn); },
     devicePixelRatio: 2,
+    location: { href: '' },
   },
   getComputedStyle: () => ({ getPropertyValue: () => '#123456' }),
   fetch: async (url, opts) => {
@@ -270,7 +272,7 @@ const context = {
 context.globalThis = context;
 vm.createContext(context);
 
-for (const name of ['i18n.js', 'sync_timeline.js', 'app.js']) {
+for (const name of ['i18n.js', 'sync_timeline.js', 'native_menu.js', 'app.js']) {
   vm.runInContext(fs.readFileSync(path.join(staticDir, name), 'utf8'), context,
                   { filename: name });
 }
@@ -831,6 +833,33 @@ async function asyncPaths() {
     press({ key: '?' });
     press({ key: 'Escape' });
     if (context.shortcutsOpen()) throw new Error('Esc ei sulkenut ohjetta');
+  });
+  /* Natiivivalikon sillat oikeilla napeilla ja tilalla (Devin-arvio 2026-11-18). */
+  step('natiivivalikko', () => {
+    const sent = [];
+    context.window.pywebview = { api: { set_native_menu: (spec) => { sent.push(spec); return true; } } };
+    const env = context.nativeEnv();
+    const spec = context.nativeMenuSpec(env);
+    const flat = (items) => items.flatMap((i) => (i.items ? flat(i.items) : [i]));
+    const items = spec.flatMap((m) => flat(m.items));
+    if (!items.some((i) => i.id === 'export-dest' && i.checked)) {
+      throw new Error('vientikohde ei näy valittuna');
+    }
+    for (const id of ['open', 'export', 'mix', 'render', 'trailer']) {
+      const item = items.find((i) => i.id === id);
+      if (!item) throw new Error(`valikosta puuttuu ${id}`);
+      if (item.enabled !== context.nativeUsable(id)) throw new Error(`${id}: tila ei vastaa nappia`);
+    }
+    context.pressNative('open');
+    if (!context.runNativeChoice({ id: 'export-dest', arg: 'resolve' }, context.nativeEnv())) {
+      throw new Error('vientikohteen valinta ei mennyt läpi');
+    }
+    context.nativeRun('trailer');
+    const last = sent[sent.length - 1];
+    if (!last || !last.flatMap((m) => flat(m.items)).every((i) => i.kind !== 'item' || !i.enabled)) {
+      throw new Error('trailer-siirtymä jätti valikon päälle');
+    }
+    context.nativeButton('mix');
   });
   step('watchMix', () => context.watchMix());
   /* watchProgress haarautuu sen mukaan onko laskenta valmis. */
