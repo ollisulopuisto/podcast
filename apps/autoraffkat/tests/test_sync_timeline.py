@@ -37,8 +37,10 @@ vm.runInContext(`
   const est = { shift_seconds: 1.0, correlation: 0.9 };
   out.status = [
     syncRowStatus(est, 1.0, true), syncRowStatus({ shift_seconds: 1.0, correlation: 0.2 }, 1.0, true),
-    syncRowStatus(est, 2.0, true), syncRowStatus(null, 0, true), syncRowStatus(null, 3, true),
-    syncRowStatus(est, 1.0, false),
+    syncRowStatus(est, 2.0, true), syncRowStatus({ shift_seconds: null }, 0, true),
+    syncRowStatus({ shift_seconds: null }, 3, true), syncRowStatus(est, 1.0, false),
+    syncRowStatus(undefined, 0, true), syncRowStatus(undefined, 2.5, false, true),
+    syncRowStatus(est, 1.0, true, true),
   ];
 `, ctx);
 console.log(JSON.stringify(ctx.out));
@@ -88,7 +90,12 @@ def test_offset_label_uses_language_decimal_and_sign(result):
 
 @needs_node
 def test_row_status_classification(result):
-    assert result["status"] == ["good", "check", "manual", "notFound", "manual", "none"]
+    assert result["status"] == [
+        "good", "check", "manual", "notFound", "manual", "none",
+        "none",    # arvion jälkeen lisätty tiedosto: ei tietuetta, ei "ei löytynyt"
+        "manual",  # käsin syötetty siirto ennen arviota
+        "manual",  # käsin muokkaus voittaa myös tuoreen arvion
+    ]
 
 
 def test_timeline_container_exists_and_strings_in_both_languages():
@@ -107,3 +114,12 @@ def test_axis_covers_offsets_not_file_length(result):
     hour = result["hour"]
     assert hour["span"] < 30
     assert hour["items"][1]["left"] - hour["items"][0]["left"] > 50
+
+
+def test_timeline_container_keeps_children_readable_to_screen_readers():
+    """role="img" piilottaisi tiedostonimet ja tilat ruudunlukijalta
+    (Devin-arvio 2026-11-18); ryhmä säilyttää ne."""
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    line = next(row for row in html.splitlines() if 'id="media-sync-timeline"' in row)
+    assert 'role="group"' in line
+    assert 'role="img"' not in line

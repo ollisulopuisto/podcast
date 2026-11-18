@@ -3750,9 +3750,14 @@ function syncOffsetLabel(value) {
   return (LANG === 'fi' ? text.replace('.', ',') : text) + ' s';
 }
 
-function syncRowStatus(estimate, value, resultReady) {
-  if (!resultReady) return 'none';
-  if (!estimate || estimate.shift_seconds === null || estimate.shift_seconds === undefined) {
+/* Käsin muokattu siirto voittaa muut tilat, ja puuttuva arviotietue (uusi
+   tiedosto arvion jälkeen) on "ei arvioitu", ei "ei löytynyt": vain
+   olemassa oleva tietue, jonka siirto on null, kertoo epäonnistuneesta
+   hausta (Devin-arvio 2026-11-18). */
+function syncRowStatus(estimate, value, resultReady, edited) {
+  if (edited) return 'manual';
+  if (!resultReady || !estimate) return 'none';
+  if (estimate.shift_seconds === null || estimate.shift_seconds === undefined) {
     return Number(value) === 0 ? 'notFound' : 'manual';
   }
   if (Math.abs(Number(estimate.shift_seconds) - Number(value)) > 0.005) return 'manual';
@@ -3779,7 +3784,8 @@ function renderSyncTimeline() {
       const estimate = ready && mediaImport.result.tracks.find((item) => item.path === source.path);
       rows.push({ path: source.path, name: source.name, duration: source.duration,
                   shift: value, reference: false,
-                  status: syncRowStatus(estimate, value, ready) });
+                  status: syncRowStatus(estimate, value, ready,
+                                        !!(mediaImport.edited && mediaImport.edited[source.path])) });
     });
   const layout = syncTimelineLayout(rows);
   box.setAttribute('aria-label', T('sync.timelineAria', {
@@ -3865,7 +3871,11 @@ function renderMediaSync() {
     shiftLabel.textContent = T('sync.offset');
     const input = document.createElement('input');
     input.type = 'number'; input.step = '0.01'; input.dataset.mediaPath = source.path;
-    input.addEventListener('input', renderSyncTimeline);
+    input.addEventListener('input', () => {
+      if (!mediaImport.edited) mediaImport.edited = {};
+      mediaImport.edited[source.path] = true;
+      renderSyncTimeline();
+    });
     input.value = estimate && estimate.shift_seconds !== null
       ? Number(estimate.shift_seconds).toFixed(2) : '0';
     shiftLabel.append(input);
@@ -3949,6 +3959,7 @@ async function estimateMediaSync() {
            valinnan, joten myöhästyvää tulosta ei enää liitetä mihinkään. */
         if (mediaImport) {
           mediaImport.result = job.result;
+          mediaImport.edited = {};
           renderMediaSync();
         }
         break;
