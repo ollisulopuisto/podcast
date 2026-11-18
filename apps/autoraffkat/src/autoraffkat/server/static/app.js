@@ -3792,10 +3792,21 @@ async function estimateMediaSync() {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'Estimate failed.');
+    let pollFailures = 0;
     while (true) {
       await new Promise((resolve) => setTimeout(resolve, 800));
-      const status = await (await fetch('/api/state')).json();
-      const job = status.media_sync;
+      /* Yksittäinen epäonnistunut kysely ei saa katkaista seurantaa: palvelimen
+         työ jatkuu, ja katkaisu jättäisi napin päälle (ja seuraava painallus
+         törmäisi käynnissä olevaan arvioon). */
+      let job;
+      try {
+        job = (await (await fetch('/api/state')).json()).media_sync;
+      } catch (pollErr) {
+        pollFailures += 1;
+        if (pollFailures >= 5) throw pollErr;
+        continue;
+      }
+      pollFailures = 0;
       if (job.current) {
         $('media-sync-progress').textContent = T('sync.progress', {
           name: job.current, percent: Math.round(job.fraction * 100),
