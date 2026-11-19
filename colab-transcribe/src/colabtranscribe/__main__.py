@@ -350,14 +350,21 @@ def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
     onnistuneen ajon jälkeen. Valmis-tapahtuma tulee vasta molempien tiedostojen
     valmistuttua, jotta kuulaksen lukija ei hyväksy vanhaa tai puuttuvaa tekstiä.
     """
-    if args.txt:
+    if args.txt and not dry_run:
         out_dir = Path(args.json)
         if out_dir.is_dir():
             for name in args.audio:
                 txt_path = out_dir / f"{Path(name).stem}.txt"
-                if txt_path.is_file() or txt_path.is_symlink():
-                    txt_path.unlink(missing_ok=True)
-    code = _run_audio_mode(args, dry_run, defer_done=args.txt)
+                try:
+                    if txt_path.is_file() or txt_path.is_symlink():
+                        txt_path.unlink(missing_ok=True)
+                except OSError as error:
+                    message = f"--txt: vanhaa {txt_path.name} ei voi poistaa: {error}"
+                    print(message, file=sys.stderr)
+                    events.enable(args.events)
+                    _failure("txt_failed", message, code=1, files=[str(txt_path)])
+                    return 1
+    code = _run_audio_mode(args, dry_run, defer_done=args.txt and not dry_run)
     if code == 0 and args.txt and not dry_run:
         out_dir = Path(args.json)
         for name in args.audio:

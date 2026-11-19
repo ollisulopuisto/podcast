@@ -179,3 +179,36 @@ def test_done_event_waits_for_both_files(local, tmp_path, capsys):
     assert lines[-1]["event"] == "done"
     assert lines[-1]["files"] == [str(out / "jakso.words.json")]
     assert (out / "jakso.txt").read_text(encoding="utf-8") == "[00:00] Moi maailma\n"
+
+
+def test_dry_run_keeps_an_existing_txt(local, tmp_path):
+    audio = tmp_path / "jakso.wav"
+    audio.write_bytes(b"data")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "jakso.txt").write_text("vanha teksti", encoding="utf-8")
+    cli.main(_args(audio, out, "--txt", "--dry-run"))
+    assert (out / "jakso.txt").read_text(encoding="utf-8") == "vanha teksti"
+
+
+def test_a_failing_stale_txt_removal_ends_in_an_error_event(
+    local, monkeypatch, tmp_path, capsys
+):
+    audio = tmp_path / "jakso.wav"
+    audio.write_bytes(b"data")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "jakso.txt").write_text("vanha teksti", encoding="utf-8")
+
+    def _no_unlink(self, missing_ok=False):
+        raise PermissionError("ei oikeutta")
+
+    monkeypatch.setattr(cli.Path, "unlink", _no_unlink)
+    assert cli.main(_args(audio, out, "--txt", "--events")) == 1
+    lines = [
+        json.loads(line.split(" ", 1)[1])
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("@@kuulas ")
+    ]
+    assert lines[-1]["event"] == "error"
+    assert lines[-1]["reason"] == "txt_failed"
