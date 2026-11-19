@@ -37,6 +37,15 @@ async function api(url, body) {
   return data;
 }
 
+/* Puolikkaan vientizoomi: ei zoomia, paneeli peitetään täsmälleen
+   (skaala 960/1080; käyttäjän 50/50-käsikorjaus 2026-11-20). Esikatselun
+   ja viennin on näytettävä sama ikkuna. */
+const HALF_ZOOM = 1;
+
+function laneZoom(frameH) {
+  return frameH === HALF_H ? HALF_ZOOM : 1;
+}
+
 /* Ikkunan leveys lähteen leveydestä kaistan kuvasuhteelle (täyttö, ks.
    trailer.window): sama laskenta kuin palvelimella. */
 function windowFraction(frameH) {
@@ -48,14 +57,24 @@ function boxLeft(x, frac) {
   return Math.min(Math.max(x - frac / 2, 0), 1 - frac);
 }
 
+/* Viennin näkyvä ikkuna: peittävä ikkuna kiinnitetään lähteen sisään
+   (sama kiinnitys kuin trailer.window), ja zoomi kiristää näkyvän
+   osuuden sen keskipisteen ympärille (fcp_panel: skaala × zoom). */
+function exportWindow(x, frameH) {
+  const cover = windowFraction(frameH);
+  const frac = cover / laneZoom(frameH);
+  const centre = boxLeft(x, cover) + cover / 2;
+  return { left: centre - frac / 2, frac };
+}
+
 function renderBoxes() {
   if (!plan || !pieces[sel]) return;
   const x = pieces[sel].x;
   [['tr-box-half', HALF_H], ['tr-box-full', FULL_H]].forEach(([id, h]) => {
-    const frac = windowFraction(h);
+    const win = exportWindow(x, h);
     const box = $(id);
-    box.style.left = `${boxLeft(x, frac) * 100}%`;
-    box.style.width = `${frac * 100}%`;
+    box.style.left = `${win.left * 100}%`;
+    box.style.width = `${win.frac * 100}%`;
   });
   drawComposite();
 }
@@ -69,10 +88,10 @@ function drawComposite() {
   const x = pieces[sel].x;
   const lane = $('tr-lane').value;
   const crop = (frameH, dx, dy, dw, dh) => {
-    const frac = windowFraction(frameH);
-    const sw = img.naturalWidth * frac;
+    const win = exportWindow(x, frameH);
+    const sw = img.naturalWidth * win.frac;
     const sh = sw * (dh / dw);
-    const sx = boxLeft(x, frac) * img.naturalWidth;
+    const sx = win.left * img.naturalWidth;
     const sy = Math.max(0, (img.naturalHeight - sh) / 2);
     ctx.drawImage(img, sx, sy, sw, Math.min(sh, img.naturalHeight), dx, dy, dw, dh);
   };

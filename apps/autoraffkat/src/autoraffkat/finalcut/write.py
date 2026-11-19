@@ -328,6 +328,11 @@ def _attach(body: list[str], index: int, lines: list[str]) -> list[str]:
     DTD vaatii sen järjestyksen — sama syy kuin puhujan avainsanalla, ks.
     ``build_multicam_fcpxml``. Väärässä järjestyksessä tiedosto näyttää
     oikealta ja Final Cut hylkää sen tuonnissa.
+
+    Vain pohjaklipin **suorat** lapset kelpaavat liitoskohdaksi: lanella
+    olevissa reaktio- ja pakettiklipeissä on omat avainsanansa, ja niiden
+    sisään liitetty kaista jää klipin paikalliseen aikaan — ohjelma ääni
+    alkoi vasta reaktion kohdalta (Devin Review #252, 2026-11-20).
     """
     out = list(body)
     line = out[index]
@@ -335,10 +340,26 @@ def _attach(body: list[str], index: int, lines: list[str]) -> list[str]:
         out[index] = line.rstrip()[:-2].rstrip() + ">"
         out[index + 1 : index + 1] = [*lines, "            </mc-clip>"]
         return out
-    close = next(i for i in range(index + 1, len(out))
-                 if out[i].strip() == "</mc-clip>")
-    at = next((i for i in range(index + 1, close)
-               if out[i].lstrip().startswith("<keyword ")), close)
+    depth = 0
+    at = None
+    close = None
+    for i in range(index, len(out)):
+        s = out[i].strip()
+        if s.startswith("</"):
+            depth -= 1
+            if depth == 0:
+                close = i
+                break
+        elif depth == 1 and s.startswith("<keyword "):
+            at = i
+            break
+        elif (s.startswith("<") and not s.startswith(("<!", "<?"))
+              and not s.endswith("/>")):
+            depth += 1
+    if at is None:
+        if close is None:
+            raise ValueError("mc-clipin lopputagia ei löytynyt")
+        at = close
     out[at:at] = lines
     return out
 
@@ -1863,10 +1884,10 @@ REACTION_LANE = 1
 # ``layout.stack_panel`` ja kehystetään kasvoihin): kaksi 1080 px neliötä
 # 1920 px korkean kuvan päällä. Lähde on 1920×1080, joten neliö jättää 420 px
 # = 21.875 % leveydestä (``Shot.crop``, renderöinti) pois kummaltakin reunalta.
-# Final Cutin crop-rect on prosentteja KORKEUDESTA: 420 / 1080 = 38.889 %
-# (``SQUARE_CROP_FCP``). Keskipisteet ovat ±540 px = ±28.125 % (1 % = 19.2 px).
+# Final Cutissa rajaus jätetään pois (``layout.fcp_panel``): paneeli näyttää
+# keskeltä 1080 px viipaleen. Keskipisteet ovat ±540 px = ±28.125 % (1 % =
+# 19.2 px).
 SQUARE_CROP = 21.875
-SQUARE_CROP_FCP = 420 / 1080 * 100
 SQUARE_Y = 28.125
 
 
@@ -1935,38 +1956,32 @@ def _square_of(stacks, a: int, b: int) -> int:
 
 def _square_lines(sign: int, indent: str) -> list[str]:
     """Neliö yhdelle kuvalle pinossa: lähde natiivikokoisena (``none``, ei
-    täyttöä), reunat rajattu ja kuva ``sign`` × ``SQUARE_Y`` ylös tai alas.
+    täyttöä eikä rajausta) ja kuva ``sign`` × ``SQUARE_Y`` ylös tai alas.
 
-    Skaala (1080/1920, 1) tekee kehyksestä neliön: ilman sitä Final Cutin
-    akselikohtainen täyttö venyttäisi rajatun alueen leveäksi (sääntö
-    varmistettu 2026-11-19, ks. ``layout.fcp_panel``).
+    Neliö syntyy ilman rajausta: skaalaa ei ole (1), joten paneeli näyttää
+    lähteen keskeltä 1080 px leveän viipaleen — sama kuin aiempi
+    38,889 %:n rajaus, mutta ilman Final Cutin akselikohtaisen täytön
+    venytysriskia (ks. ``layout.fcp_panel``).
     """
     return [
-        f'{indent}<adjust-crop mode="crop">',
-        f'{indent}  <crop-rect left="{_number(SQUARE_CROP_FCP)}" top="0" '
-        f'right="{_number(SQUARE_CROP_FCP)}" bottom="0"/>',
-        f'{indent}</adjust-crop>',
         f'{indent}<adjust-conform type="none"/>',
-        f'{indent}<adjust-transform scale="{_number(1080 / 1920)} 1" '
-        f'position="0 {_number(sign * SQUARE_Y)}"/>',
+        f'{indent}<adjust-transform position="0 {_number(sign * SQUARE_Y)}"/>',
     ]
 
 
 def _panel_lines(fcp: "screen_layout.FcpPanel", indent: str) -> list[str]:
-    """Kuva paneeliin: rajaus, natiivikoko (``none``) ja siirto.
+    """Kuva paneeliin: natiivikoko (``none``), tasainen skaala ja siirto.
 
-    **Järjestys on DTD:n**: ``adjust-crop``, ``adjust-conform``,
-    ``adjust-transform``. Final Cut hylkää väärän järjestyksen koko tuonnin
-    kuten ``tcFormat``in. Luvut tulevat ``layout.fcp_panel``ista, jonka
-    skaala-sijainti-malli on varmistettu Final Cutissa 2026-11-19.
+    Ei ``adjust-crop``ia: Final Cut skaalaa rajatun alueen täyttämään
+    kehyksen, joten rajaus käyttäisi ikkunan kahteen kertaan. Ikkuna
+    välittyy pelkällä sijainnilla (``layout.fcp_panel``, malli varmistettu
+    Final Cutissa 2026-11-19). **Järjestys on DTD:n**: ``adjust-conform``
+    ennen ``adjust-transform``ia; Final Cut hylkää väärän järjestyksen
+    koko tuonnin kuten ``tcFormat``in.
     """
     return [
-        f'{indent}<adjust-crop mode="crop">',
-        f'{indent}  <crop-rect left="{_number(fcp.left)}" top="{_number(fcp.top)}" '
-        f'right="{_number(fcp.right)}" bottom="{_number(fcp.bottom)}"/>',
-        f'{indent}</adjust-crop>',
         f'{indent}<adjust-conform type="none"/>',
-        f'{indent}<adjust-transform scale="{_number(fcp.scale_x)} {_number(fcp.scale_y)}" '
+        f'{indent}<adjust-transform scale="{_number(fcp.scale)} {_number(fcp.scale)}" '
         f'position="{_number(fcp.pos_x)} {_number(fcp.pos_y)}"/>',
     ]
 
@@ -1979,7 +1994,48 @@ def _panel_of(item, shot, panel: "screen_layout.Panel"):
         item.width, item.height, panel.w, panel.h,
         shot.scale if shot else 1.0, shot.pos_x if shot else 0.0,
         shot.pos_y if shot else 0.0)
-    return screen_layout.fcp_panel(panel, window, item.width, item.height)
+    # Zoomi kuuluu myös skaalaan: ikkuna on jo zoomin pienentämä, joten
+    # pelkkä peittävä skaala näyttäisi liikaa (MP4-renderöinti zoomaa).
+    return screen_layout.fcp_panel(panel, window, item.width, item.height,
+                                   zoom=shot.scale if shot else 1.0)
+
+
+def _panel_inner_of(item, shot, panel: "screen_layout.Panel"):
+    """Kuvan Final Cut -muoto paneelin OMAAN kehykseen (yhdistelmän sisään).
+
+    Sama laskenta kuin ``_panel_of``, mutta projektina on itse paneeli:
+    yhdistelmäklipin sekvenssi on paneelinkokoinen, joten sijainnin
+    yksikkö on prosenttia paneelin korkeudesta."""
+    if item is None or not item.width or not item.height:
+        return None
+    window = screen_layout.window_of(
+        item.width, item.height, panel.w, panel.h,
+        shot.scale if shot else 1.0, shot.pos_x if shot else 0.0,
+        shot.pos_y if shot else 0.0)
+    return screen_layout.fcp_panel(
+        screen_layout.Panel(0, 0, panel.w, panel.h), window,
+        item.width, item.height, project_w=panel.w, project_h=panel.h,
+        zoom=shot.scale if shot else 1.0)
+
+
+def _panel_compound(media_id: str, name: str, format_id: str, span: str,
+                    inner: list[str]) -> list[str]:
+    """Paneelinkokoinen yhdistelmäklippi: sen oma kehys leikkaa kuvan.
+
+    Rakenne on Final Cutin oma (kuten ``_compound_audio``): ``<media>``,
+    jonka ``<sequence>`` on paneelinkokoinen, ja aikajanalla ``<ref-clip>``.
+    Ilman tätä vain projektin reunat leikkaavat, ja zoomattu tai pysty
+    kuva vuotaa naapuripaneeliin (Devin Review #252, 2026-11-20)."""
+    return [
+        f"    <media id={quoteattr(media_id)} name={quoteattr(name)}>",
+        f'      <sequence format="{format_id}" duration="{span}" '
+        'tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">',
+        "        <spine>",
+        *inner,
+        "        </spine>",
+        "      </sequence>",
+        "    </media>",
+    ]
 
 
 def _layout_plan(settings, roles, spans, frame_duration: Fraction):
@@ -2067,7 +2123,7 @@ def _wide_clip(mc, wide_angle: str, item, panels, source: int, dur: int,
 def _reaction_clips(
     reactions, roles, angles_of, mc, frame_duration, program_start, program_end,
     timeline=None, reframer=None, vertical: bool = False, settings=None, shots=None,
-    stacks=None, panels=None,
+    stacks=None, panels=None, next_id=None,
 ):
     """Reaktiokuvat sisäkkäisinä ``mc-clip``einä omalle lanelleen.
 
@@ -2102,6 +2158,8 @@ def _reaction_clips(
     rajataan kuuntelijaan, jonka takia se on reaktio.
     """
     lines: list[str] = []
+    resources: list[str] = []
+    formats = _Formats()
     own = set(mc.angle_ids)
     # ``panels`` on kiinteä asettelu tai funktio kehys → paneelit (``auto``).
     panels_for = panels if callable(panels) else (lambda _frame, p=panels: p)
@@ -2130,15 +2188,11 @@ def _reaction_clips(
         first = to_frames(start - program_start, frame_duration)
         here = panels_for(first)
         lane = LAYOUT_REACTION_LANE if here is not None else REACTION_LANE
-        lines.append(
-            f'              <mc-clip lane="{lane}" '
-            f"ref={quoteattr(mc.media_id)} "
-            f"name={quoteattr(f'{shown} reaktio {index + 1:02d}')} "
-            f'offset="{frames_str(source, frame_duration)}" '
-            f'start="{frames_str(source, frame_duration)}" '
-            f'duration="{frames_str(dur, frame_duration)}">'
-        )
+        name = f'{shown} reaktio {index + 1:02d}'
+        span = frames_str(dur, frame_duration)
+        start_str = frames_str(source, frame_duration)
         transform: list[str] = []
+        wrapped: tuple | None = None
         shot = None
         sign = stacks[index][2] if stacks and index in stacks else 0
         stack_panel = None
@@ -2153,10 +2207,10 @@ def _reaction_clips(
                 focus = reaction.speaker if key == roles.wide_key else ""
                 shot = reframer.from_item(part, float(start), float(end), focus=focus,
                                           frame=(stack.w, stack.h))
-            fcp = _panel_of(part, shot, stack)
+            fcp = _panel_inner_of(part, shot, stack)
             if fcp:
                 stack_panel = stack
-                transform = _panel_lines(fcp, "                  ")
+                wrapped = (stack, fcp)
             else:
                 transform = _square_lines(sign, "                  ")
         elif here is not None:
@@ -2166,8 +2220,9 @@ def _reaction_clips(
                 focus = reaction.speaker if key == roles.wide_key else ""
                 shot = reframer.from_item(part, float(start), float(end), focus=focus,
                                           frame=(here.close.w, here.close.h))
-            fcp = _panel_of(part, shot, here.close)
-            transform = _panel_lines(fcp, "                  ") if fcp else []
+            fcp = _panel_inner_of(part, shot, here.close)
+            if fcp:
+                wrapped = (here.close, fcp)
         elif vertical:
             part = next((i for i in (timeline.track_media(key) if timeline else [])
                          if i.placement_at(start)), None)
@@ -2188,6 +2243,63 @@ def _reaction_clips(
                         partner=(_wide_shot(timeline, roles, here, first,
                                             first + dur, start)
                                  if here is not None else None))
+        # Avainsana, jotta reaktiokuvat löytyvät Final Cutin hakemistosta.
+        # Nimi ei riitä: monikameraklipin nimenä selain näyttää median oman
+        # nimen, ja hakemiston Tags-välilehti oli tyhjä. Avainsana on se
+        # paikka jossa Final Cut oikeasti näyttää tämän.
+        keyword = (
+            f'                <keyword start="{start_str}" '
+            f'duration="{span}" '
+            f"value={quoteattr(f'Reaktio · {shown}')}/>"
+        )
+        if wrapped is not None:
+            # Paneeli on Final Cutissa vain laskennan suorakulmio: ilman
+            # yhdistelmää vain projektin reunat leikkaavat, ja zoomattu tai
+            # pysty kuva vuotaa naapuripaneeliin (Devin Review #252,
+            # 2026-11-20). Yhdistelmän oma paneelinkokoinen kehys leikkaa;
+            # ulkoinen sijainti asettaa paneelin paikalleen.
+            # Käärityn ``ref-clip``in aika on yhdistelmän paikallinen
+            # 0..kesto, joten sen avainsana alkaa 0s:stä — lähdeajalla
+            # kirjoitettu avainsana jäisi klipin ulkopuolelle eikä näkyisi
+            # aikajanalla (Devin Review #252, 2026-11-20).
+            keyword = (
+                f'                <keyword start="0s" '
+                f'duration="{span}" '
+                f"value={quoteattr(f'Reaktio · {shown}')}/>"
+            )
+            panel, fcp_inner = wrapped
+            media_id = next_id()
+            fmt_id = formats.get(panel.w, panel.h, frame_duration, next_id)
+            resources += _panel_compound(
+                media_id, name, fmt_id, span,
+                [f'          <mc-clip ref={quoteattr(mc.media_id)} '
+                 f"name={quoteattr(name)} "
+                 f'offset="0s" start="{start_str}" duration="{span}">',
+                 f'            <mc-source angleID={quoteattr(angle_id)} '
+                 'srcEnable="video">',
+                 *_panel_lines(fcp_inner, "              "),
+                 "            </mc-source>",
+                 "          </mc-clip>"])
+            ax, ay = screen_layout.panel_anchor(panel)
+            lines += [
+                f'              <ref-clip lane="{lane}" '
+                f"ref={quoteattr(media_id)} name={quoteattr(name)} "
+                f'offset="{start_str}" duration="{span}">',
+                '                <adjust-conform type="none"/>',
+                '                <adjust-transform '
+                f'position="{_number(ax)} {_number(ay)}"/>',
+                keyword,
+                "              </ref-clip>",
+            ]
+            continue
+        lines.append(
+            f'              <mc-clip lane="{lane}" '
+            f"ref={quoteattr(mc.media_id)} "
+            f"name={quoteattr(name)} "
+            f'offset="{start_str}" '
+            f'start="{start_str}" '
+            f'duration="{span}">'
+        )
         if transform:
             lines += [
                 f'                <mc-source angleID={quoteattr(angle_id)} '
@@ -2200,17 +2312,9 @@ def _reaction_clips(
                 f'                <mc-source angleID={quoteattr(angle_id)} '
                 f'srcEnable="video"/>'
             )
-        # Avainsana, jotta reaktiokuvat löytyvät Final Cutin hakemistosta.
-        # Nimi ei riitä: monikameraklipin nimenä selain näyttää median oman
-        # nimen, ja hakemiston Tags-välilehti oli tyhjä. Avainsana on se
-        # paikka jossa Final Cut oikeasti näyttää tämän.
-        lines.append(
-            f'                <keyword start="{frames_str(source, frame_duration)}" '
-            f'duration="{frames_str(dur, frame_duration)}" '
-            f"value={quoteattr(f'Reaktio · {shown}')}/>"
-        )
+        lines.append(keyword)
         lines.append("              </mc-clip>")
-    return lines
+    return lines, [*formats.lines, *resources]
 
 
 def build_multicam_fcpxml(
@@ -2331,6 +2435,14 @@ def build_multicam_fcpxml(
 
 
     body: list[str] = []
+    extra_resources: list[str] = []
+    next_free = [_free_id(resources)]
+
+    def next_id() -> str:
+        fid = f"r{next_free[0]}"
+        next_free[0] += 1
+        return fid
+
     attached_room = False
     attached_package = False
     attached_reactions = False
@@ -2499,13 +2611,15 @@ def build_multicam_fcpxml(
         # ajoista klippikohtaisia turhaan.
         if not attached_reactions and reactions and roles is not None:
             attached_reactions = True
-            sources = sources + _reaction_clips(
+            reaction_lines, reaction_resources = _reaction_clips(
                 reactions, roles, angles_of, mc,
                 frame_duration, program_start, program_end,
                 timeline=timeline, reframer=reframer,
                 vertical=vertical, settings=settings, shots=shots,
-                stacks=stacks, panels=panels_at,
+                stacks=stacks, panels=panels_at, next_id=next_id,
             )
+            sources = sources + reaction_lines
+            extra_resources += reaction_resources
         if not attached_room and room_ids:
             attached_room = True
             sources = sources + _room_lines(
@@ -2557,7 +2671,6 @@ def build_multicam_fcpxml(
     # liitetään ensimmäiseen kuvaklippiin lanelle -1. `useAudioSubroles="1"`
     # tuo puhujien aliroolit näkyviin yhdistelmän ulkopuolelle, joten
     # yleissäädin ja puhujakohtainen säätö ovat samassa ikkunassa.
-    extra_resources: list[str] = []
     if settings is not None and settings.globals.compound_audio:
         video_only = audio_only = None
         if package_ids and package is not None:
@@ -2565,11 +2678,17 @@ def build_multicam_fcpxml(
                           if c.kind in package_ids}
             audio_only = {package_ids[c.kind] for c in package[1]
                           if c.kind in package_ids}
-        body, extra_resources = _compound_audio(
-            body, resources, program_frames, frame_duration, project_name,
+        # Vapaat id:t lasketaan laajennetusta lohkosta, jotta
+        # reaktiopaneelien yhdistelmien id:t eivät törmää äänen omaan.
+        body, more = _compound_audio(
+            body,
+            _with_resources(resources, extra_resources)
+            if extra_resources else resources,
+            program_frames, frame_duration, project_name,
             float(settings.globals.master_db),
             video_only=video_only, audio_only=audio_only,
         )
+        extra_resources += more
 
     note, metadata = _sequence_extras(settings, source)
     out = [
