@@ -8,6 +8,8 @@ import pytest
 
 from colabtranscribe import __main__ as cli
 from colabtranscribe import parakeet, transcript
+from nhsx.read import Word
+from podcastmagic.nhsx.write import paragraphs
 
 
 def _doc(*words):
@@ -100,10 +102,12 @@ def test_without_the_flag_no_txt_is_written(local, tmp_path):
     assert not (out / "jakso.txt").exists()
 
 
-def test_a_failed_run_writes_no_txt(local, monkeypatch, tmp_path):
+def test_a_failed_run_removes_a_stale_txt(local, monkeypatch, tmp_path):
     audio = tmp_path / "jakso.wav"
     audio.write_bytes(b"data")
     out = tmp_path / "out"
+    out.mkdir()
+    (out / "jakso.txt").write_text("old transcript", encoding="utf-8")
     monkeypatch.setattr(parakeet, "is_available", lambda: (False, "ei muistia"))
     assert cli.main(_args(audio, out, "--txt")) == 1
     assert not (out / "jakso.txt").exists()
@@ -129,6 +133,7 @@ def test_an_unwritable_txt_fails_the_run_and_the_last_event_is_an_error(
     ]
     assert lines[-1]["event"] == "error"
     assert lines[-1]["reason"] == "txt_failed"
+    assert "done" not in [line["event"] for line in lines]
 
 
 def test_two_files_with_the_same_stem_are_refused_before_anything_is_written(
@@ -144,3 +149,33 @@ def test_two_files_with_the_same_stem_are_refused_before_anything_is_written(
     assert cli.main([*args, "--backend", "parakeet"]) == 1
     assert "sama nimi" in capsys.readouterr().err
     assert not out.exists()
+
+
+def test_paragraph_boundaries_match_podcast_magic():
+    words = [
+        ("Yksi", 0.0, 0.5),
+        ("kaksi", 1.7, 2.0),
+        ("kolme", 2.1, 2.4),
+    ]
+    source = [Word(text, start, end - start) for text, start, end in words]
+    expected = "\n\n".join(
+        f"[{int(group[0].start) // 60:02d}:{int(group[0].start) % 60:02d}] "
+        + " ".join(word.text for word in group)
+        for group in paragraphs(source)
+    ) + "\n"
+    assert transcript.paragraph_text(_doc(*words)) == expected
+
+
+def test_done_event_waits_for_both_files(local, tmp_path, capsys):
+    audio = tmp_path / "jakso.wav"
+    audio.write_bytes(b"data")
+    out = tmp_path / "out"
+    assert cli.main(_args(audio, out, "--txt", "--events")) == 0
+    lines = [
+        json.loads(line.split(" ", 1)[1])
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("@@kuulas ")
+    ]
+    assert lines[-1]["event"] == "done"
+    assert lines[-1]["files"] == [str(out / "jakso.words.json")]
+    assert (out / "jakso.txt").read_text(encoding="utf-8") == "[00:00] Moi maailma\n"

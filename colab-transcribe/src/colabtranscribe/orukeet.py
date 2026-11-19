@@ -127,6 +127,7 @@ def run_audio_mode_orukeet(
     log,
     on_progress=None,
     events_enabled=False,
+    emit_done=True,
 ) -> int:
     """Käyttää paikallista Orukeet-runtimea samalla Kuulas-tiedostosopimuksella."""
     if dry_run:
@@ -190,7 +191,7 @@ def run_audio_mode_orukeet(
 
     if on_progress:
         on_progress(100, "Valmis.")
-    if events_enabled:
+    if events_enabled and emit_done:
         events.emit("done", files=[str(path) for path in expected])
     log(f"\nValmiit sanatiedostot ({len(expected)}):")
     for path in expected:

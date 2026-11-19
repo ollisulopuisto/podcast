@@ -141,6 +141,7 @@ def run_audio_mode_parakeet(
     log: Callable[[str], None],
     on_progress: Callable[[int, str], None] | None = None,
     events_enabled: bool = False,
+    emit_done: bool = True,
 ) -> int:
     """Suorittaa pelkän äänen litteroinnin paikallisesti Parakeet MLX:llä."""
     if dry_run:
@@ -235,7 +236,7 @@ def run_audio_mode_parakeet(
         report_progress(end_pct, f"[{idx + 1}/{total}] Valmis: {audio_path.name}")
 
     report_progress(100, "Valmis.")
-    if events_enabled:
+    if events_enabled and emit_done:
         events.emit("done", files=[str(p) for p in expected])
 
     log(f"\nValmiit sanatiedostot ({len(expected)}):")

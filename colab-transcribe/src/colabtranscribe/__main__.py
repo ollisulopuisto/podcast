@@ -346,11 +346,18 @@ def _environment_message(report) -> str:
 def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
     """Pelkkä ääni sisään, ``<nimi>.words.json`` ulos (``docs/KUULAS-COLAB.md``).
 
-    ``--txt``: onnistuneen ajon jälkeen jokaisen sanatiedoston viereen kirjoitetaan
-    ``<nimi>.txt`` (kappaleteksti). Toimii kaikilla taustajärjestelmillä, koska se
-    lukee valmiin sanatiedoston.
+    ``--txt``: poistaa vanhat tekstivastineet ennen ajoa ja kirjoittaa uudet vasta
+    onnistuneen ajon jälkeen. Valmis-tapahtuma tulee vasta molempien tiedostojen
+    valmistuttua, jotta kuulaksen lukija ei hyväksy vanhaa tai puuttuvaa tekstiä.
     """
-    code = _run_audio_mode(args, dry_run)
+    if args.txt:
+        out_dir = Path(args.json)
+        if out_dir.is_dir():
+            for name in args.audio:
+                txt_path = out_dir / f"{Path(name).stem}.txt"
+                if txt_path.is_file() or txt_path.is_symlink():
+                    txt_path.unlink(missing_ok=True)
+    code = _run_audio_mode(args, dry_run, defer_done=args.txt)
     if code == 0 and args.txt and not dry_run:
         out_dir = Path(args.json)
         for name in args.audio:
@@ -362,15 +369,24 @@ def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
             except (OSError, ValueError) as error:
                 message = f"--txt: {txt_path.name} ei onnistu: {error}"
                 print(message, file=sys.stderr)
-                # Taustajärjestelmä ehti jo lähettää ``done``n: viimeiseksi tapahtumaksi
-                # tulee virhe, jotta kuuntelija ei jää uskomaan onnistumiseen.
+                # Valmis-tapahtuma lähetetään vasta kaikkien tekstien kirjoituksen jälkeen.
                 _failure("txt_failed", message, code=1, files=[str(txt_path)])
                 return 1
             print(f"Teksti luotu: {txt_path}")
+        if args.events:
+            events.emit(
+                "done",
+                files=[
+                    str(Path(args.json) / f"{Path(name).stem}.words.json")
+                    for name in args.audio
+                ],
+            )
     return code
 
 
-def _run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
+def _run_audio_mode(
+    args: argparse.Namespace, dry_run: bool, defer_done: bool = False
+) -> int:
     events.enable(args.events)
     env_opts = RunOptions.from_env()
     audio = [str(Path(a).resolve()) for a in args.audio]
@@ -408,6 +424,7 @@ def _run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
             log=print,
             on_progress=printer,
             events_enabled=args.events,
+            emit_done=not defer_done,
         )
     reuse_session = False
     session_state = "new"
@@ -516,7 +533,8 @@ def _run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
     print(f"\nValmiit sanatiedostot ({len(expected)}):")
     for path in expected:
         print(f"  {path}")
-    events.emit("done", files=[str(p) for p in expected])
+    if not defer_done:
+        events.emit("done", files=[str(p) for p in expected])
     return 0
 
 

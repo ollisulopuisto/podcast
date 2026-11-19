@@ -100,7 +100,15 @@ colab-transcribe --audio "Olli 1.wav" --audio Panu.mp3 --json sanat/ --progress
 colab-transcribe --audio "Olli 1.wav" --json sanat/ --model parakeet-ultra
 # Paikallinen Orukeet, ilman Colab-istuntoa
 colab-transcribe --audio "Olli 1.wav" --json sanat/ --backend orukeet
+# Myös tavallinen tekstilitterointi sanatiedoston viereen
+colab-transcribe --audio "Olli 1.wav" --json sanat/ --txt
 ```
+
+`--txt` kirjoittaa onnistuneen ajon jälkeen kunkin `.words.json`-tiedoston viereen
+`.txt`-tiedoston. Siinä on `[MM:SS] teksti` -kappaleet, jotka vaihtuvat vähintään
+1,2 sekunnin tauon tai 80 sanan jälkeen. Valitsin toimii kaikilla taustajärjestelmillä,
+mutta sitä voi käyttää vain `--audio`-tilassa. Epäonnistunut ajo ei jätä vanhaa
+`.txt`-tiedostoa voimaan eikä ilmoita valmistumisesta ennen kuin tekstikin on kirjoitettu.
 
 Kaikki `--audio`-tiedostot menevät samaan Colab-istuntoon ja `sanat/<nimi>.words.json` tulee
 takaisin: `{"version":1,"timing":"whisper","language":"fi","rejected":0,"words":[{"w","s","e"}]}`,
