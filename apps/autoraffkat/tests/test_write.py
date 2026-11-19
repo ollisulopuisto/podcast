@@ -952,6 +952,56 @@ def test_a_stack_reaction_is_a_panel_sized_compound_that_clips(fixture_dir):
     assert abs(px - (-(cx - 960) * (960 / 1080 * 1.5) / 9.6)) < 0.01
 
 
+
+def test_compound_audio_stays_on_the_base_clip_with_a_stacked_reaction(fixture_dir):
+    """Devin Review #252 (2026-11-20): pystyvienti + äänen yhdistelmä +
+    pinottu reaktio. Liitos etsi ensimmäisen ``<keyword``-rivin syvyyttä
+    katsomatta, ja pinoreaktion ``ref-clip``issä on oma avainsanansa ennen
+    pohjan puhuja-avainsanaa — kaista meni reaktion sisään, jonka paikallinen
+    aika alkaa nollasta, joten ohjelma ääni alkoi vasta reaktion kohdalta.
+    Kaistan on oltava pohjaklipin SUORA lapsi lanella -1 ja ref-clipin
+    offset 0s, jotta ääni alkaa ohjelman nollasta."""
+    stub = _StubReframer(scale=1.5, pos_x=20.0)
+    settings = _vertical_settings()
+    settings.globals.compound_audio = True
+    _, xml = _with_reactions(fixture_dir, [("Guest", 8.0, 9.6, 2.1)],
+                             settings=settings, reframer=stub)
+    root = ET.fromstring(xml)
+    spine = root.find(".//project/sequence/spine")
+    base = spine.find("mc-clip")
+    lane = base.find("spine")
+    assert lane is not None and lane.get("lane") == "-1", \
+        "äänikaista ei ole pohjaklipin suorana lapsena lanella -1"
+    audio_ref = lane.find("ref-clip")
+    assert audio_ref is not None
+    assert audio_ref.get("offset") == "0s"
+    media = next(m for m in root.iter("media")
+                 if m.get("id") == audio_ref.get("ref"))
+    assert media.get("name").endswith("· ääni")
+    for ref in root.iter("ref-clip"):
+        if "reaktio" in (ref.get("name") or ""):
+            assert ref.find("spine") is None, \
+                "äänikaista meni reaktioklipin sisään (sen paikalliseen aikaan)"
+
+
+def test_a_wrapped_reaction_keyword_starts_at_zero(fixture_dir):
+    """Devin Review #252 (2026-11-20): yhdistelmään käärityn reaktion
+    ``ref-clip`` kattaa yhdistelmän paikallisen ajan 0..kesto, mutta sen
+    avainsana kirjoitettiin monikameran lähdeajalla — avainsana jäi klipin
+    ulkopuolelle eikä näkynyt aikajanalla. Käärityn klipin avainsana alkaa
+    aina 0s:stä; käärimättömän monikameraklipin lähdeaika säilyy."""
+    stub = _StubReframer(scale=1.5, pos_x=20.0)
+    _, xml = _with_reactions(fixture_dir, [("Guest", 8.0, 9.6, 2.1)],
+                             settings=_vertical_settings(), reframer=stub)
+    root = ET.fromstring(xml)
+    ref = next(c for c in root.iter("ref-clip")
+               if "reaktio" in (c.get("name") or ""))
+    keyword = ref.find("keyword")
+    assert keyword is not None
+    assert keyword.get("start") == "0s"
+    assert keyword.get("duration") == ref.get("duration")
+
+
 def test_the_base_under_a_stack_is_framed_on_its_face_too(fixture_dir):
     """Pinon alla oleva pohjakuva on pinon toinen puoli, ja se kehystetään
     samalla tavalla: kehystäjältä kysytään sitäkin paneelin kehyksellä."""

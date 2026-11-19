@@ -328,6 +328,11 @@ def _attach(body: list[str], index: int, lines: list[str]) -> list[str]:
     DTD vaatii sen järjestyksen — sama syy kuin puhujan avainsanalla, ks.
     ``build_multicam_fcpxml``. Väärässä järjestyksessä tiedosto näyttää
     oikealta ja Final Cut hylkää sen tuonnissa.
+
+    Vain pohjaklipin **suorat** lapset kelpaavat liitoskohdaksi: lanella
+    olevissa reaktio- ja pakettiklipeissä on omat avainsanansa, ja niiden
+    sisään liitetty kaista jää klipin paikalliseen aikaan — ohjelma ääni
+    alkoi vasta reaktion kohdalta (Devin Review #252, 2026-11-20).
     """
     out = list(body)
     line = out[index]
@@ -335,10 +340,26 @@ def _attach(body: list[str], index: int, lines: list[str]) -> list[str]:
         out[index] = line.rstrip()[:-2].rstrip() + ">"
         out[index + 1 : index + 1] = [*lines, "            </mc-clip>"]
         return out
-    close = next(i for i in range(index + 1, len(out))
-                 if out[i].strip() == "</mc-clip>")
-    at = next((i for i in range(index + 1, close)
-               if out[i].lstrip().startswith("<keyword ")), close)
+    depth = 0
+    at = None
+    close = None
+    for i in range(index, len(out)):
+        s = out[i].strip()
+        if s.startswith("</"):
+            depth -= 1
+            if depth == 0:
+                close = i
+                break
+        elif depth == 1 and s.startswith("<keyword "):
+            at = i
+            break
+        elif (s.startswith("<") and not s.startswith(("<!", "<?"))
+              and not s.endswith("/>")):
+            depth += 1
+    if at is None:
+        if close is None:
+            raise ValueError("mc-clipin lopputagia ei löytynyt")
+        at = close
     out[at:at] = lines
     return out
 
@@ -2237,6 +2258,15 @@ def _reaction_clips(
             # pysty kuva vuotaa naapuripaneeliin (Devin Review #252,
             # 2026-11-20). Yhdistelmän oma paneelinkokoinen kehys leikkaa;
             # ulkoinen sijainti asettaa paneelin paikalleen.
+            # Käärityn ``ref-clip``in aika on yhdistelmän paikallinen
+            # 0..kesto, joten sen avainsana alkaa 0s:stä — lähdeajalla
+            # kirjoitettu avainsana jäisi klipin ulkopuolelle eikä näkyisi
+            # aikajanalla (Devin Review #252, 2026-11-20).
+            keyword = (
+                f'                <keyword start="0s" '
+                f'duration="{span}" '
+                f"value={quoteattr(f'Reaktio · {shown}')}/>"
+            )
             panel, fcp_inner = wrapped
             media_id = next_id()
             fmt_id = formats.get(panel.w, panel.h, frame_duration, next_id)
