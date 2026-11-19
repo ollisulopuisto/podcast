@@ -97,16 +97,23 @@ def build_trailer_fcpxml(
     xs: list[float],
     project_name: str,
     *,
+    xs_panel: list[float] | None = None,
     enabled_lane: str = "top",
     dialect: str = DIALECT_FCP,
     version: str = "1.10",
 ) -> str:
-    """FCPXML-merkkijono. ``xs`` on kohteen vaakapaikka (0–1) palaa kohden."""
+    """FCPXML-merkkijono. ``xs`` on kohteen vaakapaikka (0–1) palaa kohden.
+
+    ``xs_panel`` on puolikaspaneelin oma kehys (9:16-ikkuna voi näyttää
+    eri kohdan kuin leveä paneeli); ilman sitä paneeli seuraa ``xs``:ää.
+    """
     if dialect not in DIALECTS:
         raise WriteError(t("trailer.err.dialect", value=dialect))
     if enabled_lane not in LANES:
         raise WriteError(t("trailer.err.lane", value=enabled_lane))
     if not pieces or len(pieces) != len(xs):
+        raise WriteError(t("trailer.err.pieces"))
+    if xs_panel is not None and len(xs_panel) != len(pieces):
         raise WriteError(t("trailer.err.pieces"))
     if not src.width or not src.height:
         raise WriteError(t("trailer.err.no_size", name=src.name))
@@ -151,6 +158,7 @@ def build_trailer_fcpxml(
     body: list[str] = []
     for index, a, b in cells:
         x = float(xs[index])
+        x_panel = float(xs_panel[index]) if xs_panel is not None else x
         dur = frames_str(b - a, fd)
         start = frames_str(a, fd)
         label = f"{index + 1:02d}"
@@ -177,7 +185,7 @@ def build_trailer_fcpxml(
                  f"name={quoteattr(kind.capitalize() + ' ' + label)} "
                  f'start="{start}" duration="{dur}" format="{src_format}" '
                  'tcFormat="NDF" srcEnable="video">',
-                 *_half_inner_lines(src, x, "            "),
+                 *_half_inner_lines(src, x_panel, "            "),
                  "          </asset-clip>"])
             # FCP tulkitsee liitetyn klipin offsetin isännän aikajanalle
             # (varmistettu 2026-11-19), joten suhteellinen nolla.

@@ -8,7 +8,7 @@ const HALF_H = 960;         // puolikaspaneelin korkeus
 const FULL_H = 1920;        // koko ruudun korkeus
 
 let plan = null;            // palvelimen vastaus: polku, mitat, palat
-let pieces = [];            // {start, end, x, manual}
+let pieces = [];            // {start, end, x, x_panel, manual, manual_panel}
 let sel = 0;
 let dialect = 'fcp';
 let busy = false;
@@ -69,8 +69,8 @@ function exportWindow(x, frameH) {
 
 function renderBoxes() {
   if (!plan || !pieces[sel]) return;
-  const x = pieces[sel].x;
-  [['tr-box-half', HALF_H], ['tr-box-full', FULL_H]].forEach(([id, h]) => {
+  const p = pieces[sel];
+  [['tr-box-half', HALF_H, p.x_panel], ['tr-box-full', FULL_H, p.x]].forEach(([id, h, x]) => {
     const win = exportWindow(x, h);
     const box = $(id);
     box.style.left = `${win.left * 100}%`;
@@ -85,9 +85,9 @@ function drawComposite() {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (!plan || !img.complete || !img.naturalWidth) return;
-  const x = pieces[sel].x;
+  const p = pieces[sel];
   const lane = $('tr-lane').value;
-  const crop = (frameH, dx, dy, dw, dh) => {
+  const crop = (frameH, x, dx, dy, dw, dh) => {
     const win = exportWindow(x, frameH);
     const sw = img.naturalWidth * win.frac;
     const sh = sw * (dh / dw);
@@ -97,10 +97,10 @@ function drawComposite() {
   };
   const W = canvas.width;
   const H = canvas.height;
-  crop(FULL_H, 0, 0, W, H);
+  crop(FULL_H, p.x, 0, 0, W, H);
   if (lane !== 'none') {
     const top = lane === 'top';
-    crop(HALF_H, 0, top ? 0 : H / 2, W, H / 2);
+    crop(HALF_H, p.x_panel, 0, top ? 0 : H / 2, W, H / 2);
     ctx.setLineDash([6, 4]);
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2;
@@ -125,11 +125,14 @@ function selectPiece(i) {
   if (row && typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest' });
 }
 
-/* Kehityksen siirto: x on kuvan keskipiste 0–1-välillä. */
-function nudge(dx) {
+/* Kehityksen siirto: x on kuvan keskipiste 0–1-välillä. Paneeli-ikkuna
+   (puolikas) on oma kehyksensä: Option-muunnos siirtää vain sitä. */
+function nudge(dx, panel) {
   if (!pieces[sel]) return;
-  pieces[sel].x = Math.min(1, Math.max(0, pieces[sel].x + dx));
-  pieces[sel].manual = true;
+  const field = panel ? 'x_panel' : 'x';
+  const flag = panel ? 'manual_panel' : 'manual';
+  pieces[sel][field] = Math.min(1, Math.max(0, pieces[sel][field] + dx));
+  pieces[sel][flag] = true;
   renderList();
   showFrame();
 }
@@ -173,8 +176,13 @@ function renderList() {
     const main = document.createElement('button');
     main.type = 'button';
     main.className = 'ghost tr-piece-main';
+    const fullPct = Math.round(p.x * 100);
+    const panelPct = Math.round(p.x_panel * 100);
+    // Molemmat prosentit vain kun ikkunat eriytetty: koskematon pala näyttää
+    // samalta kuin ennen.
+    const pct = fullPct === panelPct ? `${fullPct} %` : `${fullPct} % | ${panelPct} %`;
     main.textContent = `${String(i + 1).padStart(2, '0')}  ${fmt(p.start)}–${fmt(p.end)}  ` +
-      `${Math.round(p.x * 100)} %  ${p.manual ? T('trailer.manual') : T('trailer.auto')}`;
+      `${pct}  ${(p.manual || p.manual_panel) ? T('trailer.manual') : T('trailer.auto')}`;
     main.addEventListener('click', () => selectPiece(i));
     const split = document.createElement('button');
     split.type = 'button';
@@ -236,7 +244,11 @@ async function load(path) {
     };
     if (mode === 'every') body.every = Number($('tr-every').value);
     plan = await api('/api/trailer/plan', body);
-    pieces = plan.pieces.map((p) => ({ ...p, manual: false }));
+    // Paneelin kehys alkaa koko ruudun kehyksestä: mikään ei muutu ennen
+    // kuin käyttäjä eriyttää ikkunat Option-raahauksella.
+    pieces = plan.pieces.map((p) => ({
+      ...p, x_panel: p.x, manual: false, manual_panel: false,
+    }));
     sel = 0;
   } catch (err) {
     banner(err.message, true);
@@ -255,7 +267,7 @@ async function exportFcpxml() {
   try {
     const data = await api('/api/trailer/export', {
       path: plan.path,
-      pieces: pieces.map(({ start, end, x }) => ({ start, end, x })),
+      pieces: pieces.map(({ start, end, x, x_panel }) => ({ start, end, x, x_panel })),
       lane: $('tr-lane').value,
       dialect,
     });
@@ -287,11 +299,13 @@ async function exportFcpxml() {
   }
 }
 
-function setX(clientX) {
+function setX(clientX, panel) {
   const rect = $('tr-frame').getBoundingClientRect();
   if (!rect.width || !pieces[sel]) return;
-  pieces[sel].x = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-  pieces[sel].manual = true;
+  const p = pieces[sel];
+  const value = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+  p[panel ? 'x_panel' : 'x'] = value;
+  p[panel ? 'manual_panel' : 'manual'] = true;
   renderBoxes();
 }
 
@@ -322,9 +336,30 @@ function bind() {
   $('tr-list').setAttribute('aria-keyshortcuts',
     `${ariaKeys(trailerShortcut('clipPrev'))} ${ariaKeys(trailerShortcut('clipNext'))}`);
   let dragging = false;
-  frame.addEventListener('pointerdown', (e) => { dragging = true; frame.setPointerCapture(e.pointerId); setX(e.clientX); renderList(); });
-  frame.addEventListener('pointermove', (e) => { if (dragging) setX(e.clientX); });
-  frame.addEventListener('pointerup', () => { dragging = false; renderList(); });
+  // Muunnos jäädytetään alasvetoon: Optionin lipsahtaminen kesken raahauksen
+  // ei vaihda kohde-ikkunaa (eikä kehys hyppää).
+  let dragPanel = false;
+  frame.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    dragPanel = !!e.altKey;
+    frame.setPointerCapture(e.pointerId);
+    setX(e.clientX, dragPanel);
+    renderList();
+  });
+  frame.addEventListener('pointermove', (e) => { if (dragging) setX(e.clientX, dragPanel); });
+  frame.addEventListener('pointerup', () => {
+    dragging = false;
+    dragPanel = false;
+    document.body.classList.remove('tr-panel-drag');
+    renderList();
+  });
+  // Option pohjassa: paneeli-ikkuna korostuu ja kursori vaihtuu.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Alt') document.body.classList.add('tr-panel-drag');
+  });
+  document.addEventListener('keyup', (e) => {
+    if (e.key === 'Alt' && !dragging) document.body.classList.remove('tr-panel-drag');
+  });
 }
 
 async function start() {
@@ -355,6 +390,12 @@ const TRAILER_SHORTCUTS = [
   { id: 'clipRight', group: 'clip', label: 'trailer.nudgeRight',
     combos: [{ key: 'ArrowRight' }, { shift: true, key: 'ArrowRight' }],
     scope: ['page'], run: (e) => nudge(e && e.shiftKey ? NUDGE_SHIFT : NUDGE) },
+  { id: 'clipPanelLeft', group: 'clip', label: 'trailer.nudgePanelLeft',
+    combos: [{ alt: true, key: 'ArrowLeft' }, { alt: true, shift: true, key: 'ArrowLeft' }],
+    scope: ['page'], run: (e) => nudge(-(e && e.shiftKey ? NUDGE_SHIFT : NUDGE), true) },
+  { id: 'clipPanelRight', group: 'clip', label: 'trailer.nudgePanelRight',
+    combos: [{ alt: true, key: 'ArrowRight' }, { alt: true, shift: true, key: 'ArrowRight' }],
+    scope: ['page'], run: (e) => nudge(e && e.shiftKey ? NUDGE_SHIFT : NUDGE, true) },
   { id: 'clipMerge', group: 'clip', label: 'trailer.merge', combos: [{ key: 'm' }],
     scope: ['page'], run: () => mergePrev(sel) },
 ];

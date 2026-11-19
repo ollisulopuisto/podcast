@@ -145,6 +145,7 @@ def register(app, state: "AppState", _static_dir, versioned) -> None:
             raise HTTPException(400, t("trailer.bad_pieces"))
         pieces: list[tuple[float, float]] = []
         xs: list[float] = []
+        xs_panel: list[float] = []
         for item in raw:
             if not isinstance(item, dict) or "x" not in item:
                 raise HTTPException(400, t("trailer.bad_pieces"))
@@ -157,7 +158,11 @@ def register(app, state: "AppState", _static_dir, versioned) -> None:
             if not b > a or abs(a - edge) > 1e-3:
                 raise HTTPException(400, t("trailer.bad_pieces"))
             pieces.append((a, b))
-            xs.append(_number(item.get("x"), "x", 0.0, 1.0))
+            x = _number(item.get("x"), "x", 0.0, 1.0)
+            xs.append(x)
+            # Paneelin oma kehys on valinnainen: ilman sitä paneeli seuraa
+            # koko ruudun kehystä kuten ennen 9:16-ikkunan eriyttämistä.
+            xs_panel.append(_number(item.get("x_panel", x), "x_panel", 0.0, 1.0))
         try:
             src = trailer.probe_source(video)
             if pieces[-1][1] > float(src.duration) + 1e-3:
@@ -167,7 +172,7 @@ def register(app, state: "AppState", _static_dir, versioned) -> None:
             # erottuvat Final Cutin selaimessa.
             xml = build_trailer_fcpxml(
                 src, pieces, xs, os.path.splitext(os.path.basename(target))[0],
-                enabled_lane=lane, dialect=dialect)
+                xs_panel=xs_panel, enabled_lane=lane, dialect=dialect)
             out_path = write_fcpxml(target, xml)
         except (trailer.TrailerError, WriteError) as exc:
             raise HTTPException(400, str(exc)) from exc

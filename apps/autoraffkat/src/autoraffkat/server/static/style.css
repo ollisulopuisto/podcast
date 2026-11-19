@@ -829,6 +829,10 @@ dialog.sheet::backdrop { background: rgba(8, 9, 11, .62); }
 .tr-box { position: absolute; top: 0; bottom: 0; pointer-events: none; box-sizing: border-box; }
 .tr-box-half { border: 2px solid #3ddc84; }
 .tr-box-full { border: 2px solid #4da3ff; }
+/* Option pohjassa: puolikaspaneeli on muokkauksen kohteena. */
+body.tr-panel-drag .tr-frame { cursor: grab; }
+body.tr-panel-drag .tr-box-half { border-color: var(--warn); border-width: 3px; }
+body.tr-panel-drag .tr-box-full { opacity: 0.35; }
 .tr-comp { width: 202px; height: 360px; background: #111; border: 1px solid var(--line); }
 .tr-field { display: inline-flex; align-items: center; gap: 8px; margin: 4px 0; }
 .tr-output { flex-wrap: wrap; }
