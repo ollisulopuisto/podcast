@@ -355,13 +355,17 @@ def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
         out_dir = Path(args.json)
         for name in args.audio:
             words_path = out_dir / f"{Path(name).stem}.words.json"
+            txt_path = words_path.with_name(f"{Path(name).stem}.txt")
             try:
                 doc = json.loads(words_path.read_text(encoding="utf-8"))
+                txt_path.write_text(transcript.paragraph_text(doc), encoding="utf-8")
             except (OSError, ValueError) as error:
-                print(f"--txt: {words_path.name} ei aukea: {error}", file=sys.stderr)
+                message = f"--txt: {txt_path.name} ei onnistu: {error}"
+                print(message, file=sys.stderr)
+                # Taustajärjestelmä ehti jo lähettää ``done``n: viimeiseksi tapahtumaksi
+                # tulee virhe, jotta kuuntelija ei jää uskomaan onnistumiseen.
+                _failure("txt_failed", message, code=1, files=[str(txt_path)])
                 return 1
-            txt_path = words_path.with_name(f"{Path(name).stem}.txt")
-            txt_path.write_text(transcript.paragraph_text(doc), encoding="utf-8")
             print(f"Teksti luotu: {txt_path}")
     return code
 

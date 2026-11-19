@@ -112,3 +112,20 @@ def test_a_failed_run_writes_no_txt(local, monkeypatch, tmp_path):
 def test_txt_needs_the_audio_mode(capsys):
     assert cli.main(["--txt"]) == 1
     assert "--txt" in capsys.readouterr().err
+
+
+def test_an_unwritable_txt_fails_the_run_and_the_last_event_is_an_error(
+    local, tmp_path, capsys
+):
+    audio = tmp_path / "jakso.wav"
+    audio.write_bytes(b"data")
+    out = tmp_path / "out"
+    (out / "jakso.txt").mkdir(parents=True)  # kohde on hakemisto: kirjoitus epäonnistuu
+    assert cli.main(_args(audio, out, "--txt", "--events")) == 1
+    lines = [
+        json.loads(line.split(" ", 1)[1])
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("@@kuulas ")
+    ]
+    assert lines[-1]["event"] == "error"
+    assert lines[-1]["reason"] == "txt_failed"
