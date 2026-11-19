@@ -3246,8 +3246,20 @@ function watchProgress() {
   }, 300);
 }
 
-/* Kielivalitsin otsikkoon. Kieli tallentuu asetuksiin ja periytyy jaksosta
-   toiseen, joten se valitaan kerran. */
+/* Kielen vaihto: otsikon nappi ja natiivivalikon Kieli-kohta kutsuvat tätä.
+   Kieli tallentuu asetuksiin ja periytyy jaksosta toiseen, joten se valitaan kerran. */
+async function setLanguage(code) {
+  const data = await (await fetch('/api/language', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ language: code }),
+  })).json();
+  state.language = data.language;
+  setLang(state.language);
+  redrawAll();
+}
+
+/* Kielivalitsin otsikkoon. */
 function renderLanguage() {
   const host = $('language');
   host.textContent = '';
@@ -3257,16 +3269,7 @@ function renderLanguage() {
     button.type = 'button';
     button.textContent = code.toUpperCase();
     button.disabled = code === state.language;
-    button.addEventListener('click', async () => {
-      const data = await (await fetch('/api/language', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ language: code }),
-      })).json();
-      state.language = data.language;
-      setLang(state.language);
-      redrawAll();
-    });
+    button.addEventListener('click', () => setLanguage(code));
     host.append(button);
   });
 }
@@ -3353,6 +3356,13 @@ const SHORTCUTS = [
     combos: [{ mod: true, key: '.' }],
     scope: ['page'], run: () => pressNative('render-stop') },
   { id: 'zoom', group: 'preview', label: 'keys.zoom', pointer: 'keys.wheel', scope: [] },
+  /* Ikkunavalikon näppäimet hoitaa natiivi valikko (AppKit), joten sivun
+     käsittelijä ei saa koskea niihin: scope jää tyhjäksi. Rivit ovat
+     rekisterissä vain, jotta ohjeikkuna voi kertoa ne. */
+  { id: 'windowMinimize', group: 'window', label: 'menu.minimize',
+    combos: [{ mod: true, key: 'm' }], scope: [] },
+  { id: 'windowClose', group: 'window', label: 'menu.closeWindow',
+    combos: [{ mod: true, key: 'w' }], scope: [] },
   { id: 'pan', group: 'preview', label: 'keys.pan', pointer: 'keys.drag', scope: [] },
   { id: 'whole', group: 'preview', label: 'keys.whole', pointer: 'keys.dblclick', scope: [] },
   { id: 'help', group: 'help', label: 'keys.help', combos: [{ key: '?' }],
@@ -3363,7 +3373,7 @@ const SHORTCUTS = [
 ];
 
 /* Ryhmät tehtävän mukaan ja tässä järjestyksessä ohjeikkunaan. */
-const SHORTCUT_GROUPS = ['file', 'history', 'output', 'preview', 'help'];
+const SHORTCUT_GROUPS = ['file', 'history', 'output', 'preview', 'window', 'help'];
 
 let shortcutReturn = null;      // kohdistus ennen ohjeikkunan avausta
 
@@ -3511,6 +3521,7 @@ function nativeButton(cmd) {
 
 function nativeUsable(cmd, arg) {
   if (cmd === 'trailer') return true;
+  if (cmd === 'lang') return !!state && (state.languages || ['fi']).includes(arg);
   if (cmd === 'export-dest') return !!state && (arg === 'fcp' || arg === 'resolve');
   if (cmd === 'history-goto') return !!state;
   const el = nativeButton(cmd);
@@ -3531,6 +3542,7 @@ function nativeDisable() {
 
 function nativeRun(cmd, arg) {
   if (cmd === 'trailer') { nativeDisable(); window.location.href = '/trailer'; }
+  else if (cmd === 'lang') setLanguage(arg);
   else if (cmd === 'export-dest') setExportDest(arg);
   else if (cmd === 'history-goto') moveHistory('goto', arg);
   else nativeButton(cmd).click();
@@ -3551,6 +3563,9 @@ function nativeEnv() {
     usable: nativeUsable,
     checked: (cmd, arg) => cmd === 'export-dest'
       && (state && state.export_dialect === 'resolve' ? 'resolve' : 'fcp') === arg,
+    languages: () => ((state && state.languages) || ['fi']).map((code) => ({
+      id: code, label: T(`lang.${code}`), current: !!state && code === state.language,
+    })),
     history: () => {
       const select = $('history-branches');
       return select ? Array.from(select.options || []).map((option) => ({
@@ -3573,6 +3588,8 @@ function startNativeMenu() {
     getApi: () => (typeof window !== 'undefined' && window.pywebview
       ? window.pywebview.api : null),
     hasFocus: () => typeof document.hasFocus !== 'function' || document.hasFocus(),
+    /* Piirretty valikko (macOS) supistaa työkalurivin; selainvälilehti jää entiselleen. */
+    onActive: () => document.body.classList.add('native-menus'),
   });
 
   /* Valikko tulee Pythonilta takaisin tänne (`gui.py`); ikkuna, joka sai valinnan, ajaa sen. */

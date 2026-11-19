@@ -9,13 +9,19 @@
 /* Valikot ja niiden kohdat. `cmd` on komento (nappi tai erikoiskomento, ks. app.js
    `nativeUsable`), `label` käännösavain, `keys` pikanäppäinrivin id (`SHORTCUTS`), josta
    näppäinvihje luetaan. `native` merkitsee kohdan jonka pywebviewin oma natiivikohta
-   korvaa (leikepöytä toimii tekstikentissä vain natiivina). */
+   korvaa (leikepöytä toimii tekstikentissä vain natiivina). `os` merkitsee kohdan jonka
+   AppKit ajaa itse vastaanottajaketjussa oikealla keyEquivalentilla (ikkunan pienennys
+   ja sulkeminen) — sivulle ei lähetetä komentoa. `languages` on kielialivalikko, jonka
+   kohdat `env.languages()` antaa (kuten `history`). */
 const NATIVE_MENUS = [
   { id: 'file', label: 'menu.file', items: [
     { cmd: 'open-media', label: 'app.openMedia', keys: 'openMedia' },
     { cmd: 'open', label: 'app.open', keys: 'open' },
     { cmd: 'reload', label: 'app.reload', keys: 'reload' },
     { cmd: 'relink', label: 'app.relink' },
+    { sep: true },
+    { cmd: 'render', label: 'app.render', keys: 'render' },
+    { cmd: 'render-stop', label: 'menu.renderStop', keys: 'renderStop' },
     { sep: true },
     { cmd: 'export', label: 'app.export', keys: 'export' },
     { submenu: 'menu.exportTo', items: [
@@ -41,11 +47,13 @@ const NATIVE_MENUS = [
   ] },
   { id: 'audio', label: 'menu.audio', items: [
     { cmd: 'mix', label: 'audio.run', keys: 'mix' },
-    { cmd: 'render', label: 'app.render', keys: 'render' },
-    { cmd: 'render-stop', label: 'menu.renderStop', keys: 'renderStop' },
   ] },
   { id: 'view', label: 'menu.view', items: [
-    { cmd: 'shortcuts', label: 'keys.button', keys: 'help' },
+    { languages: 'menu.language' },
+  ] },
+  { id: 'window', label: 'menu.window', items: [
+    { cmd: 'window.minimize', label: 'menu.minimize', os: true },
+    { cmd: 'window.close', label: 'menu.closeWindow', os: true },
   ] },
   { id: 'help', label: 'menu.help', items: [
     { cmd: 'shortcuts', label: 'keys.button', keys: 'help' },
@@ -73,13 +81,20 @@ function nativeMenuSpec(env, menus = NATIVE_MENUS) {
           keys: '', enabled: !sheet, checked: !!node.current,
         }));
         if (items.length) out.push({ kind: 'submenu', label: env.T(entry.submenu), items });
+      } else if (entry.languages) {
+        const items = env.languages().map((lang) => ({
+          kind: 'item', id: 'lang', arg: lang.id, label: lang.label, keys: '',
+          enabled: !sheet && env.usable('lang', lang.id), checked: !!lang.current,
+        }));
+        if (items.length) out.push({ kind: 'submenu', label: env.T(entry.languages), items });
       } else if (entry.submenu) {
         out.push({ kind: 'submenu', label: env.T(entry.submenu), items: build(entry.items) });
       } else {
         const item = {
           kind: 'item', id: entry.cmd, label: env.T(entry.label),
           keys: entry.keys ? env.keysText(entry.keys) : '',
-          enabled: !entry.native && env.usable(entry.cmd, entry.arg)
+          enabled: entry.os ? true
+            : !entry.native && env.usable(entry.cmd, entry.arg)
             && (!sheet || NATIVE_WHILE_SHEET.has(entry.cmd)),
         };
         if (entry.arg !== undefined) item.arg = entry.arg;
@@ -106,7 +121,7 @@ function runNativeChoice(choice, env) {
    `push(true)` (kun ikkuna saa kohdistuksen) heti ja aina. Vain kohdistuksen saanut
    ikkuna lähettää, koska valikkorivi kuuluu etumaiselle ikkunalle. Ei tee mitään ilman
    kääreen `set_native_menu`a, joten selainvälilehti ei muutu. */
-function createNativeMenuSync({ getSpec, getApi, hasFocus }) {
+function createNativeMenuSync({ getSpec, getApi, hasFocus, onActive }) {
   let last = '';
   return {
     push(force = false) {
@@ -116,7 +131,9 @@ function createNativeMenuSync({ getSpec, getApi, hasFocus }) {
       const text = JSON.stringify(spec);
       if (!force && text === last) return false;
       last = text;
-      Promise.resolve(api.set_native_menu(spec)).catch(() => { last = ''; });
+      Promise.resolve(api.set_native_menu(spec))
+        .then((ok) => { if (ok && onActive) onActive(); })
+        .catch(() => { last = ''; });
       return true;
     },
   };

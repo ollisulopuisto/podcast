@@ -476,3 +476,63 @@ def test_a_command_without_a_string_id_is_not_sent():
     bridge._run_native_command({"id": 5})
     bridge._run_native_command("open")
     assert scripts == []
+
+
+def test_window_items_run_through_the_responder_chain_with_real_keys():
+    """Ikkunan pienennys ja sulkeminen ovat AppKitin omia: toiminto ja keyEquivalent,
+    ei representedObjectia, eikä käsittelijää sivulle."""
+    main = FakeMenu("main")
+    spec = [
+        {
+            "id": "window",
+            "label": "Ikkuna",
+            "items": [
+                item("window.minimize", "Pienennä"),
+                item("window.close", "Sulje ikkuna", enabled=False),
+            ],
+        }
+    ]
+    ok, _t, _r = run_install(main, spec)
+    assert ok
+    window = next(i for i in main.items if i.title() == "Ikkuna").submenu()
+    minimize, close = window.items
+    assert minimize.action() == "miniaturize:" and minimize._key == "m"
+    assert close.action() == "performClose:" and close._key == "w"
+    # AppKit päättää käytettävyyden itse: speksi ei saa lamauttaa ikkunakohtaa.
+    assert close.enabled is True
+    # Ei komentoa sivulle: kohtaa painettaessa mitään ei lähetä ajajalle.
+    assert minimize.representedObject() is None
+    assert close.representedObject() is None
+    assert minimize.target is None and close.target is None
+
+
+def test_install_reports_the_drawn_result_not_the_queue():
+    """callAfter-jonossa paluuarvo on piirron tulos: jono voi olla tukossa tai
+    piirto epäonnistua, ja sivu supistaa työkalurivinsä vasta kun valikko on oikeasti
+    piirretty (muuten napit katoaisivat ilman valikkoa)."""
+    main = pywebview_menu()
+    ok = native_menu.install(
+        SPEC,
+        lambda payload: None,
+        platform="darwin",
+        appkit=FakeAppKit(main),
+        main_thread=lambda fn: threading.Thread(target=fn).start(),
+        target_factory=lambda run: type("T", (), {"run": staticmethod(run)})(),
+        draw_timeout=2.0,
+    )
+    assert ok is True
+    assert any(i.title() == "Tiedosto" for i in main.items)
+
+
+def test_a_jammed_main_thread_reports_not_drawn():
+    main = pywebview_menu()
+    ok = native_menu.install(
+        SPEC,
+        lambda payload: None,
+        platform="darwin",
+        appkit=FakeAppKit(main),
+        main_thread=lambda fn: None,  # jono ei koskaan aja: raportoi piirtämättömyys
+        draw_timeout=0.05,
+    )
+    assert ok is False
+    assert not any(i.title() == "Tiedosto" for i in main.items)

@@ -856,7 +856,9 @@ async function asyncPaths() {
     }
     context.nativeRun('trailer');
     const last = sent[sent.length - 1];
-    if (!last || !last.flatMap((m) => flat(m.items)).every((i) => i.kind !== 'item' || !i.enabled)) {
+    /* Ikkunan AppKit-kohdat (window.*) eivät koskaan tarvitse sivun käsittelijää:
+       Pienennä/Sulje toimivat trailer-sivullakin. Muut kohdat eivät saa jäädä päälle. */
+    if (!last || !last.flatMap((m) => flat(m.items)).every((i) => i.kind !== 'item' || i.id.startsWith('window.') || !i.enabled)) {
       throw new Error('trailer-siirtymä jätti valikon päälle');
     }
     context.nativeButton('mix');

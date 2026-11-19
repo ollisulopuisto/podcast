@@ -31,8 +31,8 @@ def run():
 
 
 @needs_node
-def test_the_menus_are_the_five_the_app_documents(run):
-    assert run["menuIds"] == ["file", "edit", "audio", "view", "help"]
+def test_the_menus_are_the_six_the_app_documents(run):
+    assert run["menuIds"] == ["file", "edit", "audio", "view", "window", "help"]
 
 
 @needs_node
@@ -53,8 +53,10 @@ def test_an_item_the_button_refuses_is_disabled_in_the_menu(run):
 
 
 @needs_node
-def test_while_the_shortcut_sheet_is_open_only_its_own_command_is_enabled(run):
-    assert run["sheetEnabled"] == ["shortcuts"]
+def test_while_the_sheet_is_open_only_its_own_command_reaches_the_page(run):
+    # Ikkunan AppKit-kohdat eivät ole sivun komentoja: macOS ei koskaan lamauta
+    # Pienennä/Sulje-kohtia, joten ne pysyvät sallittuina sheetin aikanakin.
+    assert run["sheetEnabled"] == ["window.minimize", "window.close", "shortcuts"]
 
 
 @needs_node
@@ -74,6 +76,43 @@ def test_the_sheet_blocks_every_choice_but_its_own(run):
 def test_a_choice_the_button_would_refuse_or_a_malformed_one_is_not_run(run):
     assert run["unusableRefused"] is False
     assert run["garbageRefused"] == [False, False]
+
+
+@needs_node
+def test_render_and_stop_moved_from_audio_to_file(run):
+    assert run["fileTop"].index("render") < run["fileTop"].index("render-stop")
+    assert run["fileTop"].index("render-stop") < run["fileTop"].index("export")
+    assert "render" not in run["audioTop"] and "render-stop" not in run["audioTop"]
+    assert run["audioTop"] == ["mix"]
+
+
+@needs_node
+def test_the_shortcut_sheet_lives_only_in_help(run):
+    assert "shortcuts" not in run["viewTop"]
+    assert "shortcuts" in run["helpTop"]
+
+
+@needs_node
+def test_the_window_menu_is_os_native_and_always_enabled(run):
+    assert run["windowTop"] == ["window.minimize", "window.close"]
+    # Näppäimet ovat oikeita keyEquivalentteja, ei otsikon vihjeitä.
+    assert run["windowSpec"] == [
+        ["window.minimize", True, ""],
+        ["window.close", True, ""],
+    ]
+    assert run["windowEnabledWhenUnusable"] is True
+
+
+@needs_node
+def test_the_language_submenu_mirrors_the_project_languages(run):
+    assert run["langItems"] == [["fi", "L:fi", True], ["en", "L:en", False]]
+    assert run["sheetLangDisabled"] is True
+
+
+@needs_node
+def test_a_drawn_menu_turns_the_slim_bar_on(run):
+    # set_native_menu -> true: onActive käy (valikko piirrettiin); false: ei käy.
+    assert run["onActive"] == 1
 
 
 @needs_node

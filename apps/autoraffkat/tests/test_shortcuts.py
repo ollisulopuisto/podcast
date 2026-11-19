@@ -99,6 +99,37 @@ def test_every_shortcut_appears_in_the_sheet_in_both_languages(run):
 
 
 @needs_node
+def test_window_shortcuts_are_documented_but_never_dispatched(run):
+    """⌘M pienentää ja ⌘W sulkee ikkunan — AppKit hoitaa, sivu ei.
+
+    Ikkunavalikon kiihdytysnäppäimet ovat natiivin valikon, joten sivun
+    näppäinkäsittelijä ei saa syödä niitä: scope jää tyhjäksi. Ne ovat
+    rekisterissä vain, jotta ohjeikkuna voi kertoa niistä.
+    """
+    rows = {s["id"]: s for s in run["registry"]}
+    assert {"windowMinimize", "windowClose"} <= set(rows), list(rows)
+    assert rows["windowMinimize"]["combos"] == [{"key": "m", "mod": True}]
+    assert rows["windowClose"]["combos"] == [{"key": "w", "mod": True}]
+    assert rows["windowMinimize"]["scope"] == []
+    assert rows["windowClose"]["scope"] == []
+
+
+@needs_node
+def test_window_shortcuts_match_the_appkit_bindings(run):
+    """Rekisterin rivit vastaavat OS_WINDOW_ACTIONS -sidoksia.
+
+    Muuten ohje kertoo näppäimestä joka ei tee mitään, tai AppKit
+    kaappaa näppäimen jota ohje ei tunne.
+    """
+    from autoraffkat.native_menu import OS_WINDOW_ACTIONS
+
+    rows = {s["id"]: s for s in run["registry"]}
+    native = {key for _, key in OS_WINDOW_ACTIONS.values()}
+    assert rows["windowMinimize"]["combos"][0]["key"] in native
+    assert rows["windowClose"]["combos"][0]["key"] in native
+
+
+@needs_node
 def test_every_shortcut_label_has_a_translation_in_both_languages(run):
     """(i) Uusi näppäin ilman käännöstä näkyisi ruudulla avaimena."""
     fi, en = set(run["strings"]["fi"]), set(run["strings"]["en"])
