@@ -70,6 +70,9 @@ vm.createContext(context);
 vm.runInContext(
   fs.readFileSync(path.join(path.dirname(appPath), 'i18n.js'), 'utf8'),
   context, { filename: 'i18n.js' });
+vm.runInContext(
+  fs.readFileSync(path.join(path.dirname(appPath), 'shortcuts.js'), 'utf8'),
+  context, { filename: 'shortcuts.js' });
 vm.runInContext(src.replace(/\bboot\(\);\s*$/, ''), context, { filename: 'app.js' });
 vm.runInContext(`
   mediaImport = { paths: ['/a.mp4', '/b.wav'], reference: '/a.mp4', result: null };

@@ -100,7 +100,7 @@ const context = {
 };
 context.globalThis = context;
 vm.createContext(context);
-for (const name of ['i18n.js', 'trailer.js']) {
+for (const name of ['i18n.js', 'shortcuts.js', 'trailer.js']) {
   vm.runInContext(fs.readFileSync(path.join(staticDir, name), 'utf8'), context, { filename: name });
 }
 
@@ -148,6 +148,7 @@ const buttons = (label) => created.filter((e) => e.tagName === 'BUTTON' && e.tex
     if (!merges.length) fail('yhdistyspainikkeita ei löytynyt');
     else {
       if (!merges[0].disabled) fail('ensimmäisen rivin yhdistys pitäisi olla estetty');
+      if (merges[1].attrs['aria-keyshortcuts'] !== 'M') fail('yhdistyspainikkeelta puuttuu aria-keyshortcuts M');
       await fire(merges[1], 'click');
       if (id('tr-list').children.length !== 3) fail('yhdistys ei poistanut riviä');
     }
@@ -172,6 +173,9 @@ const buttons = (label) => created.filter((e) => e.tagName === 'BUTTON' && e.tex
     await fireKey('ArrowDown', { target: { tagName: 'INPUT' } });
     t = new URLSearchParams(id('tr-img').src.split('?')[1]).get('t');
     if (Number(t) !== 20) fail('tekstikentässä nuoli ei saa vaihtaa palaa');
+    if (!String(id('tr-frame').attrs['aria-keyshortcuts'] || '').includes('ArrowLeft')) {
+      fail('kehityskuvasta puuttuu nuolten aria-keyshortcuts');
+    }
 
     // käsin kehystys, kaista, tila, toteutus
     await fire(id('tr-frame'), 'pointerdown');

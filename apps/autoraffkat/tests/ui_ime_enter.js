@@ -58,6 +58,9 @@ vm.createContext(context);
 vm.runInContext(
   fs.readFileSync(path.join(path.dirname(appPath), 'i18n.js'), 'utf8'),
   context, { filename: 'i18n.js' });
+vm.runInContext(
+  fs.readFileSync(path.join(path.dirname(appPath), 'shortcuts.js'), 'utf8'),
+  context, { filename: 'shortcuts.js' });
 vm.runInContext(src.replace(/\bboot\(\);\s*$/, ''), context, { filename: 'app.js' });
 
 /* add() tallentaa ja piirtää uudestaan; tässä mitataan vain lisäystä. */

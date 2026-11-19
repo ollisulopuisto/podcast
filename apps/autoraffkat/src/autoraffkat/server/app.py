@@ -2020,6 +2020,7 @@ def create_app(state: AppState) -> FastAPI:
             "app.js",
             "sync_timeline.js",
             "native_menu.js",
+            "shortcuts.js",
             "i18n.js",
             "style.css",
             "favicon.ico",
@@ -2956,8 +2957,8 @@ def create_app(state: AppState) -> FastAPI:
 
     def _versioned(name: str) -> str:
         html = (STATIC_DIR / name).read_text(encoding="utf-8")
-        for asset in ("trailer.js", "native_menu.js", "i18n.js", "style.css", "favicon.png",
-                      "favicon.svg", "favicon.ico"):
+        for asset in ("trailer.js", "native_menu.js", "shortcuts.js", "i18n.js", "style.css",
+                      "favicon.png", "favicon.svg", "favicon.ico"):
             static_file = STATIC_DIR / asset
             if static_file.exists():
                 stamp = int(static_file.stat().st_mtime)

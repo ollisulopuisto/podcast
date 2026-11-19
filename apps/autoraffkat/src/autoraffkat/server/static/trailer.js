@@ -168,6 +168,7 @@ function renderList() {
     merge.className = 'ghost small';
     merge.textContent = T('trailer.merge');
     merge.disabled = i === 0;
+    merge.setAttribute('aria-keyshortcuts', ariaKeys(trailerShortcut('clipMerge')));
     merge.addEventListener('click', () => mergePrev(i));
     li.append(main, split, merge);
     list.append(li);
@@ -297,6 +298,10 @@ function bind() {
   $('tr-export').addEventListener('click', exportFcpxml);
   $('tr-lane').addEventListener('change', drawComposite);
   const frame = $('tr-frame');
+  frame.setAttribute('aria-keyshortcuts',
+    `${ariaKeys(trailerShortcut('clipLeft'))} ${ariaKeys(trailerShortcut('clipRight'))}`);
+  $('tr-list').setAttribute('aria-keyshortcuts',
+    `${ariaKeys(trailerShortcut('clipPrev'))} ${ariaKeys(trailerShortcut('clipNext'))}`);
   let dragging = false;
   frame.addEventListener('pointerdown', (e) => { dragging = true; frame.setPointerCapture(e.pointerId); setX(e.clientX); renderList(); });
   frame.addEventListener('pointermove', (e) => { if (dragging) setX(e.clientX); });
@@ -315,22 +320,33 @@ async function start() {
   if (path) load(path);
 }
 
-/* Näppäimet: ↑/↓ valitsee palan, ←/→ siirtää kehystä (⇧ suurempi askel),
-   M yhdistää edelliseen. Ei syötekentissä eikä muokkausnäppäinten kanssa. */
+/* Näppäimet rekisterissä, kuten pääsivulla (shortcuts.js): ↑/↓ valitsee palan,
+   ←/→ siirtää kehystä (⇧ suurempi askel), M yhdistää edelliseen. Vihjeet ja
+   aria-keyshortcuts johdetaan samoista riveistä. */
 const NUDGE = 0.01;
 const NUDGE_SHIFT = 0.05;
+const TRAILER_SHORTCUTS = [
+  { id: 'clipPrev', group: 'clip', label: 'trailer.prev', combos: [{ key: 'ArrowUp' }],
+    scope: ['page'], run: () => selectPiece(sel - 1) },
+  { id: 'clipNext', group: 'clip', label: 'trailer.next', combos: [{ key: 'ArrowDown' }],
+    scope: ['page'], run: () => selectPiece(sel + 1) },
+  { id: 'clipLeft', group: 'clip', label: 'trailer.nudgeLeft',
+    combos: [{ key: 'ArrowLeft' }, { shift: true, key: 'ArrowLeft' }],
+    scope: ['page'], run: (e) => nudge(-(e && e.shiftKey ? NUDGE_SHIFT : NUDGE)) },
+  { id: 'clipRight', group: 'clip', label: 'trailer.nudgeRight',
+    combos: [{ key: 'ArrowRight' }, { shift: true, key: 'ArrowRight' }],
+    scope: ['page'], run: (e) => nudge(e && e.shiftKey ? NUDGE_SHIFT : NUDGE) },
+  { id: 'clipMerge', group: 'clip', label: 'trailer.merge', combos: [{ key: 'm' }],
+    scope: ['page'], run: () => mergePrev(sel) },
+];
+
+const trailerShortcut = (rowId) => TRAILER_SHORTCUTS.find((s) => s.id === rowId);
+
 document.addEventListener('keydown', (e) => {
+  /* Lomakekentissä (myös liukusäädin) nuolet ovat kentän omia. */
   const t = e.target && e.target.tagName;
   if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
-  const step = e.shiftKey ? NUDGE_SHIFT : NUDGE;
-  if (e.key === 'ArrowUp' && sel > 0) selectPiece(sel - 1);
-  else if (e.key === 'ArrowDown' && sel < pieces.length - 1) selectPiece(sel + 1);
-  else if (e.key === 'ArrowLeft') nudge(-step);
-  else if (e.key === 'ArrowRight') nudge(step);
-  else if (e.key === 'm' || e.key === 'M') mergePrev(sel);
-  else return;
-  e.preventDefault();
+  shortcutKeyIn(TRAILER_SHORTCUTS, e, 'page', null);
 });
 
 /* Natiivivalikot: sama silta kuin pääsivulla (app.js startNativeMenu), mutta
@@ -347,7 +363,6 @@ function trailerEnv() {
     if (cmd === 'clip-merge-prev') return sel > 0;
     return false;
   };
-  const keys = { clipPrev: '↑', clipNext: '↓', clipLeft: '←', clipRight: '→', clipMerge: 'M' };
   const run = (cmd) => {
     if (cmd === 'trailer-back') window.location.href = '/';
     else if (cmd === 'trailer-export') $('tr-export').click();
@@ -361,7 +376,10 @@ function trailerEnv() {
   return {
     T, usable, run,
     sheetOpen: () => false,
-    keysText: (rowId) => keys[rowId] || '',
+    keysText: (rowId) => {
+      const row = trailerShortcut(rowId);
+      return row ? comboText(row.combos[0], onMac()) : '';
+    },
   };
 }
 
