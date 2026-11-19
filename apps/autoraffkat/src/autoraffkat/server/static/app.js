@@ -3356,6 +3356,13 @@ const SHORTCUTS = [
     combos: [{ mod: true, key: '.' }],
     scope: ['page'], run: () => pressNative('render-stop') },
   { id: 'zoom', group: 'preview', label: 'keys.zoom', pointer: 'keys.wheel', scope: [] },
+  /* Ikkunavalikon näppäimet hoitaa natiivi valikko (AppKit), joten sivun
+     käsittelijä ei saa koskea niihin: scope jää tyhjäksi. Rivit ovat
+     rekisterissä vain, jotta ohjeikkuna voi kertoa ne. */
+  { id: 'windowMinimize', group: 'window', label: 'menu.minimize',
+    combos: [{ mod: true, key: 'm' }], scope: [] },
+  { id: 'windowClose', group: 'window', label: 'menu.closeWindow',
+    combos: [{ mod: true, key: 'w' }], scope: [] },
   { id: 'pan', group: 'preview', label: 'keys.pan', pointer: 'keys.drag', scope: [] },
   { id: 'whole', group: 'preview', label: 'keys.whole', pointer: 'keys.dblclick', scope: [] },
   { id: 'help', group: 'help', label: 'keys.help', combos: [{ key: '?' }],
@@ -3366,7 +3373,7 @@ const SHORTCUTS = [
 ];
 
 /* Ryhmät tehtävän mukaan ja tässä järjestyksessä ohjeikkunaan. */
-const SHORTCUT_GROUPS = ['file', 'history', 'output', 'preview', 'help'];
+const SHORTCUT_GROUPS = ['file', 'history', 'output', 'preview', 'window', 'help'];
 
 let shortcutReturn = null;      // kohdistus ennen ohjeikkunan avausta
 
