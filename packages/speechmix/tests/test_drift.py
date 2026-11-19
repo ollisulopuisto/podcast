@@ -200,3 +200,31 @@ def test_the_lift_survives_an_active_short_term_ceiling(tmp_path):
     result = stems.StemResult()
     stems.program_deliver([job], result, {}, {}, settings)
     assert result.program_lufs == pytest.approx(-16.0, abs=0.5)
+
+
+def test_a_repeated_source_range_is_ridden_once_not_compounded(tmp_path):
+    """Sama lähdealue kahdessa sijoituksessa: veto poltetaan tiedostoon kerran.
+
+    Kahden sijoituksen eri vahvistusta ei voi kirjoittaa samaan tiedostoon;
+    varhaisin ohjelman sijoitus voittaa. Ilman suojaa jokainen span loisi
+    oman kertojansa ja 6 dB:n veto kasisi 12 dB:ksi.
+    """
+    from pedalboard.io import AudioFile
+
+    from speechmix.timeline import Span, Track
+
+    rng = np.random.default_rng(5)
+    audio = rng.normal(0, 0.05, 30 * RATE)
+    target = tmp_path / "leike [mix].wav"
+    sf.write(str(target), audio, RATE)
+    job = {"key": "leike", "speech": True, "target": str(target),
+           "bit_depth": 32,
+           "track": Track(str(target), "leike",
+                          [Span(0.0, 10.0, 0.0), Span(20.0, 30.0, 0.0)])}
+    ride = np.zeros(40)  # 1 askel = 1 s: alkuohjelma 0 dB, loppu +6 dB
+    ride[20:] = 6.0
+    with AudioFile(str(target)) as handle:
+        stems._write_with_gain(job, handle, RATE, [], 1.0, ride, 1.0)
+    written, _ = sf.read(str(target) + ".ceil.tmp.wav", dtype="float64")
+    gained = _rms_db(written[: 10 * RATE]) - _rms_db(audio[: 10 * RATE])
+    assert gained == pytest.approx(0.0, abs=0.3)

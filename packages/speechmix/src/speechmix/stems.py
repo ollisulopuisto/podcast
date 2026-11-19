@@ -685,12 +685,30 @@ def _write_with_gain(job, handle, rate: int, stored, scale: float,
                         continue
                     gain[f0 - position + (a - p0):f0 - position + (b - p0)] = \
                         curve[a - start:b - start]
-                if ride_db is not None and ride_step > 0:
+            if ride_db is not None and ride_step > 0:
+                # Sama lähdealue voi olla monta kertaa ohjelmassa: veto
+                # poltetaan kerran (varhaisin sijoitus voittaa), koska
+                # kahden sijoituksen eri vahvistusta ei voi kirjoittaa
+                # samaan tiedostoon eikä kertominen saa tuplata mitattua.
+                done = np.zeros(count, dtype=bool)
+                for span in job["track"].spans:
+                    f0 = max(position, int(round(span.file_offset * rate)))
+                    f1 = min(position + count,
+                             int(round(span.to_file_time(span.programme_end)
+                                       * rate)))
+                    if f1 <= f0:
+                        continue
+                    p0 = int(round(span.programme_start * rate)) + (
+                        f0 - int(round(span.file_offset * rate)))
+                    p1 = p0 + (f1 - f0)
                     when = (np.arange(p0, p1) / rate) / ride_step
                     slide = (10.0 ** (np.interp(
                         when, np.arange(len(ride_db)), ride_db) / 20.0)
                     ).astype(np.float32)
-                    gain[f0 - position:f0 - position + (p1 - p0)] *= slide
+                    area = slice(f0 - position, f0 - position + (p1 - p0))
+                    fresh = ~done[area]
+                    gain[area][fresh] *= slide[fresh]
+                    done[area] = True
             out.write(np.ascontiguousarray(block * gain))
             position += count
     written = frame_count(tmp)
