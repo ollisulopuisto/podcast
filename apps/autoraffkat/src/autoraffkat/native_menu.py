@@ -35,6 +35,11 @@ _NATIVE_EDIT_ACTIONS = ("cut:", "copy:", "paste:", "selectAll:")
 #: Näppäinvihjeen oikea reuna valikossa, pisteinä.
 _HINT_TAB = 300.0
 
+#: Ikkunavalikon kohdat AppKit ajaa itse vastaanottajaketjussa (target on nil):
+#: toiminto ja oikea keyEquivalent, ei komentoa sivulle. Käytettävyyden päättää AppKit,
+#: joten kohta piirretään aina sallittuna.
+OS_WINDOW_ACTIONS = {"window.minimize": ("miniaturize:", "m"), "window.close": ("performClose:", "w")}
+
 #: Mitä pywebviewin valikoissa oli; säilyy asennusten yli (asennus siirtää ne).
 _kept: dict[str, list[Any]] = {"edit": [], "view": []}
 _target: Any = None
@@ -157,6 +162,13 @@ def _titled(appkit: Any, title: str, keys: str) -> tuple[str, Any]:
 
 
 def _leaf(appkit: Any, entry: dict, target: Any) -> Any:
+    if entry["id"] in OS_WINDOW_ACTIONS:
+        action, key = OS_WINDOW_ACTIONS[entry["id"]]
+        node = appkit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            entry["label"], action, key
+        )
+        node.setEnabled_(True)
+        return node
     plain, attributed = _titled(appkit, entry["label"], entry["keys"])
     node = appkit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
         plain, "invoke:", ""

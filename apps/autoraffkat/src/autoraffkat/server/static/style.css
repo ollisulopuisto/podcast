@@ -36,8 +36,23 @@ header {
   display: grid;
   gap: 10px;
   padding: 14px 0 12px;
-  background: linear-gradient(var(--bg) 80%, transparent);
+  /* Läpinäkymätön: aiemmin alareunan liukuvärjäys päästi vierivän sisällön
+     pilkun verhon taakse, ja palkki näytti piirtävän sisällön päälle. */
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
 }
+
+/* Natiivivalikko kantaa tiedosto-, historia- ja aputoiminnot: palkki supistuu
+   yhdeksi riviksi — nimi, kieli, tila ja tulosteet. Ryhmät vain piilotetaan:
+   napit jäävät DOM:iin, koska valikko painaa niitä edelleen (`hidden`-luokka
+   lamauttaisi valikon kohdan, ks. nativeUsable). */
+body.native-menus header { display: flex; flex-wrap: wrap; align-items: center; column-gap: 18px; }
+body.native-menus .header-top { flex: 1 1 auto; }
+body.native-menus .toolbar { margin-left: auto; }
+body.native-menus #document-controls,
+body.native-menus #history-controls,
+body.native-menus #export-dest,
+body.native-menus .header-utilities { display: none; }
 
 .header-top, .header-utilities, .toolbar, .toolbar-group {
   display: flex;

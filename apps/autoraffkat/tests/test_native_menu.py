@@ -476,3 +476,31 @@ def test_a_command_without_a_string_id_is_not_sent():
     bridge._run_native_command({"id": 5})
     bridge._run_native_command("open")
     assert scripts == []
+
+
+def test_window_items_run_through_the_responder_chain_with_real_keys():
+    """Ikkunan pienennys ja sulkeminen ovat AppKitin omia: toiminto ja keyEquivalent,
+    ei representedObjectia, eikä käsittelijää sivulle."""
+    main = FakeMenu("main")
+    spec = [
+        {
+            "id": "window",
+            "label": "Ikkuna",
+            "items": [
+                item("window.minimize", "Pienennä"),
+                item("window.close", "Sulje ikkuna", enabled=False),
+            ],
+        }
+    ]
+    ok, _t, _r = run_install(main, spec)
+    assert ok
+    window = next(i for i in main.items if i.title() == "Ikkuna").submenu()
+    minimize, close = window.items
+    assert minimize.action() == "miniaturize:" and minimize._key == "m"
+    assert close.action() == "performClose:" and close._key == "w"
+    # AppKit päättää käytettävyyden itse: speksi ei saa lamauttaa ikkunakohtaa.
+    assert close.enabled is True
+    # Ei komentoa sivulle: kohtaa painettaessa mitään ei lähetä ajajalle.
+    assert minimize.representedObject() is None
+    assert close.representedObject() is None
+    assert minimize.target is None and close.target is None

@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
+(async () => {
 const ctx = vm.createContext({ Promise, JSON, String, Set });
 vm.runInContext(
   fs.readFileSync(path.join(process.argv[2], 'native_menu.js'), 'utf8')
@@ -24,6 +25,7 @@ function env(over = {}) {
     usable: () => true,
     checked: (cmd, arg) => arg === 'fcp',
     history: () => [{ id: '1', label: 'a', current: false }, { id: '2', label: 'b', current: true }],
+    languages: () => [{ id: 'fi', label: 'L:fi', current: true }, { id: 'en', label: 'L:en', current: false }],
     sheetOpen: () => false,
     run: (cmd, arg) => runs.push([cmd, arg]),
     runs,
@@ -70,5 +72,46 @@ n = 5; out.sync.push(sync.push());
 focus = false; out.sync.push(sync.push(true));
 out.sent = sent;
 out.noApi = createNativeMenuSync({ getSpec: () => ({}), getApi: () => null, hasFocus: () => true }).push();
+const topIds = (menuId) => {
+  const menu = spec.find((m) => m.id === menuId);
+  if (!menu) return [];
+  return menu.items.map((i) => (i.kind === 'submenu' ? `SUB:${i.label}` : i.id))
+    .filter(Boolean);
+};
+out.fileTop = topIds('file');
+out.audioTop = topIds('audio');
+out.viewTop = topIds('view');
+out.helpTop = topIds('help');
+out.windowTop = topIds('window');
+out.windowSpec = (spec.find((m) => m.id === 'window') || { items: [] }).items
+  .map((i) => [i.id, i.enabled, i.keys]);
+const unusableSpec = nativeMenuSpec(env({ usable: () => false }));
+out.windowEnabledWhenUnusable = (unusableSpec.find((m) => m.id === 'window') || { items: [] })
+  .items.every((i) => i.enabled === true);
+out.langItems = all.filter((i) => i.id === 'lang').map((i) => [i.arg, i.label, i.checked]);
+const sheetLangSpec = nativeMenuSpec(env({ sheetOpen: () => true }));
+out.sheetLangDisabled = sheetLangSpec.flatMap((m) => flat(m.items))
+  .filter((i) => i.id === 'lang').every((i) => i.enabled === false);
+
+let active = 0;
+const syncOn = createNativeMenuSync({
+  getSpec: () => ({}),
+  getApi: () => ({ set_native_menu: () => Promise.resolve(true) }),
+  hasFocus: () => true,
+  onActive: () => { active += 1; },
+});
+syncOn.push(true);
+const syncOff = createNativeMenuSync({
+  getSpec: () => ({}),
+  getApi: () => ({ set_native_menu: () => Promise.resolve(false) }),
+  hasFocus: () => true,
+  onActive: () => { active += 10; },
+});
+syncOff.push(true);
+await Promise.resolve();
+await Promise.resolve();
+out.onActive = active;
+
 out.everyItemHasId = NATIVE_MENUS.length;
 console.log(JSON.stringify(out));
+})().catch((err) => { console.error(err); process.exit(1); });
