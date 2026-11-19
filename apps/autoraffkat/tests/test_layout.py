@@ -67,35 +67,69 @@ def test_a_centred_square_matches_the_stack_export_numbers():
     assert fcp.right == pytest.approx(38.889, abs=1e-3)
     assert fcp.top == pytest.approx(0)
     assert fcp.bottom == pytest.approx(0)
-    assert fcp.scale == pytest.approx(1.0)
+    # Kehys on paneeli: akselikohtainen skaala on paneeli / lähde.
+    assert fcp.scale_x == pytest.approx(1080 / 1920)
+    assert fcp.scale_y == pytest.approx(1.0)
     assert fcp.pos_x == pytest.approx(0)
     assert fcp.pos_y == pytest.approx(28.125)
 
 
-def test_an_off_centre_window_is_compensated_in_the_position():
-    """Kasvot vasemmalla: ikkuna siirtyy lähteessä vasemmalle, ja koska
-    Final Cut skaalaa klipin omaa keskipistettä ympäri, sijainnin pitää
-    vetää ikkuna takaisin paneelin keskelle."""
+def test_an_off_centre_window_needs_no_position_compensation():
+    """Kasvot vasemmalla: ikkuna siirtyy lähteessä vasemmalle. Final Cut
+    skaalaa rajatun alueen TÄYTTÄMÄÄN muunnetun kehyksen (varmistettu
+    2026-11-19, ks. ``fcp_render_rect``), joten ikkuna keskittyy itsestään
+    eikä sijaintiin tarvita skaalan kompensointia."""
     panel = layout.panels(layout.LAYOUT_WIDE_TOP).close
     window = (200.0, 0.0, 889.0, 1080.0)  # keskipiste 644,5; lähteen 960
     fcp = layout.fcp_panel(panel, window, 1920, 1080)
-    s = 1080 / 889.0
-    assert fcp.scale == pytest.approx(s)
-    # Ikkunan keskipiste ruudulla: lähteen keskipiste + sijainti + s × poikkeama.
-    assert (1080 / 2) + fcp.pos_x * 19.2 + s * (644.5 - 960) == pytest.approx(540)
+    assert fcp.scale_x == pytest.approx(panel.w / 1920)
+    assert fcp.scale_y == pytest.approx(panel.h / 1080)
+    cx, cy = panel.centre
+    assert fcp.pos_x == pytest.approx((cx - 540) / 19.2)
+    assert fcp.pos_y == pytest.approx((960 - cy) / 19.2)
 
 
-def test_a_window_off_centre_vertically_is_compensated_in_the_position():
-    """Sama kuin vaakasuunnassa, y ylöspäin: ikkunan keskipiste on lähteen
-    keskipisteen alapuolella 100 px, joten skaalattuna se on s × 100 px
-    keskipisteen alla, ja sijainnin pitää nostaa se takaisin paneelin
-    keskelle (paneelin keskipiste 304 px projektin keskipisteen alla)."""
+def test_a_window_off_centre_vertically_needs_no_compensation_either():
+    """Sama kuin vaakasuunnassa: ikkuna 100 px lähteen keskikohdan alla
+    keskittyy paneeliin ilman korjausta."""
     panel = layout.panels(layout.LAYOUT_WIDE_TOP).close
     window = (515.0, 190.0, 889.0, 1080 - 190.0 - 0.0)   # keskipiste y = 635
     fcp = layout.fcp_panel(panel, window, 1920, 1080)
-    s = fcp.scale
-    off_y = 190.0 + (1080 - 190.0) / 2 - 540            # +95 px alas lähteen keskeltä
-    assert fcp.pos_y * 19.2 - s * off_y == pytest.approx(-304)
+    assert fcp.scale_x == pytest.approx(panel.w / 1920)
+    assert fcp.scale_y == pytest.approx(panel.h / 1080)
+    cx, cy = panel.centre
+    assert fcp.pos_x == pytest.approx((cx - 540) / 19.2)
+    assert fcp.pos_y == pytest.approx((960 - cy) / 19.2)
+
+
+def fcp_render_rect(fcp, src_w=1920, src_h=1080, proj_w=1080, proj_h=1920):
+    """Final Cutin todellinen mode="crop"-säätö (varmistettu 2026-11-19
+    diagnostiikkaviennillä Final Cut Prossa): rajattu alue skaalautuu
+    AKSELEITTAIN täyttämään muunnetun kehyksen (lähde × transform-skaala,
+    keskipisteen ympäri), ja kehys asettuu projektin keskelle + sijainti
+    (prosentteja projektin korkeudesta, y ylöspäin). Palauttaa kehyksen
+    suorakulmion projektin pikseleinä (y alas)."""
+    fw, fh = src_w * fcp.scale_x, src_h * fcp.scale_y
+    unit = proj_h / 100
+    x0 = (proj_w - fw) / 2 + fcp.pos_x * unit
+    y0 = (proj_h - fh) / 2 - fcp.pos_y * unit
+    return x0, y0, x0 + fw, y0 + fh
+
+
+def test_fcp_render_model_places_the_frame_exactly_on_the_panel():
+    """Mikä tahansa ikkuna: kehys on tasan paneeli ja tehozoomi on se,
+    joka renderöinnilläkin on (paneeli / ikkuna, molemmilla akseleilla)."""
+    panel = layout.stack_panel(1)
+    window = (476.0, 0.0, 1215.0, 1080.0)
+    fcp = layout.fcp_panel(panel, window, 1920, 1080)
+    fw, fh = 1920 * fcp.scale_x, 1080 * fcp.scale_y
+    assert fw / window[2] == pytest.approx(panel.w / window[2])
+    assert fh / window[3] == pytest.approx(panel.w / window[2])
+    assert fcp_render_rect(fcp) == pytest.approx(
+        (panel.x, panel.y, panel.x + panel.w, panel.y + panel.h))
+    full = layout.Panel(0, 0, 1080, 1920)
+    fcp = layout.fcp_panel(full, layout.window_of(1920, 1080, 1080, 1920), 1920, 1080)
+    assert fcp_render_rect(fcp) == pytest.approx((0, 0, 1080, 1920))
 
 
 def test_the_stack_is_two_panels_that_fill_the_screen_without_a_gap():

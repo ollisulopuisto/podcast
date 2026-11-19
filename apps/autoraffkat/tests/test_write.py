@@ -2023,17 +2023,19 @@ def _layout_cut(fixture_dir, layout="wide_top", reactions=(), reframer=None, sho
 
 
 def _transform_of(source):
+    """Palauttaa (scale-attribuutti, pos_x, pos_y): skaala on akselipari."""
     node = source.find("adjust-transform")
     px, py = (float(v) for v in node.get("position").split())
-    return float(node.get("scale").split()[0]), px, py
+    return node.get("scale"), px, py
 
 
 def test_layout_wide_top_puts_the_closeup_in_the_lower_panel(fixture_dir):
     """Spinen kuva on lähikuva alapaneelissa: natiivikokoinen (konformi
     ``none``), rajattu paneelin kuvasuhteeseen ja siirretty paneelin kohdalle.
 
-    Lähde 1920×1080 → 1080×1312: ikkuna on 889 px leveä, skaala 1,2148 ja
-    paneelin keskipiste 304 px projektin keskeltä alas = −15,83 %.
+    Lähde 1920×1080 → 1080×1312: kehys on tasan paneeli (skaala 0,5625 ×
+    1,21481 akselikohtaisesti) ja paneelin keskipiste 304 px projektin
+    keskeltä alas = −15,83 %.
     """
     _, xml = _layout_cut(fixture_dir)
     source = next(s for s in ET.fromstring(xml).findall(".//spine/mc-clip/mc-source")
@@ -2043,7 +2045,7 @@ def test_layout_wide_top_puts_the_closeup_in_the_lower_panel(fixture_dir):
     assert abs(float(crop.get("left")) - float(crop.get("right"))) < 0.01
     assert abs(float(crop.get("left")) - (1920 - 889.0) / 2 / 1080 * 100) < 0.1
     scale, px, py = _transform_of(source)
-    assert abs(scale - 1080 / 889.0) < 0.001
+    assert scale == "0.5625 1.21481"
     assert abs(px) < 0.01
     assert abs(py - (-304 / 19.2)) < 0.01
 
@@ -2061,7 +2063,7 @@ def test_layout_wide_top_writes_the_wide_on_lane_one_above_the_spine(fixture_dir
         assert source.get("srcEnable") == "video"   # ääni tulee käsitellyistä mikeistä
         assert source.find("adjust-conform").get("type") == "none"
         scale, _px, py = _transform_of(source)
-        assert abs(scale - 1080 / 1918.4) < 0.001
+        assert scale == "0.5625 0.562963"   # laaja 1080×608: kehys = paneeli
         assert abs(py - (656 / 19.2)) < 0.01     # paneelin keskipiste 656 px ylös
 
 
@@ -2341,3 +2343,12 @@ def test_square_fallback_crop_is_percent_of_height():
 
     text = "\n".join(fw._square_lines(1, ""))
     assert 'left="38.88' in text and 'right="38.88' in text
+
+
+def test_square_fallback_scales_the_frame_to_the_square():
+    """1080×1080-neliö 1920×1080-lähteestä: ilman akselikohtaista skaalaa
+    (1080/1920, 1) Final Cutin per-axis-täyttö venyttää neliön leveäksi."""
+    from autoraffkat.finalcut import write as fw
+
+    text = "\n".join(fw._square_lines(1, ""))
+    assert 'scale="0.5625 1"' in text

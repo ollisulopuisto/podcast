@@ -1935,14 +1935,20 @@ def _square_of(stacks, a: int, b: int) -> int:
 
 def _square_lines(sign: int, indent: str) -> list[str]:
     """Neliö yhdelle kuvalle pinossa: lähde natiivikokoisena (``none``, ei
-    täyttöä), reunat rajattu ja kuva ``sign`` × ``SQUARE_Y`` ylös tai alas."""
+    täyttöä), reunat rajattu ja kuva ``sign`` × ``SQUARE_Y`` ylös tai alas.
+
+    Skaala (1080/1920, 1) tekee kehyksestä neliön: ilman sitä Final Cutin
+    akselikohtainen täyttö venyttäisi rajatun alueen leveäksi (sääntö
+    varmistettu 2026-11-19, ks. ``layout.fcp_panel``).
+    """
     return [
         f'{indent}<adjust-crop mode="crop">',
         f'{indent}  <crop-rect left="{_number(SQUARE_CROP_FCP)}" top="0" '
         f'right="{_number(SQUARE_CROP_FCP)}" bottom="0"/>',
         f'{indent}</adjust-crop>',
         f'{indent}<adjust-conform type="none"/>',
-        f'{indent}<adjust-transform position="0 {_number(sign * SQUARE_Y)}"/>',
+        f'{indent}<adjust-transform scale="{_number(1080 / 1920)} 1" '
+        f'position="0 {_number(sign * SQUARE_Y)}"/>',
     ]
 
 
@@ -1951,9 +1957,8 @@ def _panel_lines(fcp: "screen_layout.FcpPanel", indent: str) -> list[str]:
 
     **Järjestys on DTD:n**: ``adjust-crop``, ``adjust-conform``,
     ``adjust-transform``. Final Cut hylkää väärän järjestyksen koko tuonnin
-    kuten ``tcFormat``in. Luvut tulevat ``layout.fcp_panel``ista, joten
-    ne ovat samat jotka renderöinti piirtää; rajauksen yksikkö on oletus
-    eikä sitä ole tuotu Final Cutiin.
+    kuten ``tcFormat``in. Luvut tulevat ``layout.fcp_panel``ista, jonka
+    skaala-sijainti-malli on varmistettu Final Cutissa 2026-11-19.
     """
     return [
         f'{indent}<adjust-crop mode="crop">',
@@ -1961,7 +1966,7 @@ def _panel_lines(fcp: "screen_layout.FcpPanel", indent: str) -> list[str]:
         f'right="{_number(fcp.right)}" bottom="{_number(fcp.bottom)}"/>',
         f'{indent}</adjust-crop>',
         f'{indent}<adjust-conform type="none"/>',
-        f'{indent}<adjust-transform scale="{_number(fcp.scale)} {_number(fcp.scale)}" '
+        f'{indent}<adjust-transform scale="{_number(fcp.scale_x)} {_number(fcp.scale_y)}" '
         f'position="{_number(fcp.pos_x)} {_number(fcp.pos_y)}"/>',
     ]
 
