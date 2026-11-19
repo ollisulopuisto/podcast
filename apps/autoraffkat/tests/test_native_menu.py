@@ -504,3 +504,35 @@ def test_window_items_run_through_the_responder_chain_with_real_keys():
     assert minimize.representedObject() is None
     assert close.representedObject() is None
     assert minimize.target is None and close.target is None
+
+
+def test_install_reports_the_drawn_result_not_the_queue():
+    """callAfter-jonossa paluuarvo on piirron tulos: jono voi olla tukossa tai
+    piirto epäonnistua, ja sivu supistaa työkalurivinsä vasta kun valikko on oikeasti
+    piirretty (muuten napit katoaisivat ilman valikkoa)."""
+    main = pywebview_menu()
+    ok = native_menu.install(
+        SPEC,
+        lambda payload: None,
+        platform="darwin",
+        appkit=FakeAppKit(main),
+        main_thread=lambda fn: threading.Thread(target=fn).start(),
+        target_factory=lambda run: type("T", (), {"run": staticmethod(run)})(),
+        draw_timeout=2.0,
+    )
+    assert ok is True
+    assert any(i.title() == "Tiedosto" for i in main.items)
+
+
+def test_a_jammed_main_thread_reports_not_drawn():
+    main = pywebview_menu()
+    ok = native_menu.install(
+        SPEC,
+        lambda payload: None,
+        platform="darwin",
+        appkit=FakeAppKit(main),
+        main_thread=lambda fn: None,  # jono ei koskaan aja: raportoi piirtämättömyys
+        draw_timeout=0.05,
+    )
+    assert ok is False
+    assert not any(i.title() == "Tiedosto" for i in main.items)

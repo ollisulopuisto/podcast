@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import threading
 from collections.abc import Callable
 from typing import Any
 
@@ -307,9 +308,12 @@ def install(
     appkit: Any = None,
     main_thread: Callable[[Callable[[], None]], None] | None = None,
     target_factory: Callable[[Callable[[dict], None]], Any] | None = None,
+    draw_timeout: float = 2.0,
 ) -> bool:
-    """Piirtää ``spec``in natiivivalikoiksi. True kun jonossa; False muualla kuin macOS:llä,
-    tyhjällä speksillä tai ilman AppKitia. Ei koskaan heitä."""
+    """Piirtää ``spec``in natiivivalikoiksi. True kun piirretty; False muualla kuin
+    macOS:llä, tyhjällä speksillä, ilman AppKitia, piirron epäonnistuessa tai pääsäikeen
+    jonon ollessa tukossa yli ``draw_timeout``in. Ei koskaan heitä. Sivu luottaa
+    paluuarvoon: vasta piirretty valikko saa supistaa ikkunan työkalurivin."""
     platform = sys.platform if platform is None else platform
     if platform != "darwin":
         return False
@@ -326,14 +330,17 @@ def install(
     except Exception as e:
         log.warning("Natiivi valikkorivi ei ole käytössä (%s); ikkunan nappirivi toimii.", e)
         return False
-    result = {"ok": True}
+    result = {"ok": False}
+    done = threading.Event()
 
     def work() -> None:
         try:
             result["ok"] = _build(menus, run, appkit, target_factory)
         except Exception as e:
-            result["ok"] = False
             log.warning("Natiivi valikkorivi ei ole käytössä (%s); ikkunan nappirivi toimii.", e)
+        finally:
+            done.set()
 
     main_thread(work)
+    done.wait(draw_timeout)
     return result["ok"]
