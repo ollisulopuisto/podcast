@@ -318,6 +318,27 @@ def encoder() -> tuple[str, list[str]]:
     return _ENCODER
 
 
+class ProcessError(subprocess.CalledProcessError):
+    """Komentoriviohjelman virhe, jonka viesti kertoo ohjelman oman selityksen.
+
+    Pelkkä «returned non-zero exit status 228» ei kerro mitä tehdä, mutta
+    ohjelma kirjoittaa syyn yleensä stderrään — «No space left on device»
+    kun levy täyttyy. Käyttöliittymä näyttää vain ``str(virhe)``, joten
+    stderr-teksti kuuluu viestiin itseensä.
+    """
+
+    def __init__(self, returncode, command, stderr=None):
+        super().__init__(returncode, command, stderr=stderr)
+        if isinstance(stderr, bytes):
+            self.detail = stderr.decode("utf-8", "replace").strip()
+        else:
+            self.detail = str(stderr or "").strip()
+
+    def __str__(self):
+        base = super().__str__()
+        return f"{base}: {self.detail}" if self.detail else base
+
+
 def _run(command: list[str], stop=None) -> None:
     """ffmpeg, joka lopetetaan heti kun ``stop`` asetetaan."""
     child = subprocess.Popen(command, stdin=subprocess.DEVNULL,
@@ -332,7 +353,7 @@ def _run(command: list[str], stop=None) -> None:
                 child.communicate()
                 raise Stopped() from None
     if child.returncode != 0:
-        raise subprocess.CalledProcessError(child.returncode, command, stderr=err)
+        raise ProcessError(child.returncode, command, stderr=err)
 
 
 def _tile_geometry(tile: Shot, pw: int, ph: int) -> tuple[int, int, int, int]:

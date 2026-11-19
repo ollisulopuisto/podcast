@@ -612,3 +612,18 @@ def test_a_programme_can_switch_between_a_full_screen_picture_and_panels(tmp_pat
     # Paneelit: ylhäällä laajan viiva, alhaalla lähikuvan.
     assert abs(np.flatnonzero(second[300] > 128).mean() - 1300 * 1080 / 1918.4) < 3
     assert abs(np.flatnonzero(second[1200] > 128).mean() - 540) < 3
+
+
+def test_a_failed_command_shows_its_own_error_text_not_just_the_status():
+    """Levy täynnä: ffmpeg sanoo «No space left on device», eikä 228.
+
+    Virheen numero yksinään ei kerro käyttäjälle mitä tehdä; ohjelman
+    oma stderr-teksti kertoo. Käyttöliittymä näyttää vain ``str(exc)``,
+    joten tekstin on oltava siinä.
+    """
+    with pytest.raises(subprocess.CalledProcessError) as raised:
+        # Osissa, ettei merkkijono ole jo komennossa itsessään.
+        render._run([sys.executable, "-c",
+                     "import sys; sys.stderr.write('levy' ' on ' 'taynna'); sys.exit(28)"])
+    assert raised.value.returncode == 28
+    assert "levy on taynna" in str(raised.value)
