@@ -125,7 +125,8 @@ class FcpPanel:
     right: float
     top: float
     bottom: float
-    scale: float
+    scale_x: float
+    scale_y: float
     pos_x: float
     pos_y: float
 
@@ -135,33 +136,34 @@ def fcp_panel(panel: Panel, window: tuple[float, float, float, float],
               project_h: int = PROJECT_H) -> FcpPanel:
     """Ikkuna → ``adjust-crop`` + ``adjust-transform`` (konformi ``none``).
 
-    Lähde on natiivikokoinen, joten skaala on paneelin leveys jaettuna
-    ikkunan leveydellä. Final Cut skaalaa klipin keskipisteen ympäri ja
-    rajaus jättää jäljelle olevan osan paikalleen, joten ikkunan keskipiste
-    päätyy keskipisteestä ``skaala × (ikkunan keskipiste − lähteen keskipiste)``
-    päähän; sijainti on paneelin keskipisteen ja sen erotus. Prosentit ovat
-    projektin korkeudesta kuten Final Cutin oma sijainti.
+    **Final Cutin todellinen mode="crop"-sääntö** (varmistettu 2026-11-19
+    diagnostiikkavientiprojektilla, kaikki 9 ruutua 1–2 px tarkkuudella):
+    rajattu alue skaalautuu AKSELEITTAIN täyttämään muunnetun kehyksen —
+    tehoskaala on ``lähde × transform-skaala`` jaettuna rajatulla alueella
+    per akseli — ja alue keskittyy kehykseen. Kehys puolestaan asettuu
+    projektin keskelle ja siirtyy sijainnin verran. Siksi skaala on paneeli
+    jaettuna LÄHTEELLÄ (molemmilla akseleilla) ja sijainti on pelkkä
+    paneelin keskipisteen siirtymä: mitään skaalan kompensointia ei ole,
+    eikä ikkunan paikka lähteessä vaikuta sijaintiin.
+
+    Kun ikkunan kuvasuhde on paneelin kuvasuhde, tehoskaala on tasainen
+    ``paneeli / ikkuna`` kuten renderöinnissäkin.
 
     **Rajauksen yksikkö** on prosenttia lähteen KORKEUDESTA kaikilla neljällä
     reunalla (Applen FCPXML-dokumentaatio; käyttäjäraportti 2026-11-18: Final
-    Cut näytti 20,42 % leveydestä luettuna 220,5 px eikä 392 px). **Oletus,
-    ei vielä tuotu Final Cutiin:** skaalaus pyörii rajaamattoman klipin
-    keskipisteen ympäri. Symmetrinen rajaus keskellä ei riipu siitä.
+    Cut näytti 20,42 % leveydestä luettuna 220,5 px eikä 392 px).
+    **Sijainnin yksikkö** on prosenttia projektin korkeudesta, y ylöspäin.
     """
     wx, wy, ww, wh = window
-    scale = panel.w / ww
-    off_x = wx + ww / 2 - src_w / 2
-    off_y = wy + wh / 2 - src_h / 2
     cx, cy = panel.centre
-    dest_x = cx - project_w / 2
-    dest_y = project_h / 2 - cy
     unit = project_h / 100.0
     return FcpPanel(
         left=wx / src_h * 100,
         right=(src_w - wx - ww) / src_h * 100,
         top=wy / src_h * 100,
         bottom=(src_h - wy - wh) / src_h * 100,
-        scale=scale,
-        pos_x=(dest_x - scale * off_x) / unit,
-        pos_y=(dest_y + scale * off_y) / unit,
+        scale_x=panel.w / src_w,
+        scale_y=panel.h / src_h,
+        pos_x=(cx - project_w / 2) / unit,
+        pos_y=(project_h / 2 - cy) / unit,
     )

@@ -55,8 +55,9 @@ def test_each_spine_clip_carries_a_top_and_a_bottom_half_connected_lane():
         assert [k.get("lane") for k in kids] == ["1", "2"]
         assert kids[0].get("name").startswith("Top")
         assert kids[1].get("name").startswith("Bottom")
-        # liitetyn klipin offset on isännän lähdeaika: sama kuin isännän start
-        assert kids[0].get("offset") == clip.get("start")
+        # FCP tulkitsee liitetyn klipin offsetin isännän aikajanalle, ei
+        # projektin aikajanalle (varmistettu 2026-11-19): suhteellinen nolla.
+        assert kids[0].get("offset") == "0s"
         assert kids[0].get("start") == clip.get("start")
         assert kids[0].get("duration") == clip.get("duration")
 
@@ -97,23 +98,53 @@ def test_half_lanes_have_the_same_zoom_and_mirror_positions():
     tt = top.find("adjust-transform")
     bt = bottom.find("adjust-transform")
     assert tt.get("scale") == bt.get("scale")
+    # 1080×960-puolikas: kehys = paneeli = 1080×960 pikseliä.
+    assert tt.get("scale") == "0.5625 0.888889"
+    tx = float(tt.get("position").split()[0])
     ty = float(tt.get("position").split()[1])
-    by = float(bt.get("position").split()[1])
+    bx, by = map(float, bt.get("position").split())
+    assert tx == bx == 0
     assert ty == pytest.approx(-by)
-    assert ty > 0
+    assert ty == pytest.approx(25)
     assert top.find("adjust-crop") is not None
     assert top.find("adjust-conform").get("type") == "none"
 
 
 def test_full_lane_fills_the_frame_and_follows_the_subject():
-    left = _spine(_doc(xs=[0.1, 0.1, 0.1]))[0].find("adjust-transform")
-    right = _spine(_doc(xs=[0.9, 0.9, 0.9]))[0].find("adjust-transform")
-    lx = float(left.get("position").split()[0])
-    rx = float(right.get("position").split()[0])
-    assert lx > 0 > rx  # kohde vasemmalla: kuvaa siirretään oikealle
-    assert left.get("scale") == right.get("scale")
+    left = _spine(_doc(xs=[0.1, 0.1, 0.1]))[0]
+    right = _spine(_doc(xs=[0.9, 0.9, 0.9]))[0]
+    lt, rt = left.find("adjust-transform"), right.find("adjust-transform")
+    # Koko ruutu = 1080×1920-kehys: kohteen seuraaminen tapahtuu ikkunan
+    # (crop-rect) kautta, sijainti on aina paneelin keskikohta.
+    assert lt.get("position") == rt.get("position") == "0 0"
+    assert lt.get("scale") == rt.get("scale") == "0.5625 1.77778"
+    lc = left.find("adjust-crop/crop-rect")
+    rc = right.find("adjust-crop/crop-rect")
+    assert float(lc.get("left")) < float(rc.get("left"))  # ikkuna seuraa
     crop = _spine(_doc())[0].find("adjust-crop/crop-rect")
     assert float(crop.get("left")) + float(crop.get("right")) > 50
+
+
+def test_emitted_transform_places_the_frame_exactly_on_the_panel():
+    """Final Cutin varmistettu mode="crop"-sääntö (2026-11-19): rajattu alue
+    täyttää muunnetun kehyksen akselikohtaisesti; kehys keskittyy + sijainti
+    (% proj. korkeudesta, y ylös). Tässä kehyksen on oltava tasan paneeli."""
+    root = _doc()
+    full = _spine(root)[0]
+    top = next(k for k in full if k.tag == "asset-clip")
+
+    def frame_rect(clip, fw_src=(1920, 1080)):
+        sx, sy = map(float, clip.find("adjust-transform").get("scale").split())
+        px, py = map(float, clip.find("adjust-transform").get("position").split())
+        fw, fh = fw_src[0] * sx, fw_src[1] * sy
+        unit = 1920 / 100
+        x0 = (1080 - fw) / 2 + px * unit
+        y0 = (1920 - fh) / 2 - py * unit
+        return x0, y0, x0 + fw, y0 + fh
+
+    # Skaala kirjoitetaan 6 merkitsevällä numerolla → pyöristysvirhe < 1 px.
+    assert frame_rect(full) == pytest.approx((0, 0, 1080, 1920), abs=0.01)
+    assert frame_rect(top) == pytest.approx((0, 0, 1080, 960), abs=0.01)
 
 
 def test_dtd_order_crop_conform_transform_then_connected_clips():

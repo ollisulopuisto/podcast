@@ -143,8 +143,10 @@ def build_trailer_fcpxml(
         body += _lane_lines("full", src, x, "              ")
         for lane, kind in ((1, "top"), (2, "bottom")):
             on = enabled_lane == kind
+            # FCP tulkitsee liitetyn klipin offsetin isännän aikajanalle
+            # (varmistettu 2026-11-19), joten suhteellinen nolla.
             c = [
-                f'ref="{lane_asset_id}"', f'lane="{lane}"', f'offset="{start}"',
+                f'ref="{lane_asset_id}"', f'lane="{lane}"', 'offset="0s"',
                 f"name={quoteattr(kind.capitalize() + ' ' + label)}",
                 f'start="{start}"', f'duration="{dur}"', 'srcEnable="video"',
             ]
