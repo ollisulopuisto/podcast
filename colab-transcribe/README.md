@@ -99,7 +99,13 @@ colab-transcribe --audio "Olli 1.wav" --audio Panu.mp3 --json words/ --progress
 colab-transcribe --audio "Olli 1.wav" --json words/ --model parakeet-ultra
 # Local Orukeet, without starting a Colab session
 colab-transcribe --audio "Olli 1.wav" --json words/ --backend orukeet
+# Also a plain text transcript next to the words file: words/Olli 1.txt
+colab-transcribe --audio "Olli 1.wav" --json words/ --txt
 ```
+
+`--txt` writes `<name>.txt` beside each `.words.json` after a successful run: `[MM:SS] text`
+paragraphs separated by a blank line. A pause of 1.2 s or 80 words starts a new paragraph.
+It works with every backend.
 
 Every `--audio` file goes up in the same Colab session and `words/<name>.words.json` comes
 back: `{"version":1,"timing":"whisper","language":"fi","rejected":0,"words":[{"w","s","e"}]}`,

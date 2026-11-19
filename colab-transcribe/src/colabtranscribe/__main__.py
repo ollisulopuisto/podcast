@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import re
 import shlex
 import signal
@@ -16,7 +17,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from . import __version__, driver, events, orukeet, parakeet, session
+from . import __version__, driver, events, orukeet, parakeet, session, transcript
 from .onboarding import check_environment
 from .options import (
     BACKENDS,
@@ -52,6 +53,12 @@ def build_parser() -> argparse.ArgumentParser:
         "<nimi>.words.json (ei .nhsx:ää, aina suora siirto)",
     )
     parser.add_argument("--json", metavar="KANSIO", help="--audio-tilan tulostekansio")
+    parser.add_argument(
+        "--txt",
+        action="store_true",
+        help="--audio: kirjoita sanatiedoston viereen myös <nimi>.txt, jossa teksti on "
+        "kappaleina ([MM:SS] teksti; tauko 1,2 s tai 80 sanaa aloittaa uuden)",
+    )
     parser.add_argument("--allow-low-memory", action="store_true",
                         help="Accept risk of Mac freeze/restart for this local run; bypass provisional RAM policy")
     parser.add_argument(
@@ -250,6 +257,8 @@ def _audio_problem(args: argparse.Namespace) -> str | None:
             return "--align kuuluu --audio-tilaan: anna myös --audio ja --json."
         if args.events:
             return "--events kuuluu --audio-tilaan: anna myös --audio ja --json."
+        if args.txt:
+            return "--txt kuuluu --audio-tilaan: anna myös --audio ja --json."
         return None
     if not args.json:
         return "--audio vaatii tulostekansion: anna --json <kansio>."
@@ -335,7 +344,56 @@ def _environment_message(report) -> str:
 
 
 def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
-    """Pelkkä ääni sisään, ``<nimi>.words.json`` ulos (``docs/KUULAS-COLAB.md``)."""
+    """Pelkkä ääni sisään, ``<nimi>.words.json`` ulos (``docs/KUULAS-COLAB.md``).
+
+    ``--txt``: poistaa vanhat tekstivastineet ennen ajoa ja kirjoittaa uudet vasta
+    onnistuneen ajon jälkeen. Valmis-tapahtuma tulee vasta molempien tiedostojen
+    valmistuttua, jotta kuulaksen lukija ei hyväksy vanhaa tai puuttuvaa tekstiä.
+    """
+    if args.txt and not dry_run:
+        out_dir = Path(args.json)
+        if out_dir.is_dir():
+            for name in args.audio:
+                txt_path = out_dir / f"{Path(name).stem}.txt"
+                try:
+                    if txt_path.is_file() or txt_path.is_symlink():
+                        txt_path.unlink(missing_ok=True)
+                except OSError as error:
+                    message = f"--txt: vanhaa {txt_path.name} ei voi poistaa: {error}"
+                    print(message, file=sys.stderr)
+                    events.enable(args.events)
+                    _failure("txt_failed", message, code=1, files=[str(txt_path)])
+                    return 1
+    code = _run_audio_mode(args, dry_run, defer_done=args.txt and not dry_run)
+    if code == 0 and args.txt and not dry_run:
+        out_dir = Path(args.json)
+        for name in args.audio:
+            words_path = out_dir / f"{Path(name).stem}.words.json"
+            txt_path = words_path.with_name(f"{Path(name).stem}.txt")
+            try:
+                doc = json.loads(words_path.read_text(encoding="utf-8"))
+                txt_path.write_text(transcript.paragraph_text(doc), encoding="utf-8")
+            except (OSError, ValueError) as error:
+                message = f"--txt: {txt_path.name} ei onnistu: {error}"
+                print(message, file=sys.stderr)
+                # Valmis-tapahtuma lähetetään vasta kaikkien tekstien kirjoituksen jälkeen.
+                _failure("txt_failed", message, code=1, files=[str(txt_path)])
+                return 1
+            print(f"Teksti luotu: {txt_path}")
+        if args.events:
+            events.emit(
+                "done",
+                files=[
+                    str(Path(args.json) / f"{Path(name).stem}.words.json")
+                    for name in args.audio
+                ],
+            )
+    return code
+
+
+def _run_audio_mode(
+    args: argparse.Namespace, dry_run: bool, defer_done: bool = False
+) -> int:
     events.enable(args.events)
     env_opts = RunOptions.from_env()
     audio = [str(Path(a).resolve()) for a in args.audio]
@@ -373,6 +431,7 @@ def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
             log=print,
             on_progress=printer,
             events_enabled=args.events,
+            emit_done=not defer_done,
         )
     reuse_session = False
     session_state = "new"
@@ -481,7 +540,8 @@ def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
     print(f"\nValmiit sanatiedostot ({len(expected)}):")
     for path in expected:
         print(f"  {path}")
-    events.emit("done", files=[str(p) for p in expected])
+    if not defer_done:
+        events.emit("done", files=[str(p) for p in expected])
     return 0
 
 
