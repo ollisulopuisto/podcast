@@ -181,6 +181,19 @@ def test_every_keydown_listener_goes_through_the_registry():
     assert "window.addEventListener('keydown', (e) => onShortcutKey(e));" in app
     assert "card.addEventListener('keydown'" not in app
     assert "if (event.key === 'Enter') add();" in app
+    # Myös trailer-sivun näppäimet menevät jaetun rekisterin kautta.
+    trailer = (STATIC / "trailer.js").read_text(encoding="utf-8")
+    assert "shortcutKeyIn(TRAILER_SHORTCUTS" in trailer
+
+
+def test_the_shared_shortcut_machinery_loads_before_both_pages_and_is_versioned():
+    """shortcuts.js ennen app.js:ää ja trailer.js:ää, ja muokkausaikaversiona."""
+    index = (STATIC / "index.html").read_text(encoding="utf-8")
+    assert index.index("/static/shortcuts.js") < index.index("/static/app.js")
+    trailer = (STATIC / "trailer.html").read_text(encoding="utf-8")
+    assert trailer.index("/static/shortcuts.js") < trailer.index("/static/trailer.js")
+    server = (STATIC.parent / "app.py").read_text(encoding="utf-8")
+    assert '"shortcuts.js"' in server
 
 
 @needs_node

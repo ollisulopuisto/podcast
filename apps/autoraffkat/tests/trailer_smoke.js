@@ -62,11 +62,13 @@ function makeElement(tag) {
 const sels = new Map();
 const document = {
   documentElement: {},
+  _handlers: {},
   createElement: makeElement,
   getElementById(id) {
     if (!registry.has(id)) { const el = makeElement('div'); el.id = id; registry.set(id, el); }
     return registry.get(id);
   },
+  addEventListener(type, fn) { (document._handlers[type] = document._handlers[type] || []).push(fn); },
   querySelectorAll: () => [],
 };
 
@@ -98,7 +100,7 @@ const context = {
 };
 context.globalThis = context;
 vm.createContext(context);
-for (const name of ['i18n.js', 'trailer.js']) {
+for (const name of ['i18n.js', 'shortcuts.js', 'trailer.js']) {
   vm.runInContext(fs.readFileSync(path.join(staticDir, name), 'utf8'), context, { filename: name });
 }
 
@@ -110,6 +112,19 @@ const fire = async (el, type, ev) => {
   for (const fn of el._handlers[type] || []) await fn({ clientX: 100, pointerId: 1, ...ev });
   await tick();
 };
+const fireKey = async (key, opts = {}) => {
+  const ev = {
+    key,
+    target: { tagName: 'DIV' },
+    shiftKey: false, metaKey: false, ctrlKey: false, altKey: false,
+    preventDefault() { this.defaultPrevented = true; },
+    ...opts,
+  };
+  for (const fn of document._handlers.keydown || []) await fn(ev);
+  await tick();
+  return ev;
+};
+const rowText = (i) => id('tr-list').children[i].children.map((c) => c.textContent).join(' ');
 const buttons = (label) => created.filter((e) => e.tagName === 'BUTTON' && e.textContent === label);
 
 (async () => {
@@ -128,10 +143,39 @@ const buttons = (label) => created.filter((e) => e.tagName === 'BUTTON' && e.tex
       if (Number(t) !== 5) fail(`jaon jälkeen ruutu t=${t}, odotettiin 5 (ensimmäisen puolikkaan keskikohta)`);
       if (id('tr-list').children.length !== 4) fail('jako ei lisännyt riviä');
     }
-    // yhdistys
-    const merge = buttons(T('trailer.merge'))[0];
-    if (merge) await fire(merge, 'click');
-    if (id('tr-list').children.length !== 3) fail('yhdistys ei poistanut riviä');
+    // yhdistys edelliseen: ensimmäisellä rivillä ei ole edellistä
+    const merges = buttons(T('trailer.merge'));
+    if (!merges.length) fail('yhdistyspainikkeita ei löytynyt');
+    else {
+      if (!merges[0].disabled) fail('ensimmäisen rivin yhdistys pitäisi olla estetty');
+      if (merges[1].attrs['aria-keyshortcuts'] !== 'M') fail('yhdistyspainikkeelta puuttuu aria-keyshortcuts M');
+      await fire(merges[1], 'click');
+      if (id('tr-list').children.length !== 3) fail('yhdistys ei poistanut riviä');
+    }
+
+    // näppäimet: ↑↓ valitsee palan, ←→ kehystää (⇧ suurempi), M yhdistää edelliseen
+    let ev = await fireKey('ArrowDown');
+    if (!ev.defaultPrevented) fail('ArrowDown pitäisi syödä');
+    let t = new URLSearchParams(id('tr-img').src.split('?')[1]).get('t');
+    if (Number(t) !== 30) fail(`ArrowDown jälkeen ruutu t=${t}, odotettiin 30 (toisen palan keskikohta)`);
+    ev = await fireKey('ArrowUp');
+    t = new URLSearchParams(id('tr-img').src.split('?')[1]).get('t');
+    if (Number(t) !== 10) fail(`ArrowUp jälkeen ruutu t=${t}, odotettiin 10`);
+    await fireKey('ArrowLeft');
+    if (!rowText(0).includes('19 %')) fail(`ArrowLeft ei siirtänyt kehystä: ${rowText(0)}`);
+    await fireKey('ArrowRight', { shiftKey: true });
+    if (!rowText(0).includes('24 %')) fail(`⇧ArrowRight ei siirtänyt kehystä suuremmin: ${rowText(0)}`);
+    await fireKey('m');
+    if (id('tr-list').children.length !== 3) fail('M ei saa yhdistää ensimmäistä palaa');
+    await fireKey('ArrowDown');
+    await fireKey('m');
+    if (id('tr-list').children.length !== 2) fail('M ei yhdistänyt valittua edelliseen');
+    await fireKey('ArrowDown', { target: { tagName: 'INPUT' } });
+    t = new URLSearchParams(id('tr-img').src.split('?')[1]).get('t');
+    if (Number(t) !== 20) fail('tekstikentässä nuoli ei saa vaihtaa palaa');
+    if (!String(id('tr-frame').attrs['aria-keyshortcuts'] || '').includes('ArrowLeft')) {
+      fail('kehityskuvasta puuttuu nuolten aria-keyshortcuts');
+    }
 
     // käsin kehystys, kaista, tila, toteutus
     await fire(id('tr-frame'), 'pointerdown');

@@ -272,7 +272,7 @@ const context = {
 context.globalThis = context;
 vm.createContext(context);
 
-for (const name of ['i18n.js', 'sync_timeline.js', 'native_menu.js', 'app.js']) {
+for (const name of ['i18n.js', 'shortcuts.js', 'sync_timeline.js', 'native_menu.js', 'app.js']) {
   vm.runInContext(fs.readFileSync(path.join(staticDir, name), 'utf8'), context,
                   { filename: name });
 }

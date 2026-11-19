@@ -12,10 +12,10 @@ const vm = require('vm');
 const ctx = vm.createContext({ Promise, JSON, String, Set });
 vm.runInContext(
   fs.readFileSync(path.join(process.argv[2], 'native_menu.js'), 'utf8')
-    + '\nthis.api = { nativeMenuSpec, runNativeChoice, createNativeMenuSync, NATIVE_MENUS };',
+    + '\nthis.api = { nativeMenuSpec, runNativeChoice, createNativeMenuSync, NATIVE_MENUS, TRAILER_MENUS };',
   ctx,
 );
-const { nativeMenuSpec, runNativeChoice, createNativeMenuSync, NATIVE_MENUS } = ctx.api;
+const { nativeMenuSpec, runNativeChoice, createNativeMenuSync, NATIVE_MENUS, TRAILER_MENUS } = ctx.api;
 
 function env(over = {}) {
   const runs = [];
@@ -36,6 +36,10 @@ const out = {};
 const spec = nativeMenuSpec(env());
 out.menuIds = spec.map((m) => m.id);
 const flat = (items) => items.flatMap((i) => (i.items ? flat(i.items) : [i]));
+const trailerSpec = nativeMenuSpec(env(), TRAILER_MENUS);
+out.trailerMenuIds = trailerSpec.map((m) => m.id);
+const trailerAll = trailerSpec.flatMap((m) => flat(m.items));
+out.trailerClipItems = trailerAll.filter((i) => i.id && i.id.startsWith('clip-')).map((i) => [i.id, i.keys, i.enabled]);
 const all = spec.flatMap((m) => flat(m.items));
 out.mixKeys = all.find((i) => i.id === 'mix').keys;
 out.exportRadios = all.filter((i) => i.id === 'export-dest').map((i) => [i.arg, i.checked]);

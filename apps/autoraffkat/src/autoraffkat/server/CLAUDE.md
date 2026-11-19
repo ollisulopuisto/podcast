@@ -66,9 +66,13 @@ caching. This happened once already.
 
 ## A shortcut is a row in `SHORTCUTS`, or it does not exist
 
-Every key the interface reacts to is one entry in `SHORTCUTS` in `app.js`:
+Every key the interface reacts to is one entry in `SHORTCUTS` in `app.js`
+(or `TRAILER_SHORTCUTS` in `trailer.js` on the trailer page):
 its combinations, where it works (`page`, `sheet`, `card`), the control it
-belongs to and its translated label. The window's key handler, the `<kbd>`
+belongs to and its translated label. The matching machinery (`matchesCombo`,
+`isTypingTarget`, `findShortcutIn`, `shortcutKeyIn`, `comboText`, `ariaKeys`)
+lives in `shortcuts.js`, shared by both pages. The window's key handler, the
+`<kbd>`
 hints and tooltips on the buttons, `aria-keyshortcuts` and the `?` cheat
 sheet are all generated from that list, so a key cannot ship undocumented and
 a documented key cannot quietly stop working. `test_shortcuts.py` presses
