@@ -96,6 +96,45 @@ function drawComposite() {
   }
 }
 
+/* Valitsee palan ja näyttää sen keskikohdan. */
+function selectPiece(i) {
+  if (!pieces.length) return;
+  sel = Math.max(0, Math.min(i, pieces.length - 1));
+  renderList();
+  showFrame();
+  const row = $('tr-list').children[sel];
+  if (row && typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest' });
+}
+
+/* Kehityksen siirto: x on kuvan keskipiste 0–1-välillä. */
+function nudge(dx) {
+  if (!pieces[sel]) return;
+  pieces[sel].x = Math.min(1, Math.max(0, pieces[sel].x + dx));
+  pieces[sel].manual = true;
+  renderList();
+  showFrame();
+}
+
+function splitAt(i) {
+  const p = pieces[i];
+  if (!p || p.end - p.start < 0.6) return;
+  const mid = (p.start + p.end) / 2;
+  pieces.splice(i, 1, { ...p, end: mid }, { ...p, start: mid });
+  if (sel > i) sel += 1;
+  renderList();
+  showFrame();
+}
+
+/* Palan tajuaa kuuluvaksi edelliseen vasta nähtyään seuraavan otoksen —
+   siksi yhdistys menee aina edelliseen, ei seuraavaan. */
+function mergePrev(i) {
+  if (i < 1 || i >= pieces.length) return;
+  pieces.splice(i - 1, 2, { ...pieces[i - 1], end: pieces[i].end });
+  if (sel >= i) sel -= 1;
+  renderList();
+  showFrame();
+}
+
 function showFrame() {
   if (!plan || !pieces[sel]) return;
   const p = pieces[sel];
@@ -117,30 +156,19 @@ function renderList() {
     main.className = 'ghost tr-piece-main';
     main.textContent = `${String(i + 1).padStart(2, '0')}  ${fmt(p.start)}–${fmt(p.end)}  ` +
       `${Math.round(p.x * 100)} %  ${p.manual ? T('trailer.manual') : T('trailer.auto')}`;
-    main.addEventListener('click', () => { sel = i; renderList(); showFrame(); });
+    main.addEventListener('click', () => selectPiece(i));
     const split = document.createElement('button');
     split.type = 'button';
     split.className = 'ghost small';
     split.textContent = T('trailer.split');
     split.disabled = p.end - p.start < 0.6;
-    split.addEventListener('click', () => {
-      const mid = (p.start + p.end) / 2;
-      pieces.splice(i, 1, { ...p, end: mid }, { ...p, start: mid });
-      if (sel > i) sel += 1;
-      renderList();
-      showFrame();
-    });
+    split.addEventListener('click', () => splitAt(i));
     const merge = document.createElement('button');
     merge.type = 'button';
     merge.className = 'ghost small';
     merge.textContent = T('trailer.merge');
-    merge.disabled = i === pieces.length - 1;
-    merge.addEventListener('click', () => {
-      pieces.splice(i, 2, { ...p, end: pieces[i + 1].end });
-      if (sel > i) sel -= 1;
-      renderList();
-      showFrame();
-    });
+    merge.disabled = i === 0;
+    merge.addEventListener('click', () => mergePrev(i));
     li.append(main, split, merge);
     list.append(li);
   });
@@ -287,4 +315,70 @@ async function start() {
   if (path) load(path);
 }
 
+/* Näppäimet: ↑/↓ valitsee palan, ←/→ siirtää kehystä (⇧ suurempi askel),
+   M yhdistää edelliseen. Ei syötekentissä eikä muokkausnäppäinten kanssa. */
+const NUDGE = 0.01;
+const NUDGE_SHIFT = 0.05;
+document.addEventListener('keydown', (e) => {
+  const t = e.target && e.target.tagName;
+  if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const step = e.shiftKey ? NUDGE_SHIFT : NUDGE;
+  if (e.key === 'ArrowUp' && sel > 0) selectPiece(sel - 1);
+  else if (e.key === 'ArrowDown' && sel < pieces.length - 1) selectPiece(sel + 1);
+  else if (e.key === 'ArrowLeft') nudge(-step);
+  else if (e.key === 'ArrowRight') nudge(step);
+  else if (e.key === 'm' || e.key === 'M') mergePrev(sel);
+  else return;
+  e.preventDefault();
+});
+
+/* Natiivivalikot: sama silta kuin pääsivulla (app.js startNativeMenu), mutta
+   trailer-sivun komennoilla. Ilman pywebview-käärettä ei tehdä mitään. */
+function trailerEnv() {
+  const cur = pieces[sel];
+  const usable = (cmd) => {
+    if (cmd === 'trailer-back') return true;
+    if (cmd === 'trailer-export') return !!plan && !busy;
+    if (cmd === 'clip-prev') return sel > 0;
+    if (cmd === 'clip-next') return sel < pieces.length - 1;
+    if (cmd === 'clip-left' || cmd === 'clip-right') return pieces.length > 0;
+    if (cmd === 'clip-split') return !!cur && cur.end - cur.start >= 0.6;
+    if (cmd === 'clip-merge-prev') return sel > 0;
+    return false;
+  };
+  const keys = { clipPrev: '↑', clipNext: '↓', clipLeft: '←', clipRight: '→', clipMerge: 'M' };
+  const run = (cmd) => {
+    if (cmd === 'trailer-back') window.location.href = '/';
+    else if (cmd === 'trailer-export') $('tr-export').click();
+    else if (cmd === 'clip-prev') selectPiece(sel - 1);
+    else if (cmd === 'clip-next') selectPiece(sel + 1);
+    else if (cmd === 'clip-left') nudge(-NUDGE);
+    else if (cmd === 'clip-right') nudge(NUDGE);
+    else if (cmd === 'clip-split') splitAt(sel);
+    else if (cmd === 'clip-merge-prev') mergePrev(sel);
+  };
+  return {
+    T, usable, run,
+    sheetOpen: () => false,
+    keysText: (rowId) => keys[rowId] || '',
+  };
+}
+
+function startNativeMenu() {
+  if (typeof createNativeMenuSync !== 'function') return;
+  const nativeSync = createNativeMenuSync({
+    getSpec: () => nativeMenuSpec(trailerEnv(), TRAILER_MENUS),
+    getApi: () => (typeof window !== 'undefined' && window.pywebview
+      ? window.pywebview.api : null),
+    hasFocus: () => typeof document.hasFocus !== 'function' || document.hasFocus(),
+    onActive: () => document.body.classList.add('native-menus'),
+  });
+  window.__autoraffkatNativeRun = (choice) => runNativeChoice(choice, trailerEnv());
+  setInterval(() => nativeSync.push(false), 750);
+  window.addEventListener('focus', () => nativeSync.push(true));
+  window.addEventListener('pywebviewready', () => nativeSync.push(true));
+}
+
 start();
+startNativeMenu();

@@ -60,6 +60,37 @@ const NATIVE_MENUS = [
   ] },
 ];
 
+/* Trailer-sivun valikot: Pala-valikko näyttää samat näppäimet joilla sivu toimii
+   (↑↓ valitsee, ←→ kehystää, M yhdistää edelliseen). Komennot ovat trailer.js:n
+   toimintoja; sivun `env` päättää käytettävyyden (esim. ensimmäistä palaa ei voi
+   yhdistää edelliseen). */
+const TRAILER_MENUS = [
+  { id: 'file', label: 'menu.file', items: [
+    { cmd: 'trailer-back', label: 'trailer.back' },
+    { cmd: 'trailer-export', label: 'trailer.export' },
+  ] },
+  { id: 'edit', label: 'menu.edit', items: [
+    { cmd: 'edit.cut', label: 'menu.cut', native: true },
+    { cmd: 'edit.copy', label: 'menu.copy', native: true },
+    { cmd: 'edit.paste', label: 'menu.paste', native: true },
+    { cmd: 'edit.select_all', label: 'menu.selectAll', native: true },
+  ] },
+  { id: 'clip', label: 'menu.clip', items: [
+    { cmd: 'clip-prev', label: 'trailer.prev', keys: 'clipPrev' },
+    { cmd: 'clip-next', label: 'trailer.next', keys: 'clipNext' },
+    { sep: true },
+    { cmd: 'clip-left', label: 'trailer.nudgeLeft', keys: 'clipLeft' },
+    { cmd: 'clip-right', label: 'trailer.nudgeRight', keys: 'clipRight' },
+    { sep: true },
+    { cmd: 'clip-split', label: 'trailer.split' },
+    { cmd: 'clip-merge-prev', label: 'trailer.merge', keys: 'clipMerge' },
+  ] },
+  { id: 'window', label: 'menu.window', items: [
+    { cmd: 'window.minimize', label: 'menu.minimize', os: true },
+    { cmd: 'window.close', label: 'menu.closeWindow', os: true },
+  ] },
+];
+
 /* Komennot jotka toimivat vaikka pikanäppäinikkuna (modaali) on auki: vain sen oma
    avaus ja sulku. Muu jätetään koskematta, jotta valikko ei muokkaa projektia ikkunan
    takaa. */

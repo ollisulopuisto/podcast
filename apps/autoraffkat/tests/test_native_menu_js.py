@@ -134,3 +134,26 @@ def test_boot_starts_the_native_menu():
     app = (STATIC / "app.js").read_text(encoding="utf-8")
     boot = app[app.index("async function boot()") :]
     assert "startNativeMenu();" in boot.split("\n}\n", 1)[0]
+
+
+@needs_node
+def test_the_trailer_menus_cover_the_clip_keyboard(run):
+    # Trailer-sivun valikot: tiedosto (takaisin, vienti), muokkaus (leikepöytä),
+    # pala (nuolinäppäimet ja M vihjeineen), ikkuna.
+    assert run["trailerMenuIds"] == ["file", "edit", "clip", "window"]
+    assert run["trailerClipItems"] == [
+        ["clip-prev", "K:clipPrev", True],
+        ["clip-next", "K:clipNext", True],
+        ["clip-left", "K:clipLeft", True],
+        ["clip-right", "K:clipRight", True],
+        ["clip-split", "", True],
+        ["clip-merge-prev", "K:clipMerge", True],
+    ]
+
+
+def test_the_trailer_page_loads_the_menu_script_and_starts_it():
+    html = (STATIC / "trailer.html").read_text(encoding="utf-8")
+    assert html.index("/static/native_menu.js") < html.index("/static/trailer.js")
+    trailer = (STATIC / "trailer.js").read_text(encoding="utf-8")
+    assert "createNativeMenuSync" in trailer
+    assert "__autoraffkatNativeRun" in trailer

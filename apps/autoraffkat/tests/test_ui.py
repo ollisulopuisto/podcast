@@ -282,9 +282,9 @@ def test_trailer_smoke_catches_a_stale_preview_and_an_undefined_variable(tmp_pat
     shutil.copytree(STATIC, stale)
     js = stale / "trailer.js"
     text = js.read_text(encoding="utf-8")
-    marker = "      if (sel > i) sel += 1;\n      renderList();\n      showFrame();"
+    marker = "  if (sel > i) sel += 1;\n  renderList();\n  showFrame();"
     assert marker in text
-    js.write_text(text.replace(marker, "      if (sel > i) sel += 1;\n      renderList();", 1),
+    js.write_text(text.replace(marker, "  if (sel > i) sel += 1;\n  renderList();", 1),
                   encoding="utf-8")
     assert _trailer_smoke(stale, "fi").returncode != 0
 
