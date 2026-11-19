@@ -241,11 +241,16 @@ def short_term_lift(short_term_db, floor_db: float, step_sec: float,
 DRIFT_DELAY_SEC = 300.0
 DRIFT_MAX_DB = 4.0
 DRIFT_MIN_DB = 0.5
+#: Liuku ei ole koskaan nopea: vaikka ohjelma loppuisi heti viiveen
+#: jälkeen, korjaus etenee korkeintaan tämän ajan vauhtia ja jää silloin
+#: tekemättä loppuun asti. Nopea liuku kuuluisi kompressorille, ei tälle.
+DRIFT_MIN_RAMP_SEC = 300.0
 
 
 def drift_lift(short_term_db, step_sec: float, speech=None,
                delay_sec: float = DRIFT_DELAY_SEC, max_db: float = DRIFT_MAX_DB,
-               min_db: float = DRIFT_MIN_DB) -> np.ndarray:
+               min_db: float = DRIFT_MIN_DB,
+               min_ramp_sec: float = DRIFT_MIN_RAMP_SEC) -> np.ndarray:
     """Hidas nosto jakson loppua kohti, dB (≥ 0), kun taso ajertuu alas.
 
     Monen jakson alku soi loppua kuumempana: puhujat asettuvat, mikki
@@ -284,10 +289,13 @@ def drift_lift(short_term_db, step_sec: float, speech=None,
     span = t[-1] - delay_sec
     if span <= 0:
         return lift
-    # Liuku viiveestä loppuun. Käyrä on jo itsessään kuulumattoman hidas
-    # (desibelejä tunnissa), joten erillistä tasausta ei tarvita: ainoa
+    # Liuku viiveestä loppuun, mutta ei koskaan nopeammin kuin
+    # ``min_ramp_sec`` antaa: jakso joka loppuu heti viiveen jälkeen saa
+    # vain alun korjauksesta. Käyrä on jo itsessään kuulumattoman hidas
+    # (desibelejä minuuteissa), joten erillistä tasausta ei tarvita: ainoa
     # kulma on viiveen kohdalla, ja sen taajuus on pienimmillään.
-    return np.clip((t - delay_sec) / span, 0.0, 1.0) * top
+    ramp = max(span, min_ramp_sec)
+    return np.clip((t - delay_sec) / ramp, 0.0, 1.0) * top
 
 
 def trim_to_target(summed: np.ndarray, rate: int, target_lufs: float,

@@ -129,10 +129,74 @@ def test_mastering_lifts_a_fading_program_toward_the_end(
     """Ajertuvan jakson loppu nousee alkua kohti; kytkettävissä pois."""
     settings = SimpleNamespace(
         target_lufs=-16.0, program_peak_db=-1.0,
-        program_drift=drift, program_drift_delay_sec=10.0)
+        program_drift=drift, program_drift_delay_sec=10.0,
+        program_drift_min_ramp_sec=30.0)
     job = _fading_job(tmp_path)
     before, _ = sf.read(job["target"], dtype="float64")
     stems.program_deliver([job], stems.StemResult(), {}, {}, settings)
     after, _ = sf.read(job["target"], dtype="float64")
     gained = _end_minus_start_db(after) - _end_minus_start_db(before)
     assert gained > expected_gain if drift else gained < expected_gain
+
+
+def test_an_episode_ending_just_after_the_delay_gets_no_fast_ramp():
+    # 301 s jakso: viiveen (300 s) jälkeen jää sekunti, eikä koko korjausta
+    # saa puristaa siihen — liuku on aina hidas tai se jää tekemättä.
+    values = _series(-18.0, -22.0, minutes=301 / 60)
+    lift = programme.drift_lift(values, 0.1)
+    assert np.diff(lift).max() < 0.01
+    assert lift[-1] < 0.5
+
+
+def test_an_episode_shorter_than_the_delay_is_not_touched():
+    values = _series(-18.0, -22.0, minutes=4)
+    assert np.all(programme.drift_lift(values, 0.1) == 0.0)
+
+
+def _fading_named_job(tmp_path, name, seconds, fade_db=-6.0, seed=1):
+    from speechmix.timeline import Span, Track
+
+    rng = np.random.default_rng(seed)
+    n = int(seconds * RATE)
+    fade = np.linspace(1.0, 10 ** (fade_db / 20), n)
+    audio = rng.normal(0, 0.05, n) * fade
+    target = tmp_path / f"{name} [mix].wav"
+    sf.write(str(target), audio, RATE)
+    return {
+        "key": name, "name": name, "speaker": name, "speech": True,
+        "source": str(target), "target": str(target), "bit_depth": 32,
+        "track": Track(str(target), name, [Span(0.0, seconds, 0.0)]),
+    }
+
+
+def test_the_lift_reaches_files_when_stems_differ_in_length(tmp_path):
+    """Aikajanapolku (eri pituiset päällekkäiset mikit) kirjoittaa vedon."""
+    settings = SimpleNamespace(
+        target_lufs=-16.0, program_peak_db=-1.0,
+        program_drift=True, program_drift_delay_sec=10.0,
+        program_drift_min_ramp_sec=30.0)
+    jobs = [_fading_named_job(tmp_path, "isanta", 90.0, seed=1),
+            _fading_named_job(tmp_path, "vieras", 80.0, seed=2)]
+    before = [sf.read(j["target"], dtype="float64")[0] for j in jobs]
+    stems.program_deliver(jobs, stems.StemResult(), {}, {}, settings)
+    for job, old in zip(jobs, before):
+        new, _ = sf.read(job["target"], dtype="float64")
+        gained = _end_minus_start_db(new) - _end_minus_start_db(old)
+        assert gained > 1.5, f"{job['key']}: veto ei päätynyt tiedostoon"
+
+
+def test_the_lift_survives_an_active_short_term_ceiling(tmp_path):
+    """Lyhytaikainen katto alkua kohden ei saa syödä lopun korjausta.
+
+    Ilman pohjakäyrän säilytystä silmukka korvaa vedon pelkällä
+    alasvedolla: integroitu jää tavoitteesta, koska lopun nostoa ei enää
+    ole ja tasainen nosto osuu kattoonsa (+12 dB) ennen tavoitetta.
+    """
+    settings = SimpleNamespace(
+        target_lufs=-16.0, program_peak_db=-1.0, program_short_term_db=-20.0,
+        program_drift=True, program_drift_delay_sec=10.0,
+        program_drift_min_ramp_sec=30.0)
+    job = _fading_job(tmp_path)
+    result = stems.StemResult()
+    stems.program_deliver([job], result, {}, {}, settings)
+    assert result.program_lufs == pytest.approx(-16.0, abs=0.5)

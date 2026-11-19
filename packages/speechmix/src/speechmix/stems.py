@@ -347,12 +347,17 @@ def program_deliver(jobs: list[dict], result, ducks: dict, extra: dict,
             delay_sec=float(getattr(settings, "program_drift_delay_sec",
                                     programme.DRIFT_DELAY_SEC)),
             max_db=float(getattr(settings, "program_drift_max_db",
-                                 programme.DRIFT_MAX_DB)))
+                                 programme.DRIFT_MAX_DB)),
+            min_ramp_sec=float(getattr(settings, "program_drift_min_ramp_sec",
+                                       programme.DRIFT_MIN_RAMP_SEC)))
         if curve.any():
             ride = curve if ride is None else ride + curve
             measured, meter, cost = run(0.0, ride)
             _log(f"ajertuman korjaus {curve.max():.2f} dB loppua kohti "
                  f"-> {measured:.2f} LUFS")
+    # Pohjakäyrä (pohjan nosto + ajertuma) säilyy koko silmukan: lyhy-
+    # taikainen katto lisätään sen päälle kierroksittain, ei korvata.
+    base = ride
     for round_number in range(DELIVER_ROUNDS):
         if measured is None:
             break
@@ -367,7 +372,11 @@ def program_deliver(jobs: list[dict], result, ducks: dict, extra: dict,
             break
         boost = round(max(-programme.MAX_PROGRAM_BOOST,
                           min(programme.MAX_PROGRAM_BOOST, boost + step)), 2)
-        ride = wanted if wanted is not None else ride
+        # Lyhytaikainen katto on **lisäys** pohjakäyrään (pohjan nosto,
+        # ajertuma), ei sen korvaaja: wanted mitataan pohjan jo sisältävästä
+        # ohjelmasta, joten se on vain puuttuva alasveto.
+        ride = (wanted if base is None else base + wanted) \
+            if wanted is not None else base
         measured, meter, cost = run(boost, ride)
         # Rajoittimella on budjetti, kuten ketjun omalla. Ala on mitattu
         # muualla eikä täällä: masteroinnissa 1–3 dB rajoitusta on tervettä,
@@ -620,10 +629,12 @@ def _ceiling_pass_timeline(members: list[dict], AudioFile,
             position += chunk
         if dry_run:
             return worst
-        for job, handle in zip(members, handles, strict=True):
+        for job, handle, ridden in zip(members, handles, _ridden(members),
+                                       strict=True):
             _write_with_gain(job, handle, rate,
                              stored if job.get("speech") else [],
-                             _linear((extra or {}).get(job["key"], 0.0) + boost_db))
+                             _linear((extra or {}).get(job["key"], 0.0) + boost_db),
+                             ride_db if ridden else None, ride_step)
     finally:
         for handle in handles:
             handle.close()
@@ -638,8 +649,14 @@ def grid_hop() -> float:
     return HOP_SEC
 
 
-def _write_with_gain(job, handle, rate: int, stored, scale: float) -> None:
-    """Stemi omassa tiedostoajassaan: ``scale`` ja käyrä aikajanan paikoilta."""
+def _write_with_gain(job, handle, rate: int, stored, scale: float,
+                     ride_db=None, ride_step: float = 0.0) -> None:
+    """Stemi omassa tiedostoajassaan: ``scale`` ja käyrä aikajanan paikoilta.
+
+    ``ride_db`` on hidas veto ohjelman aikaa (``ride_step`` sekuntia askel):
+    mittausajo laskee sen mukaan summaan, joten kirjoituksen on tehtävä
+    sama liu'u tai tiedosto jää raportoitua hiljaisemmaksi.
+    """
     from pedalboard.io import AudioFile
 
     tmp = job["target"] + ".ceil.tmp.wav"
@@ -668,6 +685,12 @@ def _write_with_gain(job, handle, rate: int, stored, scale: float) -> None:
                         continue
                     gain[f0 - position + (a - p0):f0 - position + (b - p0)] = \
                         curve[a - start:b - start]
+                if ride_db is not None and ride_step > 0:
+                    when = (np.arange(p0, p1) / rate) / ride_step
+                    slide = (10.0 ** (np.interp(
+                        when, np.arange(len(ride_db)), ride_db) / 20.0)
+                    ).astype(np.float32)
+                    gain[f0 - position:f0 - position + (p1 - p0)] *= slide
             out.write(np.ascontiguousarray(block * gain))
             position += count
     written = frame_count(tmp)
