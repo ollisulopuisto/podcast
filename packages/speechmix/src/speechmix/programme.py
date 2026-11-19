@@ -232,6 +232,64 @@ def short_term_lift(short_term_db, floor_db: float, step_sec: float,
     return np.clip(smooth[span : span + values.size], 0.0, max_lift)
 
 
+#: Ajertumakorjauksen oletukset. Viive: ohjelman alku kuullaan
+#: viitetasona, ja liian aikainen liike nostaisi sitäkin mukanaan — korjaus
+#: saa alkaa vasta kun kuulija on tottunut. Kattoraja: ajertuma on luokkaa
+#: desibeli-pari, joten suurempi mittaus on virhe eikä ohje, ja korjaus
+#: joka juoksee rajatta kirjoittaisi faderia loputtomiin. Herkkyyskynnys:
+#: puolessa desibelissä liikkuva käyrä on työtä ilman kuultavaa hyötyä.
+DRIFT_DELAY_SEC = 300.0
+DRIFT_MAX_DB = 4.0
+DRIFT_MIN_DB = 0.5
+
+
+def drift_lift(short_term_db, step_sec: float, speech=None,
+               delay_sec: float = DRIFT_DELAY_SEC, max_db: float = DRIFT_MAX_DB,
+               min_db: float = DRIFT_MIN_DB) -> np.ndarray:
+    """Hidas nosto jakson loppua kohti, dB (≥ 0), kun taso ajertuu alas.
+
+    Monen jakson alku soi loppua kuumempana: puhujat asettuvat, mikki
+    etääntyy, väsymys näkyy äänenpaineessa. Tasainen masterointinoso osuu
+    tavoitteeseen vain keskiarvona — alku ylittää ja loppu jää alle.
+    Korjaus ei ole kompressori vaan käsin tehty faderiliu'u: viiveen jälkeen
+    taso nousee hitaasti kohden jakson loppua, enintään mitattu ajertuma.
+
+    Trendi mitataan alun ja lopun mediaaneina, ei sovituksena: yksi
+    keskivaiheen huippu (mainos, naurunremakka) vääristäisi suoran mutta ei
+    liikuta reunojen keskikohtia. ``speech`` on puheen osuus askelta kohti
+    (``IntegratedMeter.short_term_speech``): musiikki ja tauot eivät kuulu
+    trendiin, koska ne eivät ajerru samalla tavalla kuin puhe. Hiljaisuus
+    (-inf) on aina pois laskuista.
+    """
+    values = np.asarray(short_term_db, dtype=np.float64)
+    lift = np.zeros(values.shape)
+    if not values.size:
+        return lift
+    keep = np.isfinite(values)
+    if speech is not None:
+        keep &= np.asarray(speech, dtype=np.float64)[: values.size] > 0.5
+    spoken = np.flatnonzero(keep)
+    if spoken.size < 10:
+        return lift
+    edge = max(1, int(round(spoken.size * 0.2)))
+    drift = float(np.median(values[spoken[:edge]])
+                  - np.median(values[spoken[-edge:]]))
+    if drift < min_db:
+        return lift
+    # Reunojen mediaanit ovat 10 %:n ja 90 %:n kohdalla, joten niiden ero
+    # on 0,8-kertainen päästä päähän -ajertumaan. Korjaus tähtää jakson
+    # loppuun, ei viimeisen viidennekseen keskipisteeseen.
+    top = min(drift / 0.8, max_db)
+    t = np.arange(values.size) * step_sec
+    span = t[-1] - delay_sec
+    if span <= 0:
+        return lift
+    # Liuku viiveestä loppuun. Käyrä on jo itsessään kuulumattoman hidas
+    # (desibelejä tunnissa), joten erillistä tasausta ei tarvita: ainoa
+    # kulma on viiveen kohdalla, ja sen taajuus on pienimmillään.
+    return np.clip((t - delay_sec) / span, 0.0, 1.0) * top
+
+
 def trim_to_target(summed: np.ndarray, rate: int, target_lufs: float,
                    max_trim: float = MAX_PROGRAM_TRIM) -> float:
     """Kuinka paljon mikkien summa on tavoitteen yli, desibeleinä (≤ 0).

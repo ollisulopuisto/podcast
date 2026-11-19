@@ -236,6 +236,20 @@ class IntegratedMeter:
         """Osalohkon pituus sekunteina: käyrän aika-akseli."""
         return BLOCK_SEC / OVERLAP
 
+    def short_term_speech(self) -> np.ndarray:
+        """Puheen osuus lyhytaikaisissa ikkunoissa, sama pituus kuin ``short_term``.
+
+        ``speech`` on lohkotahdissa eikä sovi sellaisenaan lyhytaikaisen
+        sarjan rinnalle; ajertumakorjaus tarvitsee puheportin samoille
+        askeleille kuin mittaamansa äänekkyyden.
+        """
+        marks = np.asarray(self._speech)
+        count = max(1, int(round(SHORT_TERM_SEC / (BLOCK_SEC / OVERLAP))))
+        if marks.size < count:
+            return np.zeros(0)
+        window = np.lib.stride_tricks.sliding_window_view(marks, count)
+        return window.mean(axis=1)
+
     def value(self, keep=None) -> float | None:
         """Integroitu äänekkyys, LUFS. ``None`` jos portin yli ei jää mitään.
 

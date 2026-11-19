@@ -356,6 +356,54 @@ def _run(command: list[str], stop=None) -> None:
         raise ProcessError(child.returncode, command, stderr=err)
 
 
+#: Julkaisun todellisen huipun raja. 256k AAC nostaa masteroidun
+#: -1,5 dBTP:n yli (mitattu +0,3 dBTP RX:llä 2026-11), koska pakkausvirhe
+#: osuu näytteiden väliin. Koodauksen jälkeen huippu mitataan, ja liian
+#: kuuma raita koodataan uudestaan niin paljon hiljaisempaa että raja pitää.
+AAC_TRUE_PEAK_DB = -1.0
+AAC_PEAK_MARGIN_DB = 0.1
+
+
+def measure_true_peak(path: str) -> float | None:
+    """Tiedoston todellinen huippu dBTP:nä, ffmpeg:n ebur128-mittauksella.
+
+    ``None`` kun mittausta ei saada: ääntä ei jätetä tekemättä sen takia
+    että ylimääräinen mittaus epäonnistuu.
+    """
+    done = subprocess.run(
+        [_ffmpeg(), "-nostdin", "-v", "info", "-i", str(path),
+         "-af", "ebur128=peak=true", "-f", "null", "-"],
+        capture_output=True, stdin=subprocess.DEVNULL, check=False)
+    if done.returncode != 0:
+        return None
+    text = done.stderr.decode("utf-8", "replace").split("True peak:")[-1]
+    peaks = []
+    for line in text.splitlines():
+        if "Peak:" in line and "dBFS" in line:
+            try:
+                peaks.append(float(line.split("Peak:")[1].split("dBFS")[0]))
+            except ValueError:
+                return None
+    return max(peaks) if peaks else None
+
+
+def encode_audio(wav: str, aac: str, stop=None) -> float | None:
+    """Ääniraita AAC:ksi julkaisun huippurajan sisällä.
+
+    Palauttaa mitatun huipun, jotta kutsuja voi kirjata mahdollisen
+    pudotuksen. Koodaus tehdään aina lähteestä eikä edellisestä AAC:stä,
+    joten uudelleenkoodaus ei kasaa pakkausvirhettä.
+    """
+    command = [_ffmpeg(), "-nostdin", "-v", "error", "-y", "-i", wav,
+               "-c:a", "aac", "-b:a", "256k"]
+    _run([*command, aac], stop)
+    peak = measure_true_peak(aac)
+    if peak is not None and peak > AAC_TRUE_PEAK_DB:
+        trim = round(peak - AAC_TRUE_PEAK_DB + AAC_PEAK_MARGIN_DB, 2)
+        _run([*command, "-af", f"volume=-{trim}dB", aac], stop)
+    return peak
+
+
 def _tile_geometry(tile: Shot, pw: int, ph: int) -> tuple[int, int, int, int]:
     """Neliön rajaus ja paikka: ``(leveys, vasen reuna lähteessä, x, y)``.
 
@@ -614,8 +662,10 @@ def render_program(shots: list[Shot], sources: list[AudioSource], pw: int, ph: i
         try:
             mark = time.monotonic()
             render_audio(sources, program_start, seconds, wav, stop=_Either())
-            _run([_ffmpeg(), "-nostdin", "-v", "error", "-y", "-i", wav,
-                  "-c:a", "aac", "-b:a", "256k", aac], _Either())
+            peak = encode_audio(wav, aac, stop=_Either())
+            if peak is not None and peak > AAC_TRUE_PEAK_DB:
+                log(f"AAC-huippu {peak:+.2f} dBTP yli rajan "
+                    f"{AAC_TRUE_PEAK_DB}: koodattu uudestaan tasoa laskien")
             audio_time[0] = time.monotonic() - mark
         except BaseException as exc:  # välitetään pääsäikeeseen
             failures.append(exc)

@@ -627,3 +627,61 @@ def test_a_failed_command_shows_its_own_error_text_not_just_the_status():
                      "import sys; sys.stderr.write('levy' ' on ' 'taynna'); sys.exit(28)"])
     assert raised.value.returncode == 28
     assert "levy on taynna" in str(raised.value)
+
+
+EBUR128_SUMMARY = """[Parsed_ebur128_0 @ 0x55cb071d7400] Summary:
+
+  Integrated loudness:
+    I:          -3.5 LUFS
+    Threshold: -13.5 LUFS
+
+  Loudness range:
+    LRA:         0.0 LU
+    Threshold:   0.0 LUFS
+    LRA low:     0.0 LUFS
+    LRA high:    0.0 LUFS
+
+  True peak:
+    Peak:       -0.4 dBFS
+"""
+
+
+def test_true_peak_comes_from_the_ebur128_summary(monkeypatch):
+    """Koodatun tiedoston huippu luetaan ffmpeg:n ebur128-yhteenvedosta."""
+
+    class _Done:
+        returncode = 0
+        stderr = EBUR128_SUMMARY.encode()
+
+    monkeypatch.setattr(render.subprocess, "run", lambda *a, **k: _Done())
+    assert render.measure_true_peak("audio.m4a") == pytest.approx(-0.4)
+
+
+def test_aac_over_the_true_peak_target_is_reencoded_quieter(monkeypatch):
+    """256k AAC nostaa todellista huippua: mitattuna RX:llä +0,3 dBTP kun
+    ohjelma oli masteroitu -1,5 dBTP:n kattoon. Liian kuuma koodataan
+    uudestaan pienemmällä tasolla eikä julkaista tavoitteen yli."""
+    calls = []
+    monkeypatch.setattr(render, "_run", lambda cmd, stop=None: calls.append(cmd))
+    monkeypatch.setattr(render, "measure_true_peak", lambda path: 0.3)
+    render.encode_audio("audio.wav", "audio.m4a")
+    assert len(calls) == 2
+    assert "volume=-1.4dB" in " ".join(calls[1])
+    assert "-c:a" in calls[1] and "aac" in calls[1]
+
+
+def test_aac_within_the_true_peak_target_is_kept(monkeypatch):
+    calls = []
+    monkeypatch.setattr(render, "_run", lambda cmd, stop=None: calls.append(cmd))
+    monkeypatch.setattr(render, "measure_true_peak", lambda path: -1.4)
+    render.encode_audio("audio.wav", "audio.m4a")
+    assert len(calls) == 1
+
+
+def test_a_missing_peak_measurement_does_not_stop_the_render(monkeypatch):
+    """Mittarin epäonnistuminen ei saa kaataa renderöintiä."""
+    calls = []
+    monkeypatch.setattr(render, "_run", lambda cmd, stop=None: calls.append(cmd))
+    monkeypatch.setattr(render, "measure_true_peak", lambda path: None)
+    render.encode_audio("audio.wav", "audio.m4a")
+    assert len(calls) == 1

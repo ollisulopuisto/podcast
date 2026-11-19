@@ -334,6 +334,25 @@ def program_deliver(jobs: list[dict], result, ducks: dict, extra: dict,
             measured, meter, cost = run(0.0, ride)
             _log(f"pohjan nosto {rise.max():.2f} dB hiljaisiin jaksoihin "
                  f"-> {measured:.2f} LUFS")
+
+    # Ajertuma: jakson loppu hiljenee alkua kohti, ja tasainen nosto osuu
+    # tavoitteeseen vain keskiarvona (mitattuna RX:llä integroitu -17,6 kun
+    # tavoite -16, alku kuumimpana). Korjaus on hidas faderiliu'u viiveen
+    # jälkeen, enintään mitatun ajertuman verran. Jos pohjan nosto jo
+    # liikutti käyrää, ajertuma mitataan nostetusta ohjelmasta — se on se
+    # ohjelma joka kuullaan.
+    if measured is not None and getattr(settings, "program_drift", True):
+        curve = programme.drift_lift(
+            meter.short_term(), step_sec, meter.short_term_speech(),
+            delay_sec=float(getattr(settings, "program_drift_delay_sec",
+                                    programme.DRIFT_DELAY_SEC)),
+            max_db=float(getattr(settings, "program_drift_max_db",
+                                 programme.DRIFT_MAX_DB)))
+        if curve.any():
+            ride = curve if ride is None else ride + curve
+            measured, meter, cost = run(0.0, ride)
+            _log(f"ajertuman korjaus {curve.max():.2f} dB loppua kohti "
+                 f"-> {measured:.2f} LUFS")
     for round_number in range(DELIVER_ROUNDS):
         if measured is None:
             break
