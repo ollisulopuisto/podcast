@@ -881,12 +881,12 @@ def test_a_vertical_reaction_shot_is_filled_and_framed(fixture_dir):
     clip = next(c for c in root.iter("mc-clip") if "reaktio" in (c.get("name") or ""))
     source = clip.find("mc-source")
     assert source.find("adjust-conform").get("type") == "none"
-    crop = source.find("adjust-crop/crop-rect")
-    # Keskitetty ikkuna: 1215×1080 lähteestä (1080×960 paneeli, täyttö 0,8889).
-    assert abs(float(crop.get("left")) - 32.639) < 0.01
-    assert abs(float(crop.get("right")) - 32.639) < 0.01
-    assert abs(float(crop.get("top"))) < 0.01
-    assert abs(float(crop.get("bottom"))) < 0.01
+    # Ei rajausta (2026-11-19): 1080×960-paneeli on peittävä tasainen
+    # skaala 0,8889 ja ikkuna välittyy sijainnilla.
+    assert source.find("adjust-crop") is None
+    scale, px, _py = _transform_of(source)
+    assert scale == "0.888889 0.888889"
+    assert abs(px) < 0.01   # keskitetty ikkuna: ei x-siirtoa
     assert abs(abs(_stack_y(source)) - 25.0) < 0.01
     # Reaktion kuvaa kysytään kehystäjältä paneelin kehyksellä.
     assert (1080, 960) in stub.frames
@@ -903,11 +903,15 @@ def test_a_stack_half_follows_the_face_not_the_centre(fixture_dir):
                              settings=_vertical_settings(), reframer=stub)
     clip = next(c for c in ET.fromstring(xml).iter("mc-clip")
                 if "reaktio" in (c.get("name") or ""))
-    crop = clip.find("mc-source/adjust-crop/crop-rect")
+    source = clip.find("mc-source")
+    assert source.find("adjust-crop") is None
     window = layout.window_of(1920, 1080, 1080, 960, 1.5, 20.0, 0.0)
-    assert abs(float(crop.get("left")) - window[0] / 1080 * 100) < 0.01
-    assert abs(float(crop.get("right")) - (1920 - window[0] - window[2]) / 1080 * 100) < 0.01
-    assert abs(float(crop.get("left")) - float(crop.get("right"))) > 1.0
+    cx = window[0] + window[2] / 2
+    scale, px, _py = _transform_of(source)
+    s = 960 / 1080
+    assert scale == "0.888889 0.888889"
+    assert abs(px - (-(cx - 960) * s / 19.2)) < 0.01
+    assert abs(px) > 1.0   # kasvot ohjaavat, ei keskikohta
 
 
 def test_the_base_under_a_stack_is_framed_on_its_face_too(fixture_dir):
@@ -918,10 +922,10 @@ def test_the_base_under_a_stack_is_framed_on_its_face_too(fixture_dir):
                              settings=_vertical_settings(), reframer=stub)
     root = ET.fromstring(xml)
     base = [s for s in root.findall(".//spine/mc-clip/mc-source")
-            if s.find("adjust-crop/crop-rect") is not None]
-    assert base, "pohjakuvaa ei rajattu pinoa varten"
-    crop = base[0].find("adjust-crop/crop-rect")
-    assert abs(float(crop.get("left")) - float(crop.get("right"))) > 1.0
+            if s.find("adjust-transform") is not None
+            and abs(abs(_stack_y(s)) - 25.0) < 0.01]
+    assert base, "pohjakuvaa ei kehystetty pinoa varten"
+    assert abs(_transform_of(base[0])[1]) > 1.0   # kasvot ohjaavat x:ää
     # Sekä reaktiolle että pohjalle kysyttiin paneelin kehys.
     assert stub.frames.count((1080, 960)) >= 2
 
@@ -949,12 +953,9 @@ def test_two_videos_on_screen_stack_into_two_squares(fixture_dir):
     ys = []
     for clip in reactions:
         source = clip.find("mc-source")
-        crop = source.find("adjust-crop/crop-rect")
-        assert crop is not None, "reaktiokuvaa ei rajattu neliöksi"
-        assert abs(float(crop.get("left")) - 32.639) < 0.01
-        assert abs(float(crop.get("right")) - 32.639) < 0.01
-        assert abs(float(crop.get("top"))) < 0.01
-        assert abs(float(crop.get("bottom"))) < 0.01
+        assert source.find("adjust-crop") is None, "ei rajausta: ikkuna on sijainnissa"
+        scale, _px, _py = _transform_of(source)
+        assert scale == "0.888889 0.888889"
         y = _stack_y(source)
         assert abs(abs(y) - 25.0) < 0.01
         ys.append(y)
@@ -973,8 +974,9 @@ def test_the_base_square_takes_the_other_half_of_the_stack(fixture_dir):
     reactions = [c for c in root.iter("mc-clip") if "reaktio" in (c.get("name") or "")]
     reaction_ys = [_stack_y(c.find("mc-source")) for c in reactions]
     base_ys = [_stack_y(s) for s in root.findall(".//spine/mc-clip/mc-source")
-               if s.find("adjust-crop/crop-rect") is not None]
-    assert len(base_ys) >= 2, "pohjakuvaa ei rajattu pinoa varten"
+               if s.find("adjust-transform") is not None
+               and abs(abs(_stack_y(s)) - 25.0) < 0.01]
+    assert len(base_ys) >= 2, "pohjakuvaa ei kehystetty pinoa varten"
     for reaction_y, base_y in zip(reaction_ys, base_ys, strict=False):
         assert abs(reaction_y + base_y) < 0.01
 
@@ -2033,19 +2035,17 @@ def test_layout_wide_top_puts_the_closeup_in_the_lower_panel(fixture_dir):
     """Spinen kuva on lähikuva alapaneelissa: natiivikokoinen (konformi
     ``none``), rajattu paneelin kuvasuhteeseen ja siirretty paneelin kohdalle.
 
-    Lähde 1920×1080 → 1080×1312: kehys on tasan paneeli (skaala 0,5625 ×
-    1,21481 akselikohtaisesti) ja paneelin keskipiste 304 px projektin
-    keskeltä alas = −15,83 %.
+    Lähde 1920×1080 → 1080×1312: peittävä tasainen skaala 1,21481, ei
+    rajausta, ja paneelin keskipiste 304 px projektin keskeltä alas =
+    −15,83 %.
     """
     _, xml = _layout_cut(fixture_dir)
     source = next(s for s in ET.fromstring(xml).findall(".//spine/mc-clip/mc-source")
                   if s.get("srcEnable") != "audio")
     assert source.find("adjust-conform").get("type") == "none"
-    crop = source.find("adjust-crop/crop-rect")
-    assert abs(float(crop.get("left")) - float(crop.get("right"))) < 0.01
-    assert abs(float(crop.get("left")) - (1920 - 889.0) / 2 / 1080 * 100) < 0.1
+    assert source.find("adjust-crop") is None
     scale, px, py = _transform_of(source)
-    assert scale == "0.5625 1.21481"
+    assert scale == "1.21481 1.21481"
     assert abs(px) < 0.01
     assert abs(py - (-304 / 19.2)) < 0.01
 
@@ -2063,7 +2063,7 @@ def test_layout_wide_top_writes_the_wide_on_lane_one_above_the_spine(fixture_dir
         assert source.get("srcEnable") == "video"   # ääni tulee käsitellyistä mikeistä
         assert source.find("adjust-conform").get("type") == "none"
         scale, _px, py = _transform_of(source)
-        assert scale == "0.5625 0.562963"   # laaja 1080×608: kehys = paneeli
+        assert scale == "0.562963 0.562963"   # laaja 1080×608: peittävä skaala
         assert abs(py - (656 / 19.2)) < 0.01     # paneelin keskipiste 656 px ylös
 
 
@@ -2081,9 +2081,9 @@ def test_layout_wide_bottom_swaps_the_panels(fixture_dir):
     _, top = _layout_cut(fixture_dir, "wide_top")
     _, bottom = _layout_cut(fixture_dir, "wide_bottom")
     top_y = _transform_of(next(s for s in ET.fromstring(top).findall(".//spine/mc-clip/mc-source")
-                               if s.find("adjust-crop") is not None))[2]
+                               if s.find("adjust-transform") is not None))[2]
     bottom_y = _transform_of(next(s for s in ET.fromstring(bottom).findall(".//spine/mc-clip/mc-source")
-                                  if s.find("adjust-crop") is not None))[2]
+                                  if s.find("adjust-transform") is not None))[2]
     assert abs(top_y + bottom_y) < 0.01 and top_y < 0 < bottom_y
 
 
@@ -2134,11 +2134,10 @@ def test_layout_reactions_replace_the_closeup_panel_not_the_wide(fixture_dir):
     reaction = next(c for c in root.iter("mc-clip") if "reaktio" in (c.get("name") or ""))
     assert reaction.get("lane") == "2"
     source = reaction.find("mc-source")
-    assert source.find("adjust-crop") is not None
+    assert source.find("adjust-crop") is None
     assert abs(_transform_of(source)[2] - (-304 / 19.2)) < 0.01
-    # Ei pinon neliöitä: yhdelläkään kuvalla ei ole 21,875 %:n rajausta.
-    for crop in root.iter("crop-rect"):
-        assert abs(float(crop.get("left")) - 21.875) > 0.5
+    # Ei rajausta enää lainkaan (2026-11-19).
+    assert len(list(root.iter("crop-rect"))) == 0
 
 
 # ------------------------------------------------------- automaattinen asettelu
@@ -2207,9 +2206,9 @@ def test_auto_layout_reactions_follow_their_host(fixture_dir, auto_numbers):
         (c for c in ET.fromstring(xml).iter("mc-clip") if "reaktio" in (c.get("name") or "")),
         key=lambda c: parse_time(c.get("offset")))
     assert [c.get("lane") for c in reactions] == ["2", "1"]
-    exchange, hold = (c.find("mc-source/adjust-crop/crop-rect") for c in reactions)
-    assert abs(float(exchange.get("left")) - 47.64) < 0.1         # 1080×1312 -paneeli
-    assert abs(float(hold.get("left")) - 32.639) < 0.01          # pinon 1080×960 -paneeli
+    exchange, hold = (c.find("mc-source") for c in reactions)
+    assert _transform_of(exchange)[0] == "1.21481 1.21481"   # 1080×1312 -paneeli
+    assert _transform_of(hold)[0] == "0.888889 0.888889"     # pinon 1080×960 -paneeli
 
 
 def test_auto_layout_records_panels_only_where_they_are_drawn(fixture_dir, auto_numbers):
@@ -2337,18 +2336,20 @@ def test_resolve_output_reads_back(fixture_dir, tmp_path):
     assert all(m.path for m in again.media)
 
 
-def test_square_fallback_crop_is_percent_of_height():
-    """Vara-neliö: 420 px per puoli 1920×1080-lähteestä = 38,889 % korkeudesta."""
+def test_square_fallback_has_no_crop():
+    """Vara-neliö: ei rajausta enää (2026-11-19) — Final Cutin
+    akselikohtainen täyttö venyttäisi rajatun alueen. Paneeli näyttää
+    lähteen keskeltä 1080 px viipaleen, mikä on neliö itsessään."""
     from autoraffkat.finalcut import write as fw
 
     text = "\n".join(fw._square_lines(1, ""))
-    assert 'left="38.88' in text and 'right="38.88' in text
+    assert "adjust-crop" not in text
 
 
-def test_square_fallback_scales_the_frame_to_the_square():
-    """1080×1080-neliö 1920×1080-lähteestä: ilman akselikohtaista skaalaa
-    (1080/1920, 1) Final Cutin per-axis-täyttö venyttää neliön leveäksi."""
+def test_square_fallback_needs_no_scale_either():
+    """Skaalaa ei ole (1): kehys on lähde sellaisenaan ja paneeli
+    leikkaa siitä keskiviipaleen."""
     from autoraffkat.finalcut import write as fw
 
     text = "\n".join(fw._square_lines(1, ""))
-    assert 'scale="0.5625 1"' in text
+    assert '<adjust-transform position="0 28.125"/>' in text

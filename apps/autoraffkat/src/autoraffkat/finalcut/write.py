@@ -1863,10 +1863,10 @@ REACTION_LANE = 1
 # ``layout.stack_panel`` ja kehystetään kasvoihin): kaksi 1080 px neliötä
 # 1920 px korkean kuvan päällä. Lähde on 1920×1080, joten neliö jättää 420 px
 # = 21.875 % leveydestä (``Shot.crop``, renderöinti) pois kummaltakin reunalta.
-# Final Cutin crop-rect on prosentteja KORKEUDESTA: 420 / 1080 = 38.889 %
-# (``SQUARE_CROP_FCP``). Keskipisteet ovat ±540 px = ±28.125 % (1 % = 19.2 px).
+# Final Cutissa rajaus jätetään pois (``layout.fcp_panel``): paneeli näyttää
+# keskeltä 1080 px viipaleen. Keskipisteet ovat ±540 px = ±28.125 % (1 % =
+# 19.2 px).
 SQUARE_CROP = 21.875
-SQUARE_CROP_FCP = 420 / 1080 * 100
 SQUARE_Y = 28.125
 
 
@@ -1935,38 +1935,32 @@ def _square_of(stacks, a: int, b: int) -> int:
 
 def _square_lines(sign: int, indent: str) -> list[str]:
     """Neliö yhdelle kuvalle pinossa: lähde natiivikokoisena (``none``, ei
-    täyttöä), reunat rajattu ja kuva ``sign`` × ``SQUARE_Y`` ylös tai alas.
+    täyttöä eikä rajausta) ja kuva ``sign`` × ``SQUARE_Y`` ylös tai alas.
 
-    Skaala (1080/1920, 1) tekee kehyksestä neliön: ilman sitä Final Cutin
-    akselikohtainen täyttö venyttäisi rajatun alueen leveäksi (sääntö
-    varmistettu 2026-11-19, ks. ``layout.fcp_panel``).
+    Neliö syntyy ilman rajausta: skaalaa ei ole (1), joten paneeli näyttää
+    lähteen keskeltä 1080 px leveän viipaleen — sama kuin aiempi
+    38,889 %:n rajaus, mutta ilman Final Cutin akselikohtaisen täytön
+    venytysriskia (ks. ``layout.fcp_panel``).
     """
     return [
-        f'{indent}<adjust-crop mode="crop">',
-        f'{indent}  <crop-rect left="{_number(SQUARE_CROP_FCP)}" top="0" '
-        f'right="{_number(SQUARE_CROP_FCP)}" bottom="0"/>',
-        f'{indent}</adjust-crop>',
         f'{indent}<adjust-conform type="none"/>',
-        f'{indent}<adjust-transform scale="{_number(1080 / 1920)} 1" '
-        f'position="0 {_number(sign * SQUARE_Y)}"/>',
+        f'{indent}<adjust-transform position="0 {_number(sign * SQUARE_Y)}"/>',
     ]
 
 
 def _panel_lines(fcp: "screen_layout.FcpPanel", indent: str) -> list[str]:
-    """Kuva paneeliin: rajaus, natiivikoko (``none``) ja siirto.
+    """Kuva paneeliin: natiivikoko (``none``), tasainen skaala ja siirto.
 
-    **Järjestys on DTD:n**: ``adjust-crop``, ``adjust-conform``,
-    ``adjust-transform``. Final Cut hylkää väärän järjestyksen koko tuonnin
-    kuten ``tcFormat``in. Luvut tulevat ``layout.fcp_panel``ista, jonka
-    skaala-sijainti-malli on varmistettu Final Cutissa 2026-11-19.
+    Ei ``adjust-crop``ia: Final Cut skaalaa rajatun alueen täyttämään
+    kehyksen, joten rajaus käyttäisi ikkunan kahteen kertaan. Ikkuna
+    välittyy pelkällä sijainnilla (``layout.fcp_panel``, malli varmistettu
+    Final Cutissa 2026-11-19). **Järjestys on DTD:n**: ``adjust-conform``
+    ennen ``adjust-transform``ia; Final Cut hylkää väärän järjestyksen
+    koko tuonnin kuten ``tcFormat``in.
     """
     return [
-        f'{indent}<adjust-crop mode="crop">',
-        f'{indent}  <crop-rect left="{_number(fcp.left)}" top="{_number(fcp.top)}" '
-        f'right="{_number(fcp.right)}" bottom="{_number(fcp.bottom)}"/>',
-        f'{indent}</adjust-crop>',
         f'{indent}<adjust-conform type="none"/>',
-        f'{indent}<adjust-transform scale="{_number(fcp.scale_x)} {_number(fcp.scale_y)}" '
+        f'{indent}<adjust-transform scale="{_number(fcp.scale)} {_number(fcp.scale)}" '
         f'position="{_number(fcp.pos_x)} {_number(fcp.pos_y)}"/>',
     ]
 

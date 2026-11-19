@@ -66,11 +66,18 @@ def _panel_for(kind: str) -> screen_layout.Panel:
     return screen_layout.stack_panel(1 if kind == "top" else -1)
 
 
+# Puolikkaiden zoomi: käyttäjän manuaalisesti varmistama (2026-11-19):
+# skaala 0,96 kun täsmälleen peittävä olisi 960/1080 ≈ 0,8889.
+HALF_ZOOM = 0.96 / (960 / 1080)
+
+
 def _lane_lines(kind: str, src: TrailerSource, x: float, indent: str) -> list[str]:
     panel = _panel_for(kind)
     win = crop_window(src.width, src.height, panel.w, panel.h, x)
+    zoom = 1.0 if kind == "full" else HALF_ZOOM
     return _panel_lines(
-        screen_layout.fcp_panel(panel, win, src.width, src.height), indent)
+        screen_layout.fcp_panel(panel, win, src.width, src.height, zoom=zoom),
+        indent)
 
 
 def build_trailer_fcpxml(

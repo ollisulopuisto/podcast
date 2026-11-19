@@ -119,51 +119,40 @@ def window_of(src_w: int, src_h: int, frame_w: int, frame_h: int,
 
 @dataclass(frozen=True)
 class FcpPanel:
-    """Paneelin Final Cut -muoto: rajaus prosentteina, skaala ja sijainti."""
+    """Paneelin Final Cut -muoto: tasainen skaala ja sijainti, ei rajausta."""
 
-    left: float
-    right: float
-    top: float
-    bottom: float
-    scale_x: float
-    scale_y: float
+    scale: float
     pos_x: float
     pos_y: float
 
 
 def fcp_panel(panel: Panel, window: tuple[float, float, float, float],
               src_w: int, src_h: int, project_w: int = PROJECT_W,
-              project_h: int = PROJECT_H) -> FcpPanel:
-    """Ikkuna → ``adjust-crop`` + ``adjust-transform`` (konformi ``none``).
+              project_h: int = PROJECT_H, zoom: float = 1.0) -> FcpPanel:
+    """Ikkuna → ``adjust-transform`` (konformi ``none``), EI ``adjust-crop``ia.
 
-    **Final Cutin todellinen mode="crop"-sääntö** (varmistettu 2026-11-19
-    diagnostiikkavientiprojektilla, kaikki 9 ruutua 1–2 px tarkkuudella):
-    rajattu alue skaalautuu AKSELEITTAIN täyttämään muunnetun kehyksen —
-    tehoskaala on ``lähde × transform-skaala`` jaettuna rajatulla alueella
-    per akseli — ja alue keskittyy kehykseen. Kehys puolestaan asettuu
-    projektin keskelle ja siirtyy sijainnin verran. Siksi skaala on paneeli
-    jaettuna LÄHTEELLÄ (molemmilla akseleilla) ja sijainti on pelkkä
-    paneelin keskipisteen siirtymä: mitään skaalan kompensointia ei ole,
-    eikä ikkunan paikka lähteessä vaikuta sijaintiin.
+    Final Cut skaalaa rajatun alueen akselikohtaisesti TÄYTTÄMÄÄN
+    muunnetun kehyksen (varmistettu 2026-11-19 diagnostiikkaprojektilla),
+    joten ``adjust-crop`` ei käy ikkunointiin: ikkuna tulisi käytetyksi
+    kahdesti. Ilman rajausta alue on koko lähde, skaala pysyy tasaiseksi
+    ja sijainti keskittää ikkunan paneeliin. Kehys on lähde × skaala,
+    asetettuna projektin keskelle + sijainti; projektin reunoilla
+    yli menevä osa leikkautuu pois. Tämän varmisti myös käyttäjän
+    manuaalinen korjaus (2026-11-19: 37 klippiä, rajaus poistettu,
+    tasainen skaala 0,96, sijainti 0/±25).
 
-    Kun ikkunan kuvasuhde on paneelin kuvasuhde, tehoskaala on tasainen
-    ``paneeli / ikkuna`` kuten renderöinnissäkin.
+    Skaala on paneelin peittävä tasainen skaala ``max(w/src_w, h/src_h)``
+    kerrottuna ``zoom``illa. ``zoom`` > 1 kiristää näkyvää ikkunaa
+    (traileri: käyttäjän valitsema 0,96 / 0,8889 ≈ 1,08).
 
-    **Rajauksen yksikkö** on prosenttia lähteen KORKEUDESTA kaikilla neljällä
-    reunalla (Applen FCPXML-dokumentaatio; käyttäjäraportti 2026-11-18: Final
-    Cut näytti 20,42 % leveydestä luettuna 220,5 px eikä 392 px).
     **Sijainnin yksikkö** on prosenttia projektin korkeudesta, y ylöspäin.
     """
     wx, wy, ww, wh = window
+    s = max(panel.w / src_w, panel.h / src_h) * zoom
     cx, cy = panel.centre
     unit = project_h / 100.0
     return FcpPanel(
-        left=wx / src_h * 100,
-        right=(src_w - wx - ww) / src_h * 100,
-        top=wy / src_h * 100,
-        bottom=(src_h - wy - wh) / src_h * 100,
-        scale_x=panel.w / src_w,
-        scale_y=panel.h / src_h,
-        pos_x=(cx - project_w / 2) / unit,
-        pos_y=(project_h / 2 - cy) / unit,
+        scale=s,
+        pos_x=(cx - project_w / 2 - (wx + ww / 2 - src_w / 2) * s) / unit,
+        pos_y=(project_h / 2 - cy + (wy + wh / 2 - src_h / 2) * s) / unit,
     )

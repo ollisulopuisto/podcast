@@ -58,78 +58,70 @@ def test_the_window_never_leaves_the_source():
     assert 0 <= y and y + h <= 1080 + 1e-6
 
 
-def test_a_centred_square_matches_the_stack_export_numbers():
+def test_a_centred_square_needs_no_crop_and_unit_scale():
     """Sama laskenta kuin ``write._square_lines``: neliö 1080×1080,
-    keskipiste 540 px ylös keskeltä = 28,125 %, rajaus 38,889 % korkeudesta per puoli (420 px)."""
+    keskipiste 540 px ylös keskeltä = 28,125 %. Peittävä skaala on 1 ja
+    ikkuna on jo keskellä, joten vain sijainti jää."""
     panel = layout.Panel(0, -120, 1080, 1080)
     fcp = layout.fcp_panel(panel, (420, 0, 1080, 1080), 1920, 1080)
-    assert fcp.left == pytest.approx(38.889, abs=1e-3)
-    assert fcp.right == pytest.approx(38.889, abs=1e-3)
-    assert fcp.top == pytest.approx(0)
-    assert fcp.bottom == pytest.approx(0)
-    # Kehys on paneeli: akselikohtainen skaala on paneeli / lähde.
-    assert fcp.scale_x == pytest.approx(1080 / 1920)
-    assert fcp.scale_y == pytest.approx(1.0)
+    assert fcp.scale == pytest.approx(1.0)
     assert fcp.pos_x == pytest.approx(0)
     assert fcp.pos_y == pytest.approx(28.125)
 
 
-def test_an_off_centre_window_needs_no_position_compensation():
-    """Kasvot vasemmalla: ikkuna siirtyy lähteessä vasemmalle. Final Cut
-    skaalaa rajatun alueen TÄYTTÄMÄÄN muunnetun kehyksen (varmistettu
-    2026-11-19, ks. ``fcp_render_rect``), joten ikkuna keskittyy itsestään
-    eikä sijaintiin tarvita skaalan kompensointia."""
-    panel = layout.panels(layout.LAYOUT_WIDE_TOP).close
+def test_an_off_centre_window_is_centred_by_the_position():
+    """Kasvot vasemmalla: ilman rajausta skaala on paneelin peittävä
+    tasainen skaala ja sijainti keskittää ikkunan paneeliin (malli
+    varmistettu Final Cutissa 2026-11-19, ks. ``fcp_render_point``)."""
+    panel = layout.panels(layout.LAYOUT_WIDE_TOP).close  # 1080×1312
     window = (200.0, 0.0, 889.0, 1080.0)  # keskipiste 644,5; lähteen 960
     fcp = layout.fcp_panel(panel, window, 1920, 1080)
-    assert fcp.scale_x == pytest.approx(panel.w / 1920)
-    assert fcp.scale_y == pytest.approx(panel.h / 1080)
+    s = 1312 / 1080
+    assert fcp.scale == pytest.approx(s)
     cx, cy = panel.centre
-    assert fcp.pos_x == pytest.approx((cx - 540) / 19.2)
+    assert fcp.pos_x == pytest.approx((cx - 540 - (644.5 - 960) * s) / 19.2)
     assert fcp.pos_y == pytest.approx((960 - cy) / 19.2)
 
 
-def test_a_window_off_centre_vertically_needs_no_compensation_either():
-    """Sama kuin vaakasuunnassa: ikkuna 100 px lähteen keskikohdan alla
-    keskittyy paneeliin ilman korjausta."""
+def test_a_window_off_centre_vertically_shifts_the_position_too():
+    """Sama kuin vaakasuunnassa: ikkuna 95 px lähteen keskikohdan alla
+    siirtää sijaintia skaalattuna (y ylöspäin)."""
     panel = layout.panels(layout.LAYOUT_WIDE_TOP).close
     window = (515.0, 190.0, 889.0, 1080 - 190.0 - 0.0)   # keskipiste y = 635
     fcp = layout.fcp_panel(panel, window, 1920, 1080)
-    assert fcp.scale_x == pytest.approx(panel.w / 1920)
-    assert fcp.scale_y == pytest.approx(panel.h / 1080)
+    s = fcp.scale
     cx, cy = panel.centre
-    assert fcp.pos_x == pytest.approx((cx - 540) / 19.2)
-    assert fcp.pos_y == pytest.approx((960 - cy) / 19.2)
+    assert fcp.pos_x == pytest.approx((cx - 540 - (515 + 889 / 2 - 960) * s) / 19.2)
+    assert fcp.pos_y == pytest.approx((960 - cy + (635 - 540) * s) / 19.2)
 
 
-def fcp_render_rect(fcp, src_w=1920, src_h=1080, proj_w=1080, proj_h=1920):
-    """Final Cutin todellinen mode="crop"-säätö (varmistettu 2026-11-19
-    diagnostiikkaviennillä Final Cut Prossa): rajattu alue skaalautuu
-    AKSELEITTAIN täyttämään muunnetun kehyksen (lähde × transform-skaala,
-    keskipisteen ympäri), ja kehys asettuu projektin keskelle + sijainti
-    (prosentteja projektin korkeudesta, y ylöspäin). Palauttaa kehyksen
-    suorakulmion projektin pikseleinä (y alas)."""
-    fw, fh = src_w * fcp.scale_x, src_h * fcp.scale_y
+def fcp_render_point(fcp, x, y, src_w=1920, src_h=1080, proj_w=1080,
+                     proj_h=1920):
+    """Final Cutin varmistettu säätö ilman rajausta (2026-11-19): alue on
+    koko lähde, kehys = lähde × skaala asettuu projektin keskelle +
+    sijainti (% projektin korkeudesta, y ylöspäin), ja projektin
+    ulkopuolelle jäävä osa leikkautuu. Palauttaa lähdepisteen (x, y)
+    projektikoordinaatit (y alas)."""
     unit = proj_h / 100
-    x0 = (proj_w - fw) / 2 + fcp.pos_x * unit
-    y0 = (proj_h - fh) / 2 - fcp.pos_y * unit
-    return x0, y0, x0 + fw, y0 + fh
+    fx = (proj_w - src_w * fcp.scale) / 2 + fcp.pos_x * unit
+    fy = (proj_h - src_h * fcp.scale) / 2 - fcp.pos_y * unit
+    return fx + x * fcp.scale, fy + y * fcp.scale
 
 
-def test_fcp_render_model_places_the_frame_exactly_on_the_panel():
-    """Mikä tahansa ikkuna: kehys on tasan paneeli ja tehozoomi on se,
-    joka renderöinnilläkin on (paneeli / ikkuna, molemmilla akseleilla)."""
-    panel = layout.stack_panel(1)
+def test_fcp_render_model_centres_the_window_on_the_panel():
+    """Ikkunan keskipiste osuu paneelin keskipisteeseen ja skaala on
+    tasainen — sekä pinon puolikas että koko ruutu."""
+    panel = layout.stack_panel(1)  # 1080×960
     window = (476.0, 0.0, 1215.0, 1080.0)
     fcp = layout.fcp_panel(panel, window, 1920, 1080)
-    fw, fh = 1920 * fcp.scale_x, 1080 * fcp.scale_y
-    assert fw / window[2] == pytest.approx(panel.w / window[2])
-    assert fh / window[3] == pytest.approx(panel.w / window[2])
-    assert fcp_render_rect(fcp) == pytest.approx(
-        (panel.x, panel.y, panel.x + panel.w, panel.y + panel.h))
+    assert fcp.scale == pytest.approx(960 / 1080)  # peittävä
+    assert fcp_render_point(fcp, 476 + 1215 / 2, 540) == pytest.approx(
+        panel.centre)
     full = layout.Panel(0, 0, 1080, 1920)
-    fcp = layout.fcp_panel(full, layout.window_of(1920, 1080, 1080, 1920), 1920, 1080)
-    assert fcp_render_rect(fcp) == pytest.approx((0, 0, 1080, 1920))
+    fcp = layout.fcp_panel(full, layout.window_of(1920, 1080, 1080, 1920),
+                           1920, 1080)
+    assert fcp.scale == pytest.approx(1920 / 1080)  # peittävä
+    assert fcp_render_point(fcp, 960, 540) == pytest.approx((540, 960))
 
 
 def test_the_stack_is_two_panels_that_fill_the_screen_without_a_gap():
@@ -140,18 +132,13 @@ def test_the_stack_is_two_panels_that_fill_the_screen_without_a_gap():
     assert fcp.pos_y == pytest.approx(25.0)
 
 
-def test_crop_is_percent_of_the_source_height_not_width():
-    """Final Cutin crop-rect on prosentteja lähteen KORKEUDESTA (Apple DTD).
-    Käyttäjäraportti 2026-11-18: 1920×1080-lähteen ikkuna alkoi 392 px:stä,
-    mutta Final Cut näytti vasemmalle 220,5 px, koska luku oli prosentteja
-    leveydestä (20,42 % × 1080 = 220,5)."""
+def test_there_is_no_crop_anymore():
+    """``adjust-crop`` poistettiin 2026-11-19: Final Cut skaalaa rajatun
+    alueen akselikohtaisesti täyttämään kehyksen, joten rajaus käytti
+    ikkunan kahteen kertaan. FcpPanelilla ei ole rajauskenttiä."""
     panel = layout.stack_panel(1)
-    window = (392.0, 0.0, 1215.0, 1080.0)
-    fcp = layout.fcp_panel(panel, window, 1920, 1080)
-    assert fcp.left / 100 * 1080 == pytest.approx(392.0)
-    assert fcp.right / 100 * 1080 == pytest.approx(1920 - 392.0 - 1215.0)
-    assert fcp.top == pytest.approx(0)
-    # Pystyakselilla sama yksikkö: 100 px ylhäältä = 100 / 1080 %.
-    tall = layout.fcp_panel(panel, (0.0, 100.0, 1215.0, 880.0), 1920, 1080)
-    assert tall.top / 100 * 1080 == pytest.approx(100.0)
-    assert tall.bottom / 100 * 1080 == pytest.approx(100.0)
+    fcp = layout.fcp_panel(panel, (392.0, 0.0, 1215.0, 1080.0), 1920, 1080)
+    assert not hasattr(fcp, "left")
+    assert fcp.scale == pytest.approx(960 / 1080)
+    # Ikkunan keskipiste (999,5) siirtyy paneelin keskipisteeseen:
+    assert fcp.pos_x == pytest.approx(-(999.5 - 960) * (960 / 1080) / 19.2)
