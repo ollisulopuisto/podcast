@@ -129,3 +129,18 @@ def test_an_unwritable_txt_fails_the_run_and_the_last_event_is_an_error(
     ]
     assert lines[-1]["event"] == "error"
     assert lines[-1]["reason"] == "txt_failed"
+
+
+def test_two_files_with_the_same_stem_are_refused_before_anything_is_written(
+    local, tmp_path, capsys
+):
+    """Sama nimi kirjoittaisi sekä sanatiedoston että .txt:n toisen päälle."""
+    one, two = tmp_path / "a" / "jakso.wav", tmp_path / "b" / "jakso.mp3"
+    for path in (one, two):
+        path.parent.mkdir()
+        path.write_bytes(b"data")
+    out = tmp_path / "out"
+    args = ["--audio", str(one), "--audio", str(two), "--json", str(out), "--txt"]
+    assert cli.main([*args, "--backend", "parakeet"]) == 1
+    assert "sama nimi" in capsys.readouterr().err
+    assert not out.exists()
