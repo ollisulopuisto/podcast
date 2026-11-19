@@ -908,8 +908,10 @@ def test_a_stack_half_follows_the_face_not_the_centre(fixture_dir):
     window = layout.window_of(1920, 1080, 1080, 960, 1.5, 20.0, 0.0)
     cx = window[0] + window[2] / 2
     scale, px, _py = _transform_of(source)
-    s = 960 / 1080
-    assert scale == "0.888889 0.888889"
+    # Kehystäjän zoomi kuuluu skaalaan: peittävä × 1,5 (Devin Review
+    # 2026-11-20: zoomi putosi viennistä, MP4 säilytti sen).
+    s = 960 / 1080 * 1.5
+    assert scale == "1.33333 1.33333"
     assert abs(px - (-(cx - 960) * s / 19.2)) < 0.01
     assert abs(px) > 1.0   # kasvot ohjaavat, ei keskikohta
 

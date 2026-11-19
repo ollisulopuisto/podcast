@@ -1973,7 +1973,10 @@ def _panel_of(item, shot, panel: "screen_layout.Panel"):
         item.width, item.height, panel.w, panel.h,
         shot.scale if shot else 1.0, shot.pos_x if shot else 0.0,
         shot.pos_y if shot else 0.0)
-    return screen_layout.fcp_panel(panel, window, item.width, item.height)
+    # Zoomi kuuluu myös skaalaan: ikkuna on jo zoomin pienentämä, joten
+    # pelkkä peittävä skaala näyttäisi liikaa (MP4-renderöinti zoomaa).
+    return screen_layout.fcp_panel(panel, window, item.width, item.height,
+                                   zoom=shot.scale if shot else 1.0)
 
 
 def _layout_plan(settings, roles, spans, frame_duration: Fraction):
