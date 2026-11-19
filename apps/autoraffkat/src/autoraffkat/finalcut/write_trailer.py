@@ -68,17 +68,16 @@ def _panel_for(kind: str) -> screen_layout.Panel:
     return screen_layout.stack_panel(1 if kind == "top" else -1)
 
 
-# Puolikkaiden zoomi: käyttäjän manuaalisesti varmistama (2026-11-19):
-# skaala 0,96 kun täsmälleen peittävä olisi 960/1080 ≈ 0,8889.
-HALF_ZOOM = 0.96 / (960 / 1080)
+# Puolikas peittää paneelinsa TÄSMÄLLEEN: tasainen skaala 960/1080 ≈
+# 0,888889, ei yli menevää zoomia (käyttäjän 50/50-käsikorjauksen
+# varmistama jakoviva 2026-11-20).
 
 
 def _lane_lines(kind: str, src: TrailerSource, x: float, indent: str) -> list[str]:
     panel = _panel_for(kind)
     win = crop_window(src.width, src.height, panel.w, panel.h, x)
-    zoom = 1.0 if kind == "full" else HALF_ZOOM
     return _panel_lines(
-        screen_layout.fcp_panel(panel, win, src.width, src.height, zoom=zoom),
+        screen_layout.fcp_panel(panel, win, src.width, src.height),
         indent)
 
 
@@ -88,8 +87,7 @@ def _half_inner_lines(src: TrailerSource, x: float, indent: str) -> list[str]:
     win = crop_window(src.width, src.height, panel.w, panel.h, x)
     inner = screen_layout.fcp_panel(
         screen_layout.Panel(0, 0, panel.w, panel.h), win,
-        src.width, src.height, project_w=panel.w, project_h=panel.h,
-        zoom=HALF_ZOOM)
+        src.width, src.height, project_w=panel.w, project_h=panel.h)
     return _panel_lines(inner, indent)
 
 
@@ -166,7 +164,7 @@ def build_trailer_fcpxml(
         for lane, kind in ((1, "top"), (2, "bottom")):
             on = enabled_lane == kind
             # Puolikas on paneelinkokoinen yhdistelmäklippi: ilman sitä vain
-            # projektin reunat leikkaavat, ja zoomin (0,96) yli nostama osa
+            # projektin reunat leikkaavat, ja pysty- tai zoomattu lähde
             # vuotaisi saumassa toisen kaistan päälle (Devin Review #252,
             # 2026-11-20). Yhdistelmän oma 1080×960-kehys leikkaa sauman
             # tarkasti; ulkoinen sijainti pitää paneelin paikallaan.

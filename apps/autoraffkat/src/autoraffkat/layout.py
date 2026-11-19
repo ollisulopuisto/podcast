@@ -148,11 +148,10 @@ def fcp_panel(panel: Panel, window: tuple[float, float, float, float],
     asetettuna projektin keskelle + sijainti; projektin reunoilla
     yli menevä osa leikkautuu pois. Tämän varmisti myös käyttäjän
     manuaalinen korjaus (2026-11-19: 37 klippiä, rajaus poistettu,
-    tasainen skaala 0,96, sijainti 0/±25).
+    tasainen skaala, sijainti 0/±25).
 
     Skaala on paneelin peittävä tasainen skaala ``max(w/src_w, h/src_h)``
-    kerrottuna ``zoom``illa. ``zoom`` > 1 kiristää näkyvää ikkunaa
-    (traileri: käyttäjän valitsema 0,96 / 0,8889 ≈ 1,08).
+    kerrottuna ``zoom``illa. ``zoom`` > 1 kiristää näkyvää ikkunaa.
 
     **Sijainnin yksikkö** on prosenttia projektin korkeudesta, y ylöspäin.
     """

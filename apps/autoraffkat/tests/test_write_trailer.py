@@ -108,17 +108,19 @@ def test_half_lanes_have_the_same_zoom_and_mirror_positions():
     # Peilitut paneelipaikat ulkoisina sijainteina (yhdistelmä on 1080×960).
     assert top.find("adjust-transform").get("position") == "0 25"
     assert bottom.find("adjust-transform").get("position") == "0 -25"
-    # 1080×960-puolikas: käyttäjän varmistama zoomi 0,96 (2026-11-19),
-    # tasainen molemmilla akseleilla, EI rajausta.
+    # 1080×960-puolikas: täsmälleen peittävä skaala 960/1080 ≈ 0,888889
+    # (käyttäjän 50/50-käsikorjaus 2026-11-20), tasainen molemmilla
+    # akseleilla, EI rajausta.
     transforms = [
         _media_by_id(root, k.get("ref")).find(".//asset-clip/adjust-transform")
         for k in (top, bottom)
     ]
-    assert transforms[0].get("scale") == transforms[1].get("scale") == "0.96 0.96"
+    assert (transforms[0].get("scale") == transforms[1].get("scale")
+            == "0.888889 0.888889")
     tx = float(transforms[0].get("position").split()[0])
     # kohde x=0.3: ikkuna 1215 px, keskipiste 607,5 → sijainti keskittää sen
     # yhdistelmän omassa kehyksessä (960 px = 9,6/%).
-    assert tx == pytest.approx(-(607.5 - 960) * 0.96 / 9.6)
+    assert tx == pytest.approx(-(607.5 - 960) * (960 / 1080) / 9.6)
     assert tx == float(transforms[1].get("position").split()[0])
     for k in (top, bottom):
         seq = _media_by_id(root, k.get("ref")).find("sequence")
@@ -127,12 +129,10 @@ def test_half_lanes_have_the_same_zoom_and_mirror_positions():
 
 
 def test_half_lanes_are_panel_sized_compounds_that_clip():
-    """Puolikkaan zoomi 0,96 ylittää paneelin korkeuden (1080·0,96 = 1037 >
-    960), ja ilman rajausta vain projektin reunat leikkaavat: saumassa
-    näkyisi toinen kaista (Devin Review #252, 2026-11-20). Puolikkaat ovat
-    nyt paneelinkokoisia yhdistelmäklippejä, joiden oma 1080×960-kehys
-    leikkaa yli menevän — sama kuva kuin Ollin käsin varmistamassa
-    korjauksessa, mutta sauma on tarkka."""
+    """Ilman rajausta vain projektin reunat leikkaavat, ja pysty- tai
+    zoomattu lähde vuotaisi saumassa toisen kaistan päälle (Devin Review
+    #252, 2026-11-20). Puolikkaat ovat paneelinkokoisia yhdistelmäklippejä,
+    joiden oma 1080×960-kehys leikkaa sauman tarkasti."""
     root = _doc(xs=[0.3, 0.3, 0.3])
     clip = _spine(root)[0]
     top, bottom = [k for k in clip if k.tag == "ref-clip"]
@@ -145,11 +145,23 @@ def test_half_lanes_are_panel_sized_compounds_that_clip():
     fmt = root.find(f".//format[@id='{seq.get('format')}']")
     assert (fmt.get("width"), fmt.get("height")) == ("1080", "960")
     inner = seq.find(".//asset-clip/adjust-transform")
-    assert inner.get("scale") == "0.96 0.96"
+    assert inner.get("scale") == "0.888889 0.888889"
     # Ikkunan keskitys on yhdistelmän omissa yksiköissä (960 px = 9,6/%).
     tx = float(inner.get("position").split()[0])
-    assert tx == pytest.approx(-(607.5 - 960) * 0.96 / 9.6)
+    assert tx == pytest.approx(-(607.5 - 960) * (960 / 1080) / 9.6)
     assert seq.find(".//adjust-crop") is None
+
+
+def test_half_panels_cover_exactly_the_panel_height():
+    """50/50-jako: puolikkaan tasainen skaala näyttää täsmälleen paneelin
+    korkeuden (1080 × 960/1080 = 960), ei yli eikä ali — käyttäjän
+    varmistama käsikorjaus 2026-11-20 (skaala 0,96 → 960/1080)."""
+    root = _doc(xs=[0.5, 0.5, 0.5])
+    for lane in _spine(root)[0].iter("ref-clip"):
+        media = _media_by_id(root, lane.get("ref"))
+        tr = media.find(".//asset-clip/adjust-transform")
+        scale = float(tr.get("scale").split()[0])
+        assert scale * 1080 == pytest.approx(960)
 
 
 def test_full_lane_fills_the_frame_and_follows_the_subject():

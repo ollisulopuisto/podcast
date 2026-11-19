@@ -37,10 +37,10 @@ async function api(url, body) {
   return data;
 }
 
-/* Puolikkaan vientizoomi: sama kuin palvelimen write_trailer.HALF_ZOOM
-   (käyttäjän varmistama 0,96 kun täsmälleen peittävä olisi 960/1080).
-   Esikatselun ja viennin on näytettävä sama ikkuna. */
-const HALF_ZOOM = 0.96 / (960 / 1080);
+/* Puolikkaan vientizoomi: ei zoomia, paneeli peitetään täsmälleen
+   (skaala 960/1080; käyttäjän 50/50-käsikorjaus 2026-11-20). Esikatselun
+   ja viennin on näytettävä sama ikkuna. */
+const HALF_ZOOM = 1;
 
 function laneZoom(frameH) {
   return frameH === HALF_H ? HALF_ZOOM : 1;
