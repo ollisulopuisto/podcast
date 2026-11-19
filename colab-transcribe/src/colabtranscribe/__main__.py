@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import re
 import shlex
 import signal
@@ -16,7 +17,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from . import __version__, driver, events, orukeet, parakeet, session
+from . import __version__, driver, events, orukeet, parakeet, session, transcript
 from .onboarding import check_environment
 from .options import (
     BACKENDS,
@@ -52,6 +53,12 @@ def build_parser() -> argparse.ArgumentParser:
         "<nimi>.words.json (ei .nhsx:ää, aina suora siirto)",
     )
     parser.add_argument("--json", metavar="KANSIO", help="--audio-tilan tulostekansio")
+    parser.add_argument(
+        "--txt",
+        action="store_true",
+        help="--audio: kirjoita sanatiedoston viereen myös <nimi>.txt, jossa teksti on "
+        "kappaleina ([MM:SS] teksti; tauko 1,2 s tai 80 sanaa aloittaa uuden)",
+    )
     parser.add_argument("--allow-low-memory", action="store_true",
                         help="Accept risk of Mac freeze/restart for this local run; bypass provisional RAM policy")
     parser.add_argument(
@@ -250,6 +257,8 @@ def _audio_problem(args: argparse.Namespace) -> str | None:
             return "--align kuuluu --audio-tilaan: anna myös --audio ja --json."
         if args.events:
             return "--events kuuluu --audio-tilaan: anna myös --audio ja --json."
+        if args.txt:
+            return "--txt kuuluu --audio-tilaan: anna myös --audio ja --json."
         return None
     if not args.json:
         return "--audio vaatii tulostekansion: anna --json <kansio>."
@@ -335,7 +344,29 @@ def _environment_message(report) -> str:
 
 
 def run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
-    """Pelkkä ääni sisään, ``<nimi>.words.json`` ulos (``docs/KUULAS-COLAB.md``)."""
+    """Pelkkä ääni sisään, ``<nimi>.words.json`` ulos (``docs/KUULAS-COLAB.md``).
+
+    ``--txt``: onnistuneen ajon jälkeen jokaisen sanatiedoston viereen kirjoitetaan
+    ``<nimi>.txt`` (kappaleteksti). Toimii kaikilla taustajärjestelmillä, koska se
+    lukee valmiin sanatiedoston.
+    """
+    code = _run_audio_mode(args, dry_run)
+    if code == 0 and args.txt and not dry_run:
+        out_dir = Path(args.json)
+        for name in args.audio:
+            words_path = out_dir / f"{Path(name).stem}.words.json"
+            try:
+                doc = json.loads(words_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as error:
+                print(f"--txt: {words_path.name} ei aukea: {error}", file=sys.stderr)
+                return 1
+            txt_path = words_path.with_name(f"{Path(name).stem}.txt")
+            txt_path.write_text(transcript.paragraph_text(doc), encoding="utf-8")
+            print(f"Teksti luotu: {txt_path}")
+    return code
+
+
+def _run_audio_mode(args: argparse.Namespace, dry_run: bool) -> int:
     events.enable(args.events)
     env_opts = RunOptions.from_env()
     audio = [str(Path(a).resolve()) for a in args.audio]
