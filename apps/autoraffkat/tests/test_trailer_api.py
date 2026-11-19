@@ -59,9 +59,9 @@ def test_plan_frame_and_export_round_trip(client, tmp_path):
     assert written.parent == tmp_path and written.exists()
     root = ET.fromstring(written.read_text(encoding="utf-8"))
     assert root.get("version") == "1.9"
-    spine = list(root.find(".//spine"))
+    spine = list(root.find(".//project/sequence/spine"))
     assert len(spine) == 3
-    top, bottom = [k for k in spine[0] if k.tag == "asset-clip"]
+    top, bottom = [k for k in spine[0] if k.tag == "ref-clip"]
     assert top.get("enabled") == "0" and bottom.get("enabled") in (None, "1")
 
     # toinen vienti ei korvaa ensimmäistä

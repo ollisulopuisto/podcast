@@ -117,6 +117,15 @@ def window_of(src_w: int, src_h: int, frame_w: int, frame_h: int,
     return x / k, y / k, frame_w / k, frame_h / k
 
 
+def panel_anchor(panel: Panel, project_w: int = PROJECT_W,
+                 project_h: int = PROJECT_H) -> tuple[float, float]:
+    """Paneelin keskipiste ``adjust-transform``-sijaintina (% projektin
+    korkeudesta, y ylöspäin) — yhdistelmäklipin ulkoinen paikka."""
+    unit = project_h / 100.0
+    cx, cy = panel.centre
+    return (cx - project_w / 2) / unit, (project_h / 2 - cy) / unit
+
+
 @dataclass(frozen=True)
 class FcpPanel:
     """Paneelin Final Cut -muoto: tasainen skaala ja sijainti, ei rajausta."""

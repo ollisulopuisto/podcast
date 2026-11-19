@@ -878,8 +878,11 @@ def test_a_vertical_reaction_shot_is_filled_and_framed(fixture_dir):
     _, xml = _with_reactions(fixture_dir, [("Guest", 8.0, 9.6, 2.1)],
                              settings=_vertical_settings(), reframer=stub)
     root = ET.fromstring(xml)
-    clip = next(c for c in root.iter("mc-clip") if "reaktio" in (c.get("name") or ""))
-    source = clip.find("mc-source")
+    ref = next(c for c in root.iter("ref-clip") if "reaktio" in (c.get("name") or ""))
+    # Paneelin paikka on yhdistelmän ulkoinen sijainti.
+    assert abs(abs(_transform_of(ref)[2]) - 25.0) < 0.01
+    media = next(m for m in root.iter("media") if m.get("id") == ref.get("ref"))
+    source = media.find(".//mc-source")
     assert source.find("adjust-conform").get("type") == "none"
     # Ei rajausta (2026-11-19): 1080×960-paneeli on peittävä tasainen
     # skaala 0,8889 ja ikkuna välittyy sijainnilla.
@@ -887,7 +890,6 @@ def test_a_vertical_reaction_shot_is_filled_and_framed(fixture_dir):
     scale, px, _py = _transform_of(source)
     assert scale == "0.888889 0.888889"
     assert abs(px) < 0.01   # keskitetty ikkuna: ei x-siirtoa
-    assert abs(abs(_stack_y(source)) - 25.0) < 0.01
     # Reaktion kuvaa kysytään kehystäjältä paneelin kehyksellä.
     assert (1080, 960) in stub.frames
 
@@ -901,19 +903,53 @@ def test_a_stack_half_follows_the_face_not_the_centre(fixture_dir):
     stub = _StubReframer(scale=1.5, pos_x=20.0)
     _, xml = _with_reactions(fixture_dir, [("Guest", 8.0, 9.6, 2.1)],
                              settings=_vertical_settings(), reframer=stub)
-    clip = next(c for c in ET.fromstring(xml).iter("mc-clip")
-                if "reaktio" in (c.get("name") or ""))
-    source = clip.find("mc-source")
+    root = ET.fromstring(xml)
+    ref = next(c for c in root.iter("ref-clip") if "reaktio" in (c.get("name") or ""))
+    media = next(m for m in root.iter("media") if m.get("id") == ref.get("ref"))
+    source = media.find(".//mc-source")
     assert source.find("adjust-crop") is None
     window = layout.window_of(1920, 1080, 1080, 960, 1.5, 20.0, 0.0)
     cx = window[0] + window[2] / 2
     scale, px, _py = _transform_of(source)
     # Kehystäjän zoomi kuuluu skaalaan: peittävä × 1,5 (Devin Review
-    # 2026-11-20: zoomi putosi viennistä, MP4 säilytti sen).
+    # 2026-11-20: zoomi putosi viennistä, MP4 säilytti sen). Keskitys on
+    # yhdistelmän omassa kehyksessä (960 px = 9,6/%).
     s = 960 / 1080 * 1.5
     assert scale == "1.33333 1.33333"
-    assert abs(px - (-(cx - 960) * s / 19.2)) < 0.01
+    assert abs(px - (-(cx - 960) * s / 9.6)) < 0.01
     assert abs(px) > 1.0   # kasvot ohjaavat, ei keskikohta
+
+
+def test_a_stack_reaction_is_a_panel_sized_compound_that_clips(fixture_dir):
+    """Devin Review #252 (2026-11-20): paneeli ei ole Final Cutissa rajaus —
+    ilman ``adjust-crop``ia vain projektin reunat leikkaavat, joten zoomattu
+    kuva vuotaa naapuripaneeliin. Paneelikuvat ovat nyt paneelinkokoisia
+    yhdistelmäklippejä: yhdistelmän oma kehys leikkaa yli menevän osan.
+    Rakenne on Final Cutin oma (``<media><sequence>`` + ``<ref-clip>``,
+    sama kuin ``_compound_audio``)."""
+    from autoraffkat import layout
+
+    stub = _StubReframer(scale=1.5, pos_x=20.0)
+    _, xml = _with_reactions(fixture_dir, [("Guest", 8.0, 9.6, 2.1)],
+                             settings=_vertical_settings(), reframer=stub)
+    root = ET.fromstring(xml)
+    ref = next(c for c in root.iter("ref-clip")
+               if "reaktio" in (c.get("name") or ""))
+    assert ref.find("mc-source") is None   # kulma on yhdistelmän sisällä
+    outer = ref.find("adjust-transform").get("position").split()
+    assert abs(abs(float(outer[1])) - 25.0) < 0.01   # paneelin keskipiste
+    media = next(m for m in root.iter("media") if m.get("id") == ref.get("ref"))
+    seq = media.find("sequence")
+    fmt = root.find(f".//format[@id='{seq.get('format')}']")
+    assert (fmt.get("width"), fmt.get("height")) == ("1080", "960")
+    source = seq.find(".//mc-source")
+    assert source.find("adjust-crop") is None
+    scale, px, _py = _transform_of(source)
+    assert scale == "1.33333 1.33333"   # peittävä × zoomi (sama kuin ulkona)
+    # Ikkunan keskitys on nyt paneelin yksiköissä (960 px = 9,6/%).
+    window = layout.window_of(1920, 1080, 1080, 960, 1.5, 20.0, 0.0)
+    cx = window[0] + window[2] / 2
+    assert abs(px - (-(cx - 960) * (960 / 1080 * 1.5) / 9.6)) < 0.01
 
 
 def test_the_base_under_a_stack_is_framed_on_its_face_too(fixture_dir):
@@ -949,16 +985,18 @@ def test_two_videos_on_screen_stack_into_two_squares(fixture_dir):
     _, xml = _with_reactions(fixture_dir, spans,
                              settings=_vertical_settings(),
                              reframer=_StubReframer(scale=1.0, pos_x=0.0))
-    reactions = [c for c in ET.fromstring(xml).iter("mc-clip")
+    root = ET.fromstring(xml)
+    reactions = [c for c in root.iter("ref-clip")
                  if "reaktio" in (c.get("name") or "")]
     assert len(reactions) == 2
     ys = []
     for clip in reactions:
-        source = clip.find("mc-source")
+        media = next(m for m in root.iter("media") if m.get("id") == clip.get("ref"))
+        source = media.find(".//mc-source")
         assert source.find("adjust-crop") is None, "ei rajausta: ikkuna on sijainnissa"
         scale, _px, _py = _transform_of(source)
         assert scale == "0.888889 0.888889"
-        y = _stack_y(source)
+        y = _transform_of(clip)[2]   # paneelin paikka ulkoisena sijaintina
         assert abs(abs(y) - 25.0) < 0.01
         ys.append(y)
     # Järjestys vaihtuu: A päällä, sitten B päällä.
@@ -973,9 +1011,9 @@ def test_the_base_square_takes_the_other_half_of_the_stack(fixture_dir):
                              settings=_vertical_settings(),
                              reframer=_StubReframer(scale=1.0, pos_x=0.0))
     root = ET.fromstring(xml)
-    reactions = [c for c in root.iter("mc-clip") if "reaktio" in (c.get("name") or "")]
-    reaction_ys = [_stack_y(c.find("mc-source")) for c in reactions]
-    base_ys = [_stack_y(s) for s in root.findall(".//spine/mc-clip/mc-source")
+    reactions = [c for c in root.iter("ref-clip") if "reaktio" in (c.get("name") or "")]
+    reaction_ys = [_transform_of(c)[2] for c in reactions]
+    base_ys = [_stack_y(s) for s in root.findall(".//project/sequence/spine/mc-clip/mc-source")
                if s.find("adjust-transform") is not None
                and abs(abs(_stack_y(s)) - 25.0) < 0.01]
     assert len(base_ys) >= 2, "pohjakuvaa ei kehystetty pinoa varten"
@@ -2133,11 +2171,12 @@ def test_layout_reactions_replace_the_closeup_panel_not_the_wide(fixture_dir):
     neliöpinoa synny: laaja pysyy ylhäällä koko ajan."""
     _, xml = _layout_cut(fixture_dir, reactions=[("Guest", 8.0, 9.6, 2.1)])
     root = ET.fromstring(xml)
-    reaction = next(c for c in root.iter("mc-clip") if "reaktio" in (c.get("name") or ""))
+    reaction = next(c for c in root.iter("ref-clip") if "reaktio" in (c.get("name") or ""))
     assert reaction.get("lane") == "2"
-    source = reaction.find("mc-source")
-    assert source.find("adjust-crop") is None
-    assert abs(_transform_of(source)[2] - (-304 / 19.2)) < 0.01
+    # Paneelin keskipisteen paikka on yhdistelmän ulkoinen sijainti.
+    assert abs(_transform_of(reaction)[2] - (-304 / 19.2)) < 0.01
+    media = next(m for m in root.iter("media") if m.get("id") == reaction.get("ref"))
+    assert media.find(".//mc-source").find("adjust-crop") is None
     # Ei rajausta enää lainkaan (2026-11-19).
     assert len(list(root.iter("crop-rect"))) == 0
 
@@ -2204,11 +2243,15 @@ def test_auto_layout_reactions_follow_their_host(fixture_dir, auto_numbers):
     aikana se on pinon puolikas (lane 1, 1080×960 paneeli)."""
     _, xml = _layout_cut(fixture_dir, "auto", segments=_AUTO_SEGMENTS,
                          reactions=[("Guest", 8.0, 9.6, 2.1), ("Guest", 20.0, 21.6, 2.1)])
+    root = ET.fromstring(xml)
     reactions = sorted(
-        (c for c in ET.fromstring(xml).iter("mc-clip") if "reaktio" in (c.get("name") or "")),
+        (c for c in root.iter("ref-clip") if "reaktio" in (c.get("name") or "")),
         key=lambda c: parse_time(c.get("offset")))
     assert [c.get("lane") for c in reactions] == ["2", "1"]
-    exchange, hold = (c.find("mc-source") for c in reactions)
+    exchange, hold = (
+        next(m for m in root.iter("media") if m.get("id") == c.get("ref"))
+        .find(".//mc-source")
+        for c in reactions)
     assert _transform_of(exchange)[0] == "1.21481 1.21481"   # 1080×1312 -paneeli
     assert _transform_of(hold)[0] == "0.888889 0.888889"     # pinon 1080×960 -paneeli
 

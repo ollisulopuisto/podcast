@@ -37,6 +37,8 @@ from .write import (
     WriteError,
     _asset_lines,
     _Formats,
+    _number,
+    _panel_compound,
     _panel_lines,
     file_url,
 )
@@ -80,6 +82,17 @@ def _lane_lines(kind: str, src: TrailerSource, x: float, indent: str) -> list[st
         indent)
 
 
+def _half_inner_lines(src: TrailerSource, x: float, indent: str) -> list[str]:
+    """Puolikkaan muunto YHDISTELMÄN omassa 1080×960-kehyksessä."""
+    panel = _panel_for("top")  # molemmat puolikkaat ovat saman kokoiset
+    win = crop_window(src.width, src.height, panel.w, panel.h, x)
+    inner = screen_layout.fcp_panel(
+        screen_layout.Panel(0, 0, panel.w, panel.h), win,
+        src.width, src.height, project_w=panel.w, project_h=panel.h,
+        zoom=HALF_ZOOM)
+    return _panel_lines(inner, indent)
+
+
 def build_trailer_fcpxml(
     src: TrailerSource,
     pieces: list[tuple[float, float]],
@@ -112,6 +125,8 @@ def build_trailer_fcpxml(
     def next_id() -> str:
         counter[0] += 1
         return f"r{counter[0]}"
+
+    media_resources: list[str] = []
 
     formats = _Formats()
     seq_format = formats.get(screen_layout.PROJECT_W, screen_layout.PROJECT_H, fd, next_id)
@@ -150,18 +165,37 @@ def build_trailer_fcpxml(
         body += _lane_lines("full", src, x, "              ")
         for lane, kind in ((1, "top"), (2, "bottom")):
             on = enabled_lane == kind
+            # Puolikas on paneelinkokoinen yhdistelmäklippi: ilman sitä vain
+            # projektin reunat leikkaavat, ja zoomin (0,96) yli nostama osa
+            # vuotaisi saumassa toisen kaistan päälle (Devin Review #252,
+            # 2026-11-20). Yhdistelmän oma 1080×960-kehys leikkaa sauman
+            # tarkasti; ulkoinen sijainti pitää paneelin paikallaan.
+            media_id = next_id()
+            half_format = formats.get(
+                screen_layout.PROJECT_W, screen_layout.PROJECT_H // 2, fd, next_id)
+            media_resources += _panel_compound(
+                media_id, kind.capitalize() + " " + label, half_format, dur,
+                [f'          <asset-clip ref="{lane_asset_id}" offset="0s" '
+                 f"name={quoteattr(kind.capitalize() + ' ' + label)} "
+                 f'start="{start}" duration="{dur}" format="{src_format}" '
+                 'tcFormat="NDF" srcEnable="video">',
+                 *_half_inner_lines(src, x, "            "),
+                 "          </asset-clip>"])
             # FCP tulkitsee liitetyn klipin offsetin isännän aikajanalle
             # (varmistettu 2026-11-19), joten suhteellinen nolla.
             c = [
-                f'ref="{lane_asset_id}"', f'lane="{lane}"', 'offset="0s"',
+                f'ref="{media_id}"', f'lane="{lane}"', 'offset="0s"',
                 f"name={quoteattr(kind.capitalize() + ' ' + label)}",
-                f'start="{start}"', f'duration="{dur}"', 'srcEnable="video"',
+                f'duration="{dur}"', 'srcEnable="video"',
             ]
             if not on:
                 c.append('enabled="0"')
-            body.append("              <asset-clip " + " ".join(c) + ">")
-            body += _lane_lines(kind, src, x, "                ")
-            body.append("              </asset-clip>")
+            ax, ay = screen_layout.panel_anchor(_panel_for(kind))
+            body.append("              <ref-clip " + " ".join(c) + ">")
+            body.append('                <adjust-conform type="none"/>')
+            body.append('                <adjust-transform '
+                        f'position="{_number(ax)} {_number(ay)}"/>')
+            body.append("              </ref-clip>")
         body.append("            </asset-clip>")
 
     length = cells[-1][2]
@@ -172,6 +206,7 @@ def build_trailer_fcpxml(
         "  <resources>",
         *formats.lines,
         *asset,
+        *media_resources,
         "  </resources>",
         "  <library>",
         f"    <event name={quoteattr(project_name)}>",
