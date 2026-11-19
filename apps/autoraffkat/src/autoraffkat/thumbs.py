@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import uuid
 from pathlib import Path
 
 from speechmix.binaries import get_binary_path
@@ -53,7 +54,9 @@ def thumbnail(path: str, duration: float) -> str | None:
     target = cache_path(path, at)
     if target.exists():
         return str(target)
-    tmp = target.with_suffix(".tmp.jpg")
+    # Jokaisella pyynnöllä oma tmp-nimi: samaa klippiä varten voi olla
+    # monta purkua yhtä aikaa, eikä toinen saa siirtää tämän tiedostoa.
+    tmp = target.with_suffix(f".{uuid.uuid4().hex}.tmp.jpg")
     try:
         ffmpeg_bin = get_binary_path("ffmpeg")
         done = subprocess.run(
@@ -85,7 +88,14 @@ def thumbnail(path: str, duration: float) -> str | None:
     if done.returncode != 0 or not tmp.exists() or tmp.stat().st_size == 0:
         tmp.unlink(missing_ok=True)
         return None
-    tmp.replace(target)
+    try:
+        tmp.replace(target)
+    except FileNotFoundError:
+        # Sama kuva valmistui toisessa pyynnössä juuri äsken: maali on
+        # jo olemassa, joten käytetään sitä. Jos maaliakin ei ole,
+        # kyseessä on jokin muu häiriö, ja pikkukuva jää vain pois.
+        if not target.exists():
+            return None
     return str(target)
 
 
