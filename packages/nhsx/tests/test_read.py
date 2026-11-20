@@ -273,3 +273,64 @@ def test_read_does_not_resolve_external_entities(tmp_path):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_read_markers():
+    """Istunnon <Markers>-lohkon merkit luetaan aikaleimoineen."""
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Session>
+  <AudioPool Path="">
+    <File Id="1" Name="test.wav" Path="test.wav"/>
+  </AudioPool>
+  <Tracks>
+    <Track Name="Speaker1">
+      <Region Ref="1" Start="0.000" Length="10.000" Offset="0.000"/>
+    </Track>
+  </Tracks>
+  <Markers>
+    <Marker Id="1" Name="Sisään" Time="01:02.500"/>
+    <Marker Id="2" Name="Ulos" Time="72.5"/>
+  </Markers>
+</Session>"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".nhsx", delete=False) as f:
+        f.write(xml)
+        f.flush()
+        session = read(f.name)
+
+    assert len(session.markers) == 2
+    first, second = session.markers
+    assert first.id == "1"
+    assert first.name == "Sisään"
+    assert first.time == 62.5
+    assert second.id == "2"
+    assert second.name == "Ulos"
+    assert second.time == 72.5
+
+
+def test_read_without_markers_block():
+    """Istunto ilman <Markers>-lohkoa antaa tyhjän listan."""
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Session>
+  <AudioPool Path="">
+    <File Id="1" Name="test.wav" Path="test.wav"/>
+  </AudioPool>
+  <Tracks>
+    <Track Name="Speaker1">
+      <Region Ref="1" Start="0.000" Length="10.000" Offset="0.000"/>
+    </Track>
+  </Tracks>
+</Session>"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".nhsx", delete=False) as f:
+        f.write(xml)
+        f.flush()
+        session = read(f.name)
+
+    assert session.markers == []
+
+
+def test_session_positional_audio_dir():
+    """Viiden positionaalisen argumentin rakentaminen säilyy: äänihakemisto
+    ei valu markers-kenttään."""
+    session = Session("p.nhsx", None, [], [], "/audio")
+    assert session.audio_dir == "/audio"
+    assert session.markers == []

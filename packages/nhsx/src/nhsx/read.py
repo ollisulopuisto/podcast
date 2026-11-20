@@ -172,6 +172,18 @@ class TrackInfo:
 
 
 @dataclass
+class MarkerInfo:
+    """Istunnon <Markers>-lohkon merkki. Hindenburgin viimeisimmät
+    sisään/ulos-pisteet ovat merkit Id 1 (\"Sisään\") ja Id 2 (\"Ulos\").
+    """
+
+    id: str
+    name: str
+    time: float
+    elem: object = field(repr=False, default=None)
+
+
+@dataclass
 class Session:
     """Luettu istunto. ``tree`` on lxml-puu, jota moduulit muokkaavat."""
 
@@ -179,6 +191,7 @@ class Session:
     tree: object = field(repr=False, default=None)
     files: list[FileInfo] = field(default_factory=list)
     tracks: list[TrackInfo] = field(default_factory=list)
+    markers: list[MarkerInfo] = field(default_factory=list, kw_only=True)
     audio_dir: str = ""
 
     def file_by_id(self, ref: str) -> FileInfo | None:
@@ -264,6 +277,21 @@ def read(path: str | Path) -> Session:
     except ValueError as exc:
         raise NhsxError(f"Virheellinen aikaleima: {exc}") from exc
 
+    markers: list[MarkerInfo] = []
+    try:
+        for elem in descendants(root, "Markers"):
+            for marker in children(elem, "Marker"):
+                markers.append(
+                    MarkerInfo(
+                        id=marker.get("Id", ""),
+                        name=marker.get("Name", ""),
+                        time=time_to_seconds(marker.get("Time", "0")),
+                        elem=marker,
+                    )
+                )
+    except ValueError as exc:
+        raise NhsxError(f"Virheellinen aikaleima: {exc}") from exc
+
     if pool is None and not tracks:
         raise NhsxError(
             "Tiedostosta ei löytynyt äänipoolia eikä raitoja. "
@@ -277,7 +305,8 @@ def read(path: str | Path) -> Session:
     base = Path(path).resolve().parent
     audio_dir = str((base / pool_path).resolve()) if pool_path else str(base)
 
-    return Session(path=path, tree=tree, files=files, tracks=tracks, audio_dir=audio_dir)
+    return Session(path=path, tree=tree, files=files, tracks=tracks,
+                   markers=markers, audio_dir=audio_dir)
 
 
 def locate(session: Session, file_info, extra_dir: str = "") -> str:
