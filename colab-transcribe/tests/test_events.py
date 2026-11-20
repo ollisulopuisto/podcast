@@ -442,7 +442,7 @@ def test_a_file_already_on_the_vm_is_not_announced_as_an_upload(tmp_path, monkey
     source = tmp_path / "a.wav"
     source.write_bytes(b"xx")
     remote = "/content/cache/xyz"
-    monkeypatch.setattr(driver, "_list_cache", lambda session, log, timeout: {remote})
+    monkeypatch.setattr(driver, "_list_cache", lambda session, log, timeout, verbose=True: {remote})
     monkeypatch.setattr(driver, "_execute_single", lambda *a, **k: 0)
     plan = [
         ["cache-list", "s"],
@@ -516,9 +516,9 @@ def test_colab_update_notices_become_one_warning_and_stay_out_of_progress(
     monkeypatch.setattr(
         cli.driver, "run", _runner(progress=[(10.0, NOTICE), (20.0, "b")], lines=NOTICES)
     )
-    assert cli.main(_args(audio, "--events", "--progress")) == 0
+    assert cli.main(_args(audio, "--events", "--progress", "--verbose")) == 0
     out = capsys.readouterr().out
-    assert all(line in out for line in NOTICES)  # tekstirivit pysyvät
+    assert all(line in out for line in NOTICES)  # --verbose: tekstirivit pysyvät
     got = _events(out)
     (warning,) = [e for e in got if e["event"] == "warning"]
     assert warning["code"] == "colab_update" and "new version" in warning["message"]
@@ -656,3 +656,26 @@ def test_the_clis_not_found_wording_also_triggers_the_fresh_session_retry(
     assert plans[1][0][:2] == ["colab", "new"]
     got = _events(capsys.readouterr().out)
     assert [e["code"] for e in got if e["event"] == "warning"] == ["session_lost"]
+
+
+def test_update_notices_are_quiet_by_default_but_still_one_warning(
+    audio, ready, monkeypatch, capsys
+):
+    """Oletus on hiljainen (omistaja 20.11): päivitysmainosrivit eivät tulostu,
+    mutta ``colab_update``-huomautus kerrotaan kerran."""
+    monkeypatch.setattr(
+        cli.driver, "run", _runner(progress=[(10.0, NOTICE), (20.0, "b")], lines=NOTICES)
+    )
+    assert cli.main(_args(audio, "--events")) == 0
+    out = capsys.readouterr().out
+    # Tekstiriveinä eivät tulostu: korkeintaan ensimmäinen näkyy, ja sekin
+    # vain yhden warning-tapahtuman viestinä.
+    for line in NOTICES:
+        assert out.count(line) <= 1
+        assert not any(
+            line in text and not text.startswith("@@kuulas ")
+            for text in out.splitlines()
+        )
+    got = _events(out)
+    warnings = [e for e in got if e["event"] == "warning"]
+    assert [w["code"] for w in warnings] == ["colab_update"]
