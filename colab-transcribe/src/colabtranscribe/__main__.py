@@ -319,7 +319,9 @@ def _progress_printer(lines: bool = True):
 #: tekstistä ja yrittää uudelleen tuoreella istunnolla; ``--events`` antaa sen
 #: tunnisteella (``warning``, ``code: session_lost``), ja työkalu korjaa sen
 #: itse: ks. ``run_audio_mode``.
-_SESSION_LOST = re.compile(r"Session '[^']*' appears to be lost")
+#: CLI 0.7.5 sanoo ``Session 'whisper' not found.`` (käyttäjäraportti 19.11),
+#: uudemmat ``appears to be lost``; molemmat tarkoittavat kadonnutta konetta.
+_SESSION_LOST = re.compile(r"Session '[^']*' (?:appears to be lost|not found)")
 
 #: ``error.message`` on yksi lyhyt luettava rivi, ei koskaan loki.
 MESSAGE_LIMIT = 200
