@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from nhsx import NhsxError, Session, read, tracks
+from nhsx.read import descendants
 
 
 def test_read_simple_nhsx():
@@ -362,3 +363,29 @@ def test_a_bad_marker_time_does_not_discard_valid_audio():
 
     assert len(session.tracks) == 1
     assert [m.id for m in session.markers] == ["1"]
+
+
+def test_invalid_optional_markers_do_not_discard_valid_audio_or_xml(tmp_path):
+    path = tmp_path / 'markers.nhsx'
+    path.write_text(
+        '<Session xmlns="urn:hindenburg"><AudioPool>'
+        '<File Id="1" Name="voice.wav" Path="voice.wav"/></AudioPool>'
+        '<Tracks><Track Name="Voice"><Region Ref="1" Start="0" Length="10"/>'
+        '</Track></Tracks><Markers>'
+        '<Marker Id="3" Name="Good" Time="1:02:03.125"/>'
+        '<Marker Id="4" Name="Bad" Time="no"/>'
+        '<Marker Id="5" Name="Missing"/>'
+        '<Marker Id="6" Name="Negative" Time="-1"/>'
+        '<Marker Id="7" Name="Infinite" Time="inf"/>'
+        '<Marker Id="8" Name="NaN" Time="nan"/>'
+        '<Marker Id="9" Name="Huge but finite" Time="1e308"/>'
+        '<Marker Id="10" Name="Empty" Time=""/>'
+        '<Marker Id="11" Name="Origin" Time="0"/>'
+        '</Markers></Session>', encoding='utf-8')
+    session = read(path)
+    assert len(session.files) == len(session.tracks) == 1
+    assert session.tracks[0].regions[0].length == 10
+    assert [(marker.id, marker.time) for marker in session.markers] == [
+        ('3', 3723.125), ('9', 1e308), ('11', 0)]
+    # Optional malformed metadata stays available for a lossless round trip.
+    assert len(descendants(session.tree.getroot(), 'Marker')) == 9

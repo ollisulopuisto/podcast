@@ -284,8 +284,11 @@ def read(path: str | Path) -> Session:
     markers: list[MarkerInfo] = []
     for elem in descendants(root, "Markers"):
         for marker in children(elem, "Marker"):
+            raw = marker.get("Time")
+            if raw is None:
+                continue
             try:
-                seconds = time_to_seconds(marker.get("Time", "0"))
+                seconds = time_to_seconds(raw)
             except ValueError:
                 continue
             if not math.isfinite(seconds) or seconds < 0:
