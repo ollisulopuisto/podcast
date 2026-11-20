@@ -442,7 +442,7 @@ def test_a_file_already_on_the_vm_is_not_announced_as_an_upload(tmp_path, monkey
     source = tmp_path / "a.wav"
     source.write_bytes(b"xx")
     remote = "/content/cache/xyz"
-    monkeypatch.setattr(driver, "_list_cache", lambda session, log, timeout: {remote})
+    monkeypatch.setattr(driver, "_list_cache", lambda session, log, timeout, verbose=True: {remote})
     monkeypatch.setattr(driver, "_execute_single", lambda *a, **k: 0)
     plan = [
         ["cache-list", "s"],
