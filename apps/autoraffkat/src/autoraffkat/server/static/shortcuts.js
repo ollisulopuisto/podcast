@@ -32,7 +32,11 @@ function comboText(combo, mac) {
   else if (key === ' ') key = T('keys.space');
   else if (key === 'Escape') key = 'Esc';
   else if (key.length === 1) key = key.toUpperCase();
-  if (!combo.mod) return key;
+  if (!combo.mod) {
+    if (!combo.alt) return key;
+    const shift = combo.shift ? (mac ? '\u21e7' : 'Shift+') : '';
+    return mac ? `\u2325${shift}${key}` : `Alt+${shift}${key}`;
+  }
   if (key === 'Enter') key = mac ? '↩' : 'Enter';
   if (mac) return `${combo.shift ? '⇧' : ''}⌘${key}`;
   return `Ctrl+${combo.shift ? 'Shift+' : ''}${key}`;
@@ -43,17 +47,20 @@ function ariaKeys(entry) {
   return (entry.combos || []).map((c) => {
     const key = c.key === ' ' ? 'Space' : (c.key.length === 1 ? c.key.toUpperCase() : c.key);
     const shift = c.shift ? 'Shift+' : '';
-    return c.mod ? `Meta+${shift}${key} Control+${shift}${key}` : `${shift}${key}`;
+    const alt = c.alt ? 'Alt+' : '';
+    return c.mod ? `Meta+${shift}${key} Control+${shift}${key}` : `${alt}${shift}${key}`;
   }).join(' ');
 }
 
 /* Täsmääkö painallus yhdistelmään. Vaihto ei ratkaise: ? vaatii sen
    useimmilla näppäimistöillä, ja vaihto+⌘E vei ennenkin. Ilman muunninta
-   olevaan yhdistelmään ei kelpaa ⌘, Ctrl eikä Alt — ne ovat selaimen. */
+   olevaan yhdistelmään ei kelpaa ⌘ eikä Ctrl — ne ovat selaimen. */
 function matchesCombo(combo, e) {
   const mod = !!(e.metaKey || e.ctrlKey);
   if (!!combo.mod !== mod) return false;
-  if (!combo.mod && e.altKey) return false;
+  /* Alt ratkaisee ilman päämuunninta: tavalliseen yhdistelmään ei kelpaa
+     Alt (se on selaimen), ja alt-rivi vaatii sen (Option-nuolet trailerissa). */
+  if (!combo.mod && !!combo.alt !== !!e.altKey) return false;
   /* Vaihto ratkaisee vain kun rivi sanoo sen: `shift: true` vaatii sen, `false` kieltää
      sen (⌘R lataa uudestaan, ⇧⌘R renderöi), ja ilman kenttää se ei ratkaise. */
   if (combo.mod && combo.shift !== undefined && !!combo.shift !== !!e.shiftKey) return false;

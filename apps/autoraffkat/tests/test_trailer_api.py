@@ -74,6 +74,36 @@ def test_plan_frame_and_export_round_trip(client, tmp_path):
 
 
 @needs_ffmpeg
+def test_export_writes_the_panel_slice_separately(client, tmp_path):
+    """Paneelin kehys (x_panel) menee vientiin koko ruudun kehyksestä
+    riippumatta; ilman sitä paneeli seuraa x:ää kuten ennen."""
+    video = _synthetic(tmp_path / "t.mp4")
+
+    def transforms(piece):
+        out = client.post("/api/trailer/export", json={
+            "path": video, "pieces": [piece]}).json()
+        root = ET.fromstring(pathlib.Path(out["path"]).read_text(encoding="utf-8"))
+        clip = next(iter(root.find(".//project/sequence/spine")))
+        full = float(clip.find("adjust-transform").get("position").split()[0])
+        lane = next(k for k in clip if k.tag == "ref-clip")
+        media = next(m for m in root.iter("media") if m.get("id") == lane.get("ref"))
+        panel = float(media.find(".//asset-clip/adjust-transform")
+                      .get("position").split()[0])
+        return full, panel
+
+    # ilman x_panelia paneeli seuraa x:ää (vanha käytös säilyy)
+    full_a, panel_a = transforms({"start": 0.0, "end": 6.0, "x": 0.3})
+    # eri x_panel: vain paneelin sijainti muuttuu
+    full_b, panel_b = transforms({"start": 0.0, "end": 6.0, "x": 0.3, "x_panel": 0.8})
+    assert full_b == pytest.approx(full_a)
+    assert panel_b != pytest.approx(panel_a)
+    # x_panel rajataan kuten x, ei hylätä
+    res = client.post("/api/trailer/export", json={
+        "path": video, "pieces": [{"start": 0.0, "end": 6.0, "x": 0.3, "x_panel": 7}]})
+    assert res.status_code == 200
+
+
+@needs_ffmpeg
 def test_export_validates_its_input(client, tmp_path):
     video = _synthetic(tmp_path / "t.mp4")
     ok = [{"start": 0.0, "end": 2.0, "x": 0.5}]

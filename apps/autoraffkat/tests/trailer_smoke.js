@@ -62,6 +62,7 @@ function makeElement(tag) {
 const sels = new Map();
 const document = {
   documentElement: {},
+  body: makeElement('body'),
   _handlers: {},
   createElement: makeElement,
   getElementById(id) {

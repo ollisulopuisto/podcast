@@ -164,6 +164,40 @@ def test_half_panels_cover_exactly_the_panel_height():
         assert scale * 1080 == pytest.approx(960)
 
 
+def test_panels_follow_their_own_slice_when_given():
+    """9:16- ja paneeli-ikkunat kehystetään erikseen: palalla on x_full
+    (koko ruutu) ja x_panel (puolikas), ks. suunnitelma 2026-11-19.
+    Tässä koko ruutu seuraa kohdetta 0,2:ssä ja paneeli 0,9:ssä."""
+    root = _doc(xs=[0.2, 0.2, 0.2], xs_panel=[0.9, 0.9, 0.9])
+    clip = _spine(root)[0]
+    full_x = float(clip.find("adjust-transform").get("position").split()[0])
+    # koko ruutu: ikkuna 607,5 px, keskipiste 384 → sijainti kuten ennenkin
+    assert full_x == pytest.approx(-(384 - 960) * (1920 / 1080) / 19.2)
+    top, bottom = [k for k in clip if k.tag == "ref-clip"]
+    for lane in (top, bottom):
+        tr = _media_by_id(root, lane.get("ref")).find(
+            ".//asset-clip/adjust-transform")
+        tx = float(tr.get("position").split()[0])
+        # paneeli: ikkuna 1215 px kiinnittyy oikeaan reunaan (keskipiste
+        # 1312,5) kun x_panel = 0,9 — eri kuin koko ruudun 0,2 antaisi
+        assert tx == pytest.approx(-(1312.5 - 960) * (960 / 1080) / 9.6)
+
+
+def test_panels_default_to_the_full_slice():
+    """Ilman xs_panel-listaa paneeli seuraa koko ruudun kehystä kuten ennen."""
+    root = _doc(xs=[0.9, 0.9, 0.9])
+    clip = _spine(root)[0]
+    top = next(k for k in clip if k.tag == "ref-clip")
+    tr = _media_by_id(root, top.get("ref")).find(".//asset-clip/adjust-transform")
+    tx = float(tr.get("position").split()[0])
+    assert tx == pytest.approx(-(1312.5 - 960) * (960 / 1080) / 9.6)
+
+
+def test_a_mismatched_panel_slice_list_is_an_error():
+    with pytest.raises(WriteError):
+        _doc(xs=[0.5, 0.5, 0.5], xs_panel=[0.5])
+
+
 def test_full_lane_fills_the_frame_and_follows_the_subject():
     left = _spine(_doc(xs=[0.1, 0.1, 0.1]))[0]
     right = _spine(_doc(xs=[0.9, 0.9, 0.9]))[0]
