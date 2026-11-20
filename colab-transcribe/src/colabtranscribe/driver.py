@@ -713,8 +713,10 @@ def _execute_single(
     opened_auth_urls: set[str] | None = None,
     max_retries: int = 2,
     on_line: Callable[[str], None] | None = None,
+    verbose: bool = True,
 ) -> int:
-    log(shlex.join(command))
+    if verbose:
+        log(shlex.join(command))
     cmd_to_run = list(command)
     stdin_data: str | None = None
     is_colab_exec = False
@@ -938,6 +940,7 @@ def _upload_as_flac(
     log: Callable[[str], None],
     timeout: float | None = None,
     on_bytes: Callable[[int, int], None] | None = None,
+    verbose: bool = True,
 ) -> int:
     """Pakkaa WAV FLACiksi, lähetä, ja pura Colabissa samannimiseksi WAViksi.
 
@@ -948,7 +951,8 @@ def _upload_as_flac(
 
     decoder = _flac_bitdepth(source)
     if decoder is None:
-        return _upload_in_chunks(session, source, remote, log, timeout, on_bytes)
+        return _upload_in_chunks(
+            session, source, remote, log, timeout, on_bytes, verbose=verbose)
     remote_flac = f"{remote}.flac"
     with tempfile.TemporaryDirectory() as tmp:
         flac = Path(tmp) / "a.flac"
@@ -970,12 +974,14 @@ def _upload_as_flac(
                 if on_bytes is not None:
                     on_bytes(int(done / total * original), original)
 
-            code = _upload_in_chunks(session, flac, remote_flac, log, timeout, packed)
+            code = _upload_in_chunks(
+                session, flac, remote_flac, log, timeout, packed, verbose=verbose)
         else:
             code = _execute_single(
                 ["colab", "upload", "-s", session, str(flac), remote_flac],
                 log,
                 timeout=timeout,
+                verbose=verbose,
             )
     if code != 0:
         return code
@@ -991,6 +997,7 @@ def _upload_as_flac(
         ],
         log,
         timeout=timeout,
+        verbose=verbose,
     )
 
 
@@ -1001,6 +1008,7 @@ def _upload_in_chunks(
     log: Callable[[str], None],
     timeout: float | None = None,
     on_bytes: Callable[[int, int], None] | None = None,
+    verbose: bool = True,
 ) -> int:
     """Lähetä iso tiedosto paloina ja liitä ne Colabissa: yhden palan virhe
     maksaa yhden palan uudelleenlähetyksen, ei koko tiedostoa.
@@ -1025,6 +1033,7 @@ def _upload_in_chunks(
                     ["colab", "upload", "-s", session, str(part), remote_part],
                     log,
                     timeout=timeout,
+                    verbose=verbose,
                 )
                 if code == 0:
                     break
@@ -1049,6 +1058,7 @@ def _upload_in_chunks(
         ],
         log,
         timeout=timeout,
+        verbose=verbose,
     )
 
 
@@ -1097,6 +1107,7 @@ def run(
     on_progress: Callable[[float, str], None] | None = None,
     on_drive_failure: Callable[[], list[list[str]]] | None = None,
     trail=None,
+    verbose: bool = True,
 ) -> int:
     """Aja suunnitelma peräkkäin ja syötä jokainen rivi lokiin.
 
@@ -1207,7 +1218,8 @@ def run(
 
             if command[0] == "flac-upload":
                 code = _upload_as_flac(
-                    command[1], Path(command[2]), command[3], log, timeout, on_bytes
+                    command[1], Path(command[2]), command[3], log, timeout, on_bytes,
+                    verbose=verbose,
                 )
                 if code != 0:
                     return code
@@ -1215,14 +1227,16 @@ def run(
 
             if command[0] == "chunked-upload":
                 code = _upload_in_chunks(
-                    command[1], Path(command[2]), command[3], log, timeout, on_bytes
+                    command[1], Path(command[2]), command[3], log, timeout, on_bytes,
+                    verbose=verbose,
                 )
                 if code != 0:
                     return code
                 continue
 
             if len(command) >= 3 and command[0] == "drive" and command[1] == "upload":
-                log(shlex.join(command))
+                if verbose:
+                    log(shlex.join(command))
                 input_dir = command[2]
                 parts = command[3].split("/")
                 session = parts[1] if len(parts) >= 2 else "session"
@@ -1261,7 +1275,8 @@ def run(
                 session = command[3]
                 remote_dir = command[4].rstrip("/")
                 local_dir = Path(command[5])
-                log(shlex.join(command))
+                if verbose:
+                    log(shlex.join(command))
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     tar_name = "_transfer_output.tar.gz"
                     remote_tar = f"/content/{tar_name}"
@@ -1279,6 +1294,7 @@ def run(
                         timeout=timeout,
                         opened_auth_urls=opened_auth_urls,
                         on_line=_subline,
+                        verbose=verbose,
                     )
                     if code != 0:
                         return code
@@ -1289,6 +1305,7 @@ def run(
                         timeout=timeout,
                         opened_auth_urls=opened_auth_urls,
                         on_line=_subline,
+                        verbose=verbose,
                     )
                     if code != 0:
                         return code
@@ -1306,6 +1323,7 @@ def run(
                         timeout=timeout,
                         opened_auth_urls=opened_auth_urls,
                         on_line=_subline,
+                        verbose=verbose,
                     )
                 continue
 
@@ -1315,6 +1333,7 @@ def run(
                 timeout=timeout,
                 opened_auth_urls=opened_auth_urls,
                 on_line=_subline,
+                verbose=verbose,
             )
             if code != 0:
                 return code

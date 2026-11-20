@@ -183,6 +183,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="tulosta ajettavat komennot äläkä aja mitään",
     )
     parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="näytä jokainen komento ja Colab CLI:n mainosrivit (oletus: "
+        "vain edistyminen ja virheet)",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="tarkista apuohjelmat ja ympäristömuuttujat",
@@ -285,11 +291,15 @@ def _audio_problem(args: argparse.Namespace) -> str | None:
     return None
 
 
-#: Colab CLI:n oma päivitysilmoitus. Se ei kuulu edistymiseen: kuulas näytti
-#: sen tilarivinä. Tekstirivinä se kulkee kuten ennen, ``--events``illa se on
-#: yksi ``warning`` (``code: colab_update``) eikä koskaan ``progress.message``.
+#: Colab CLI:n oma päivitysilmoitus (kaikki muodot: "A new version ...",
+#: "Run 'colab update'", "You can run 'colab update --install'", "Run 'pip
+#: install --upgrade google-colab-cli'", "To silence this check ..."). Se ei
+#: kuulu edistymiseen: kuulas näytti sen tilarivinä. ``--events``illa se on
+#: yksi ``warning`` (``code: colab_update``) eikä koskaan ``progress.message``;
+#: tekstirivinä se tulostuu vain ``--verbose``lla (omistaja 20.11).
 _COLAB_UPDATE = re.compile(
-    r"^\[colab\] (A new version of Colab CLI|Run 'colab update'|To silence this check)"
+    r"^\[colab\] .*(version of Colab CLI|colab update|google-colab-cli"
+    r"|silence this check)"
 )
 
 
@@ -478,13 +488,16 @@ def _run_audio_mode(
     lost = {"seen": False, "update_told": False}
 
     def log(line: str) -> None:
+        if _COLAB_UPDATE.match(line):
+            if not lost["update_told"]:
+                lost["update_told"] = True
+                events.emit("warning", code="colab_update", message=line.strip())
+            if not args.verbose:
+                return
         print(line, flush=True)
         if _SESSION_LOST.search(line):
             lost["seen"] = True
             events.emit("warning", code="session_lost", message=line.strip())
-        elif _COLAB_UPDATE.match(line) and not lost["update_told"]:
-            lost["update_told"] = True
-            events.emit("warning", code="colab_update", message=line.strip())
 
     printer = _progress_printer(args.progress) if (args.progress or args.events) else None
 
@@ -492,7 +505,12 @@ def _run_audio_mode(
         extra = {"trail": trail} if trail is not None else {}
         with _sigterm_cancels():
             return driver.run(
-                plan, log, timeout=driver.COMMAND_TIMEOUT, on_progress=printer, **extra
+                plan,
+                log,
+                timeout=driver.COMMAND_TIMEOUT,
+                on_progress=printer,
+                verbose=args.verbose,
+                **extra,
             )
 
     trail = events.StageTrail() if args.events else None
@@ -546,7 +564,7 @@ def _run_audio_mode(
     return 0
 
 
-def run_headless(options: RunOptions, dry_run: bool) -> int:
+def run_headless(options: RunOptions, dry_run: bool, verbose: bool = False) -> int:
     """Skriptattava ajo: suunnitelma, joko tulosteena tai totuutena."""
     input_path = Path(options.input_dir)
     if not input_path.exists():
@@ -609,6 +627,8 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
 
     def log(line: str) -> None:
         lines.append(line)
+        if _COLAB_UPDATE.match(line) and not verbose:
+            return
         print(line)
 
     code = driver.run(
@@ -616,6 +636,7 @@ def run_headless(options: RunOptions, dry_run: bool) -> int:
         log,
         timeout=driver.COMMAND_TIMEOUT,
         on_drive_failure=lambda: driver.direct_tail(options, files, aliases),
+        verbose=verbose,
     )
     if code == 0:
         generated = driver.parse_generated("\n".join(lines))
@@ -685,7 +706,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        return run_headless(options_from_args(args), dry_run=args.dry_run)
+        return run_headless(
+            options_from_args(args), dry_run=args.dry_run, verbose=args.verbose
+        )
     except ValueError as error:
         print(str(error), file=sys.stderr)
         return 1

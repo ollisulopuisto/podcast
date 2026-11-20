@@ -1036,7 +1036,7 @@ def test_a_large_compressed_flac_uses_chunked_upload(monkeypatch, tmp_path: Path
     chunked = []
     commands = []
 
-    def upload_in_chunks(session, source, remote, log, timeout=None, on_bytes=None):
+    def upload_in_chunks(session, source, remote, log, timeout=None, on_bytes=None, **_):
         chunked.append((session, Path(source).suffix, remote))
         return 0
 
@@ -1324,3 +1324,28 @@ def test_cache_identity_rehashes_each_rapid_rewrite(tmp_path):
         keys.append(driver.cache_path(source))
     assert len(set(keys[:3])) == 3
     assert keys[0] == keys[3]
+
+
+def test_run_omits_command_echoes_unless_verbose(monkeypatch):
+    """Hiljainen oletus: komentojen kaiut eivät kuulu tulosteeseen (omistaja
+    20.11), virheet ja ohjelman oma tuloste kuuluvat."""
+    import io
+
+    class FakeProcess:
+        def __init__(self, cmd, stdin=None, **kwargs):
+            self.stdin = io.StringIO()
+            self.stdout = ["Valmis\n"]
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", FakeProcess)
+    plan = [["colab", "exec", "-s", "sess", "mkdir -p /content/input"]]
+
+    quiet: list[str] = []
+    assert driver.run(plan, quiet.append, verbose=False) == 0
+    assert quiet == ["Valmis"]
+
+    loud: list[str] = []
+    assert driver.run(plan, loud.append) == 0
+    assert loud[0] == "colab exec -s sess 'mkdir -p /content/input'"
