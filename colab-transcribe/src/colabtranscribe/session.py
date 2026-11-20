@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
+
+#: Colab CLI:n sanomat kun istunnon kone on kadonnut (Google otti sen
+#: takaisin): 0.7.5 ``Session 'whisper' not found.`` (käyttäjäraportti
+#: 19.11), uudemmat ``appears to be lost``. Jaettu ``__main__``in kanssa:
+#: sama tunnistus elävyyskyselyssä ja ajon lokirivienseurannassa.
+SESSION_GONE = re.compile(r"Session '[^']*' (?:appears to be lost|not found)")
 
 
 def get_sessions_config_path() -> Path:
@@ -43,14 +50,38 @@ def get_session(session_name: str) -> dict[str, Any] | None:
 
 
 def is_session_alive(session_name: str) -> bool:
-    """Tarkista onko istunto olemassa ja käynnissä."""
+    """Tarkista onko istunto olemassa ja käynnissä — myös Colabilta kysyen.
+
+    Paikallinen kirjaus (ja sen keep-alive-prosessi) voi elää vaikka Google
+    on ottanut koneen takaisin (käyttäjäraportti 19.11): silloin vastaus on
+    ``Session '<nimi>' not found.`` ja istuntoa ei ole. Kysely voi vain
+    kieltää: verkkovika tai muu epäselvä vastaus palauttaa paikallisen
+    tuloksen, ja ajon oma kerta-uudelleenyritys korjaa loput."""
     sess = get_session(session_name)
     if not sess:
         return False
     pid = sess.get("keep_alive_pid")
-    if pid is not None:
-        return _is_pid_alive(int(pid))
-    return True
+    if pid is not None and not _is_pid_alive(int(pid)):
+        return False
+    return _remote_alive(session_name)
+
+
+def _remote_alive(session_name: str) -> bool:
+    """Kysy Colabilta: False vain kun vastaus sanoo istunnon kadonneen."""
+    try:
+        from .onboarding import colab_env
+
+        res = subprocess.run(
+            ["colab", "exec", "-s", session_name, "true"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=colab_env(),
+            timeout=30,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return True
+    return SESSION_GONE.search(res.stdout or "") is None
 
 
 def stop_session(session_name: str) -> int:

@@ -86,3 +86,60 @@ def test_stop_finds_the_bundled_colab(monkeypatch):
     monkeypatch.setattr("subprocess.run", run)
     assert session_mod.stop_session("s") == 0
     assert seen == [(["colab", "stop", "-s", "s"], "/env/bin")]
+
+
+def _cfg_with(tmp_path: Path, monkeypatch, name: str = "whisper") -> None:
+    cfg = tmp_path / "sessions.json"
+    cfg.write_text(json.dumps({name: {"name": name}}), encoding="utf-8")
+    monkeypatch.setattr(session, "get_sessions_config_path", lambda: cfg)
+
+
+def test_is_session_alive_asks_colab_and_believes_a_gone_answer(
+    tmp_path: Path, monkeypatch
+):
+    """Paikallinen kirjaus elää, mutta Google on ottanut koneen (19.11):
+    vastaus "Session 'whisper' not found." tarkoittaa kuollutta."""
+    _cfg_with(tmp_path, monkeypatch)
+
+    class Gone:
+        returncode = 1
+        stdout = "[colab] Session 'whisper' not found.\n"
+
+    monkeypatch.setattr(session.subprocess, "run", lambda *a, **k: Gone())
+    assert session.is_session_alive("whisper") is False
+
+
+def test_is_session_alive_keeps_true_on_an_inconclusive_probe(
+    tmp_path: Path, monkeypatch
+):
+    """Verkkovika tai puuttuva CLI ei saa tappaa elävää kirjettä: vanha
+    käytös jää, ja ajon oma uudelleenyritys korjaa tilanteen."""
+    _cfg_with(tmp_path, monkeypatch)
+
+    class NetDown:
+        returncode = 1
+        stdout = "URLError: network unreachable"
+
+    monkeypatch.setattr(session.subprocess, "run", lambda *a, **k: NetDown())
+    assert session.is_session_alive("whisper") is True
+
+    def no_cli(*a, **k):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(session.subprocess, "run", no_cli)
+    assert session.is_session_alive("whisper") is True
+
+
+def test_is_session_alive_short_circuits_without_a_local_record(
+    tmp_path: Path, monkeypatch
+):
+    """Ei paikallista kirjausta, ei kyselyä Colabiin."""
+    monkeypatch.setattr(
+        session, "get_sessions_config_path", lambda: tmp_path / "none.json"
+    )
+    called = []
+    monkeypatch.setattr(
+        session.subprocess, "run", lambda *a, **k: called.append(a) or None
+    )
+    assert session.is_session_alive("whisper") is False
+    assert called == []
