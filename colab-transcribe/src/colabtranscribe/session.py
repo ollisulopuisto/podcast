@@ -71,8 +71,11 @@ def _remote_alive(session_name: str) -> bool:
     try:
         from .onboarding import colab_env
 
+        # CLI 0.7.5:n exec lukee koodin stdinistä, ei argumentista (Devin):
+        # vaaraton no-op riittää todistamaan että kone vastaa.
         res = subprocess.run(
-            ["colab", "exec", "-s", session_name, "true"],
+            ["colab", "exec", "-s", session_name],
+            input="pass\n",
             capture_output=True,
             text=True,
             check=False,

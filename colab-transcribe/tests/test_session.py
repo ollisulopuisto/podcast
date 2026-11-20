@@ -50,6 +50,8 @@ def test_is_session_alive_checks_process(tmp_path: Path, monkeypatch):
         return pid == 99999
 
     monkeypatch.setattr(session, "_is_pid_alive", fake_pid_exists)
+    # Paikallisen tilan testi: etäkysely erikseen (test_the_probe_*).
+    monkeypatch.setattr(session, "_remote_alive", lambda name: True)
 
     assert session.is_session_alive("alive-sess") is True
     assert session.is_session_alive("dead-sess") is False
@@ -143,3 +145,24 @@ def test_is_session_alive_short_circuits_without_a_local_record(
     )
     assert session.is_session_alive("whisper") is False
     assert called == []
+
+
+def test_the_probe_speaks_stdin_like_the_driver(tmp_path: Path, monkeypatch):
+    """CLI 0.7.5:n exec lukee koodin stdinistä, ei argumentista (Devin #258):
+    kysely ei saa antaa positionaalista koodiargumenttia."""
+    _cfg_with(tmp_path, monkeypatch)
+    seen = {}
+
+    class Alive:
+        returncode = 0
+        stdout = ""
+
+    def fake_run(argv, **kwargs):
+        seen["argv"] = argv
+        seen["input"] = kwargs.get("input")
+        return Alive()
+
+    monkeypatch.setattr(session.subprocess, "run", fake_run)
+    assert session.is_session_alive("whisper") is True
+    assert seen["argv"] == ["colab", "exec", "-s", "whisper"]
+    assert seen["input"] is not None
