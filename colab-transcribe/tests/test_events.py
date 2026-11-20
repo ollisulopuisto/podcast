@@ -644,7 +644,7 @@ def test_a_very_long_message_is_cut_to_one_line(capsys):
 def test_the_clis_not_found_wording_also_triggers_the_fresh_session_retry(
     audio, ready, monkeypatch, capsys
 ):
-    """colab CLI 0.7.5 says "Session 'whisper' not found." (käyttäjäraportti
+    """colab CLI 0.7.5 sanoo "Session 'whisper' not found." (käyttäjäraportti
     19.11): sekin tarkoittaa kadonnutta istuntoa."""
     plans, stopped = [], []
     fake, calls = _flaky(line="Session 'whisper' not found.", plans=plans)
