@@ -1349,3 +1349,26 @@ def test_run_omits_command_echoes_unless_verbose(monkeypatch):
     loud: list[str] = []
     assert driver.run(plan, loud.append) == 0
     assert loud[0] == "colab exec -s sess 'mkdir -p /content/input'"
+
+
+def test_quiet_run_does_not_echo_the_cache_list_command(monkeypatch):
+    """Devin #259: myös uusittua istuntoa käyttävä ajo kunnioittaa hiljaista
+    oletusta: cache-list -kyselyn komentoechon tulee olla pois päältä."""
+    import io
+
+    class FakeProcess:
+        def __init__(self, cmd, stdin=None, **kwargs):
+            self.stdin = io.StringIO()
+            self.stdout = ["/content/cache/x.flac\n"]
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", FakeProcess)
+    quiet: list[str] = []
+    assert driver.run([["cache-list", "sess"]], quiet.append, verbose=False) == 0
+    assert quiet == ["/content/cache/x.flac"]
+
+    loud: list[str] = []
+    assert driver.run([["cache-list", "sess"]], loud.append, verbose=True) == 0
+    assert loud[0].startswith("colab exec -s sess ")

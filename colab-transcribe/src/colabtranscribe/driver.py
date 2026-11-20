@@ -1072,7 +1072,10 @@ def _upload_target(command: list[str]) -> tuple[str, str] | None:
 
 
 def _list_cache(
-    session: str, log: Callable[[str], None], timeout: float | None = None
+    session: str,
+    log: Callable[[str], None],
+    timeout: float | None = None,
+    verbose: bool = True,
 ) -> set[str]:
     """Tiedostot jotka edellinen ajo jätti Colabin välimuistiin. Epäonnistunut
     listaus on tyhjä lista: silloin ladataan kaikki, mikä on aina oikein."""
@@ -1087,6 +1090,7 @@ def _list_cache(
         ["colab", "exec", "-s", session, f"find {REMOTE_CACHE} -type f 2>/dev/null; true"],
         collect,
         timeout=timeout,
+        verbose=verbose,
     )
     return set(found) if code == 0 else set()
 
@@ -1208,7 +1212,7 @@ def run(
                     )
 
             if command[0] == "cache-list":
-                cached = _list_cache(command[1], log, timeout)
+                cached = _list_cache(command[1], log, timeout, verbose=verbose)
                 continue
 
             target = _upload_target(command)
