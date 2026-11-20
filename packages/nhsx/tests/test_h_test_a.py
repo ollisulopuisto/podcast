@@ -70,3 +70,16 @@ def test_fade_children_carry_start_length_gain():
     assert fades[1].get("Start") == "10.834"
     assert fades[1].get("Length") == "01.666"
     assert fades[1].get("Gain") is None
+
+
+def test_real_session_markers():
+    """Hindenburgin kirjoittamat merkit: Id 1/2 ovat sen sisään/ulos-pisteet."""
+    session = read(DATA / "h-test A.nhsx")
+    by_id = {m.id: m for m in session.markers}
+    assert len(session.markers) == 4
+    assert by_id["1"].name == "Sisään"
+    assert by_id["1"].time == 62.5
+    assert by_id["2"].name == "Ulos"
+    assert by_id["2"].time == 72.5
+    assert by_id["3"].time == 60.0
+    assert by_id["4"].time == 84.2

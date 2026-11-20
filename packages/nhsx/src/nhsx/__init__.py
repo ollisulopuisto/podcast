@@ -7,6 +7,7 @@ a Hindenburg session into `speechmix.timeline.Track`/`Span` objects.
 from .pipeline import tracks
 from .read import (
     FileInfo,
+    MarkerInfo,
     NhsxError,
     RegionInfo,
     Session,
@@ -20,6 +21,7 @@ from .read import (
 
 __all__ = [
     "FileInfo",
+    "MarkerInfo",
     "NhsxError",
     "RegionInfo",
     "Session",
