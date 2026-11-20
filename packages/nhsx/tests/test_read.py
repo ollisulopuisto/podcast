@@ -334,3 +334,31 @@ def test_session_positional_audio_dir():
     session = Session("p.nhsx", None, [], [], "/audio")
     assert session.audio_dir == "/audio"
     assert session.markers == []
+
+
+def test_a_bad_marker_time_does_not_discard_valid_audio():
+    """Merkki on valinnaista metatietoa: virheellinen aika ei saa kaataa
+    koko istunnon lukua (omistajan sääntö, kuulas #254)."""
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Session>
+  <AudioPool Path="">
+    <File Id="1" Name="test.wav" Path="test.wav"/>
+  </AudioPool>
+  <Tracks>
+    <Track Name="Speaker1">
+      <Region Ref="1" Start="0.000" Length="10.000" Offset="0.000"/>
+    </Track>
+  </Tracks>
+  <Markers>
+    <Marker Id="1" Name="Sisään" Time="62.500"/>
+    <Marker Id="9" Name="Rikki" Time="ei-aika"/>
+    <Marker Id="10" Name="Miinus" Time="-5"/>
+  </Markers>
+</Session>"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".nhsx", delete=False) as f:
+        f.write(xml)
+        f.flush()
+        session = read(f.name)
+
+    assert len(session.tracks) == 1
+    assert [m.id for m in session.markers] == ["1"]
