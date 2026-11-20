@@ -11,6 +11,11 @@ let plan = null;            // palvelimen vastaus: polku, mitat, palat
 let pieces = [];            // {start, end, x, x_panel, manual, manual_panel}
 let sel = 0;
 let dialect = 'fcp';
+let layout = 'wide';
+try {
+  const saved = localStorage.getItem('autoraffkat.trailer.layout');
+  if (saved === 'wide' || saved === 'halves') layout = saved;
+} catch { /* Tallennus voi olla estetty; valinta toimii silti. */ }
 let busy = false;
 
 function banner(text, bad) {
@@ -42,6 +47,10 @@ async function api(url, body) {
    ja viennin on näytettävä sama ikkuna. */
 const HALF_ZOOM = 1;
 
+function panelHeight() {
+  return layout === 'wide' ? Math.round(FRAME_W * 9 / 16 / 2) * 2 : HALF_H;
+}
+
 function laneZoom(frameH) {
   return frameH === HALF_H ? HALF_ZOOM : 1;
 }
@@ -70,7 +79,7 @@ function exportWindow(x, frameH) {
 function renderBoxes() {
   if (!plan || !pieces[sel]) return;
   const p = pieces[sel];
-  [['tr-box-half', HALF_H, p.x_panel], ['tr-box-full', FULL_H, p.x]].forEach(([id, h, x]) => {
+  [['tr-box-half', panelHeight(), p.x_panel], ['tr-box-full', FULL_H, p.x]].forEach(([id, h, x]) => {
     const win = exportWindow(x, h);
     const box = $(id);
     box.style.left = `${win.left * 100}%`;
@@ -100,18 +109,20 @@ function drawComposite() {
   crop(FULL_H, p.x, 0, 0, W, H);
   if (lane !== 'none') {
     const top = lane === 'top';
-    crop(HALF_H, p.x_panel, 0, top ? 0 : H / 2, W, H / 2);
+    const panelH = H * panelHeight() / FULL_H;
+    const remainingH = H - panelH;
+    crop(panelHeight(), p.x_panel, 0, top ? 0 : remainingH, W, panelH);
     ctx.setLineDash([6, 4]);
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2;
-    ctx.strokeRect(2, top ? H / 2 + 2 : 2, W - 4, H / 2 - 4);
+    ctx.strokeRect(2, top ? panelH + 2 : 2, W - 4, remainingH - 4);
     ctx.setLineDash([]);
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(0, top ? H / 2 : 0, W, 0);
+    ctx.fillRect(0, top ? panelH : 0, W, remainingH);
     ctx.fillStyle = '#fff';
     ctx.font = '14px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(T('trailer.yourVideo'), W / 2, top ? H * 0.75 : H * 0.25);
+    ctx.fillText(T('trailer.yourVideo'), W / 2, top ? panelH + remainingH / 2 : remainingH / 2);
   }
 }
 
@@ -202,6 +213,35 @@ function renderList() {
   });
 }
 
+/* Asettelun vaihto ei pilko uudelleen eikä hukkaa käsin tehtyjä kehyksiä. */
+function setLayout(value) {
+  if (value !== 'wide' && value !== 'halves') return;
+  layout = value;
+  try { localStorage.setItem('autoraffkat.trailer.layout', value); }
+  catch { /* Tallennuksen esto ei estä vientiä. */ }
+  renderLayout();
+  renderBoxes();
+}
+
+function renderLayout() {
+  const host = $('tr-layout');
+  const focused = Array.from(host.children).indexOf(document.activeElement);
+  host.textContent = '';
+  host.setAttribute('aria-label', T('trailer.layout'));
+  ['wide', 'halves'].forEach((value) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'ghost';
+    button.setAttribute('aria-pressed', String(layout === value));
+    button.textContent = T(`trailer.layout.${value}`);
+    button.addEventListener('click', () => setLayout(value));
+    host.append(button);
+  });
+  if (focused >= 0 && typeof host.children[focused].focus === 'function') {
+    host.children[focused].focus();
+  }
+}
+
 function renderDest() {
   const host = $('tr-dest');
   host.textContent = '';
@@ -226,6 +266,7 @@ function renderAll() {
   $('tr-export').disabled = !plan || busy;
   $('tr-apply').disabled = !plan || busy;
   renderDest();
+  renderLayout();
   renderList();
   showFrame();
 }
@@ -269,6 +310,7 @@ async function exportFcpxml() {
       path: plan.path,
       pieces: pieces.map(({ start, end, x, x_panel }) => ({ start, end, x, x_panel })),
       lane: $('tr-lane').value,
+      layout,
       dialect,
     });
     const box = $('tr-exported');

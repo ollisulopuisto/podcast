@@ -98,3 +98,29 @@ def test_split_copies_both_slices_and_merge_keeps_the_previous(run):
     merged = run["afterMerge"]["rows"]
     assert len(merged) == 2
     assert _pct(merged[0]) == _pct(rows[0])
+
+
+@needs_node
+def test_layout_preview_and_export_keep_the_same_panel_and_remaining_space(run):
+    """Molemmat asettelut ja sijainnit piirretään ja lähetetään vientiin."""
+    assert run["defaultLayout"] == "wide"
+    assert run["remembered"]["autoraffkat.trailer.layout"] == "halves"
+    for sample in run["layouts"]:
+        assert sample["body"]["layout"] == sample["choice"]
+        assert sample["body"]["lane"] == sample["lane"]
+        # Kanvas 540×960, ulostulo 1080×1920.
+        height = 304 if sample["choice"] == "wide" else 480
+        if sample["lane"] == "none":
+            assert len(sample["draws"]) == 1
+            assert sample["outlines"] == []
+            continue
+        full, panel = sample["draws"]
+        assert full[4:] == [0, 0, 540, 960]
+        top = sample["lane"] == "top"
+        assert panel[4:] == [0, 0 if top else 960-height, 540, height]
+        sx, sy, sw, sh = panel[:4]
+        assert 0 <= sx <= 1920-sw+1e-6
+        assert sy >= 0 and sy+sh <= 1080+1e-6
+        assert sw/sh == pytest.approx(540/height)
+        assert sample["outlines"][0][1] == (height+2 if top else 2)
+        assert sample["outlines"][0][3] == 960-height-4

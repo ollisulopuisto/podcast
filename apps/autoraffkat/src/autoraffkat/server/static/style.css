@@ -846,3 +846,8 @@ body.tr-panel-drag .tr-box-full { opacity: 0.35; }
 /* Tiedostopolun valinta: näyttökenttä, Valitse ja Tyhjennä samalla rivillä. */
 .path-field { display: flex; gap: 6px; align-items: center; min-width: 0; }
 .path-field input { flex: 1; min-width: 0; text-overflow: ellipsis; cursor: default; }
+
+.tr-layout-field { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.tr-layout-field .export-dest { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.tr-layout-field button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }

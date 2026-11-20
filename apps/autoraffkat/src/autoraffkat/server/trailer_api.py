@@ -20,7 +20,7 @@ from speechmix.binaries import get_binary_path
 
 from .. import pick, trailer
 from ..finalcut.write import DIALECTS, WriteError, write_fcpxml
-from ..finalcut.write_trailer import LANES, build_trailer_fcpxml
+from ..finalcut.write_trailer import LANES, LAYOUTS, build_trailer_fcpxml
 from ..i18n import t
 
 if TYPE_CHECKING:  # vain tyypitystä varten
@@ -138,7 +138,8 @@ def register(app, state: "AppState", _static_dir, versioned) -> None:
         video = _video_path(payload.get("path"))
         lane = payload.get("lane") or "top"
         dialect = payload.get("dialect") or "fcp"
-        if lane not in LANES or dialect not in DIALECTS:
+        layout = payload.get("layout", "halves")
+        if lane not in LANES or dialect not in DIALECTS or layout not in LAYOUTS:
             raise HTTPException(400, t("trailer.bad_choice"))
         raw = payload.get("pieces")
         if not isinstance(raw, list) or not raw or len(raw) > MAX_PIECES:
@@ -172,7 +173,7 @@ def register(app, state: "AppState", _static_dir, versioned) -> None:
             # erottuvat Final Cutin selaimessa.
             xml = build_trailer_fcpxml(
                 src, pieces, xs, os.path.splitext(os.path.basename(target))[0],
-                xs_panel=xs_panel, enabled_lane=lane, dialect=dialect)
+                xs_panel=xs_panel, enabled_lane=lane, dialect=dialect, layout=layout)
             out_path = write_fcpxml(target, xml)
         except (trailer.TrailerError, WriteError) as exc:
             raise HTTPException(400, str(exc)) from exc

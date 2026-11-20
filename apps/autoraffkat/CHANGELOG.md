@@ -7,6 +7,19 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.20.2] - 2026-11-20
+
+### Added
+- Trailer layout: a 1080×608 wide strip above or below a 1080×1312 area for
+  your own video, alongside unchanged 50/50. Layout selection, preview and
+  FCPXML agree; the browser remembers the choice. Commentary, subtitles and
+  audio adjustments remain Final Cut work.
+- Trailerin asettelu: 1080×608-laajapaneeli ylös tai alas ja 1080×1312-tila
+  omalle videolle, nykyisen 50/50-jaon rinnalle. Selain muistaa valinnan;
+  esikatselu ja FCPXML vastaavat sitä. Oma video, tekstitys ja äänen säädöt
+  tehdään edelleen Final Cutissa.
+
+
 ### Added
 - Package panel: intro, outro and credits files and the music beds are
   chosen with the system file dialog instead of typed paths. The field shows

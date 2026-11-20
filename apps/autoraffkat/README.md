@@ -44,6 +44,25 @@ angles, cuts and dialogue roles in place.*
 * **Final Cut Pro all the way out.** A multicam source produces a multicam
   timeline; angles, roles and sync survive the round trip.
 
+
+## Trailer layouts
+
+Trailer mode keeps a single trailer as an editable 1080×1920 Final Cut timeline.
+Choose **Wide + your video** for a 1080×608 strip above or below the space for
+your own video (1080×1312), or **50 / 50** for the existing 1080×960 halves.
+New visits start wide; the layout choice is remembered in this browser.
+The full-height trailer remains underneath both optional, video-only panel
+lanes. **Full frame only** disables both panel lanes. Add your own video,
+subtitles and audio adjustments in Final Cut; this mode does not import or
+sync commentary or burn subtitles into an MP4.
+
+Changing the layout does not discard the cuts or manual framing. Up/Down
+select a piece, Left/Right adjust the full-frame crop, Option+Left/Right
+adjust the panel crop, and M merges with the previous piece. The same layout
+is used in the preview and FCPXML export. API callers that omit `layout`
+still get the legacy halves; use `layout: "wide"` for the new strip.
+
+
 ## Usage
 
 ```
