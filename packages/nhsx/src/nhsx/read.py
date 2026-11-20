@@ -191,7 +191,7 @@ class Session:
     tree: object = field(repr=False, default=None)
     files: list[FileInfo] = field(default_factory=list)
     tracks: list[TrackInfo] = field(default_factory=list)
-    markers: list[MarkerInfo] = field(default_factory=list)
+    markers: list[MarkerInfo] = field(default_factory=list, kw_only=True)
     audio_dir: str = ""
 
     def file_by_id(self, ref: str) -> FileInfo | None:

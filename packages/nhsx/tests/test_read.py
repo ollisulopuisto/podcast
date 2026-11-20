@@ -326,3 +326,11 @@ def test_read_without_markers_block():
         session = read(f.name)
 
     assert session.markers == []
+
+
+def test_session_positional_audio_dir():
+    """Viiden positionaalisen argumentin rakentaminen säilyy: äänihakemisto
+    ei valu markers-kenttään."""
+    session = Session("p.nhsx", None, [], [], "/audio")
+    assert session.audio_dir == "/audio"
+    assert session.markers == []
