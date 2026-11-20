@@ -176,3 +176,22 @@ def test_plan_failures_are_translated_not_raw(client, tmp_path, monkeypatch):
     assert res.status_code == 400
     assert "RAW-ERRNO-TEXT" not in res.json()["detail"]
     assert not res.json()["detail"].startswith("trailer.")
+
+
+@needs_ffmpeg
+def test_wide_layout_round_trips_and_unknown_layout_is_rejected(client, tmp_path):
+    """Rajapinta ei saa jättää valittua asettelua huomiotta."""
+    video = _synthetic(tmp_path / "wide.mp4")
+    body = {"path": video, "pieces": [{"start": 0., "end": 6., "x": 0.2,
+                                           "x_panel": 0.8}], "layout": "wide"}
+    res = client.post("/api/trailer/export", json=body)
+    assert res.status_code == 200
+    root = ET.fromstring(pathlib.Path(res.json()["path"]).read_text())
+    strip = root.find(".//project/sequence/spine/asset-clip/ref-clip")
+    media = root.find(f".//media[@id='{strip.get('ref')}']")
+    fmt = root.find(f".//format[@id='{media.find('sequence').get('format')}']")
+    assert fmt.get("height") == "608"
+    before = set(tmp_path.glob("*.fcpxml"))
+    for bad in ["unknown", [], {}, 42]:
+        assert client.post("/api/trailer/export", json={**body, "layout": bad}).status_code == 400
+    assert set(tmp_path.glob("*.fcpxml")) == before

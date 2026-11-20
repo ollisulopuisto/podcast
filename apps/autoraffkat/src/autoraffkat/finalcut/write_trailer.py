@@ -44,6 +44,7 @@ from .write import (
 )
 
 LANES = ("top", "bottom", "none")
+LAYOUTS = ("halves", "wide")
 
 
 def _quantize(pieces, frame_duration: Fraction, total_frames: int):
@@ -61,10 +62,14 @@ def _quantize(pieces, frame_duration: Fraction, total_frames: int):
     return out
 
 
-def _panel_for(kind: str) -> screen_layout.Panel:
+def _panel_for(kind: str, layout: str = "halves") -> screen_layout.Panel:
     if kind == "full":
         return screen_layout.Panel(0, 0, screen_layout.PROJECT_W,
                                    screen_layout.PROJECT_H)
+    if layout == "wide":
+        panels = screen_layout.panels(
+            screen_layout.LAYOUT_WIDE_TOP if kind == "top" else screen_layout.LAYOUT_WIDE_BOTTOM)
+        return panels.wide
     return screen_layout.stack_panel(1 if kind == "top" else -1)
 
 
@@ -81,9 +86,9 @@ def _lane_lines(kind: str, src: TrailerSource, x: float, indent: str) -> list[st
         indent)
 
 
-def _half_inner_lines(src: TrailerSource, x: float, indent: str) -> list[str]:
-    """Puolikkaan muunto YHDISTELMÄN omassa 1080×960-kehyksessä."""
-    panel = _panel_for("top")  # molemmat puolikkaat ovat saman kokoiset
+def _panel_inner_lines(src: TrailerSource, x: float, indent: str, layout: str) -> list[str]:
+    """Paneelin muunto oman kokoisessa yhdistelmässä: 960 tai 608 px korkea."""
+    panel = _panel_for("top", layout)  # molemmat puolikkaat ovat saman kokoiset
     win = crop_window(src.width, src.height, panel.w, panel.h, x)
     inner = screen_layout.fcp_panel(
         screen_layout.Panel(0, 0, panel.w, panel.h), win,
@@ -98,17 +103,22 @@ def build_trailer_fcpxml(
     project_name: str,
     *,
     xs_panel: list[float] | None = None,
+    layout: str = "halves",
     enabled_lane: str = "top",
     dialect: str = DIALECT_FCP,
     version: str = "1.10",
 ) -> str:
-    """FCPXML-merkkijono. ``xs`` on kohteen vaakapaikka (0–1) palaa kohden.
+    """FCPXML-merkkijono. ``layout`` on ``halves`` (vanha) tai ``wide``.
+
+    ``xs`` on kohteen vaakapaikka (0–1) palaa kohden.
 
     ``xs_panel`` on puolikaspaneelin oma kehys (9:16-ikkuna voi näyttää
     eri kohdan kuin leveä paneeli); ilman sitä paneeli seuraa ``xs``:ää.
     """
     if dialect not in DIALECTS:
         raise WriteError(t("trailer.err.dialect", value=dialect))
+    if layout not in LAYOUTS:
+        raise WriteError(t("trailer.bad_choice"))
     if enabled_lane not in LANES:
         raise WriteError(t("trailer.err.lane", value=enabled_lane))
     if not pieces or len(pieces) != len(xs):
@@ -171,21 +181,21 @@ def build_trailer_fcpxml(
         body += _lane_lines("full", src, x, "              ")
         for lane, kind in ((1, "top"), (2, "bottom")):
             on = enabled_lane == kind
-            # Puolikas on paneelinkokoinen yhdistelmäklippi: ilman sitä vain
+            # Kaista on paneelinkokoinen yhdistelmäklippi: ilman sitä vain
             # projektin reunat leikkaavat, ja pysty- tai zoomattu lähde
             # vuotaisi saumassa toisen kaistan päälle (Devin Review #252,
-            # 2026-11-20). Yhdistelmän oma 1080×960-kehys leikkaa sauman
+            # 2026-11-20). Yhdistelmän oma paneelikehys leikkaa sauman
             # tarkasti; ulkoinen sijainti pitää paneelin paikallaan.
             media_id = next_id()
             half_format = formats.get(
-                screen_layout.PROJECT_W, screen_layout.PROJECT_H // 2, fd, next_id)
+                screen_layout.PROJECT_W, _panel_for(kind, layout).h, fd, next_id)
             media_resources += _panel_compound(
                 media_id, kind.capitalize() + " " + label, half_format, dur,
                 [f'          <asset-clip ref="{lane_asset_id}" offset="0s" '
                  f"name={quoteattr(kind.capitalize() + ' ' + label)} "
                  f'start="{start}" duration="{dur}" format="{src_format}" '
                  'tcFormat="NDF" srcEnable="video">',
-                 *_half_inner_lines(src, x_panel, "            "),
+                 *_panel_inner_lines(src, x_panel, "            ", layout),
                  "          </asset-clip>"])
             # FCP tulkitsee liitetyn klipin offsetin isännän aikajanalle
             # (varmistettu 2026-11-19), joten suhteellinen nolla.
@@ -196,7 +206,7 @@ def build_trailer_fcpxml(
             ]
             if not on:
                 c.append('enabled="0"')
-            ax, ay = screen_layout.panel_anchor(_panel_for(kind))
+            ax, ay = screen_layout.panel_anchor(_panel_for(kind, layout))
             body.append("              <ref-clip " + " ".join(c) + ">")
             body.append('                <adjust-conform type="none"/>')
             body.append('                <adjust-transform '

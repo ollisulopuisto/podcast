@@ -1,6 +1,7 @@
 """Trailerin kolmikaistainen FCPXML: spine = koko ruutu, päällä ylä- ja alapuolikas."""
 
 from fractions import Fraction
+from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import pytest
@@ -377,3 +378,38 @@ def test_export_errors_follow_the_language():
         _doc(pieces=[], xs=[])
     assert not str(err.value).startswith("trailer.")
     assert "pala" in str(err.value).lower()
+
+
+@pytest.mark.parametrize("lane,anchor", [("top", "0 34.1667"), ("bottom", "0 -34.1667")])
+@pytest.mark.parametrize("dialect", ["fcp", "resolve"])
+def test_wide_trailer_has_a_clipped_608_pixel_strip_and_frame_exact_offsets(lane, anchor, dialect):
+    """Laaja säilyttää 16:9-kuvan ja jättää omalle videolle 1312 px."""
+    root = _doc(layout="wide", enabled_lane=lane, dialect=dialect)
+    for clip in _spine(root):
+        strips = [k for k in clip if k.tag == "ref-clip"]
+        active = strips[0 if lane == "top" else 1]
+        assert active.get("enabled") is None
+        assert active.find("adjust-transform").get("position") == anchor
+        for strip in strips:
+            assert strip.get("offset") == "0s"
+            assert strip.get("duration") == clip.get("duration")
+            seq = _media_by_id(root, strip.get("ref")).find("sequence")
+            fmt = root.find(f".//format[@id='{seq.get('format')}']")
+            assert (fmt.get("width"), fmt.get("height")) == ("1080", "608")
+            inner = seq.find(".//asset-clip")
+            assert inner.get("start") == clip.get("start")
+            scale = [float(v) for v in inner.find("adjust-transform").get("scale").split()]
+            assert scale == pytest.approx([608 / 1080] * 2, abs=1e-6)
+            assert seq.find(".//adjust-crop") is None
+            asset = root.find(f".//asset[@id='{inner.get('ref')}']")
+            assert asset.get("hasAudio") is None
+
+
+def test_omitted_layout_remains_byte_identical_to_explicit_halves():
+    args = (_src(), [(0., 10.)], [0.2], "Review")
+    # Tallennettu puhtaalta mainilta 1bdf95d ennen wide-muutosta.
+    golden = (Path(__file__).parent / "data/trailer-halves-before-wide.fcpxml").read_text()
+    assert build_trailer_fcpxml(*args) == golden
+    assert build_trailer_fcpxml(*args, layout="halves") == golden
+    with pytest.raises(WriteError):
+        build_trailer_fcpxml(*args, layout="unknown")

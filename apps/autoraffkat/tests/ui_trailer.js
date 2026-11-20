@@ -74,8 +74,10 @@ function makeElement(tag) {
   return el;
 }
 
+const draws = [];
+const outlines = [];
 const canvas2d = {
-  clearRect() {}, drawImage() {}, setLineDash() {}, strokeRect() {},
+  clearRect() { draws.length = 0; outlines.length = 0; }, drawImage(...args) { draws.push(args.slice(1)); }, setLineDash() {}, strokeRect(...args) { outlines.push(args); },
   fillRect() {}, fillText() {},
   strokeStyle: '', lineWidth: 0, fillStyle: '', font: '', textAlign: '',
 };
@@ -130,7 +132,9 @@ const fetchStub = async (url, opts) => {
   return { ok: true, json: async () => ({ language: 'fi' }) };
 };
 
+const stored = new Map();
 const context = {
+  localStorage: { getItem: (k) => stored.get(k) ?? null, setItem: (k, v) => stored.set(k, v) },
   document: doc,
   navigator: { platform: 'MacIntel', userAgent: 'Mozilla/5.0 (Macintosh)' },
   location: { search: '' },
@@ -207,5 +211,19 @@ const lastExport = () => {
   ev('mergePrev(1)');
   out.afterMerge = { rows: rowTexts() };
 
+  out.defaultLayout = ev('layout');
+  const measurements = [];
+  for (const choice of ['wide', 'halves']) {
+    ev(`setLayout('${choice}')`);
+    for (const lane of ['top', 'bottom', 'none']) {
+      elById('tr-lane').value = lane;
+      ev('drawComposite()');
+      await ev('exportFcpxml()');
+      measurements.push({choice, lane, draws: JSON.parse(JSON.stringify(draws)),
+        outlines: JSON.parse(JSON.stringify(outlines)), body: sent.at(-1).body});
+    }
+  }
+  out.layouts = measurements;
+  out.remembered = Object.fromEntries(stored);
   console.log(JSON.stringify(out));
 })().catch((err) => { console.error(err && err.stack || err); process.exit(1); });

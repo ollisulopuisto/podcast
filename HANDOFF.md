@@ -132,3 +132,17 @@ carrying it across.
   from measuring real material says what was measured. `SHARED-AUDIO.md`
   collects them. Changing one without a new measurement is how the three
   copies drifted apart in the first place.
+
+
+## 2026-11-20: autoraffkat trailer wide layout
+
+Owner selected sketch A: a full-width 16:9 trailer strip at top, leaving a
+larger area for own video. Branch `feature/trailer-wide-layout` adds a wide
+preset alongside unchanged 50/50. Preview, API and writer carry the choice;
+API omission stays legacy halves. One trailer only, own video/subtitles/audio
+remain Final Cut work. No commentary import, sync, transcription or MP4 added.
+Writer uses the shared wide panel geometry and retains panel-sized compounds,
+relative connected offsets and audio-only-on-spine behavior. Regression tests
+cover both export dialects and top/bottom/full preview and export. Exact-head
+CI/Devin and a native Final Cut import are separate checks, not inferred from
+local synthetic tests. Version bumped to 2026.11.20.2 in this PR for the requested DMG; no tag or release made.

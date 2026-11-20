@@ -46,6 +46,25 @@ kulmat, leikkaukset ja dialogiroolit ovat valmiina jatkoeditointia varten.*
 * **Final Cut Prosta ulos ja takaisin.** Monikameralähteestä tulee
   monikameraleikkaus; kulmat, roolit ja synkka säilyvät.
 
+
+## Trailerin asettelut
+
+Traileritila vie yhden trailerin muokattavaksi 1080×1920-aikajanaksi Final Cutiin.
+**Laaja + oma kuva** tekee 1080×608-paneelin ylös tai alas ja jättää omalle
+videolle 1080×1312-tilan. **50 / 50** säilyttää nykyiset 1080×960-puolikkaat.
+Uusi vierailu alkaa laajasta; selain muistaa asetteluvalinnan.
+Koko ruudun trailer pysyy kahden valinnaisen, äänettömän paneelikaistan alla.
+**Vain koko ruutu** poistaa molemmat paneelit käytöstä. Lisää oma video,
+tekstitys ja äänen säädöt Final Cutissa. Traileritila ei tuo tai synkkaa
+kommentaaria eikä polta tekstitystä MP4-tiedostoon.
+
+Asettelun vaihtaminen säilyttää palat ja käsin tehdyt kehykset. Ylös/alas
+valitsee palan, vasen/oikea kehystää koko ruudun ja Option+vasen/oikea
+paneelin. M yhdistää edelliseen. Esikatselu ja FCPXML käyttävät samaa
+asettelua. Rajapintakutsu ilman `layout`-valintaa tuottaa edelleen puolikkaat;
+`layout: "wide"` valitsee uuden laajan paneelin.
+
+
 ## Käyttö
 
 ```
