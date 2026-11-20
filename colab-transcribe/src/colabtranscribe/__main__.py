@@ -319,7 +319,8 @@ def _progress_printer(lines: bool = True):
 #: tekstistä ja yrittää uudelleen tuoreella istunnolla; ``--events`` antaa sen
 #: tunnisteella (``warning``, ``code: session_lost``), ja työkalu korjaa sen
 #: itse: ks. ``run_audio_mode``.
-_SESSION_LOST = re.compile(r"Session '[^']*' appears to be lost")
+#: Jaettu ``session``-moduulin kanssa: yksi tunnistus, ei kahta kopiota.
+_SESSION_LOST = session.SESSION_GONE
 
 #: ``error.message`` on yksi lyhyt luettava rivi, ei koskaan loki.
 MESSAGE_LIMIT = 200

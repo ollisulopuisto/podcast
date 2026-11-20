@@ -639,3 +639,20 @@ def test_a_very_long_message_is_cut_to_one_line(capsys):
     (error,) = _events(capsys.readouterr().out)
     assert "\n" not in error["message"] and len(error["message"]) <= 200
     assert error["message"].startswith("rivi yksi rivi kaksi")
+
+
+def test_the_clis_not_found_wording_also_triggers_the_fresh_session_retry(
+    audio, ready, monkeypatch, capsys
+):
+    """colab CLI 0.7.5 says "Session 'whisper' not found." (käyttäjäraportti
+    19.11): sekin tarkoittaa kadonnutta istuntoa."""
+    plans, stopped = [], []
+    fake, calls = _flaky(line="Session 'whisper' not found.", plans=plans)
+    monkeypatch.setattr(cli.driver, "run", fake)
+    monkeypatch.setattr(cli.session, "is_session_alive", lambda name: True)
+    monkeypatch.setattr(cli.session, "stop_session", lambda name: stopped.append(name) or 0)
+    assert cli.main(_args(audio, "--events")) == 0
+    assert calls["n"] == 2 and stopped == ["whisper"]
+    assert plans[1][0][:2] == ["colab", "new"]
+    got = _events(capsys.readouterr().out)
+    assert [e["code"] for e in got if e["event"] == "warning"] == ["session_lost"]
