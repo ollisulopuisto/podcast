@@ -30,6 +30,7 @@ tag`` — sama idea, mutta ilman osumaa nimeen ``MyAudioPoolBackup``.
 from __future__ import annotations
 
 import glob
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -277,20 +278,26 @@ def read(path: str | Path) -> Session:
     except ValueError as exc:
         raise NhsxError(f"Virheellinen aikaleima: {exc}") from exc
 
+    # Merkit ovat valinnaista metatietoa: yhden merkin rikkinäinen tai
+    # kielteinen aika ei saa hylätä muuten ehjää ääntä (omistajan sääntö,
+    # kuulas #254) — kyseinen merkki jätetään pois.
     markers: list[MarkerInfo] = []
-    try:
-        for elem in descendants(root, "Markers"):
-            for marker in children(elem, "Marker"):
-                markers.append(
-                    MarkerInfo(
-                        id=marker.get("Id", ""),
-                        name=marker.get("Name", ""),
-                        time=time_to_seconds(marker.get("Time", "0")),
-                        elem=marker,
-                    )
+    for elem in descendants(root, "Markers"):
+        for marker in children(elem, "Marker"):
+            try:
+                seconds = time_to_seconds(marker.get("Time", "0"))
+            except ValueError:
+                continue
+            if not math.isfinite(seconds) or seconds < 0:
+                continue
+            markers.append(
+                MarkerInfo(
+                    id=marker.get("Id", ""),
+                    name=marker.get("Name", ""),
+                    time=seconds,
+                    elem=marker,
                 )
-    except ValueError as exc:
-        raise NhsxError(f"Virheellinen aikaleima: {exc}") from exc
+            )
 
     if pool is None and not tracks:
         raise NhsxError(
