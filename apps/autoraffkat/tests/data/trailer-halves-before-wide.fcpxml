@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+<fcpxml version="1.10">
+  <resources>
+    <format id="r1" frameDuration="1/25s" width="1080" height="1920" colorSpace="1-1-1 (Rec. 709)"/>
+    <format id="r2" name="FFVideoFormat1080p25" frameDuration="1/25s" width="1920" height="1080" colorSpace="1-1-1 (Rec. 709)"/>
+    <format id="r6" frameDuration="1/25s" width="1080" height="960" colorSpace="1-1-1 (Rec. 709)"/>
+    <asset id="r3" name="trailer" start="0s" duration="10s" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000" hasVideo="1" videoSources="1" format="r2">
+      <media-rep kind="original-media" src="file:///media/trailer.mp4"/>
+    </asset>
+    <asset id="r4" name="trailer (video)" start="0s" duration="10s" hasVideo="1" videoSources="1" format="r2">
+      <media-rep kind="original-media" src="file:///media/trailer.mp4"/>
+    </asset>
+    <media id="r5" name="Top 01">
+      <sequence format="r6" duration="10s" tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">
+        <spine>
+          <asset-clip ref="r4" offset="0s" name="Top 01" start="0s" duration="10s" format="r2" tcFormat="NDF" srcEnable="video">
+            <adjust-conform type="none"/>
+            <adjust-transform scale="0.888889 0.888889" position="32.6389 0"/>
+          </asset-clip>
+        </spine>
+      </sequence>
+    </media>
+    <media id="r7" name="Bottom 01">
+      <sequence format="r6" duration="10s" tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">
+        <spine>
+          <asset-clip ref="r4" offset="0s" name="Bottom 01" start="0s" duration="10s" format="r2" tcFormat="NDF" srcEnable="video">
+            <adjust-conform type="none"/>
+            <adjust-transform scale="0.888889 0.888889" position="32.6389 0"/>
+          </asset-clip>
+        </spine>
+      </sequence>
+    </media>
+  </resources>
+  <library>
+    <event name="Review">
+      <project name="Review">
+        <sequence format="r1" duration="10s" tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">
+          <spine>
+            <asset-clip ref="r3" offset="0s" name="Full 01" start="0s" duration="10s" format="r2" tcFormat="NDF">
+              <adjust-conform type="none"/>
+              <adjust-transform scale="1.77778 1.77778" position="53.3333 0"/>
+              <ref-clip ref="r5" lane="1" offset="0s" name="Top 01" duration="10s" srcEnable="video">
+                <adjust-conform type="none"/>
+                <adjust-transform position="0 25"/>
+              </ref-clip>
+              <ref-clip ref="r7" lane="2" offset="0s" name="Bottom 01" duration="10s" srcEnable="video" enabled="0">
+                <adjust-conform type="none"/>
+                <adjust-transform position="0 -25"/>
+              </ref-clip>
+            </asset-clip>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>

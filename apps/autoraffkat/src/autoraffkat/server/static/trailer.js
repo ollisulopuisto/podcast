@@ -118,7 +118,7 @@ function drawComposite() {
     ctx.strokeRect(2, top ? panelH + 2 : 2, W - 4, remainingH - 4);
     ctx.setLineDash([]);
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(0, top ? panelH : 0, W, remainingH);
+    ctx.fillRect(0, top ? panelH : 0, W, 0);
     ctx.fillStyle = '#fff';
     ctx.font = '14px sans-serif';
     ctx.textAlign = 'center';

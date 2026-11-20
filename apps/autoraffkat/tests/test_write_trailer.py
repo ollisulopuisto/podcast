@@ -1,6 +1,7 @@
 """Trailerin kolmikaistainen FCPXML: spine = koko ruutu, päällä ylä- ja alapuolikas."""
 
 from fractions import Fraction
+from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import pytest
@@ -406,7 +407,9 @@ def test_wide_trailer_has_a_clipped_608_pixel_strip_and_frame_exact_offsets(lane
 
 def test_omitted_layout_remains_byte_identical_to_explicit_halves():
     args = (_src(), [(0., 10.)], [0.2], "Review")
-    old = build_trailer_fcpxml(*args)
-    assert build_trailer_fcpxml(*args, layout="halves") == old
+    # Tallennettu puhtaalta mainilta 1bdf95d ennen wide-muutosta.
+    golden = (Path(__file__).parent / "data/trailer-halves-before-wide.fcpxml").read_text()
+    assert build_trailer_fcpxml(*args) == golden
+    assert build_trailer_fcpxml(*args, layout="halves") == golden
     with pytest.raises(WriteError):
         build_trailer_fcpxml(*args, layout="unknown")
