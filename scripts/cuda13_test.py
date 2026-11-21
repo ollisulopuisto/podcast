@@ -50,6 +50,8 @@ def main(argv=None, *, run=subprocess.run, system=None, work_root=None):
             if not visible.strip() or visible.strip() == "-1":
                 raise ValueError("CUDA_VISIBLE_DEVICES disables all GPUs")
             selection = visible.split(",")[0].strip()
+            if not selection or selection == "-1":
+                raise ValueError("CUDA_VISIBLE_DEVICES disables the first GPU")
             if selection.isdigit():
                 if len(inventory) != 1 or selection != "0":
                     raise ValueError("For multiple GPUs use a stable GPU UUID, not numeric ordering")
@@ -90,6 +92,7 @@ def main(argv=None, *, run=subprocess.run, system=None, work_root=None):
             child_env = {key: value for key, value in os.environ.items()
                          if not key.startswith(("UV_", "PIP_"))
                          and key not in {"VIRTUAL_ENV", "PYTHONPATH", "PYTHONHOME"}}
+            child_env["PIP_CONFIG_FILE"] = os.devnull
             child_env["UV_PROJECT_ENVIRONMENT"] = str(kuulas / ".venv")
             child_env["CUDA_VISIBLE_DEVICES"] = uuid
             run([sys.executable, "-m", "venv", str(bootstrap)], env=child_env, check=True, timeout=120)

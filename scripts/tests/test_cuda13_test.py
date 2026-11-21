@@ -165,3 +165,29 @@ def test_unsupported_or_ambiguous_device_stops(tmp_path, monkeypatch, selection)
 
     assert module.main([], run=run, system="Linux", work_root=tmp_path) == 1
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("selection", [",0", " ,GPU-good", "-1,GPU-good"])
+def test_disabled_first_gpu_does_not_enable_only_gpu(tmp_path, monkeypatch, selection):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", selection)
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
+
+    assert module.main([], run=run, system="Linux", work_root=tmp_path) == 1
+    assert len(calls) == 1
+
+
+def test_pip_config_cannot_redirect_bootstrap_install(tmp_path, monkeypatch):
+    monkeypatch.setenv("PIP_CONFIG_FILE", "/external/pip.conf")
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
+
+    assert module.main([], run=run, system="Linux", work_root=tmp_path) == 0
+    pip_call = next(kwargs for argv, kwargs in calls if "pip" in argv)
+    assert pip_call["env"]["PIP_CONFIG_FILE"] == module.os.devnull

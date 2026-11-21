@@ -7,3 +7,5 @@ Owner: Instinct. Branch: agent/cuda13-test-script. Status: Review. Adds scripts/
 ## CUDA runner safety follow-up
 
 Fixed inherited uv project environment escape, selected-GPU validation and WSL probe lookup. 17 mocked regressions pass, including external environment preservation and visibility failures. Full Ruff passes. No real GPU acceptance claimed; PR remains unmerged.
+
+Follow-up: disabled machine-wide pip settings and fail closed on an empty first GPU-list entry. 21 mock cases pass after three red-before regressions; Ruff passes.
