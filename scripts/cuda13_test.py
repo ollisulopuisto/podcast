@@ -7,7 +7,9 @@ First use downloads several GB of packages and public Whisper model weights.
 """
 
 import argparse
+import os
 import platform
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -31,17 +33,42 @@ def main(argv=None, *, run=subprocess.run, system=None, work_root=None):
         return 1
     stage = "hardware"
     try:
+        probe = shutil.which("nvidia-smi")
+        if probe is None:
+            wsl_probe = Path("/usr/lib/wsl/lib/nvidia-smi")
+            probe = str(wsl_probe) if wsl_probe.is_file() else "nvidia-smi"
         result = run(
-            ["nvidia-smi", "--query-gpu=name,driver_version,compute_cap", "--format=csv,noheader"],
+            [probe, "--query-gpu=uuid,name,driver_version,compute_cap", "--format=csv,noheader"],
             check=True, capture_output=True, text=True, timeout=30,
         )
         if not result.stdout.strip():
             raise ValueError("no NVIDIA GPU assigned")
-        for row in result.stdout.strip().splitlines():
-            name, driver, capability = [value.strip() for value in row.split(",")]
-            print(f"GPU: {name}; driver: {driver}; compute capability: {capability}")
-            if int(driver.split(".")[0]) < 580 or float(capability) < 7.5:
+        inventory = [[value.strip() for value in row.split(",")]
+                     for row in result.stdout.strip().splitlines()]
+        visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+        if visible is not None:
+            if not visible.strip() or visible.strip() == "-1":
+                raise ValueError("CUDA_VISIBLE_DEVICES disables all GPUs")
+            selection = visible.split(",")[0].strip()
+            if selection.isdigit():
+                if len(inventory) != 1 or selection != "0":
+                    raise ValueError("For multiple GPUs use a stable GPU UUID, not numeric ordering")
+                selected = inventory[0]
+            else:
+                matches = [gpu for gpu in inventory if gpu[0].startswith(selection)]
+                if len(matches) != 1:
+                    raise ValueError("Selected GPU UUID is missing or ambiguous")
+                selected = matches[0]
+        else:
+            compatible = [gpu for gpu in inventory
+                          if int(gpu[2].split(".")[0]) >= 580 and float(gpu[3]) >= 7.5]
+            if not compatible:
                 raise ValueError("CUDA 13 needs driver family >=580 and Turing or newer")
+            selected = compatible[0]
+        uuid, name, driver, capability = selected
+        print(f"Selected GPU: {name}; UUID: {uuid}; driver: {driver}; capability: {capability}")
+        if int(driver.split(".")[0]) < 580 or float(capability) < 7.5:
+            raise ValueError("Selected GPU does not support the CUDA 13 experiment")
         print("PASS hardware: driver-family/architecture gate; actual kernels checked below")
         stage = "checkout"
         with tempfile.TemporaryDirectory(prefix="podcast-cuda13-", dir=work_root) as folder:
@@ -60,22 +87,27 @@ def main(argv=None, *, run=subprocess.run, system=None, work_root=None):
             print(f"PASS checkout: pinned experiment {KUULAS_COMMIT}")
             stage = "install"
             bootstrap = root / "bootstrap"
-            run([sys.executable, "-m", "venv", str(bootstrap)], check=True, timeout=120)
+            child_env = {key: value for key, value in os.environ.items()
+                         if not key.startswith(("UV_", "PIP_"))
+                         and key not in {"VIRTUAL_ENV", "PYTHONPATH", "PYTHONHOME"}}
+            child_env["UV_PROJECT_ENVIRONMENT"] = str(kuulas / ".venv")
+            child_env["CUDA_VISIBLE_DEVICES"] = uuid
+            run([sys.executable, "-m", "venv", str(bootstrap)], env=child_env, check=True, timeout=120)
             python = str(bootstrap / "bin" / "python")
-            run([python, "-m", "pip", "install", "uv==" + UV_VERSION],
-                check=True, timeout=300)
+            run([python, "-m", "pip", "--isolated", "install", "uv==" + UV_VERSION],
+                env=child_env, check=True, timeout=300)
             uv = [python, "-m", "uv"]
             run([*uv, "sync", "--locked", "--extra", "transcribe", "--python", "3.13"],
-                cwd=kuulas, check=True, timeout=3600)
+                cwd=kuulas, env=child_env, check=True, timeout=3600)
             print("PASS install: isolated locked environment; no global packages changed")
             stage = "torch"
             command = [*uv, "run", "--frozen", "--extra", "transcribe", "python",
                        "scripts/cuda13_smoke.py"]
-            run([*command, "--check"], cwd=kuulas, check=True, timeout=180)
+            run([*command, "--check"], cwd=kuulas, env=child_env, check=True, timeout=180)
             print("PASS torch: CUDA 13 tensor calculation and TorchAudio API")
             if audio is not None:
                 stage = "transcription"
-                run([*command, str(audio)], cwd=kuulas, check=True, timeout=900)
+                run([*command, str(audio)], cwd=kuulas, env=child_env, check=True, timeout=900)
                 print("PASS transcription: nonempty GPU Whisper output, no CPU fallback")
             else:
                 print("NOT RUN transcription: pass a short speech WAV as the optional argument")

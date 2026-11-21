@@ -13,7 +13,13 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 
-@pytest.mark.parametrize("inventory", ["", "T4, 550.1, 7.5\n", "V100, 600.1, 7.0\n"])
+@pytest.fixture(autouse=True)
+def isolated_hardware_environment(monkeypatch):
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    monkeypatch.setattr(module.shutil, "which", lambda name: "nvidia-smi")
+
+
+@pytest.mark.parametrize("inventory", ["", "GPU-good, T4, 550.1, 7.5\n", "GPU-old, V100, 600.1, 7.0\n"])
 def test_failed_hardware_gate_never_installs_or_clones(inventory, tmp_path, capsys):
     calls = []
 
@@ -42,7 +48,7 @@ def test_no_wav_is_not_claimed_as_transcription_pass(tmp_path, capsys):
     def run(argv, **kwargs):
         calls.append(argv)
         if argv[0] == "nvidia-smi":
-            return SimpleNamespace(stdout="T4, 600.1, 7.5\n")
+            return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
         return SimpleNamespace(stdout=module.KUULAS_COMMIT + "\n")
 
     assert module.main([], run=run, system="Linux", work_root=tmp_path) == 0
@@ -58,7 +64,7 @@ def test_failed_install_does_not_run_gpu_smoke(tmp_path, capsys):
     def run(argv, **kwargs):
         calls.append(argv)
         if argv[0] == "nvidia-smi":
-            return SimpleNamespace(stdout="T4, 600.1, 7.5\n")
+            return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
         if "sync" in argv:
             raise subprocess.CalledProcessError(1, argv)
         return SimpleNamespace(stdout=module.KUULAS_COMMIT + "\n")
@@ -76,7 +82,7 @@ def test_wav_with_spaces_is_one_argument_and_cuda_processes_are_separate(tmp_pat
     def run(argv, **kwargs):
         calls.append(argv)
         if argv[0] == "nvidia-smi":
-            return SimpleNamespace(stdout="T4, 600.1, 7.5\n")
+            return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
         return SimpleNamespace(stdout=module.KUULAS_COMMIT + "\n")
 
     assert module.main([str(audio)], run=run, system="Linux", work_root=tmp_path) == 0
@@ -93,3 +99,69 @@ def test_native_windows_stops_before_commands(tmp_path, capsys):
 
     assert module.main([], run=run, system="Windows", work_root=tmp_path) == 1
     assert "FAIL platform" in capsys.readouterr().out
+
+
+def test_external_uv_environment_is_replaced_for_every_uv_command(tmp_path, monkeypatch):
+    monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", "/outside/important-env")
+    monkeypatch.setenv("VIRTUAL_ENV", "/outside/active")
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
+
+    assert module.main([], run=run, system="Linux", work_root=tmp_path) == 0
+    for argv, kwargs in calls:
+        if "uv" in argv:
+            assert Path(kwargs["env"]["UV_PROJECT_ENVIRONMENT"]).is_relative_to(tmp_path)
+            assert kwargs["env"]["UV_PROJECT_ENVIRONMENT"].endswith("kuulas/.venv")
+            assert "VIRTUAL_ENV" not in kwargs["env"]
+            assert kwargs["env"]["CUDA_VISIBLE_DEVICES"] == "GPU-good"
+
+
+def test_uuid_selection_ignores_hidden_old_gpu(tmp_path, monkeypatch):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-good")
+
+    def run(argv, **kwargs):
+        return SimpleNamespace(stdout="GPU-old, V100, 600.1, 7.0\nGPU-good, T4, 600.1, 7.5\n")
+
+    assert module.main([], run=run, system="Linux", work_root=tmp_path) == 0
+
+
+def test_empty_gpu_selection_fails_before_install(tmp_path, monkeypatch):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
+
+    assert module.main([], run=run, system="Linux", work_root=tmp_path) == 1
+    assert len(calls) == 1
+
+
+def test_wsl_nvidia_smi_fallback(tmp_path, monkeypatch):
+    monkeypatch.setattr(module.shutil, "which", lambda name: None)
+    original = Path.is_file
+    monkeypatch.setattr(Path, "is_file", lambda p: str(p) == "/usr/lib/wsl/lib/nvidia-smi" or original(p))
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
+
+    assert module.main([], run=run, system="Linux", work_root=tmp_path) == 0
+    assert calls[0][0] == "/usr/lib/wsl/lib/nvidia-smi"
+
+
+@pytest.mark.parametrize("selection", ["GPU-old", "-1", "MIG-unknown", "1", "0"])
+def test_unsupported_or_ambiguous_device_stops(tmp_path, monkeypatch, selection):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", selection)
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return SimpleNamespace(stdout="GPU-old, V100, 600.1, 7.0\nGPU-good, T4, 600.1, 7.5\n")
+
+    assert module.main([], run=run, system="Linux", work_root=tmp_path) == 1
+    assert len(calls) == 1

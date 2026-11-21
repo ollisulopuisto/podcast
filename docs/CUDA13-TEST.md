@@ -8,10 +8,14 @@ Each stage prints PASS or FAIL. Without a WAV it explicitly says NOT RUN transcr
 
 Temporary checkout/environments are removed on ordinary success/failure. uv and model download caches can remain in the user's normal cache directories; terminating the process abruptly can leave temporary files. Existing user audio is read only, never modified or uploaded by the script. Whisper weights come from the model host. No user credentials are required.
 
-Verification for this change: eight regression cases pass without network/GPU (old driver, old GPU, missing GPU, command error, install failure, WAV path with spaces, optional transcription and native-Windows rejection). The tests failed before implementation. Repository-wide Ruff 0.17.2 passes. The actual script rejects unavailable hardware here and exits 1 before installing. Real GPU install/inference, WSL2, Colab, driver compatibility and model downloads remain UNRUN. No GPU was available in the execution environment.
+Verification for this change: 17 regression cases pass without network/GPU (old driver, old GPU, missing GPU, command error, install failure, WAV path with spaces, optional transcription and native-Windows rejection). The tests failed before implementation. Repository-wide Ruff 0.17.2 passes. The actual script rejects unavailable hardware here and exits 1 before installing. Real GPU install/inference, WSL2, Colab, driver compatibility and model downloads remain UNRUN. No GPU was available in the execution environment.
 
 Sources:
 - https://docs.nvidia.com/deploy/cuda-compatibility/latest/minor-version-compatibility.html
 - https://docs.nvidia.com/cuda/wsl-user-guide/
 - https://docs.pytorch.org/audio/stable/installation.html
 - https://research.google.com/colaboratory/faq.html
+
+The runner now strips inherited uv/pip redirection settings, ignores user pip settings, and explicitly binds every uv sync/run to the temporary checkout's `.venv`. It also clears active-venv/Python-path overrides from its install/smoke children. PATH is checked for `nvidia-smi` first, with the documented WSL path as fallback.
+
+On a mixed-GPU host, select one supported device with `CUDA_VISIBLE_DEVICES=GPU-...` (the UUID from `nvidia-smi -L`). Only that selected GPU is validated and exposed to the smoke processes. Empty/disabled selections fail; ambiguous numeric selections on multiple-GPU hosts and MIG selections are rejected before downloads. With no visibility setting, the first compatible physical GPU is selected and printed. If a UUID list is supplied, the first device is the test device.
