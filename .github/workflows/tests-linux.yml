@@ -94,6 +94,9 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
+      - name: CUDA runner contract (no GPU or network)
+        run: uv run pytest scripts/tests/test_cuda13_test.py -q
+
       - name: workspace
         run: uv run pytest tests -q
 
