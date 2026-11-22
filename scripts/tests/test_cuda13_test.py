@@ -102,30 +102,49 @@ def test_native_windows_stops_before_commands(tmp_path, capsys):
 
 
 def test_external_uv_environment_is_replaced_for_every_uv_command(tmp_path, monkeypatch):
+    audio = tmp_path / "short speech.wav"
+    audio.write_bytes(b"path fixture, not decoded by mocked subprocess")
     monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", "/outside/important-env")
     monkeypatch.setenv("VIRTUAL_ENV", "/outside/active")
+    monkeypatch.setenv("UV_INDEX_URL", "https://invalid.example/uv")
+    monkeypatch.setenv("PIP_TARGET", "/outside/packages")
+    monkeypatch.setenv("PYTHONPATH", "/outside/imports")
+    monkeypatch.setenv("PYTHONHOME", "/outside/python")
     calls = []
 
     def run(argv, **kwargs):
         calls.append((argv, kwargs))
         return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
 
-    assert module.main([], run=run, system="Linux", work_root=tmp_path) == 0
+    assert module.main([str(audio)], run=run, system="Linux", work_root=tmp_path) == 0
     for argv, kwargs in calls:
         if "uv" in argv:
             assert Path(kwargs["env"]["UV_PROJECT_ENVIRONMENT"]).is_relative_to(tmp_path)
             assert kwargs["env"]["UV_PROJECT_ENVIRONMENT"].endswith("kuulas/.venv")
-            assert "VIRTUAL_ENV" not in kwargs["env"]
+            assert not {"VIRTUAL_ENV", "PYTHONPATH", "PYTHONHOME", "PIP_TARGET", "UV_INDEX_URL"} & kwargs["env"].keys()
+            assert {key for key in kwargs["env"] if key.startswith("UV_")} == {"UV_PROJECT_ENVIRONMENT"}
+            assert {key for key in kwargs["env"] if key.startswith("PIP_")} == {"PIP_CONFIG_FILE"}
+            assert kwargs["env"]["PIP_CONFIG_FILE"] == module.os.devnull
             assert kwargs["env"]["CUDA_VISIBLE_DEVICES"] == "GPU-good"
+    smoke = [(argv, kwargs) for argv, kwargs in calls if "scripts/cuda13_smoke.py" in argv]
+    assert [argv[-1] for argv, _kwargs in smoke] == ["--check", str(audio)]
 
 
 def test_uuid_selection_ignores_hidden_old_gpu(tmp_path, monkeypatch):
-    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-good")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-go")
+    audio = tmp_path / "speech.wav"
+    audio.write_bytes(b"path fixture, not decoded by mocked subprocess")
+    calls = []
 
     def run(argv, **kwargs):
+        calls.append((argv, kwargs))
         return SimpleNamespace(stdout="GPU-old, V100, 600.1, 7.0\nGPU-good, T4, 600.1, 7.5\n")
 
-    assert module.main([], run=run, system="Linux", work_root=tmp_path) == 0
+    assert module.main([str(audio)], run=run, system="Linux", work_root=tmp_path) == 0
+    smoke = [(argv, kwargs) for argv, kwargs in calls if "scripts/cuda13_smoke.py" in argv]
+    assert [argv[-1] for argv, _kwargs in smoke] == ["--check", str(audio)]
+    for _argv, kwargs in smoke:
+        assert kwargs["env"]["CUDA_VISIBLE_DEVICES"] == "GPU-good"
 
 
 def test_empty_gpu_selection_fails_before_install(tmp_path, monkeypatch):
