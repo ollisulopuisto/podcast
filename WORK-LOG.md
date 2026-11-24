@@ -48,7 +48,6 @@ pass. No real Colab/GPU install or inference run; no version bump or merge.
 Hint mutation replaces the tuple assignment through AST, not a version-string
 match. Pin-only0.0.1 mutation failed before test repair, then all three contracts
 passed with only wordalign.py changed; reverted to2.8.0 afterward. INSTALL
-readers and lazy installer use the shared tuple. CalVer deliberately left to
-the integrator per AGENTS/CLAUDE guidance: source PR is not a release, no tag or
-package publication here; shipped-resource changes need integrator bump before
-the next release. Version metadata remains consistent with uv.lock.
+readers and lazy installer use the shared tuple. CalVer follows the owner's standing instruction to bump each update:
+colab-transcribe2026.11.24.1, matching uv.lock workspace metadata. No dependency
+resolution change, publication, tag or merge.
