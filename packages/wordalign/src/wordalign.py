@@ -90,7 +90,8 @@ VERSION = "ctc1"
 
 
 #: Ohje, kun torch puuttuu. Kutsuja voi antaa omansa (``make_aligner(install=...)``).
-INSTALL = "pip install torch==2.8.0 torchaudio==2.8.0"
+ALIGN_PACKAGES = ("torch==2.8.0", "torchaudio==2.8.0")
+INSTALL = "pip install " + " ".join(ALIGN_PACKAGES)
 
 
 class AlignerUnavailable(RuntimeError):

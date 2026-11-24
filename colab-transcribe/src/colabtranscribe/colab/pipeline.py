@@ -1360,7 +1360,6 @@ ALIGN_SITE = "/content/aligner_site"
 ALIGN_PIP_TIMEOUT = 1800
 ALIGN_TIMEOUT = 7200
 ALIGN_MODULE = "/content/wordalign.py"
-ALIGN_PACKAGES = ["torch==2.8.0", "torchaudio==2.8.0"]
 ALIGN_TIMING = "ctc-v1"
 
 
@@ -1384,6 +1383,9 @@ def aligner_env():
 
 
 def install_aligner():
+    # Ajuri lataa tämän tiedoston vain --align-ajossa; tavallinen ajo ei tuo sitä.
+    from wordalign import ALIGN_PACKAGES
+
     subprocess.run(
         ["pip", "install", "-q", "--target", ALIGN_SITE, *ALIGN_PACKAGES],
         check=True,
