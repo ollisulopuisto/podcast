@@ -17,7 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-KUULAS_COMMIT = "5ba4e993c1a29b0bdaf21c4d6483ffb3104d0fd7"
+KUULAS_COMMIT = "d99454e6a3ededc4302fc2296c9c62d0ed0e590a"
 PODCAST_COMMIT = "40a7d503c2637e7c685c7ca1c56850385524600e"  # Snapshot with the path packages used to resolve the experiment.
 UV_VERSION = "0.13.9"
 
