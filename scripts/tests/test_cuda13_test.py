@@ -118,7 +118,7 @@ def test_external_uv_environment_is_replaced_for_every_uv_command(tmp_path, monk
 
     assert module.main([str(audio)], run=run, system="Linux", work_root=tmp_path) == 0
     for argv, kwargs in calls:
-        if "uv" in argv:
+        if any(Path(arg).name == "uv" for arg in argv):
             assert Path(kwargs["env"]["UV_PROJECT_ENVIRONMENT"]).is_relative_to(tmp_path)
             assert kwargs["env"]["UV_PROJECT_ENVIRONMENT"].endswith("kuulas/.venv")
             assert not {"VIRTUAL_ENV", "PYTHONPATH", "PYTHONHOME", "PIP_TARGET", "UV_INDEX_URL"} & kwargs["env"].keys()
@@ -210,3 +210,41 @@ def test_pip_config_cannot_redirect_bootstrap_install(tmp_path, monkeypatch):
     assert module.main([], run=run, system="Linux", work_root=tmp_path) == 0
     pip_call = next(kwargs for argv, kwargs in calls if "pip" in argv)
     assert pip_call["env"]["PIP_CONFIG_FILE"] == module.os.devnull
+
+
+def test_colab_without_ensurepip_never_calls_stdlib_venv(tmp_path):
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        if "venv" in argv:
+            raise subprocess.CalledProcessError(1, argv, stderr="ensurepip is not available")
+        return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
+
+    assert module.main([], run=run, system="Linux", work_root=tmp_path) == 0
+    assert not any("venv" in argv for argv, _ in calls)
+    argv, kwargs = next((argv, kw) for argv, kw in calls if "pip" in argv)
+    assert "--target" in argv and "--isolated" in argv
+    assert "uv==" + module.UV_VERSION in argv
+    assert Path(argv[argv.index("--target") + 1]).is_relative_to(tmp_path)
+    assert kwargs["capture_output"] and kwargs["text"]
+    assert not list(tmp_path.iterdir())
+
+
+def test_failed_bootstrap_reports_stderr_and_venv_repair_then_stops(tmp_path, capsys):
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        if "pip" in argv:
+            raise subprocess.CalledProcessError(1, argv, stderr="ensurepip subprocess exited 1")
+        return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
+
+    assert module.main([], run=run, system="Linux", work_root=tmp_path) == 1
+    output = capsys.readouterr().out
+    assert "FAIL install" in output
+    assert "ensurepip subprocess exited 1" in output
+    assert "python3-venv" in output
+    assert "sudo apt-get install -y python3-venv" in output
+    assert not any("sync" in argv or "scripts/cuda13_smoke.py" in argv for argv in calls)
+    assert not list(tmp_path.iterdir())

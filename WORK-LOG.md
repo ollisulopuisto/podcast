@@ -81,3 +81,6 @@ se ei ohita selaimen tekstihistoriaa. Ei avoimia löydöksiä.
 Ei fyysistä Mac-koetta, Final Cutia, pakattua sovellusta tai DSP-testisarjaa.
 Versio 2026.11.25.1 neljässä metadata-/lukkotiedostossa. Ei julkaisua,
 PR:n yhdistäminen odottaa erillistä käyttäjän sanaa. #264/#265 ennallaan.
+## 2026-11-24: Colab CUDA experiment bootstrap repair
+
+Owner: Instinct. Branch: fix/cuda13-colab-bootstrap. Replaces the stdlib venv/ensurepip bootstrap with pinned uv installed through isolated pip --target. uv's native binary creates the locked project environment; inherited pip/uv/Python redirects stay stripped. Captures install stderr and reports distro venv repair guidance without changing the machine. Updates the experiment pin to the PyAV<19 compatibility commit. Two new regressions failed first and all 23 runner tests now pass; full Ruff passes. No GPU inference or driver change performed. Separate PR, no merge.

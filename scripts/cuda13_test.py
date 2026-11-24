@@ -4,6 +4,8 @@
 Pass a short speech WAV path to include transcription. In Colab mount Drive
 first and pass its path. Audio is processed on the machine running this script.
 First use downloads several GB of packages and public Whisper model weights.
+Bootstrap uses isolated pip --target, not stdlib venv/ensurepip. Colab does
+not need python3-venv for this runner; bootstrap errors include stderr.
 """
 
 import argparse
@@ -15,7 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-KUULAS_COMMIT = "f22296ee821236a7611d8a337136055a07fb663d"
+KUULAS_COMMIT = "fb5a81329efaa71fcc84ef752e398869576ee992"
 PODCAST_COMMIT = "40a7d503c2637e7c685c7ca1c56850385524600e"  # Snapshot with the path packages used to resolve the experiment.
 UV_VERSION = "0.13.9"
 
@@ -95,13 +97,14 @@ def main(argv=None, *, run=subprocess.run, system=None, work_root=None):
             child_env["PIP_CONFIG_FILE"] = os.devnull
             child_env["UV_PROJECT_ENVIRONMENT"] = str(kuulas / ".venv")
             child_env["CUDA_VISIBLE_DEVICES"] = uuid
-            run([sys.executable, "-m", "venv", str(bootstrap)], env=child_env, check=True, timeout=120)
-            python = str(bootstrap / "bin" / "python")
-            run([python, "-m", "pip", "--isolated", "install", "uv==" + UV_VERSION],
-                env=child_env, check=True, timeout=300)
-            uv = [python, "-m", "uv"]
+            run([sys.executable, "-m", "pip", "--isolated", "install",
+                 "--target", str(bootstrap), "uv==" + UV_VERSION],
+                env=child_env, check=True, capture_output=True, text=True, timeout=300)
+            # Use the wheel's native executable directly, without importing from
+            # user site-packages or passing a PYTHONPATH into project Python.
+            uv = [str(bootstrap / "bin" / "uv")]
             run([*uv, "sync", "--locked", "--extra", "transcribe", "--python", "3.13"],
-                cwd=kuulas, env=child_env, check=True, timeout=3600)
+                cwd=kuulas, env=child_env, check=True, capture_output=True, text=True, timeout=3600)
             print("PASS install: isolated locked environment; no global packages changed")
             stage = "torch"
             command = [*uv, "run", "--frozen", "--extra", "transcribe", "python",
@@ -118,6 +121,14 @@ def main(argv=None, *, run=subprocess.run, system=None, work_root=None):
         return 0
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         print(f"FAIL {stage}: {type(error).__name__}: {error}")
+        if isinstance(error, subprocess.SubprocessError):
+            stderr = getattr(error, "stderr", None)
+            if stderr:
+                print(stderr.decode(errors="replace") if isinstance(stderr, bytes) else stderr)
+        if stage == "install":
+            print("If a Debian/Ubuntu Python reports venv/ensurepip unavailable, its repair is:\n"
+                  "sudo apt-get install -y python3-venv\n"
+                  "This runner avoids stdlib venv; do not change drivers or global pip packages.")
         print("STOP: later stages were not run. No driver install or CPU fallback attempted.")
         return 1
 
