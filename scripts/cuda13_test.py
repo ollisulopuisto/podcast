@@ -9,6 +9,7 @@ not need python3-venv for this runner; bootstrap errors include stderr.
 """
 
 import argparse
+import json
 import os
 import platform
 import shutil
@@ -25,6 +26,8 @@ UV_VERSION = "0.13.9"
 def main(argv=None, *, run=subprocess.run, system=None, work_root=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("wav", nargs="?", type=Path, help="optional local or mounted Drive WAV")
+    parser.add_argument("--kuulas-path", action="store_true",
+                        help="also test Kuulas local Whisper plus CTC alignment on the WAV")
     args = parser.parse_args(argv)
     if (system or platform.system()) != "Linux":
         print("FAIL platform: run in Linux, Colab or WSL2, not macOS/native Windows")
@@ -32,6 +35,9 @@ def main(argv=None, *, run=subprocess.run, system=None, work_root=None):
     audio = args.wav.expanduser().resolve() if args.wav is not None else None
     if audio is not None and (not audio.is_file() or audio.suffix.lower() != ".wav"):
         print("FAIL input: provide an existing short speech WAV; no downloads started")
+        return 1
+    if args.kuulas_path and audio is None:
+        print("FAIL input: --kuulas-path requires a speech WAV")
         return 1
     stage = "hardware"
     try:
@@ -111,6 +117,24 @@ def main(argv=None, *, run=subprocess.run, system=None, work_root=None):
                        "scripts/cuda13_smoke.py"]
             run([*command, "--check"], cwd=kuulas, env=child_env, check=True, timeout=180)
             print("PASS torch: CUDA 13 tensor calculation and TorchAudio API")
+            if args.kuulas_path:
+                stage = "kuulas-align"
+                result = run(
+                    [*uv, "run", "--frozen", "--extra", "transcribe", "python", "-c",
+                     "import json, sys, time; from kuulas.local_whisper import local; "
+                     "started = time.monotonic(); "
+                     "words = local(sys.argv[1], model='tiny', allow_low_memory=True); "
+                     "print(json.dumps({'words': words, 'elapsed': time.monotonic() - started}))",
+                     str(audio)],
+                    cwd=kuulas, env=child_env, check=True, capture_output=True, text=True, timeout=1800,
+                )
+                aligned = json.loads(result.stdout)
+                words = aligned["words"]
+                if not words:
+                    raise ValueError("Kuulas alignment returned zero words")
+                print(f"PASS kuulas-align: {len(words)} words; first five with flick timings: "
+                      f"{words[:5]}; elapsed {aligned['elapsed']:.2f}s; "
+                      "Kuulas local CPU int8 Whisper plus separate CTC worker, not a GPU claim")
             if audio is not None:
                 stage = "transcription"
                 # Discover only this project environment's package directories.
@@ -134,7 +158,7 @@ def main(argv=None, *, run=subprocess.run, system=None, work_root=None):
                 print("NOT RUN transcription: pass a short speech WAV as the optional argument")
         print("PASS requested stages; full Kuulas GUI, CTC model and other machines remain untested")
         return 0
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(f"FAIL {stage}: {type(error).__name__}: {error}")
         if isinstance(error, subprocess.SubprocessError):
             stderr = getattr(error, "stderr", None)

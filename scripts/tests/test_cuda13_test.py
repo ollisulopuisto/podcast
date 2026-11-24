@@ -272,3 +272,28 @@ def test_transcription_child_gets_project_cuda12_libraries_only(tmp_path, monkey
     assert first.endswith("site-packages/nvidia/cublas/lib")
     assert tail == "/existing/libs"
     assert smoke[0][1]["env"] is not smoke[1][1]["env"]
+
+
+@pytest.mark.parametrize("words, status", [([], 1), ([{"w": "hello", "s": 0, "e": 1}], 0)])
+def test_optional_kuulas_alignment_stage_reports_real_word_result(tmp_path, capsys, words, status):
+    import json
+
+    audio = tmp_path / "speech.wav"
+    audio.write_bytes(b"mock path")
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        if "-c" in argv and "kuulas.local_whisper" in argv[argv.index("-c") + 1]:
+            return SimpleNamespace(stdout=json.dumps({"words": words, "elapsed": 0.1}))
+        return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
+
+    assert module.main(["--kuulas-path", str(audio)], run=run, system="Linux", work_root=tmp_path) == status
+    output = capsys.readouterr().out
+    assert ("PASS kuulas-align" if status == 0 else "FAIL kuulas-align") in output
+    if status == 0:
+        assert "hello" in output and "1 words" in output
+    check = next(i for i, (argv, _) in enumerate(calls) if "--check" in argv)
+    align = next(i for i, (argv, _) in enumerate(calls) if "-c" in argv and "kuulas.local_whisper" in argv[argv.index("-c") + 1])
+    assert align > check
+    assert str(audio) == calls[align][0][-1]
