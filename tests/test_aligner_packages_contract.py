@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import subprocess
 import sys
@@ -25,7 +26,6 @@ def load(name, path):
 class AlignerPackagesContract(unittest.TestCase):
     def test_pip_argv_and_install_hint_follow_the_shared_tuple(self):
         align = load("wordalign", ALIGN)
-        self.assertEqual(align.ALIGN_PACKAGES, ("torch==2.8.0", "torchaudio==2.8.0"))
         self.assertEqual(align.INSTALL, "pip install " + " ".join(align.ALIGN_PACKAGES))
         pipeline = load("align_contract_pipeline", PIPELINE)
         with patch.dict(sys.modules, {"wordalign": align}):
@@ -43,7 +43,17 @@ class AlignerPackagesContract(unittest.TestCase):
                 self.assertEqual(run.call_args.args[0][-2:], list(align.ALIGN_PACKAGES))
 
     def test_install_hint_is_derived_when_tuple_changes(self):
-        source = ALIGN.read_text().replace('"torch==2.8.0"', '"torch==0.0.1"')
+        source = ALIGN.read_text()
+        tree = ast.parse(source)
+        assignments = [node for node in tree.body if isinstance(node, ast.Assign)
+                       and any(isinstance(target, ast.Name) and target.id == "ALIGN_PACKAGES"
+                               for target in node.targets)]
+        self.assertEqual(len(assignments), 1)
+        assignments[0].value = ast.Tuple(
+            elts=[ast.Constant("torch==0.0.1"), ast.Constant("torchaudio==0.0.2")],
+            ctx=ast.Load(),
+        )
+        source = ast.unparse(ast.fix_missing_locations(tree))
         with tempfile.TemporaryDirectory() as folder:
             changed = Path(folder) / "wordalign.py"
             changed.write_text(source)
@@ -82,8 +92,6 @@ assert seen == [{"align": False}], seen
                 timeout=30,
             )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-
 
 if __name__ == "__main__":
     unittest.main()

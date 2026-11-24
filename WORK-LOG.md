@@ -43,3 +43,12 @@ contract and unaligned isolated run.118 audio-mode, wordalign and new contract
 tests pass. Tests failed first on missing tuple; hardcoded installer mutation
 fails, restored implementation passes. Whole-repo Ruff0.17.2 and diff checks
 pass. No real Colab/GPU install or inference run; no version bump or merge.
+
+265 review follow-up: contract tests no longer duplicate production pins.
+Hint mutation replaces the tuple assignment through AST, not a version-string
+match. Pin-only0.0.1 mutation failed before test repair, then all three contracts
+passed with only wordalign.py changed; reverted to2.8.0 afterward. INSTALL
+readers and lazy installer use the shared tuple. CalVer deliberately left to
+the integrator per AGENTS/CLAUDE guidance: source PR is not a release, no tag or
+package publication here; shipped-resource changes need integrator bump before
+the next release. Version metadata remains consistent with uv.lock.
