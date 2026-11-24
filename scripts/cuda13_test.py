@@ -17,7 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-KUULAS_COMMIT = "fb5a81329efaa71fcc84ef752e398869576ee992"
+KUULAS_COMMIT = "5ba4e993c1a29b0bdaf21c4d6483ffb3104d0fd7"
 PODCAST_COMMIT = "40a7d503c2637e7c685c7ca1c56850385524600e"  # Snapshot with the path packages used to resolve the experiment.
 UV_VERSION = "0.13.9"
 
@@ -113,8 +113,23 @@ def main(argv=None, *, run=subprocess.run, system=None, work_root=None):
             print("PASS torch: CUDA 13 tensor calculation and TorchAudio API")
             if audio is not None:
                 stage = "transcription"
-                run([*command, str(audio)], cwd=kuulas, env=child_env, check=True, timeout=900)
-                print("PASS transcription: nonempty GPU Whisper output, no CPU fallback")
+                # Discover only this project environment's package directories.
+                # The dynamic loader must see them before the child starts.
+                libraries = run(
+                    [*uv, "run", "--frozen", "--extra", "transcribe", "python", "-c",
+                     "import os, pathlib, sysconfig; "
+                     "root = pathlib.Path(sysconfig.get_paths()['purelib']) / 'nvidia'; "
+                     "print(os.pathsep.join(str(root / name / 'lib') "
+                     "for name in ('cublas', 'cudnn') if (root / name / 'lib').is_dir()))"],
+                    cwd=kuulas, env=child_env, check=True, capture_output=True, text=True, timeout=60,
+                ).stdout.strip()
+                if not libraries:
+                    raise ValueError("project CUDA 12 library directories are missing")
+                transcription_env = child_env.copy()
+                existing = child_env.get("LD_LIBRARY_PATH", "")
+                transcription_env["LD_LIBRARY_PATH"] = libraries + (os.pathsep + existing if existing else "")
+                run([*command, str(audio)], cwd=kuulas, env=transcription_env, check=True, timeout=900)
+                print("PASS transcription: Torch CUDA 13 plus faster-whisper CUDA 12 libraries; nonempty GPU output, no CPU fallback")
             else:
                 print("NOT RUN transcription: pass a short speech WAV as the optional argument")
         print("PASS requested stages; full Kuulas GUI, CTC model and other machines remain untested")

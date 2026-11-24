@@ -248,3 +248,27 @@ def test_failed_bootstrap_reports_stderr_and_venv_repair_then_stops(tmp_path, ca
     assert "sudo apt-get install -y python3-venv" in output
     assert not any("sync" in argv or "scripts/cuda13_smoke.py" in argv for argv in calls)
     assert not list(tmp_path.iterdir())
+
+
+def test_transcription_child_gets_project_cuda12_libraries_only(tmp_path, monkeypatch):
+    audio = tmp_path / "speech.wav"
+    audio.write_bytes(b"mock path")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/existing/libs")
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        if "-c" in argv:
+            project = Path(kwargs["cwd"]) / ".venv" / "lib" / "python3.13" / "site-packages"
+            return SimpleNamespace(stdout=str(project / "nvidia/cublas/lib") + "\n")
+        return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
+
+    assert module.main([str(audio)], run=run, system="Linux", work_root=tmp_path) == 0
+    smoke = [(argv, kwargs) for argv, kwargs in calls if "scripts/cuda13_smoke.py" in argv]
+    assert smoke[0][1]["env"]["LD_LIBRARY_PATH"] == "/existing/libs"
+    path = smoke[1][1]["env"]["LD_LIBRARY_PATH"]
+    first, tail = path.split(module.os.pathsep, 1)
+    assert Path(first).is_relative_to(tmp_path)
+    assert first.endswith("site-packages/nvidia/cublas/lib")
+    assert tail == "/existing/libs"
+    assert smoke[0][1]["env"] is not smoke[1][1]["env"]
