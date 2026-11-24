@@ -34,6 +34,25 @@ Pass --kuulas-path with the WAV to run the actual Kuulas local_whisper.local pat
 
 ## Recorded owner Colab result, 2026-11-24 21:50 EET
 
-The owner supplied a successful Colab run on Tesla T4, driver 580.82.07, compute capability 7.5, Python 3.13 environment, torch 2.13.0+cu130 (CUDA build 13.0) and torchaudio 2.11.1+cu132. The runner at podcast commit 5f3321c4ee16483f28eeaf608e97748f739c8e16 pinned Kuulas experiment 5ba4e993c1a29b0bdaf21c4d6483ffb3104d0fd7 and podcast path packages 40a7d503c2637e7c685c7ca1c56850385524600e. Locked installation, the Torch CUDA tensor operation, TorchAudio MMS_FA API availability and faster-whisper GPU transcription of the JFK sample all passed without CPU fallback.
+Repository owner Olli Sulopuisto ran the Colab cell and supplied a successful run on Tesla T4, driver 580.82.07, compute capability 7.5, Python 3.13 environment, torch 2.13.0+cu130 (CUDA build 13.0) and torchaudio 2.11.1+cu132. The runner at podcast commit 5f3321c4ee16483f28eeaf608e97748f739c8e16 pinned Kuulas experiment 5ba4e993c1a29b0bdaf21c4d6483ffb3104d0fd7 and podcast path packages 40a7d503c2637e7c685c7ca1c56850385524600e. Locked installation, the Torch CUDA tensor operation, TorchAudio MMS_FA API availability and faster-whisper GPU transcription of the JFK sample all passed without CPU fallback.
 
 This proves Torch CUDA13 and faster-whisper with CUDA12 cuBLAS worked side by side on that T4 session. It does not prove CT2 CUDA13 support, full Kuulas GUI operation, actual CTC alignment or another machine. The result predates the OpenTelemetry-only lock bump and podcast commit 29a8dce8ce731a9e57c7189112b5b0a4272952fa adding --kuulas-path. The current PR head and that new Kuulas-call stage have not been run on a T4 in this recorded result. Source: owner's iMessage output at 21:50:38 EET, 2026-11-24.
+
+
+Selected console lines copied from the repository owner's pasted Colab output (GPU UUID omitted). These are evidence for the exact commits above, not a reviewer-run test:
+
+```text
+Selected GPU: Tesla T4; driver: 580.82.07; capability: 7.5
+PASS hardware: driver-family/architecture gate; actual kernels checked below
+PASS checkout: pinned experiment 5ba4e993c1a29b0bdaf21c4d6483ffb3104d0fd7
+PASS install: isolated locked environment; no global packages changed
+torch: 2.13.0+cu130
+torchaudio: 2.11.1+cu132
+Torch CUDA build: 13.0
+GPU: Tesla T4
+PASS: Torch CUDA 13 tensor operation and TorchAudio MMS_FA API
+PASS torch: CUDA 13 tensor calculation and TorchAudio API
+PASS: faster-whisper CUDA transcription completed without CPU fallback
+PASS transcription: Torch CUDA 13 plus faster-whisper CUDA 12 libraries; nonempty GPU output, no CPU fallback
+PASS requested stages; full Kuulas GUI, CTC model and other machines remain untested
+```
