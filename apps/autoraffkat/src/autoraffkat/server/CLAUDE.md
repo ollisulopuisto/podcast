@@ -82,7 +82,8 @@ anything that reacts without a row; it also fails on a `keydown` listener
 that does not go through `shortcutKey`. Adding a shortcut is adding a row and
 two translations.
 
-`mod` is ⌘ on a Mac and Ctrl elsewhere, for display only: the handler accepts
-either on every platform, as it always did. A key without a modifier never
+`mod` requires Command on Mac; physical Control belongs to the focused field.
+Elsewhere the existing Control/Command compatibility stays. Undo/redo in text
+fields remains native, not project history. A key without a modifier never
 fires while the user types in a text field, a select or an editable element
 (`isTypingTarget`) — `?` in a speaker's name is a letter.

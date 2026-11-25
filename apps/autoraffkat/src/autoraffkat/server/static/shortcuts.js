@@ -10,7 +10,7 @@
    Kentät kuten app.js:n SHORTCUTS-luettelossa; `run` saa painallustapahtuman,
    jotta esim. vaihtonäppäin voi suurentaa askelta. */
 
-/* Mac vai ei. Näkymä vain: käsittelijä hyväksyy ⌘:n ja Ctrl:n kummassakin.
+/* Mac vai ei. Macissa komennot vaativat ⌘:n, muualla myös Ctrl käy.
    iPad on Mac, koska sen näppäimistössä on ⌘. */
 function isMacLike(nav) {
   if (!nav) return false;
@@ -42,13 +42,13 @@ function comboText(combo, mac) {
   return `Ctrl+${combo.shift ? 'Shift+' : ''}${key}`;
 }
 
-/* aria-keyshortcuts: molemmat muuntimet, koska molemmat toimivat. */
+/* Avustava ohjelma saa vain toimivat muuntimet. */
 function ariaKeys(entry) {
   return (entry.combos || []).map((c) => {
     const key = c.key === ' ' ? 'Space' : (c.key.length === 1 ? c.key.toUpperCase() : c.key);
     const shift = c.shift ? 'Shift+' : '';
     const alt = c.alt ? 'Alt+' : '';
-    return c.mod ? `Meta+${shift}${key} Control+${shift}${key}` : `${alt}${shift}${key}`;
+    return c.mod ? (onMac() ? `Meta+${shift}${key}` : `Meta+${shift}${key} Control+${shift}${key}`) : `${alt}${shift}${key}`;
   }).join(' ');
 }
 
@@ -56,6 +56,7 @@ function ariaKeys(entry) {
    useimmilla näppäimistöillä, ja vaihto+⌘E vei ennenkin. Ilman muunninta
    olevaan yhdistelmään ei kelpaa ⌘ eikä Ctrl — ne ovat selaimen. */
 function matchesCombo(combo, e) {
+  if (onMac() && e.ctrlKey) return false;
   const mod = !!(e.metaKey || e.ctrlKey);
   if (!!combo.mod !== mod) return false;
   /* Alt ratkaisee ilman päämuunninta: tavalliseen yhdistelmään ei kelpaa
@@ -86,6 +87,7 @@ function isTypingTarget(el) {
 function findShortcutIn(shortcuts, e, scope) {
   const typing = isTypingTarget(e.target);
   return (shortcuts || []).find((s) => (s.scope || []).includes(scope)
+    && !(typing && (s.id === 'undo' || s.id === 'redo'))
     && (s.combos || []).some((c) => matchesCombo(c, e) && (c.mod || !typing))) || null;
 }
 
