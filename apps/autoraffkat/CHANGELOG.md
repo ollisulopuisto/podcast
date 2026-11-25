@@ -7,6 +7,16 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.25.1] - 2026-11-25
+
+### Fixed
+- Mac commands require Command, leaving physical Control-E/O to text editing.
+  Command-Z and Shift-Command-Z use text history while typing and project
+  history elsewhere. Existing Command actions stay assigned.
+- Macin komennot vaativat Commandin, joten Control-E/O jäävät tekstikentälle.
+  Command-Z ja Shift-Command-Z käyttävät kirjoitettaessa tekstihistoriaa,
+  muualla projektihistoriaa. Nykyiset Command-komennot säilyvät.
+
 ## [2026.11.20.2] - 2026-11-20
 
 ### Added
