@@ -3318,7 +3318,7 @@ function renderStatic() {
 
    Kentät:
    * `combos`: näppäinyhdistelmät. `mod` on ⌘ Macissa ja Ctrl muualla —
-     käsittelijä hyväksyy kumman tahansa kummassakin, kuten ennenkin.
+     Macissa Ctrl jää tekstikentälle, muualla molemmat toimivat.
    * `scope`: missä yhdistelmä toimii. `page` = sivu ilman avointa ohjetta,
      `sheet` = ohjeikkuna auki.
    * `control`: painike jonka kylkeen näppäin piirretään, ja `text` sen nimi.

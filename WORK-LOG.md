@@ -28,3 +28,26 @@ Linux/Python 3.13. Repository-wide Ruff 0.17.2 and git diff --check pass.
 No network/GPU operations occur in the test stubs. Real hardware acceptance is
 still unrun. Duplicate check: inspected open/recent PRs, branch list and main;
 #263 is the only CUDA experiment runner work, so its existing tests are extended.
+
+
+## 2026-11-25: Macin tekstikenttien pikanäppäimet
+
+Haara `fix/mac-text-shortcut-ownership`, kb-audit-autoraffkat. Jaettu
+`shortcuts.js` hylkää Macissa fyysisen Controlin, myös Commandin kanssa.
+Command-E/O säilyvät, muualla vanha Control/Command-yhteensopivuus säilyy.
+Kumoaminen ja uudelleenteko jätetään tekstikentässä selaimelle; muualla
+projektihistorialle. Molemmat sivut käyttävät samaa koneistoa. ARIA-vihje
+kertoo Macissa vain toimivan Command-yhdistelmän.
+
+Uusi tuotantokoneiston testi ensin punainen: Mac Control-O kaappautui.
+Korjauksen jälkeen 94 käyttöliittymä-, näppäin-, traileri- ja valikkotestiä
+läpi; mukana koko renderöinnin savutesti. Ruff koko repossa puhdas.
+Työtilan sopimustestit: 267 läpi, 3 alustan ohitusta, 16 alitestiä;
+yksi ympäristövirhe, zsh:n käynnistys estetty PermissionErrorilla.
+Oma vastahakoinen katselmointi RAN: jäljitetty molemmat rekisterit,
+keydown-käsittelijät, tekstitila, ARIA/vihjeet ja natiivivalikkosilta.
+Natiivivalikon projektihistoria on vain vihje, ei keyEquivalent, joten
+se ei ohita selaimen tekstihistoriaa. Ei avoimia löydöksiä.
+Ei fyysistä Mac-koetta, Final Cutia, pakattua sovellusta tai DSP-testisarjaa.
+Versio 2026.11.25.1 neljässä metadata-/lukkotiedostossa. Ei julkaisua,
+PR:n yhdistäminen odottaa erillistä käyttäjän sanaa. #264/#265 ennallaan.

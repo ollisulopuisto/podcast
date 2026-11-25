@@ -167,7 +167,8 @@ def test_the_handler_reacts_only_to_registered_keys(run):
         ]
         assert not stray, (where, stray)
     keys = {(r["key"], tuple(r["mods"])) for r in battery["page"]}
-    assert ("e", ("metaKey",)) in keys and ("o", ("ctrlKey",)) in keys
+    assert ("e", ("metaKey",)) in keys
+    assert (("o", ("ctrlKey",)) in keys) == (run["platform"] != "mac")
     assert ("?", ()) in keys and ("?", ("shiftKey",)) in keys
 
 
@@ -288,8 +289,8 @@ def test_the_modifier_is_cmd_on_a_mac_and_ctrl_elsewhere(mac, other):
         assert "⌘E" in mac["sheet"][lang]["rows"]["export"]
         assert "Ctrl+E" in other["sheet"][lang]["rows"]["export"]
         assert "⌘" not in other["sheet"][lang]["text"]
-    # Ruudunlukijalle kumpikin, koska kumpikin toimii kummassakin.
-    assert mac["hints"]["en"]["export"]["aria"] == "Meta+E Control+E"
+    # Macissa ruudunlukijalle vain Command.
+    assert mac["hints"]["en"]["export"]["aria"] == "Meta+E"
     assert other["hints"]["en"]["export"]["aria"] == "Meta+E Control+E"
 
 
@@ -298,8 +299,9 @@ def test_the_old_shortcuts_still_work(run):
     """⌘E ja Ctrl+O tekevät saman kuin ennen, myös tekstikentästä."""
     sc = run["scenarios"]
     assert sc["cmdE"] == {"exports": 1, "prevented": True}
-    assert sc["ctrlShiftE"] == 2, "vaihto+Ctrl+E vei ennenkin"
-    assert sc["ctrlOFromField"] == {"opens": 1, "prevented": True}
+    mac = run["platform"] == "mac"
+    assert sc["ctrlShiftE"] == (1 if mac else 2)
+    assert sc["ctrlOFromField"] == {"opens": 0 if mac else 1, "prevented": not mac}
     assert sc["cmdEFromSheet"] == {"exports": 1, "closed": True}
 
 
@@ -311,3 +313,13 @@ def test_shift_tells_apart_the_command_pairs(run):
     assert pairs["cmdShiftR"] == ["render"]
     assert pairs["cmdZ"] == ["undo"]
     assert pairs["cmdShiftZ"] == ["redo"]
+
+
+@needs_node
+def test_mac_control_and_focused_text_history():
+    """Macissa Control ja tekstin kumoaminen eivät aja projektikomentoja."""
+    done = subprocess.run(
+        ["node", str(HARNESS.with_name("ui_mac_shortcut_ownership.js"))],
+        capture_output=True, text=True, encoding="utf-8", timeout=20,
+    )
+    assert done.returncode == 0, done.stderr or done.stdout
