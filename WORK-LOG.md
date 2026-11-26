@@ -29,6 +29,28 @@ No network/GPU operations occur in the test stubs. Real hardware acceptance is
 still unrun. Duplicate check: inspected open/recent PRs, branch list and main;
 #263 is the only CUDA experiment runner work, so its existing tests are extended.
 
+## 2026-11-24 - shared aligner installation tuple
+
+Structure-only move from main13850c0: wordalign.py owns ALIGN_PACKAGES and
+derives INSTALL; Colab install_aligner imports that tuple lazily. Torch and
+TorchAudio remain2.8.0, no dependency or lock change. The remote driver already
+uploads this single-file module only for --align; ordinary runs import none of
+it. Existing test covers upload-before-run and no upload without --align.
+Checked main, branches, open/recent PRs:264 is separate CUDA experiment and
+bootstrap work, no duplicate constant refactor. Own adversarial review traced
+the upload resource, install argv, unavailable error hint, ALIGN_TIMING/version
+contract and unaligned isolated run.118 audio-mode, wordalign and new contract
+tests pass. Tests failed first on missing tuple; hardcoded installer mutation
+fails, restored implementation passes. Whole-repo Ruff0.17.2 and diff checks
+pass. No real Colab/GPU install or inference run; no version bump or merge.
+
+265 review follow-up: contract tests no longer duplicate production pins.
+Hint mutation replaces the tuple assignment through AST, not a version-string
+match. Pin-only0.0.1 mutation failed before test repair, then all three contracts
+passed with only wordalign.py changed; reverted to2.8.0 afterward. INSTALL
+readers and lazy installer use the shared tuple. CalVer follows the owner's standing instruction to bump each update:
+colab-transcribe2026.11.24.1, matching uv.lock workspace metadata. No dependency
+resolution change, publication, tag or merge.
 
 ## 2026-11-25: Macin tekstikenttien pikanäppäimet
 
