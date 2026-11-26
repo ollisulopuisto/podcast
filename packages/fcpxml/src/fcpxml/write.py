@@ -83,7 +83,7 @@ def snap_pieces(pieces: Sequence[Piece], frame_duration: Fraction) -> list[Piece
     return snapped
 
 
-@dataclass
+@dataclass(slots=True)
 class _Plan:
     """What the cutting needs to know about the source."""
 

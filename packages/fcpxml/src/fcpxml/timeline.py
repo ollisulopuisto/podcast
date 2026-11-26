@@ -27,13 +27,25 @@ FPS_LABELS = {
 }
 
 
+_parse_cache: dict[str, Fraction] = {}
+
+
 def parse_time(value: str | None, default: Fraction = ZERO) -> Fraction:
-    """Reads an FCPXML time as a Fraction. ``None`` and empty give the default."""
+    """Reads an FCPXML time as a Fraction. ``None`` and empty give the default.
+
+    Cached on the text: timelines repeat the same frame-aligned values
+    thousands of times, and Fractions are immutable, so sharing is safe. A
+    plain dict keyed on the string only beats lru_cache here, which would
+    hash the Fraction default on every call.
+    """
     if value is None:
         return default
     text = value.strip()
     if not text:
         return default
+    hit = _parse_cache.get(text)
+    if hit is not None:
+        return hit
     if text.endswith("s"):
         text = text[:-1]
     if not text:
@@ -46,7 +58,10 @@ def parse_time(value: str | None, default: Fraction = ZERO) -> Fraction:
         result = Fraction(int(num), int(den))
     else:
         result = Fraction(int(text))
-    return -result if negative else result
+    result = -result if negative else result
+    if len(_parse_cache) < 8192:
+        _parse_cache[value.strip()] = result
+    return result
 
 
 def format_time(value: Fraction) -> str:
