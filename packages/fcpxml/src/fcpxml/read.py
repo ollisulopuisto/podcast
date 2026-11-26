@@ -26,7 +26,7 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from fractions import Fraction
 from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
@@ -97,7 +97,7 @@ class ReadError(Exception):
 # ------------------------------------------------------------------ resources
 
 
-@dataclass
+@dataclass(slots=True)
 class _Asset:
     """An ``<asset>`` resource as it is. No timeline positions yet."""
 
@@ -207,7 +207,7 @@ def _collect_resources(root) -> tuple[dict[str, _Asset], dict[str, dict], dict]:
 # ------------------------------------------------------------------ walking
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class _State:
     """What a container hands down to everything inside it.
 
@@ -226,7 +226,7 @@ class _State:
 _NO_STATE = _State()
 
 
-@dataclass
+@dataclass(slots=True)
 class _Hit:
     """One media occurrence that was found."""
 
@@ -236,7 +236,7 @@ class _Hit:
     angle_id: str = ""
 
 
-@dataclass
+@dataclass(slots=True)
 class _Ctx:
     """The state of the walk.
 
@@ -370,18 +370,23 @@ def _markers_of(elem, abs_offset: Fraction, local_start: Fraction) -> list[Marke
 
 
 def _register_spine_item(
-    ctx: _Ctx, child, abs_offset: Fraction, local_start: Fraction
+    ctx: _Ctx, child, base: Fraction
 ) -> int:
-    """Records a top-level spine item and returns its id."""
+    """Records a top-level spine item and returns its id.
+
+    ``base`` is the walk's ``abs_offset - local_start``, hoisted by the
+    caller because every sibling needs it too.
+    """
     ref = child.get("ref", "")
     duration = parse_time(child.get("duration"), ZERO)
-    if duration <= 0 and child.tag in LEAF_TAGS and ref in ctx.assets:
+    if duration.numerator <= 0 and child.tag in LEAF_TAGS and ref in ctx.assets:
         duration = ctx.assets[ref].duration
+    off = parse_time(child.get("offset"), ZERO)
     item = SpineItem(
         id=len(ctx.spine),
         kind=child.tag,
         name=child.get("name", ""),
-        offset=abs_offset + (parse_time(child.get("offset"), ZERO) - local_start),
+        offset=base + off if base else off,
         start=parse_time(child.get("start"), ZERO),
         duration=duration,
         ref=ref,
@@ -412,12 +417,16 @@ def _walk(
     """
     if depth > 12:
         return
+    # Hoisted: every child's absolute offset is its own offset plus this.
+    # Zero denominators are common (a project's spine starts at zero), and
+    # adding to a normalized Fraction is exact, so reuse the object.
+    base = abs_offset - local_start if local_start else abs_offset
     for child in elem:
         tag = child.tag
         item_state = state
         if elem is ctx.root and tag in SPINE_TAGS:
-            item_state = replace(state, container=_register_spine_item(
-                ctx, child, abs_offset, local_start))
+            item_state = _State(state.muted, state.unsupported, state.enabled,
+                                _register_spine_item(ctx, child, base))
 
         if tag in ("marker", "chapter-marker"):
             # A leaf's own markers go on its placement, below.
@@ -427,7 +436,8 @@ def _walk(
                     ctx.markers.append(marker)
             continue
         if tag == "transition":
-            offset = abs_offset + (parse_time(child.get("offset"), ZERO) - local_start)
+            off = parse_time(child.get("offset"), ZERO)
+            offset = base + off if base else off
             if _in(bounds, offset):
                 ctx.transitions.append(
                     Transition(
@@ -448,13 +458,17 @@ def _walk(
         child_offset = parse_time(child.get("offset"), ZERO)
         child_start = parse_time(child.get("start"), ZERO)
         child_dur = parse_time(child.get("duration"), ZERO)
-        child_abs = abs_offset + (child_offset - local_start)
+        child_abs = base + child_offset if base else child_offset
         lane = _int_attr(child, "lane", 0)
-        child_state = replace(
-            item_state,
-            enabled=item_state.enabled and child.get("enabled") != "0",
-            unsupported=item_state.unsupported + _unsupported(child),
-        )
+        enabled = item_state.enabled and child.get("enabled") != "0"
+        uns = _unsupported(child)
+        if enabled == item_state.enabled and not uns:
+            # Nothing changed: t + () is t for tuples, so reusing the
+            # parent's state is identity-equal to building a new one.
+            child_state = item_state
+        else:
+            child_state = _State(item_state.muted, item_state.unsupported + uns,
+                                 enabled, item_state.container)
 
         if tag == "audition":
             # Only the active alternative, which is the first child.
@@ -476,7 +490,7 @@ def _walk(
 
         ref = child.get("ref", "")
         if tag in LEAF_TAGS and ref in ctx.assets:
-            if child_dur <= 0:
+            if child_dur.numerator <= 0:
                 child_dur = ctx.assets[ref].duration
             # Muted audio is skipped: Final Cut has marked the role off in
             # the sync-source.
@@ -541,14 +555,16 @@ def _walk(
         # clip / sync-clip and unknown references.
         # A sync-clip can mute audio roles: collect them for the children.
         if tag == "sync-clip":
-            child_state = replace(child_state, muted=item_state.muted | _muted_roles(child))
+            child_state = _State(item_state.muted | _muted_roles(child),
+                                 child_state.unsupported, child_state.enabled,
+                                 child_state.container)
         _walk(child, child_abs, child_start, ctx, depth + 1, bounds, angle_id,
               child_state)
 
 
 def _span(offset: Fraction, duration: Fraction) -> Bounds:
     """A clip's own span, or ``None`` if no duration was stated."""
-    return (offset, offset + duration) if duration > 0 else None
+    return (offset, offset + duration) if duration.numerator > 0 else None
 
 
 def _clip(
@@ -560,11 +576,19 @@ def _clip(
     so the correspondence between timeline time and file time holds.
     """
     lo, hi = offset, offset + duration
+    clipped = False
     if bounds is not None:
-        lo = max(lo, bounds[0])
-        hi = min(hi, bounds[1])
-    if hi <= lo:
+        nlo, nhi = max(lo, bounds[0]), min(hi, bounds[1])
+        clipped = nlo != lo or nhi != hi
+        lo, hi = nlo, nhi
+    # Fractions are normalized with positive denominators, so the cross
+    # product compares without the Rational ABC dance.
+    if hi.numerator * lo.denominator <= lo.numerator * hi.denominator:
         return None
+    if not clipped:
+        # Unclipped: lo is offset and hi - lo is duration, so the source
+        # start and length need no fresh arithmetic.
+        return Placement(lo, start, duration, lane)
     return Placement(lo, start + (lo - offset), hi - lo, lane)
 
 

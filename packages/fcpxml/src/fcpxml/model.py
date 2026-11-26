@@ -15,7 +15,7 @@ from fractions import Fraction
 from .timeline import ZERO
 
 
-@dataclass
+@dataclass(slots=True)
 class Marker:
     """A ``<marker>`` or ``<chapter-marker>`` at a point on the timeline."""
 
@@ -26,7 +26,7 @@ class Marker:
     completed: bool | None = None  # a to-do marker: done or not; ``None`` if not one
 
 
-@dataclass
+@dataclass(slots=True)
 class Transition:
     """A ``<transition>`` on a spine: a cross dissolve and the like.
 
@@ -42,7 +42,7 @@ class Transition:
     has_video: bool = False
 
 
-@dataclass
+@dataclass(slots=True)
 class SpineItem:
     """One item on the project's spine itself: what a writer cuts.
 
@@ -65,7 +65,7 @@ class SpineItem:
         return self.offset + self.duration
 
 
-@dataclass
+@dataclass(slots=True)
 class Placement:
     """One occurrence of a media on the timeline.
 
@@ -106,7 +106,7 @@ class Placement:
         return self.start + (seconds - self.offset)
 
 
-@dataclass
+@dataclass(slots=True)
 class MediaItem:
     """One media found in the XML and its occurrences on the timeline.
 
@@ -159,7 +159,7 @@ class MediaItem:
         return p.source_at(seconds) - self.asset_start
 
 
-@dataclass
+@dataclass(slots=True)
 class MulticamRef:
     """One ``<mc-clip>`` on the timeline.
 
@@ -190,7 +190,7 @@ class MulticamRef:
         return self.start + (seconds - self.offset)
 
 
-@dataclass
+@dataclass(slots=True)
 class Track:
     """The unit of role assignment.
 
@@ -208,7 +208,7 @@ class Track:
     has_audio: bool = False
 
 
-@dataclass
+@dataclass(slots=True)
 class Format:
     """A ``<format>`` resource: the picture size and frame rate."""
 
@@ -223,7 +223,7 @@ class Format:
         return None if not self.frame_duration else 1 / self.frame_duration
 
 
-@dataclass
+@dataclass(slots=True)
 class Timeline:
     """A timeline that has been read."""
 

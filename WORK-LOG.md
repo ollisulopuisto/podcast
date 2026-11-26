@@ -1,5 +1,9 @@
 # Work log
 
+## 2026-11-26: fcpxml read walk -56% on large timelines
+
+Owner: Instinct. Branch: bolt/podcast-20261126-fcpxml-read-walk. Status: Review. `read_fcpxml` on a synthetic 4000-clip project (348 KB, built from `packages/fcpxml/tests/xml_builders.py`): 73.8 ms to 32.3 ms median of 25 runs (-56%), same sandbox session. The walk hoisted the loop-invariant `abs_offset - local_start`, skips zero-base adds and unclipped `_clip` arithmetic, builds `_State` directly instead of `dataclasses.replace`, caches parsed times in a dict keyed on the string (lru_cache hashed the Fraction default per call), compares Fractions by cross product and numerator sign instead of the Rational ABC path, and gives the dataclasses `slots=True`. Parity: `repr(dataclasses.asdict(timeline))` byte-identical before/after across the xml_fixtures documents (sync, project, multicam) and the 4000-clip file, `include_muted` both ways. 119 fcpxml tests pass; autoraffkat test_timeline + test_write 103 pass; repo-wide ruff clean. Pre-existing failure on clean main: tests/test_run_script.py zsh case (no zsh in this sandbox). Duplicate check: open/recent PRs and git log show no other fcpxml read-perf work. No merge authorized for this PR.
+
 ## CUDA 13 command-line test, 2026-11-21
 
 Owner: Instinct. Branch: agent/cuda13-test-script. Status: Review. Adds scripts/cuda13_test.py and stage/fail-closed tests for the owner-requested Linux/Colab/WSL2 experiment. No app dependencies, drivers, releases or main changes. See docs/CUDA13-TEST.md for checks and unrun GPU acceptance. No merge authorized for this PR.
