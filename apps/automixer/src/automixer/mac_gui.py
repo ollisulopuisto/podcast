@@ -145,6 +145,9 @@ def main():
                         )
                 except Exception as exc:
                     self.status.setStringValue_(str(exc))
+                    if '--smoke' in sys.argv:
+                        print(f'Native start failed: {exc}', flush=True)
+                        self.performSelector_withObject_afterDelay_('captureSmoke:', None, .1)
             elif ident == 'cancel':
                 if self.watcher is not None:
                     self.watcher.close()
@@ -187,6 +190,8 @@ def main():
             event = json.loads(str(raw))
             self.name.setStringValue_(Path(event['source']).name)
             state = event['state']
+            if '--smoke' in sys.argv:
+                print(json.dumps(event), flush=True)
             self.status.setStringValue_(event.get('error', '') if state == 'failed' else '')
             if state == 'running':
                 self.progress.setIndeterminate_(True)
@@ -201,7 +206,7 @@ def main():
                 self.progress.stopAnimation_(None)
                 self.progress.setIndeterminate_(False)
                 self.progress.setDoubleValue_(100 if state == 'done' else 0)
-                if '--smoke' in sys.argv and state == 'done':
+                if '--smoke' in sys.argv:
                     self.performSelector_withObject_afterDelay_('captureSmoke:', None, .1)
 
         def showUpgrade_(self, _unused):

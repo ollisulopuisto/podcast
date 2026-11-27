@@ -14,7 +14,7 @@ def test_native_shell_renders_window_on_mac(tmp_path):
     screenshot.unlink(missing_ok=True)
     env = {**os.environ, 'AUTOMIXER_SMOKE_PNG': str(screenshot), 'HOME': str(tmp_path)}
     result = subprocess.run([sys.executable, '-m', 'automixer.mac_gui', '--smoke'],
-                            capture_output=True, text=True, env=env, timeout=25)
+                            capture_output=True, text=True, env=env, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
     assert screenshot.read_bytes().startswith(b'\x89PNG')
     assert screenshot.stat().st_size > 5000

@@ -7,6 +7,11 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.27.7] - 2026-11-27
+
+### Changed
+- Native workflow smoke reports job events and captures failed terminal states too, so a failed child cannot look like an unexplained UI timeout. Allows cold-start processing time without weakening output checks.
+
 ## [2026.11.27.6] - 2026-11-27
 
 ### Added

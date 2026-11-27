@@ -259,7 +259,7 @@ wheels = [
 
 [[package]]
 name = "automixer"
-version = "2026.11.27.6"
+version = "2026.11.27.7"
 source = { editable = "apps/automixer" }
 dependencies = [
     { name = "mlx", marker = "sys_platform == 'darwin'" },
