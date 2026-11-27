@@ -1,4 +1,4 @@
-"""Fix the sound of one video file without touching the picture.
+"""Fix one audio or video file without touching any picture stream.
 
 The audio goes through the shared speech chain (`speechmix.chain.process`) —
 restoration plug-in first, then clean-up, levelling and a true-peak ceiling
@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from automixer.domain.processor import SpeechSettings
+from automixer.domain.settings import SpeechSettings
 from speechmix import chain, editor
 
 TARGET_LUFS = -16.0
@@ -160,7 +160,11 @@ def fix_video(
     if source.resolve() == target.resolve():
         raise VideoError("Refusing to overwrite the source file.")
 
+    if target.exists() or target.is_symlink():
+        raise VideoError(f"Output already exists: {target}")
+
     info = _probe(source)
+    has_video = any(s["codec_type"] == "video" for s in info["streams"])
     stream = _pick_audio(info, log)
     offset = float(stream.get("start_time", 0) or 0) - float(
         info["format"].get("start_time", 0) or 0
@@ -199,37 +203,52 @@ def fix_video(
         sf.write(fixed, processed.T, rate, subtype="FLOAT")
 
         codec = stream["codec_name"]
-        audio_codec = (
-            ["-c:a", codec] if codec.startswith("pcm_")
-            else ["-c:a", "aac", "-b:a", AAC_BITRATE]
+        if has_video:
+            audio_codec = (
+                ["-c:a", codec] if codec.startswith("pcm_")
+                else ["-c:a", "aac", "-b:a", AAC_BITRATE]
+            )
+        else:
+            codecs = {".wav": ["-c:a", "pcm_f32le"], ".flac": ["-c:a", "flac"],
+                      ".mp3": ["-c:a", "libmp3lame", "-b:a", "256k"],
+                      ".m4a": ["-c:a", "aac", "-b:a", AAC_BITRATE]}
+            if target.suffix.lower() not in codecs:
+                raise VideoError(f"Unsupported audio output format: {target.suffix}")
+            audio_codec = codecs[target.suffix.lower()]
+        # A unique sibling avoids concurrent jobs sharing/deleting a partial.
+        fd, partial_name = tempfile.mkstemp(
+            prefix=f".{target.stem}.partial-", suffix=target.suffix, dir=target.parent,
         )
-        partial = target.with_name(f".{target.name}.partial{target.suffix}")
+        os.close(fd)
+        partial = Path(partial_name)
         try:
-            _ffmpeg(
-                "-i", str(source),
-                "-itsoffset", f"{offset:.6f}", "-i", str(fixed),
-                "-map", "0:v", "-map", "1:a:0",
-                "-c:v", "copy", *audio_codec,
-                "-map_metadata", "0",
-                # The mp4 muxer writes Dolby Vision's dvcC/dvvC only at this
-                # level; without it the record is dropped (and refused below).
-                "-strict", "unofficial",
-                str(partial),
-            )
-            after = _picture(_probe(partial))
-        except Exception:
+            if has_video:
+                _ffmpeg(
+                    "-i", str(source),
+                    "-itsoffset", f"{offset:.6f}", "-i", str(fixed),
+                    "-map", "0:v", "-map", "1:a:0",
+                    "-c:v", "copy", *audio_codec,
+                    "-map_metadata", "0",
+                    # Preserve Dolby Vision configuration in MP4.
+                    "-strict", "unofficial", str(partial),
+                )
+                before, after = _picture(info), _picture(_probe(partial))
+                if before != after:
+                    lost = sorted(set(before["side_data"]) - set(after["side_data"]))
+                    changed = [k for k in before if k != "side_data" and before[k] != after[k]]
+                    raise VideoError(
+                        "The remux changed the picture's metadata; nothing was written. "
+                        f"Lost: {', '.join(lost) or '-'}. Changed: {', '.join(changed) or '-'}.",
+                    )
+            else:
+                _ffmpeg("-i", str(fixed), "-map", "0:a:0", *audio_codec, str(partial))
+            # Atomic exclusive publication: a target created mid-run is preserved.
+            try:
+                os.link(partial, target)
+            except FileExistsError as exc:
+                raise VideoError(f"Output already exists: {target}") from exc
+        finally:
             partial.unlink(missing_ok=True)
-            raise
-        before = _picture(info)
-        if before != after:
-            partial.unlink()
-            lost = sorted(set(before["side_data"]) - set(after["side_data"]))
-            changed = [k for k in before if k != "side_data" and before[k] != after[k]]
-            raise VideoError(
-                "The remux changed the picture's metadata; nothing was written. "
-                f"Lost: {', '.join(lost) or '-'}. Changed: {', '.join(changed) or '-'}."
-            )
-        os.replace(partial, target)
 
     log(f"Measured {result.measured_lufs:.1f} LUFS (mono), lifted {result.gain_db:+.1f} dB, "
         f"limiter {result.limiter_db:.1f} dB, PSR {result.psr_lu:.1f} LU")

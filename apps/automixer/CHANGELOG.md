@@ -7,6 +7,14 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.27.1] - 2026-11-27
+
+### Added
+- Single-file processing accepts audio-only WAV, MP3, M4A and FLAC files without loading Apple MLX. The existing shared speech chain is unchanged.
+
+### Fixed
+- Existing output files are refused, including files created by another job while processing. Temporary output files are unique and removed after failures.
+
 ## [2026.10.27.1] - 2026-10-27
 
 ### Added

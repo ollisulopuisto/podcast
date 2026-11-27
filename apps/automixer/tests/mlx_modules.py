@@ -16,5 +16,4 @@ NEEDS_MLX = (
     "test_plugin_is_shared.py",
     "test_processor.py",
     "test_shared_chain.py",
-    "test_video.py",
 )
