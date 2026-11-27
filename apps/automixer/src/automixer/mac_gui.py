@@ -75,6 +75,9 @@ def main():
             self.name.setFrame_(A.NSMakeRect(90, 210, 690, 24))
             view.addSubview_(self.name)
             self.progress = A.NSProgressIndicator.alloc().initWithFrame_(A.NSMakeRect(90, 187, 690, 8))
+            self.progress.setStyle_(A.NSProgressIndicatorStyleBar)
+            self.progress.setUsesThreadedAnimation_(False)
+            self.progress.setIndeterminate_(False)
             self.progress.setMinValue_(0)
             self.progress.setMaxValue_(100)
             view.addSubview_(self.progress)
@@ -179,6 +182,9 @@ def main():
         @objc.python_method
         def addPaths(self, paths):
             self.controller.add_paths(paths)
+            if self.watcher is not None and not self.controller.watching:
+                self.watcher.close()
+                self.watcher = None
             if self.controller.folder and not self.controller.files:
                 self.tabs.setSelectedSegment_(1)
                 self.name.setStringValue_(self.controller.folder.name)
@@ -220,8 +226,17 @@ def main():
                     self.progress.setDoubleValue_(percent)
             if state in {'done', 'failed', 'cancelled'}:
                 self.progress.stopAnimation_(None)
+                # Replace the animated backing view so its old presentation layer
+                # cannot keep displaying an indeterminate segment after publication.
+                old = self.progress
+                self.progress = A.NSProgressIndicator.alloc().initWithFrame_(old.frame())
+                self.progress.setStyle_(A.NSProgressIndicatorStyleBar)
                 self.progress.setIndeterminate_(False)
+                self.progress.setMinValue_(0)
+                self.progress.setMaxValue_(100)
                 self.progress.setDoubleValue_(100 if state == 'done' else 0)
+                old.superview().addSubview_(self.progress)
+                old.removeFromSuperview()
                 self.progress.setNeedsDisplay_(True)
                 if '--smoke' in sys.argv:
                     self.performSelector_withObject_afterDelay_('captureSmoke:', None, .5)
@@ -294,20 +309,28 @@ def main():
             self.tabChanged_(self.tabs)
             self.level.selectItemAtIndex_(0)
             self.levelChanged_(self.level)
-            self.addPaths([str(source)])
+            if '--smoke-folder' in sys.argv:
+                self.addPaths([str(self.state_dir)])
+                self.tabs.setSelectedSegment_(1)
+                self.tabChanged_(self.tabs)
+            else:
+                self.addPaths([str(source)])
             self.command_(self.buttons['start'])
-            if not self.controller._submitted:
+            if not self.controller._submitted and not self.controller.watching:
                 raise RuntimeError('Native Start did not submit the staged audio file')
 
         def captureSmoke_(self, _unused):
             import os
             import subprocess
             path = os.environ.get('AUTOMIXER_SMOKE_PNG', '/tmp/automixer-smoke.png')
+            assert self.progress.doubleValue() == 100, 'Capture requires a completed job'
             self.window.displayIfNeeded()
             # Capture WindowServer pixels, including native layer-backed controls.
             # NSView bitmap caching omits those controls on modern macOS.
             subprocess.run(['/usr/sbin/screencapture', '-x', '-l',
                             str(self.window.windowNumber()), path], check=True)
+            if self.watcher is not None:
+                self.watcher.close()
             self.controller.close()
             A.NSApp.stop_(None)
             # stop: takes effect only after run receives its next event.

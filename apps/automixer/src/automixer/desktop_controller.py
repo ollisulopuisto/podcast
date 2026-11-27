@@ -102,6 +102,8 @@ class Controller:
                     continue
                 path = path.resolve()
                 if path.is_dir():
+                    if self.folder != path:
+                        self.watching = False
                     self.folder = path
                 elif path.is_file() and path.suffix.lower() in MEDIA_SUFFIXES and path not in self.files:
                     self.files.append(path)

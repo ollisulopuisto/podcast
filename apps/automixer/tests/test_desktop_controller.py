@@ -136,3 +136,23 @@ def test_retry_source_rearms_failed_folder_fingerprint(tmp_path):
     c.retry_source(source)
     c.scan(now=4)
     assert [p for p, _ in c.queue.added] == [source, source]
+
+
+def test_changing_watched_folder_requires_explicit_new_start(tmp_path):
+    old, new = tmp_path / 'old', tmp_path / 'new'
+    old.mkdir()
+    new.mkdir()
+    source = new / 'one.wav'
+    source.touch()
+    c = desktop_controller.Controller(tmp_path / 'state', queue_factory=Queue)
+    c.add_paths([old])
+    c.start(mode='folder')
+    c.add_paths([new])
+    assert not c.watching
+    c.scan(now=0)
+    c.scan(now=2)
+    assert c.queue.added == []
+    c.start(mode='folder')
+    c.scan(now=3)
+    c.scan(now=5)
+    assert [p for p, _ in c.queue.added] == [source]

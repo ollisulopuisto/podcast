@@ -7,6 +7,15 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.27.10] - 2026-11-27
+
+### Fixed
+- Changing the selected watched folder stops the old observer and requires an explicit Start for the new folder.
+- Completed jobs replace the animated progress view with a determinate bar so stale animation cannot remain visible.
+
+### Added
+- Native Mac acceptance runs a real audio job through both Files and watched-folder modes.
+
 ## [2026.11.27.9] - 2026-11-27
 
 ### Added
