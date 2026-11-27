@@ -173,7 +173,13 @@ def test_real_workspace_lock_version_only_uses_dependency_scope(tmp_path, monkey
 
     choose = runpy.run_path(str(ROOT / 'scripts/ci_test_selection.py'))['select_changes']
     original = (ROOT / 'uv.lock').read_text()
-    changed = original.replace('name = "automixer"\nversion = "2026.10.28.1"', 'name = "automixer"\nversion = "2026.11.27.1"')
+    import tomllib
+    version = next(package['version'] for package in tomllib.loads(original)['package']
+                   if package['name'] == 'automixer')
+    changed = original.replace(
+        f'name = "automixer"\nversion = "{version}"',
+        f'name = "automixer"\nversion = "{version}.1"',
+    )
     assert original != changed
     (tmp_path / 'uv.lock').write_text(changed)
     monkeypatch.chdir(tmp_path)
