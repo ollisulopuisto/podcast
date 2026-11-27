@@ -87,7 +87,7 @@ def integrated_lufs(path) -> float:
     """ffmpegin oma ebur128 — ei sama mittari kuin ketjun pyloudnorm."""
     err = subprocess.run(
         ["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-map", "0:a",
-         "-af", "ebur128=framelog=quiet", "-f", "null", "-"],
+         "-af", "ebur128=framelog=verbose", "-f", "null", "-"],
         check=True, capture_output=True, text=True,
     ).stderr
     line = [x for x in err.splitlines() if x.strip().startswith("I:")][-1]
