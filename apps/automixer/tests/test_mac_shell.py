@@ -7,11 +7,16 @@ from pathlib import Path
 import pytest
 
 
+def screenshot_path(folder_mode):
+    base = Path(os.environ.get('AUTOMIXER_SMOKE_PNG', '/tmp/automixer-smoke.png'))
+    return base.with_name(base.stem + ('-folder' if folder_mode else '-files') + base.suffix)
+
+
 @pytest.mark.parametrize("folder_mode", [False, True])
 def test_native_shell_renders_window_on_mac(tmp_path, folder_mode):
     if sys.platform != 'darwin':
         pytest.skip('native AppKit requires macOS')
-    screenshot = Path(os.environ.get('AUTOMIXER_SMOKE_PNG', '/tmp/automixer-smoke.png'))
+    screenshot = screenshot_path(folder_mode)
     screenshot.unlink(missing_ok=True)
     env = {**os.environ, 'AUTOMIXER_SMOKE_PNG': str(screenshot), 'HOME': str(tmp_path)}
     result = subprocess.run([sys.executable, '-m', 'automixer.mac_gui', '--smoke',
@@ -30,3 +35,9 @@ def test_native_shell_renders_window_on_mac(tmp_path, folder_mode):
     assert audio.channels == 1
     assert audio.samplerate == 48000
     assert source.read_bytes() != output.read_bytes()
+
+
+def test_native_cases_keep_distinct_screenshots(monkeypatch):
+    monkeypatch.setenv('AUTOMIXER_SMOKE_PNG', '/tmp/automixer-smoke.png')
+    assert screenshot_path(False) == Path('/tmp/automixer-smoke-files.png')
+    assert screenshot_path(True) == Path('/tmp/automixer-smoke-folder.png')
