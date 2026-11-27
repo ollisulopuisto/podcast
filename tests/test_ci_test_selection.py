@@ -182,3 +182,9 @@ def test_real_workspace_lock_version_only_uses_dependency_scope(tmp_path, monkey
             'linux': ['automixer'], 'macos': ['automixer']}
     with patch.object(subprocess, 'check_output', side_effect=subprocess.CalledProcessError(128, 'git')):
         assert choose(['uv.lock'], 'missing') == {'linux': ['all'], 'macos': ['all']}
+
+
+def test_piped_pytest_failures_are_not_hidden_by_tee():
+    for name in ('tests.yml', 'tests-linux.yml'):
+        workflow = (ROOT / '.github/workflows' / name).read_text()
+        assert 'defaults:\n  run:\n    shell: bash' in workflow

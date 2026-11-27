@@ -20,6 +20,11 @@ concurrency:
 permissions:
   contents: read
 
+# Explicit bash enables pipefail for pytest output piped through tee.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   select:
     runs-on: ubuntu-latest
