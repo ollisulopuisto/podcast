@@ -7,6 +7,11 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.27.3] - 2026-11-27
+
+### Added
+- Folder-discovery state waits for stable file size and modification time, skips generated outputs, and saves successful file fingerprints across restarts. This is state groundwork; native filesystem event wiring and the GUI remain separate work.
+
 ## [2026.11.27.2] - 2026-11-27
 
 ### Added
