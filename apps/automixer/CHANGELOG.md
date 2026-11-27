@@ -7,6 +7,50 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.27.10] - 2026-11-27
+
+### Fixed
+- Changing the selected watched folder stops the old observer and requires an explicit Start for the new folder.
+- Completed jobs replace the animated progress view with a determinate bar so stale animation cannot remain visible.
+
+### Added
+- Native Mac acceptance runs a real audio job through both Files and watched-folder modes.
+
+## [2026.11.27.9] - 2026-11-27
+
+### Added
+- Missing media tools get one normal-location recheck before a native directory picker. The chosen directory must contain executable ffmpeg and ffprobe, is remembered, and only changes child-process PATH. File and folder failures can retry without losing success history.
+
+### Fixed
+- Native output smoke reads the backend's floating-point WAV with soundfile instead of the PCM-only wave reader, preserving duration/channel/rate/content assertions.
+
+## [2026.11.27.8] - 2026-11-27
+
+### Fixed
+- Native command dispatch reads button identifiers before menu represented objects; regression coverage checks a button that exposes both methods.
+- Native job smoke checks submission and records worker events before main-thread delivery to make a bridge stall diagnosable.
+
+## [2026.11.27.7] - 2026-11-27
+
+### Changed
+- Native workflow smoke reports job events and captures failed terminal states too, so a failed child cannot look like an unexplained UI timeout. Allows cold-start processing time without weakening output checks.
+
+## [2026.11.27.6] - 2026-11-27
+
+### Added
+- Native Mac smoke now stages a real audio file, exercises tab and level actions, starts processing through the window button, and captures the completed job. The test checks the published audio, not only window creation.
+
+## [2026.11.27.5] - 2026-11-27
+
+### Fixed
+- Files that fail or are cancelled can be retried with Start without repeating completed outputs.
+- Native smoke captures WindowServer pixels and wakes the AppKit loop after stopping, instead of timing out after producing a partial view bitmap.
+
+## [2026.11.27.4] - 2026-11-27
+
+### Added
+- Native Mac window groundwork for Files and Folder jobs, shared menu commands, drag-and-drop references and level selection. Native filesystem events feed stable-file discovery, and child processing holds an App Nap activity. This work is still awaiting Mac smoke and visual verification.
+
 ## [2026.11.27.3] - 2026-11-27
 
 ### Added

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import signal
+import sys
 
 from automixer import cli_video
 
@@ -21,8 +22,23 @@ def main():
 
     signal.signal(signal.SIGTERM, stop)
     try:
-        cli_video.fix_video(args.source, args.target, args.lufs, plugin=None,
-                            log=lambda line: print(line, flush=True))
+        if sys.platform == 'darwin':
+            from Foundation import (
+                NSActivityUserInitiatedAllowingIdleSystemSleep,
+                NSProcessInfo,
+            )
+            process = NSProcessInfo.processInfo()
+            token = process.beginActivityWithOptions_reason_(
+                NSActivityUserInitiatedAllowingIdleSystemSleep, 'Processing audio',
+            )
+        else:
+            process, token = None, None
+        try:
+            cli_video.fix_video(args.source, args.target, args.lufs, plugin=None,
+                                log=lambda line: print(line, flush=True))
+        finally:
+            if process is not None:
+                process.endActivity_(token)
     except (cli_video.VideoError, OSError) as exc:
         print(str(exc), flush=True)
         return 1

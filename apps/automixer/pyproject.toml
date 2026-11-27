@@ -1,11 +1,13 @@
 [project]
 name = "automixer"
-version = "2026.11.27.3"
+version = "2026.11.27.10"
 description = "Automatic podcast mixing on Apple Silicon: session config in, rendered mix out"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "speechmix",
+    "pyobjc-framework-Cocoa>=12.2; sys_platform == 'darwin'",
+    "watchdog>=6.0.0",
     # Hindenburgin istunnon luku ja aluesijoittelu, ks. `session.py`.
     "nhsx",
     # Apple Silicon only: the TUI and the in-memory mixer use mlx. The stems
@@ -27,6 +29,7 @@ automixer = "automixer.cli_mix:main"
 autoanalyze = "automixer.cli_analyze:main"
 autotui = "automixer.app:main"
 autovideo = "automixer.cli_video:main"
+automixer-gui = "automixer.mac_gui:main"
 automixer-beds = "automixer.cli_beds:main"
 
 # The importable package is `automixer`, living under src/.  Spelling the build

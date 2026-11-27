@@ -76,6 +76,11 @@ class FolderState:
                 del self._seen[key]
         return ready
 
+    def unsettled(self):
+        return any(key not in self._pending and self._completed.get(key) != value[0]
+                   and self._failed.get(key) != value[0]
+                   for key, value in self._seen.items())
+
     def complete(self, source):
         key = str(Path(source).resolve())
         if key not in self._pending:
