@@ -81,6 +81,9 @@ class MacFolderEvents:
         self._observer.start()
         self._checks.changed()
 
+    def changed(self):
+        self._checks.changed()
+
     def close(self):
         self._checks.close()
         self._observer.stop()

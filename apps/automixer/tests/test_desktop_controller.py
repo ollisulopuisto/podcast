@@ -104,3 +104,35 @@ def test_native_command_uses_button_identifier_before_represented_object():
             return 'folder'
     assert desktop_controller.command_id(Button()) == 'start'
     assert desktop_controller.command_id(MenuItem()) == 'folder'
+
+
+def test_media_tools_setting_validates_both_binaries_before_saving(tmp_path):
+    import pytest
+
+    from automixer.file_jobs import MissingTools
+    tools = tmp_path / 'tools'
+    tools.mkdir()
+    c = desktop_controller.Controller(tmp_path / 'state', queue_factory=Queue)
+    with pytest.raises(MissingTools):
+        c.set_media_tools(tools)
+    for name in ('ffmpeg', 'ffprobe'):
+        tool = tools / name
+        tool.write_text('#!/bin/sh\n')
+        tool.chmod(0o755)
+    c.set_media_tools(tools)
+    fresh = desktop_controller.Controller(tmp_path / 'state', queue_factory=Queue)
+    assert fresh.queue.media_tools_dir == tools
+
+
+def test_retry_source_rearms_failed_folder_fingerprint(tmp_path):
+    source = tmp_path / 'one.wav'
+    source.touch()
+    c = desktop_controller.Controller(tmp_path / 'state', queue_factory=Queue)
+    c.add_paths([tmp_path])
+    c.start(mode='folder')
+    c.scan(now=0)
+    c.scan(now=2)
+    c.queue.event({'source': str(source), 'state': 'failed'})
+    c.retry_source(source)
+    c.scan(now=4)
+    assert [p for p, _ in c.queue.added] == [source, source]

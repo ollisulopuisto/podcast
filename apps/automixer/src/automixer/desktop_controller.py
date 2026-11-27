@@ -6,7 +6,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from automixer.file_jobs import FileQueue, JobError
+from automixer.file_jobs import FileQueue, JobError, media_environment
 from automixer.folder_watch import MEDIA_SUFFIXES, FolderState, WatchError
 
 
@@ -22,6 +22,7 @@ class Command:
 COMMANDS = (
     Command('add', 'File', 'Add Files...', 'Lisää tiedostoja...', 'o'),
     Command('folder', 'File', 'Watch Folder...', 'Seuraa kansiota...', 'O'),
+    Command('tools', 'File', 'Choose Media Tools...', 'Valitse mediatyökalut...'),
     Command('start', 'Process', 'Start', 'Aloita', '\r'),
     Command('cancel', 'Process', 'Cancel', 'Peru', '.'),
     Command('reveal', 'File', 'Reveal Output', 'Näytä tulos Finderissa', 'r'),
@@ -72,6 +73,26 @@ class Controller:
         self._watched_pending = set()
         self._submitted = set()
         self.queue = queue_factory(on_event=self._event)
+        self._tools_path = Path(state_dir) / 'media-tools-dir'
+        try:
+            self.queue.media_tools_dir = Path(self._tools_path.read_text(encoding='utf-8').strip())
+        except FileNotFoundError:
+            self.queue.media_tools_dir = None
+
+    def set_media_tools(self, folder):
+        folder = Path(folder).resolve()
+        # Validate this directory, not a coincidental ffmpeg on the inherited PATH.
+        media_environment(path='', search_dirs=[folder])
+        self._tools_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self._tools_path.with_suffix('.partial')
+        temporary.write_text(str(folder), encoding='utf-8')
+        temporary.replace(self._tools_path)
+        self.queue.media_tools_dir = folder
+
+    def retry_source(self, source):
+        with self._lock:
+            self._watch.retry(source)
+            self._submitted.discard(Path(source))
 
     def add_paths(self, paths):
         with self._lock:

@@ -22,8 +22,9 @@ def test_native_shell_renders_window_on_mac(tmp_path):
     source = tmp_path / 'Library' / 'Application Support' / 'Automixer' / 'native-smoke.wav'
     output = source.with_name('native-smoke-mixed.wav')
     assert output.exists(), result.stdout + result.stderr
-    import wave
-    with wave.open(str(output), 'rb') as audio:
-        assert audio.getnframes() == 48000
-        assert audio.getnchannels() == 1
+    import soundfile as sf
+    audio = sf.info(output)
+    assert audio.frames == 48000
+    assert audio.channels == 1
+    assert audio.samplerate == 48000
     assert source.read_bytes() != output.read_bytes()

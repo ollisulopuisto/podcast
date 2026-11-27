@@ -7,6 +7,14 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.27.9] - 2026-11-27
+
+### Added
+- Missing media tools get one normal-location recheck before a native directory picker. The chosen directory must contain executable ffmpeg and ffprobe, is remembered, and only changes child-process PATH. File and folder failures can retry without losing success history.
+
+### Fixed
+- Native output smoke reads the backend's floating-point WAV with soundfile instead of the PCM-only wave reader, preserving duration/channel/rate/content assertions.
+
 ## [2026.11.27.8] - 2026-11-27
 
 ### Fixed

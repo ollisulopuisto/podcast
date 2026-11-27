@@ -42,6 +42,7 @@ def main():
             self.language = 'fi' if str(A.NSLocale.preferredLanguages()[0]).startswith('fi') else 'en'
             self.pending_paths = getattr(self, 'pending_paths', [])
             self.watcher = None
+            self.tool_retries = set()
             self.state_dir = Path.home() / 'Library' / 'Application Support' / APP_NAME
             self.controller = Controller(self.state_dir, on_event=self.event)
             self.window = A.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
@@ -138,6 +139,8 @@ def main():
                 panel.setAllowsMultipleSelection_(ident == 'add')
                 if panel.runModal() == A.NSModalResponseOK:
                     self.addPaths([url.path() for url in panel.URLs()])
+            elif ident == 'tools':
+                self.chooseMediaTools()
             elif ident == 'start':
                 try:
                     mode = 'folder' if self.tabs.selectedSegment() == 1 else 'files'
@@ -153,7 +156,7 @@ def main():
                     self.status.setStringValue_(str(exc))
                     if '--smoke' in sys.argv:
                         print(f'Native start failed: {exc}', flush=True)
-                        self.performSelector_withObject_afterDelay_('captureSmoke:', None, .1)
+                        self.performSelector_withObject_afterDelay_('captureSmoke:', None, .5)
             elif ident == 'cancel':
                 if self.watcher is not None:
                     self.watcher.close()
@@ -198,9 +201,14 @@ def main():
             event = json.loads(str(raw))
             self.name.setStringValue_(Path(event['source']).name)
             state = event['state']
+            if state == 'failed' and event.get('error_kind') == 'missing_tools' and '--smoke' not in sys.argv:
+                source = event['source']
+                if source not in self.tool_retries:
+                    self.tool_retries.add(source)
+                    self.performSelector_withObject_afterDelay_('retryTools:', source, .3)
             if '--smoke' in sys.argv:
                 print(json.dumps(event), flush=True)
-            self.status.setStringValue_(event.get('error', '') if state == 'failed' else '')
+            self.status.setStringValue_(event.get('error', '') if state == 'failed' and event.get('error_kind') != 'missing_tools' else '')
             if state == 'running':
                 self.progress.setIndeterminate_(True)
                 self.progress.startAnimation_(None)
@@ -214,8 +222,39 @@ def main():
                 self.progress.stopAnimation_(None)
                 self.progress.setIndeterminate_(False)
                 self.progress.setDoubleValue_(100 if state == 'done' else 0)
+                self.progress.setNeedsDisplay_(True)
                 if '--smoke' in sys.argv:
-                    self.performSelector_withObject_afterDelay_('captureSmoke:', None, .1)
+                    self.performSelector_withObject_afterDelay_('captureSmoke:', None, .5)
+
+        def retryTools_(self, source):
+            # Recheck normal locations once before asking for a custom directory.
+            from automixer.file_jobs import MissingTools, media_environment
+            try:
+                media_environment(tools_dir=self.controller.queue.media_tools_dir)
+            except MissingTools:
+                if not self.chooseMediaTools():
+                    return
+            self.controller.retry_source(str(source))
+            if self.controller.watching:
+                self.watcher.changed()
+            else:
+                self.controller.start(mode='files')
+
+        @objc.python_method
+        def chooseMediaTools(self):
+            panel = A.NSOpenPanel.openPanel()
+            panel.setMessage_(self.text('Choose the folder containing ffmpeg and ffprobe', 'Valitse kansio, jossa ovat ffmpeg ja ffprobe'))
+            panel.setCanChooseDirectories_(True)
+            panel.setCanChooseFiles_(False)
+            panel.setAllowsMultipleSelection_(False)
+            if panel.runModal() != A.NSModalResponseOK:
+                return False
+            try:
+                self.controller.set_media_tools(panel.URL().path())
+            except Exception as exc:
+                self.status.setStringValue_(str(exc))
+                return False
+            return True
 
         def showUpgrade_(self, _unused):
             from automixer import __version__

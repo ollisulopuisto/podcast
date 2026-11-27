@@ -23,34 +23,39 @@ class JobError(Exception):
     """The job failed without replacing its source or an existing target."""
 
 
+class MissingTools(JobError):
+    """Media tools can be supplied by choosing their directory."""
+
+
 class JobCancelled(JobError):
     """Cancellation requested before publication completed."""
 
 
-def media_environment(*, path=None, search_dirs=None):
+def media_environment(*, path=None, search_dirs=None, tools_dir=None):
     env = os.environ.copy()
     search = list(search_dirs if search_dirs is not None else [
         Path(sys.executable).parent / 'media', Path('/opt/homebrew/bin'),
         Path('/usr/local/bin'), Path('/usr/bin'), Path('/bin'),
     ])
-    env['PATH'] = os.pathsep.join([env.get('PATH', '') if path is None else path,
-                                 *(str(p) for p in search)])
+    inherited = env.get('PATH', '') if path is None else path
+    env['PATH'] = os.pathsep.join([*([str(tools_dir)] if tools_dir else []),
+                                 inherited, *(str(p) for p in search)])
     missing = [name for name in ('ffmpeg', 'ffprobe')
                if not shutil.which(name, path=env['PATH'])]
     if missing:
-        raise JobError('Media tools not found: ' + ', '.join(missing))
+        raise MissingTools('Media tools not found: ' + ', '.join(missing))
     env['PYTHONUNBUFFERED'] = '1'
     return env
 
 
-def output_for(source):
+def output_for(source, *, tools_dir=None):
     source = Path(source)
     suffix = source.suffix
     if suffix.lower() == '.mov' and source.exists():
         try:
             data = subprocess.run(
                 ['ffprobe', '-v', 'error', '-show_streams', '-of', 'json', str(source)],
-                env=media_environment(), check=True, capture_output=True, text=True,
+                env=media_environment(tools_dir=tools_dir) if tools_dir else media_environment(), check=True, capture_output=True, text=True,
             )
             info = json.loads(data.stdout)
         except (subprocess.SubprocessError, ValueError) as exc:
@@ -68,11 +73,11 @@ def worker_command(source, target, target_lufs=-16):
             str(target), '--lufs', str(target_lufs), '--no-plugin']
 
 
-def run_file(source, target, *, target_lufs=-16, cancel=None, log=lambda _line: None):
+def run_file(source, target, *, target_lufs=-16, cancel=None, log=lambda _line: None, tools_dir=None):
     cancel = cancel if cancel is not None else threading.Event()
     if cancel.is_set():
         raise JobCancelled('Cancelled')
-    env = media_environment()
+    env = media_environment(tools_dir=tools_dir) if tools_dir else media_environment()
     child = subprocess.Popen(worker_command(source, target, target_lufs), env=env,
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              text=True, start_new_session=os.name != 'nt')
@@ -141,6 +146,7 @@ class FileQueue:
         self._active = set()
         self._cancel = None
         self._closed = False
+        self.media_tools_dir = None
         self._thread = threading.Thread(target=self._work, daemon=True)
         self._thread.start()
 
@@ -195,11 +201,14 @@ class FileQueue:
             try:
                 if closed:
                     raise JobCancelled('Queue closed')
-                target = output_for(source)
+                target = output_for(source, tools_dir=self.media_tools_dir)
                 self._event(source, 'running', target=str(target))
                 self._run(source, target, target_lufs=target_lufs, cancel=cancel,
-                          log=lambda line, source=source: self._event(source, 'progress', line=line))
+                          log=lambda line, source=source: self._event(source, 'progress', line=line),
+                          **({'tools_dir': self.media_tools_dir} if self.media_tools_dir else {}))
                 self._event(source, 'done', target=str(target))
+            except MissingTools as exc:
+                self._event(source, 'failed', error=str(exc), error_kind='missing_tools')
             except JobCancelled:
                 self._event(source, 'cancelled')
             except Exception as exc:
