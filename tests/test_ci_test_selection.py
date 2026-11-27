@@ -188,3 +188,11 @@ def test_piped_pytest_failures_are_not_hidden_by_tee():
     for name in ('tests.yml', 'tests-linux.yml'):
         workflow = (ROOT / '.github/workflows' / name).read_text()
         assert 'defaults:\n  run:\n    shell: bash' in workflow
+
+
+def test_autoraffkat_undeclared_musicbed_import_is_installed_and_selected():
+    # package.py imports nhsx.musicbed although its manifest omits nhsx.
+    assert 'autoraffkat' in select_suites(['packages/nhsx/src/nhsx/musicbed.py'])['macos']
+    workflow = (ROOT / '.github/workflows/tests.yml').read_text()
+    job = workflow.split('\n  autoraffkat:', 1)[1].split('\n  automixer:', 1)[0]
+    assert '--package autoraffkat --package nhsx' in job

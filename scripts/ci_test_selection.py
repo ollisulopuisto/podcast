@@ -33,7 +33,7 @@ LIBRARY_SUITES = {
     },
     "packages/nhsx/": {
         "linux": {"nhsx", "automixer", "podcast-magic"},
-        "macos": {"automixer", "podcast-magic"},
+        "macos": {"automixer", "autoraffkat", "podcast-magic"},
     },
     "packages/silencelearn/": {
         "linux": {"silencelearn", "colab-transcribe", "podcast-magic"},
