@@ -7,6 +7,12 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.27.1] - 2026-11-27
+
+### Changed
+- Release version for the already merged large-timeline FCPXML reader speedup (#268). No additional behavior changes in this version bump.
+- Julkaisuversio jo yhdistetylle suurten FCPXML-aikajanojen lukunopeuden parannukselle (#268). Versionosto ei muuta toimintaa.
+
 ## [2026.11.25.1] - 2026-11-25
 
 ### Fixed
