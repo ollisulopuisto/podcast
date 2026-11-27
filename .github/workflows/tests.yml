@@ -119,6 +119,14 @@ jobs:
       - run: uv sync --locked --inexact --package automixer --group dev
       - name: automixer
         run: uv run --directory apps/automixer pytest -q -m "not mlx"
+      - name: Upload Automixer native GUI smoke screenshot
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: automixer-native-smoke
+          path: /tmp/automixer-smoke.png
+          if-no-files-found: warn
+          retention-days: 3
       - name: automixer — the mlx tests ran
         run: |
           uv run --directory apps/automixer pytest -m mlx -q --no-header -rs | tee /tmp/mlx.log
