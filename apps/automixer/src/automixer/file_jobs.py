@@ -37,6 +37,8 @@ def media_environment(*, path=None, search_dirs=None, tools_dir=None):
         Path(sys.executable).parent / 'media', Path('/opt/homebrew/bin'),
         Path('/usr/local/bin'), Path('/usr/bin'), Path('/bin'),
     ])
+    if search_dirs is None and hasattr(sys, '_MEIPASS'):
+        search.insert(0, Path(sys._MEIPASS) / 'bin')
     inherited = env.get('PATH', '') if path is None else path
     env['PATH'] = os.pathsep.join([*([str(tools_dir)] if tools_dir else []),
                                  inherited, *(str(p) for p in search)])
