@@ -7,6 +7,11 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.27.6] - 2026-11-27
+
+### Added
+- Native Mac smoke now stages a real audio file, exercises tab and level actions, starts processing through the window button, and captures the completed job. The test checks the published audio, not only window creation.
+
 ## [2026.11.27.5] - 2026-11-27
 
 ### Fixed

@@ -201,6 +201,8 @@ def main():
                 self.progress.stopAnimation_(None)
                 self.progress.setIndeterminate_(False)
                 self.progress.setDoubleValue_(100 if state == 'done' else 0)
+                if '--smoke' in sys.argv and state == 'done':
+                    self.performSelector_withObject_afterDelay_('captureSmoke:', None, .1)
 
         def showUpgrade_(self, _unused):
             from automixer import __version__
@@ -225,6 +227,25 @@ def main():
             alert.runModal()
 
         def smoke_(self, _unused):
+            import math
+            import struct
+            import wave
+            self.state_dir.mkdir(parents=True, exist_ok=True)
+            source = self.state_dir / 'native-smoke.wav'
+            with wave.open(str(source), 'wb') as audio:
+                audio.setparams((1, 2, 48000, 48000, 'NONE', 'not compressed'))
+                audio.writeframes(b''.join(struct.pack('<h', int(800 * math.sin(i * 440 * 2 * math.pi / 48000))) for i in range(48000)))
+            # Use the same native actions as a user, including tab and level changes.
+            self.tabs.setSelectedSegment_(1)
+            self.tabChanged_(self.tabs)
+            self.tabs.setSelectedSegment_(0)
+            self.tabChanged_(self.tabs)
+            self.level.selectItemAtIndex_(0)
+            self.levelChanged_(self.level)
+            self.addPaths([str(source)])
+            self.command_(self.buttons['start'])
+
+        def captureSmoke_(self, _unused):
             import os
             import subprocess
             path = os.environ.get('AUTOMIXER_SMOKE_PNG', '/tmp/automixer-smoke.png')
