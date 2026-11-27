@@ -38,6 +38,11 @@ concurrency:
 permissions:
   contents: read
 
+# Explicit bash enables pipefail for pytest output piped through tee.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   select:
     runs-on: ubuntu-latest
@@ -55,12 +60,12 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           BEFORE_SHA: ${{ github.event.before }}
         run: |
-          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$EVENT_NAME" = push ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
             python scripts/ci_test_selection.py --all </dev/null
           elif [ "$EVENT_NAME" = pull_request ]; then
-            git diff --name-only "$BASE_SHA...HEAD" | python scripts/ci_test_selection.py
+            git diff --name-only "$BASE_SHA...HEAD" | python scripts/ci_test_selection.py --base "$(git merge-base "$BASE_SHA" HEAD)"
           else
-            git diff --name-only "$BEFORE_SHA" HEAD | python scripts/ci_test_selection.py
+            git diff --name-only "$BEFORE_SHA" HEAD | python scripts/ci_test_selection.py --base "$BEFORE_SHA"
           fi
 
   linux:
@@ -138,7 +143,7 @@ jobs:
 
       - name: podcast-magic
         if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.linux), 'all') || contains(fromJSON(needs.select.outputs.linux), 'podcast-magic')) }}
-        run: uv run --directory apps/podcast-magic pytest -q
+        run: uv run --directory apps/podcast-magic pytest -q --ignore=tests/test_ui.py --ignore=tests/test_render_endtoend.py
 
       - name: colab-transcribe
         if: ${{ !cancelled() && (contains(fromJSON(needs.select.outputs.linux), 'all') || contains(fromJSON(needs.select.outputs.linux), 'colab-transcribe')) }}

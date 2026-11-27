@@ -501,7 +501,7 @@ def test_ci_runs_every_members_tests_and_lints_everything():
     linux = (ROOT / ".github" / "workflows" / "tests-linux.yml").read_text(encoding="utf-8")
     assert "continue-on-error" not in mac.replace("`continue-on-error`", "")
     assert "continue-on-error" not in linux.replace("`continue-on-error`", "")
-    assert re.search(r"run: uv run ruff check \.\s*$", mac, re.MULTILINE)
+    # Lint/contracts run once in the portable workflow, not on paid Mac jobs.
     assert re.search(r"run: uv run ruff check \.\s*$", linux, re.MULTILINE)
     for member in MEMBERS:
         if not (member / "tests").is_dir():
