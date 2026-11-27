@@ -88,3 +88,20 @@ Owner: Instinct. Branch: fix/cuda13-colab-bootstrap. Replaces the stdlib venv/en
 CUDA runtime follow-up: pin Kuulas experiment 5ba4e993c1a29b0bdaf21c4d6483ffb3104d0fd7 with Linux CUDA12 cuBLAS (and its required nvrtc dependency). The transcription child alone gets project cuBLAS/cuDNN library paths before launch. Added mocked isolation/path regression, failed first then passed, all 24 runner tests and full Ruff pass. No library symlinks or GPU claims. Actual T4 verification remains with the owner.
 
 Optional Kuulas end-to-end stage: --kuulas-path calls local_whisper.local with tiny and low-memory override after Torch, reports nonempty aligned word records/flick timestamps and elapsed time, then runs the separate GPU transcription smoke. Two mocked result cases failed first, all26 runner tests and full Ruff pass. Reviewed subprocess boundaries, input validation and CPU-vs-GPU claims against actual local_whisper implementation. No real model/GPU execution here, no merge.
+
+## 2026-11-27: Automixer Apple Silicon packaging
+
+Separate packaging branch stacked above the GUI. Native PyInstaller bundle,
+manifest-derived version, arm64-only standalone media binaries, frozen
+Files/Folder synthetic-audio smoke and minimal JIT entitlements. One new
+Mac-only workflow approved by owner: PRs build/test without signing secrets;
+manual main builds sign, notarize, staple and publish a versioned DMG only
+after the frozen smoke. Existing signing helpers and pinned media downloader
+reused. No mic entitlement or third-party plug-in permission added. StdIO
+retained for the GUI's isolated worker protocol. Source-path environment and
+Homebrew PATH stripped for frozen acceptance. Local tests cover tool discovery,
+platform refusal and build arguments, not a real Mac bundle. Own review traced
+worker re-entry, media resolution, signing gates and draft-first publication.
+Actual Mac freezing, hardened-runtime behavior and notarization remain pending.
+
+Packaging review follow-up: PR job is now explicitly contents:read with no signing or publishing steps; the separate write-capable release job and each credential step require manual dispatch on main. PyInstaller is selected by a dedicated root dependency group, resolved through the existing hash-bearing uv.lock entry, rather than an ephemeral --with installation. Release collision preflight now lists published and draft tags and fails on either. Workflow boundary regression and permissions tests pass (15); actual frozen Mac and notarization checks remain pending.
