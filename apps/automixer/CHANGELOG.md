@@ -7,6 +7,12 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.27.8] - 2026-11-27
+
+### Fixed
+- Native command dispatch reads button identifiers before menu represented objects; regression coverage checks a button that exposes both methods.
+- Native job smoke checks submission and records worker events before main-thread delivery to make a bridge stall diagnosable.
+
 ## [2026.11.27.7] - 2026-11-27
 
 ### Changed

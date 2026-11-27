@@ -12,6 +12,7 @@ from pathlib import Path
 from automixer.desktop_controller import (
     COMMANDS,
     Controller,
+    command_id,
     progress_percent,
     shortcut_text,
 )
@@ -27,6 +28,9 @@ def main():
         return worker_main()
     if sys.platform != 'darwin':
         raise RuntimeError('The native Automixer window requires macOS')
+    if '--smoke' in sys.argv:
+        import faulthandler
+        faulthandler.dump_traceback_later(20)
     import AppKit as A
     import objc
     from Foundation import NSObject, NSThread
@@ -124,7 +128,9 @@ def main():
             A.NSApp.setMainMenu_(bar)
 
         def command_(self, sender):
-            ident = sender.representedObject() if hasattr(sender, 'representedObject') else sender.identifier()
+            ident = command_id(sender)
+            if '--smoke' in sys.argv:
+                print(f'Native command: {ident}', flush=True)
             if ident in {'add', 'folder'}:
                 panel = A.NSOpenPanel.openPanel()
                 panel.setCanChooseDirectories_(ident == 'folder')
@@ -184,6 +190,8 @@ def main():
 
         @objc.python_method
         def event(self, event):
+            if '--smoke' in sys.argv:
+                print('Worker event: ' + json.dumps(event), flush=True)
             self.performSelectorOnMainThread_withObject_waitUntilDone_('receiveEvent:', json.dumps(event), False)
 
         def receiveEvent_(self, raw):
@@ -249,6 +257,8 @@ def main():
             self.levelChanged_(self.level)
             self.addPaths([str(source)])
             self.command_(self.buttons['start'])
+            if not self.controller._submitted:
+                raise RuntimeError('Native Start did not submit the staged audio file')
 
         def captureSmoke_(self, _unused):
             import os

@@ -91,3 +91,16 @@ def test_start_retries_failure_and_cancel_but_never_repeats_success(tmp_path):
     assert [item[0] for item in c.queue.added] == sources + sources[:2]
     c.start()
     assert len(c.queue.added) == 5
+
+
+def test_native_command_uses_button_identifier_before_represented_object():
+    class Button:
+        def identifier(self):
+            return 'start'
+        def representedObject(self):
+            return None
+    class MenuItem:
+        def representedObject(self):
+            return 'folder'
+    assert desktop_controller.command_id(Button()) == 'start'
+    assert desktop_controller.command_id(MenuItem()) == 'folder'

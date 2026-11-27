@@ -31,6 +31,13 @@ COMMANDS = (
 )
 
 
+def command_id(sender):
+    ident = sender.identifier() if hasattr(sender, 'identifier') else None
+    if not ident and hasattr(sender, 'representedObject'):
+        ident = sender.representedObject()
+    return str(ident) if ident else None
+
+
 def shortcut_text(language='en'):
     return '\n'.join(
         f'{c.title_fi if language == "fi" else c.title_en}: ⌘{c.key.upper()}'
