@@ -1,0 +1,132 @@
+name: Automixer macOS package
+
+on:
+  pull_request:
+    paths:
+      - apps/automixer/**
+      - packages/speechmix/**
+      - packages/nhsx/**
+      - scripts/build_automixer_macos.py
+      - scripts/smoke_automixer_macos.py
+      - .github/workflows/build-automixer-macos.yml
+      - uv.lock
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: automixer-package-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  package:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      UV_NO_SYNC: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Refuse publishing from a branch
+        if: github.event_name != 'pull_request'
+        run: test "$GITHUB_REF" = refs/heads/main
+      - name: Install selected app and build tools
+        run: |
+          test "$(uname -m)" = arm64
+          uv sync --locked --only-group dev
+          uv sync --locked --inexact --package automixer
+      - name: Fetch verified standalone media tools
+        run: uv run python apps/autoraffkat/scripts/fetch_binaries.py --os darwin --dest "$RUNNER_TEMP/media"
+      - name: Import existing Developer ID signing identity
+        if: github.event_name != 'pull_request'
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$BUILD_CERTIFICATE_BASE64"
+          test -n "$P12_PASSWORD"
+          test -n "$KEYCHAIN_PASSWORD"
+          export KEYCHAIN_PATH="$RUNNER_TEMP/automixer-signing.keychain-db"
+          export CERTIFICATE_PATH="$RUNNER_TEMP/automixer-signing.p12"
+          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 -D -o "$CERTIFICATE_PATH"
+          python3 scripts/macos_ci_credentials.py import-certificate
+          rm -f "$CERTIFICATE_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -F 'Developer ID Application: Olli Sulopuisto (LWSR8T5392)'
+          echo 'APPLE_SIGNING_IDENTITY=Developer ID Application: Olli Sulopuisto (LWSR8T5392)' >> "$GITHUB_ENV"
+      - name: Freeze arm64 app
+        run: uv run --with pyinstaller==6.22.3 python scripts/build_automixer_macos.py --media-dir "$RUNNER_TEMP/media"
+      - name: Verify frozen signature and run real GUI audio jobs
+        run: |
+          codesign --verify --deep --strict dist/automixer-macos/Automixer.app
+          uv run --no-project python scripts/smoke_automixer_macos.py dist/automixer-macos/Automixer.app --captures "$RUNNER_TEMP/frozen-captures"
+      - name: Upload frozen acceptance captures
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: automixer-frozen-captures
+          path: ${{ runner.temp }}/frozen-captures/*.png
+          retention-days: 3
+          if-no-files-found: warn
+      - name: Build signed disk image
+        if: github.event_name != 'pull_request'
+        run: |
+          version=$(uv run --no-project python -c 'import tomllib; print(tomllib.load(open("apps/automixer/pyproject.toml", "rb"))["project"]["version"])')
+          echo "AUTOMIXER_VERSION=$version" >> "$GITHUB_ENV"
+          echo "DMG_PATH=dist/Automixer-${version}-arm64.dmg" >> "$GITHUB_ENV"
+          staging="$RUNNER_TEMP/automixer-dmg"
+          mkdir "$staging"
+          ditto dist/automixer-macos/Automixer.app "$staging/Automixer.app"
+          ln -s /Applications "$staging/Applications"
+          hdiutil create -srcfolder "$staging" -volname Automixer -format UDZO "dist/Automixer-${version}-arm64.dmg"
+          codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "dist/Automixer-${version}-arm64.dmg"
+      - name: Notarize and staple, fail closed
+        if: github.event_name != 'pull_request'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: LWSR8T5392
+        run: |
+          set -euo pipefail
+          test -n "$APPLE_ID"
+          test -n "$APPLE_APP_PASSWORD"
+          export KEYCHAIN_PATH="$RUNNER_TEMP/automixer-signing.keychain-db"
+          python3 scripts/macos_ci_credentials.py store-notary-credentials
+          xcrun notarytool submit "$DMG_PATH" --keychain-profile ci-notary --keychain "$KEYCHAIN_PATH" --wait --timeout 45m --output-format json > "$RUNNER_TEMP/notary.json"
+          python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))["status"] == "Accepted"' "$RUNNER_TEMP/notary.json"
+          xcrun stapler staple "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG_PATH"
+          codesign --verify --verbose=2 "$DMG_PATH"
+      - name: Publish verified DMG as a release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="automixer-gui-v${AUTOMIXER_VERSION}"
+          # Never overwrite a version or publish a half-uploaded release.
+          if gh release view "$tag"; then echo 'Version already published'; exit 1; fi
+          shasum -a 256 "$DMG_PATH" > "${DMG_PATH}.sha256"
+          gh release create "$tag" --target "$GITHUB_SHA" --draft --title "Automixer ${AUTOMIXER_VERSION} (Apple Silicon)" --notes 'Signed and notarized Apple Silicon app. Files and watched-folder synthetic audio workflows passed in the frozen app; real user episodes and native dialog recovery remain unverified.' "$DMG_PATH" "${DMG_PATH}.sha256"
+          gh release edit "$tag" --draft=false
+      - name: Remove signing material
+        if: ${{ always() && github.event_name != 'pull_request' }}
+        run: |
+          rm -f "$RUNNER_TEMP/automixer-signing.p12"
+          if [ -f "$RUNNER_TEMP/automixer-signing.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/automixer-signing.keychain-db"
+          fi

@@ -27,7 +27,7 @@ a = Analysis([str(APP / 'packaging/launcher.py')],
              excludes=['tkinter', 'IPython', 'matplotlib', 'pytest'])
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='Automixer',
-          console=False, argv_emulation=False, target_arch='arm64',
+          console=True, argv_emulation=False, target_arch='arm64',
           codesign_identity=identity, entitlements_file=entitlements)
 coll = COLLECT(exe, a.binaries, a.datas, name='Automixer')
 app = BUNDLE(coll, name='Automixer.app', bundle_identifier='com.sulopuis.automixer',
