@@ -37,5 +37,6 @@ def test_pr_has_read_only_token_and_no_secrets_or_release_operations():
             assert "if: github.ref == 'refs/heads/main'" in block
     assert 'gh release list --limit 1000 --json tagName,isDraft' in release
     assert '--with pyinstaller' not in workflow
-    assert '--group automixer-build' in workflow
+    assert '--only-group dev --only-group automixer-build' in workflow
+    assert '--only-group dev --group ' not in workflow
     assert 'name = "pyinstaller"' in (ROOT / 'uv.lock').read_text()

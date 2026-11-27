@@ -43,7 +43,7 @@ jobs:
       - name: Install selected app and build tools
         run: |
           test "$(uname -m)" = arm64
-          uv sync --locked --only-group dev --group automixer-build
+          uv sync --locked --only-group dev --only-group automixer-build
           uv sync --locked --inexact --package automixer
       - name: Fetch verified standalone media tools
         run: uv run python apps/autoraffkat/scripts/fetch_binaries.py --os darwin --dest "$RUNNER_TEMP/media"
@@ -83,7 +83,7 @@ jobs:
       - name: Install selected app and build tools
         run: |
           test "$(uname -m)" = arm64
-          uv sync --locked --only-group dev --group automixer-build
+          uv sync --locked --only-group dev --only-group automixer-build
           uv sync --locked --inexact --package automixer
       - name: Fetch verified standalone media tools
         run: uv run python apps/autoraffkat/scripts/fetch_binaries.py --os darwin --dest "$RUNNER_TEMP/media"
