@@ -1,6 +1,7 @@
 """UI-independent command registry and desktop job coordination."""
 from __future__ import annotations
 
+import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +36,14 @@ def shortcut_text(language='en'):
         f'{c.title_fi if language == "fi" else c.title_en}: ⌘{c.key.upper()}'
         for c in COMMANDS if c.key
     )
+
+
+def progress_percent(line):
+    match = re.fullmatch(r'\s+[A-Za-z_ -]+ \((\d{1,3})%\)', line)
+    if match and 0 <= int(match[1]) <= 100:
+        # Chain completion is not publication; reserve the last 5% for encoding.
+        return min(95, int(match[1]))
+    return None
 
 
 class Controller:

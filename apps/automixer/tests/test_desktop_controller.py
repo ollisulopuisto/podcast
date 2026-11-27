@@ -68,3 +68,11 @@ def test_symlink_and_explicit_files_mode_do_not_start_folder(tmp_path):
     c.add_paths([tmp_path])
     c.start(mode='files')
     assert not c.watching
+
+
+def test_progress_is_clamped_and_only_chain_stage_lines_count():
+    from automixer.desktop_controller import progress_percent
+    assert progress_percent('  cleanup (10%)') == 10
+    assert progress_percent('  lag (100%)') == 95
+    assert progress_percent('  bad (999%)') is None
+    assert progress_percent('Measured -16 LUFS') is None

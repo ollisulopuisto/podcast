@@ -9,7 +9,12 @@ import sys
 import threading
 from pathlib import Path
 
-from automixer.desktop_controller import COMMANDS, Controller, shortcut_text
+from automixer.desktop_controller import (
+    COMMANDS,
+    Controller,
+    progress_percent,
+    shortcut_text,
+)
 
 APP_NAME = 'Automixer'
 BUNDLE_ID = 'com.sulopuis.automixer'
@@ -31,6 +36,7 @@ def main():
     class Delegate(NSObject):
         def applicationDidFinishLaunching_(self, _notification):
             self.language = 'fi' if str(A.NSLocale.preferredLanguages()[0]).startswith('fi') else 'en'
+            self.pending_paths = getattr(self, 'pending_paths', [])
             self.watcher = None
             self.state_dir = Path.home() / 'Library' / 'Application Support' / APP_NAME
             self.controller = Controller(self.state_dir, on_event=self.event)
@@ -81,6 +87,9 @@ def main():
             self.installMenu()
             self.window.makeKeyAndOrderFront_(None)
             A.NSApp.activateIgnoringOtherApps_(True)
+            self.addPaths(self.pending_paths)
+            if '--smoke' not in sys.argv:
+                self.performSelector_withObject_afterDelay_('showUpgrade:', None, .3)
             if '--smoke' in sys.argv:
                 self.performSelector_withObject_afterDelay_('smoke:', None, 1.0)
             for arg in [] if '--smoke' in sys.argv else sys.argv[1:]:
@@ -145,10 +154,12 @@ def main():
                 if self.controller.outputs:
                     url = A.NSURL.fileURLWithPath_(list(self.controller.outputs.values())[-1])
                     A.NSWorkspace.sharedWorkspace().activateFileViewerSelectingURLs_([url])
-            elif ident in {'changes', 'shortcuts'}:
+            elif ident == 'changes':
+                self.showChanges()
+            elif ident == 'shortcuts':
                 alert = A.NSAlert.alloc().init()
-                alert.setMessageText_(self.text("What's New", 'Uutta tässä versiossa') if ident == 'changes' else self.text('Keyboard Shortcuts', 'Pikanäppäimet'))
-                alert.setInformativeText_(shortcut_text(self.language) if ident == 'shortcuts' else self.text('Single-file and watched-folder audio processing.', 'Yksittäisten tiedostojen ja seuratun kansion äänen käsittely.'))
+                alert.setMessageText_(self.text('Keyboard Shortcuts', 'Pikanäppäimet'))
+                alert.setInformativeText_(shortcut_text(self.language))
                 alert.runModal()
             elif ident == 'quit':
                 A.NSApp.terminate_(None)
@@ -180,10 +191,38 @@ def main():
             if state == 'running':
                 self.progress.setIndeterminate_(True)
                 self.progress.startAnimation_(None)
+            if state == 'progress':
+                percent = progress_percent(event.get('line', ''))
+                if percent is not None:
+                    self.progress.stopAnimation_(None)
+                    self.progress.setIndeterminate_(False)
+                    self.progress.setDoubleValue_(percent)
             if state in {'done', 'failed', 'cancelled'}:
                 self.progress.stopAnimation_(None)
                 self.progress.setIndeterminate_(False)
                 self.progress.setDoubleValue_(100 if state == 'done' else 0)
+
+        def showUpgrade_(self, _unused):
+            from automixer import __version__
+            seen = self.state_dir / 'seen-version'
+            try:
+                previous = seen.read_text(encoding='utf-8')
+            except FileNotFoundError:
+                previous = None
+            if previous is not None and previous != __version__:
+                self.showChanges()
+            self.state_dir.mkdir(parents=True, exist_ok=True)
+            seen.write_text(__version__, encoding='utf-8')
+
+        @objc.python_method
+        def showChanges(self):
+            alert = A.NSAlert.alloc().init()
+            alert.setMessageText_(self.text("What's New", 'Uutta tässä versiossa'))
+            alert.setInformativeText_(self.text(
+                'Single-file and watched-folder audio processing. Files are referenced, not copied. Existing outputs are never replaced.',
+                'Yksittäisten tiedostojen ja seuratun kansion äänen käsittely. Tiedostoihin viitataan, niitä ei kopioida. Olemassa olevia tuloksia ei korvata.',
+            ))
+            alert.runModal()
 
         def smoke_(self, _unused):
             import os
@@ -200,6 +239,8 @@ def main():
         def application_openFiles_(self, app, paths):
             if hasattr(self, 'controller'):
                 self.addPaths(paths)
+            else:
+                self.pending_paths = list(paths)
             app.replyToOpenOrPrint_(A.NSApplicationDelegateReplySuccess)
 
         def applicationShouldTerminate_(self, _app):
