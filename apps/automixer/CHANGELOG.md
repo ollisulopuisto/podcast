@@ -7,6 +7,11 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.27.2] - 2026-11-27
+
+### Added
+- Desktop job-runner groundwork: isolated single-file child processes, one job at a time, progress callbacks, cancellation, beside-source `-mixed` outputs and media-tool discovery for Finder launches. No GUI or watched-folder interface is included yet.
+
 ## [2026.11.27.1] - 2026-11-27
 
 ### Added
