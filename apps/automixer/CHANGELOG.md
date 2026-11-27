@@ -7,6 +7,11 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.27.4] - 2026-11-27
+
+### Added
+- Native Mac window groundwork for Files and Folder jobs, shared menu commands, drag-and-drop references and level selection. Native filesystem events feed stable-file discovery, and child processing holds an App Nap activity. This work is still awaiting Mac smoke and visual verification.
+
 ## [2026.11.27.3] - 2026-11-27
 
 ### Added

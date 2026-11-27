@@ -63,7 +63,8 @@ def output_for(source):
 
 
 def worker_command(source, target, target_lufs=-16):
-    return [sys.executable, '-m', 'automixer.file_worker', str(source),
+    prefix = [sys.executable, '--file-worker'] if getattr(sys, 'frozen', False) else [sys.executable, '-m', 'automixer.file_worker']
+    return [*prefix, str(source),
             str(target), '--lufs', str(target_lufs), '--no-plugin']
 
 
