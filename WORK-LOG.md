@@ -103,3 +103,5 @@ Homebrew PATH stripped for frozen acceptance. Local tests cover tool discovery,
 platform refusal and build arguments, not a real Mac bundle. Own review traced
 worker re-entry, media resolution, signing gates and draft-first publication.
 Actual Mac freezing, hardened-runtime behavior and notarization remain pending.
+
+Packaging review follow-up: PR job is now explicitly contents:read with no signing or publishing steps; the separate write-capable release job and each credential step require manual dispatch on main. PyInstaller is selected by a dedicated root dependency group, resolved through the existing hash-bearing uv.lock entry, rather than an ephemeral --with installation. Release collision preflight now lists published and draft tags and fails on either. Workflow boundary regression and permissions tests pass (15); actual frozen Mac and notarization checks remain pending.

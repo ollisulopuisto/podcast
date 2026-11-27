@@ -25,8 +25,46 @@ defaults:
 
 jobs:
   package:
+    if: github.event_name == 'pull_request'
     runs-on: macos-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      UV_NO_SYNC: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install selected app and build tools
+        run: |
+          test "$(uname -m)" = arm64
+          uv sync --locked --only-group dev --group automixer-build
+          uv sync --locked --inexact --package automixer
+      - name: Fetch verified standalone media tools
+        run: uv run python apps/autoraffkat/scripts/fetch_binaries.py --os darwin --dest "$RUNNER_TEMP/media"
+      - name: Freeze arm64 app
+        run: uv run python scripts/build_automixer_macos.py --media-dir "$RUNNER_TEMP/media"
+      - name: Verify frozen signature and run real GUI audio jobs
+        run: |
+          codesign --verify --deep --strict dist/automixer-macos/Automixer.app
+          uv run --no-project python scripts/smoke_automixer_macos.py dist/automixer-macos/Automixer.app --captures "$RUNNER_TEMP/frozen-captures"
+      - name: Upload frozen acceptance captures
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: automixer-frozen-captures
+          path: ${{ runner.temp }}/frozen-captures/*.png
+          retention-days: 3
+          if-no-files-found: warn
+  release:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    timeout-minutes: 90
     permissions:
       contents: write
     env:
@@ -40,17 +78,17 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - name: Refuse publishing from a branch
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
         run: test "$GITHUB_REF" = refs/heads/main
       - name: Install selected app and build tools
         run: |
           test "$(uname -m)" = arm64
-          uv sync --locked --only-group dev
+          uv sync --locked --only-group dev --group automixer-build
           uv sync --locked --inexact --package automixer
       - name: Fetch verified standalone media tools
         run: uv run python apps/autoraffkat/scripts/fetch_binaries.py --os darwin --dest "$RUNNER_TEMP/media"
       - name: Import existing Developer ID signing identity
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
@@ -68,7 +106,7 @@ jobs:
           security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -F 'Developer ID Application: Olli Sulopuisto (LWSR8T5392)'
           echo 'APPLE_SIGNING_IDENTITY=Developer ID Application: Olli Sulopuisto (LWSR8T5392)' >> "$GITHUB_ENV"
       - name: Freeze arm64 app
-        run: uv run --with pyinstaller==6.22.3 python scripts/build_automixer_macos.py --media-dir "$RUNNER_TEMP/media"
+        run: uv run python scripts/build_automixer_macos.py --media-dir "$RUNNER_TEMP/media"
       - name: Verify frozen signature and run real GUI audio jobs
         run: |
           codesign --verify --deep --strict dist/automixer-macos/Automixer.app
@@ -77,12 +115,12 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: automixer-frozen-captures
+          name: automixer-release-frozen-captures
           path: ${{ runner.temp }}/frozen-captures/*.png
           retention-days: 3
           if-no-files-found: warn
       - name: Build signed disk image
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
         run: |
           version=$(uv run --no-project python -c 'import tomllib; print(tomllib.load(open("apps/automixer/pyproject.toml", "rb"))["project"]["version"])')
           echo "AUTOMIXER_VERSION=$version" >> "$GITHUB_ENV"
@@ -94,7 +132,7 @@ jobs:
           hdiutil create -srcfolder "$staging" -volname Automixer -format UDZO "dist/Automixer-${version}-arm64.dmg"
           codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "dist/Automixer-${version}-arm64.dmg"
       - name: Notarize and staple, fail closed
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
@@ -112,19 +150,20 @@ jobs:
           spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG_PATH"
           codesign --verify --verbose=2 "$DMG_PATH"
       - name: Publish verified DMG as a release
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tag="automixer-gui-v${AUTOMIXER_VERSION}"
           # Never overwrite a version or publish a half-uploaded release.
-          if gh release view "$tag"; then echo 'Version already published'; exit 1; fi
+          gh release list --limit 1000 --json tagName,isDraft > "$RUNNER_TEMP/releases.json"
+          python3 -c 'import json,sys; assert not any(r["tagName"] == sys.argv[2] for r in json.load(open(sys.argv[1]))), "Version already exists (published or draft)"' "$RUNNER_TEMP/releases.json" "$tag"
           shasum -a 256 "$DMG_PATH" > "${DMG_PATH}.sha256"
           gh release create "$tag" --target "$GITHUB_SHA" --draft --title "Automixer ${AUTOMIXER_VERSION} (Apple Silicon)" --notes 'Signed and notarized Apple Silicon app. Files and watched-folder synthetic audio workflows passed in the frozen app; real user episodes and native dialog recovery remain unverified.' "$DMG_PATH" "${DMG_PATH}.sha256"
           gh release edit "$tag" --draft=false
       - name: Remove signing material
-        if: ${{ always() && github.event_name != 'pull_request' }}
+        if: ${{ always() && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' }}
         run: |
           rm -f "$RUNNER_TEMP/automixer-signing.p12"
           if [ -f "$RUNNER_TEMP/automixer-signing.keychain-db" ]; then

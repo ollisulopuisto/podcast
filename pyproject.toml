@@ -35,6 +35,7 @@ testpaths = ["tests"]
 # ryhmässä on vain se mitä vain se tarvitsee (httpx, pyinstaller).
 [dependency-groups]
 dev = ["ruff==0.17.2", "pytest>=9.0.2"]
+automixer-build = ["pyinstaller==6.22.3"]
 
 # Yksi lintiasetus koko työtilalle, ja se on tämä. ruff lukee lähintä
 # `[tool.ruff]`-lohkoa, joten sovelluksen omassa `pyproject.toml`issa oleva
