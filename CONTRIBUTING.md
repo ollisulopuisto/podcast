@@ -77,12 +77,22 @@ macOS `tests.yml` repeats only the suites that need Apple frameworks, Metal,
 or macOS application behavior, alongside the workspace agreement check.
 This avoids spending macOS minutes on the same portable tests twice.
 
-Pull requests and pushes select member suites from changed paths. An app edit
-runs that app's suite on its supported runners; a shared-library edit runs the
-library suite and its consuming apps. The macOS job is skipped entirely when
-no macOS suite is selected. Workspace contracts and lint still run for every
-change. Documentation-only edits skip member suites. A manual test workflow
-dispatch still runs every suite.
+Pull requests select member suites from changed paths. Lockfile changes compare
+package records and trace both the old and new dependency graphs, including
+optional and development groups, to workspace consumers. Unknown packages,
+resolution metadata and global configuration changes select everything. Main
+pushes and manual dispatches run every suite.
+
+Mac tests have separate speechmix, autoraffkat, Automixer and podcast-magic
+jobs. Each installs its own dependency closure plus the root test tools; the
+speechmix fixtures also need autoraffkat and the Metal path. The final `test`
+check rejects failed/cancelled selectors and any expected suite that did not
+succeed. Linux keeps lint, workspace contracts and the portable suites.
+
+PR CLI packaging jobs validate the installed archives without repeating the
+application suites. Tag releases and manual builds keep independent full
+validation before publication. No new repository or shared-library release
+process is required.
 
 For an urgent installer check, `build-autoraffkat.yml` and
 `build-podcast-magic.yml` can be dispatched manually with **hotfix artifact**

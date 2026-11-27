@@ -47,18 +47,14 @@ jobs:
               changed = subprocess.check_output(
                   ["git", "diff", "--name-only", f"origin/{base}...HEAD"], text=True
               ).splitlines()
-              apps = set()
-              for path in changed:
-                  if path.startswith(("apps/automixer/", "packages/speechmix/", "packages/nhsx/")):
-                      apps.add("automixer")
-                  if path.startswith(("colab-transcribe/", "packages/silencelearn/", "packages/wordalign/")):
-                      apps.add("colab-transcribe")
-                  if path in {
-                      "uv.lock", "pyproject.toml", "scripts/build_cli_release.py",
-                      "scripts/smoke_cli_release.py", ".github/workflows/build-cli.yml",
-                  } or path.startswith("tests/"):
-                      apps.update(("automixer", "colab-transcribe"))
-              selected = [app for app in ("automixer", "colab-transcribe") if app in apps]
+              import runpy
+              choose = runpy.run_path("scripts/ci_test_selection.py")["select_changes"]
+              merge_base = subprocess.check_output(
+                  ["git", "merge-base", f"origin/{base}", "HEAD"], text=True
+              ).strip()
+              suites = choose(changed, merge_base)["linux"]
+              selected = [app for app in ("automixer", "colab-transcribe")
+                          if "all" in suites or app in suites]
           elif os.environ["REF_NAME"].startswith("automixer-v"):
               selected = ["automixer"]
           elif os.environ["REF_NAME"].startswith("colab-transcribe-v"):
@@ -89,6 +85,7 @@ jobs:
         shell: bash
     env:
       CLI_APP: ${{ matrix.app }}
+      UV_NO_SYNC: true
       RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
     steps:
       - uses: actions/checkout@v7
@@ -103,12 +100,21 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg zsh libportaudio2 libsndfile1
       - name: Install workspace without changing the lockfile
+        if: github.event_name == 'pull_request'
+        run: |
+          uv sync --locked --only-group dev
+          uv sync --locked --inexact --package "$CLI_APP" --group dev
+      - name: Install full release validation dependencies
+        if: github.event_name != 'pull_request'
         run: uv sync --locked --all-packages
       - name: Lint
+        if: github.event_name != 'pull_request'
         run: uv run --locked ruff check .
       - name: Workspace contracts
+        if: github.event_name != 'pull_request'
         run: uv run --locked pytest tests -q
       - name: App and shared library tests
+        if: github.event_name != 'pull_request'
         run: |
           if [ "$CLI_APP" = automixer ]; then
             if [ "$RUNNER_OS" = Linux ]; then
@@ -118,7 +124,7 @@ jobs:
               uv run --locked --directory apps/automixer pytest -q -m "not mlx"
             else
               uv run --locked --directory packages/speechmix pytest -q
-              uv run --locked --directory apps/automixer pytest -q
+              uv run --locked --directory apps/automixer pytest -q -m "not mlx"
               uv run --locked --directory apps/automixer pytest -m mlx -q --no-header -rs | tee /tmp/cli-mlx.log
               if grep -q "skipped" /tmp/cli-mlx.log; then
                 echo "The macOS release must run the real mlx tests."
