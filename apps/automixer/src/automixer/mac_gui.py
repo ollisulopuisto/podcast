@@ -226,15 +226,21 @@ def main():
 
         def smoke_(self, _unused):
             import os
-            view = self.window.contentView()
-            bitmap = view.bitmapImageRepForCachingDisplayInRect_(view.bounds())
-            view.cacheDisplayInRect_toBitmapImageRep_(view.bounds(), bitmap)
-            data = bitmap.representationUsingType_properties_(A.NSBitmapImageFileTypePNG, {})
+            import subprocess
             path = os.environ.get('AUTOMIXER_SMOKE_PNG', '/tmp/automixer-smoke.png')
-            if not data.writeToFile_atomically_(path, True):
-                raise RuntimeError('Could not save smoke screenshot')
+            self.window.displayIfNeeded()
+            # Capture WindowServer pixels, including native layer-backed controls.
+            # NSView bitmap caching omits those controls on modern macOS.
+            subprocess.run(['/usr/sbin/screencapture', '-x', '-l',
+                            str(self.window.windowNumber()), path], check=True)
             self.controller.close()
             A.NSApp.stop_(None)
+            # stop: takes effect only after run receives its next event.
+            event = A.NSEvent.otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2_(
+                A.NSEventTypeApplicationDefined, A.NSMakePoint(0, 0), 0, 0,
+                self.window.windowNumber(), None, 0, 0, 0,
+            )
+            A.NSApp.postEvent_atStart_(event, True)
 
         def application_openFiles_(self, app, paths):
             if hasattr(self, 'controller'):

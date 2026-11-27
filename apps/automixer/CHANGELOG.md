@@ -7,6 +7,12 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.27.5] - 2026-11-27
+
+### Fixed
+- Files that fail or are cancelled can be retried with Start without repeating completed outputs.
+- Native smoke captures WindowServer pixels and wakes the AppKit loop after stopping, instead of timing out after producing a partial view bitmap.
+
 ## [2026.11.27.4] - 2026-11-27
 
 ### Added

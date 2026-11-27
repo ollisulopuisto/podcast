@@ -76,3 +76,18 @@ def test_progress_is_clamped_and_only_chain_stage_lines_count():
     assert progress_percent('  lag (100%)') == 95
     assert progress_percent('  bad (999%)') is None
     assert progress_percent('Measured -16 LUFS') is None
+
+
+def test_start_retries_failure_and_cancel_but_never_repeats_success(tmp_path):
+    sources = [tmp_path / f'{name}.wav' for name in ('failed', 'cancelled', 'done')]
+    for source in sources:
+        source.touch()
+    c = desktop_controller.Controller(tmp_path / 'state', queue_factory=Queue)
+    c.add_paths(sources)
+    c.start()
+    for source, state in zip(sources, ('failed', 'cancelled', 'done')):
+        c.queue.event({'source': str(source), 'state': state, 'target': str(source.with_suffix('.out.wav'))})
+    c.start()
+    assert [item[0] for item in c.queue.added] == sources + sources[:2]
+    c.start()
+    assert len(c.queue.added) == 5

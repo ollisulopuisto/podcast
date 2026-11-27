@@ -110,6 +110,9 @@ class Controller:
             source, state = event['source'], event['state']
             if state == 'done':
                 self.outputs[source] = event['target']
+            elif state in {'failed', 'cancelled'}:
+                # Start retries unfinished files, never a successfully published one.
+                self._submitted.discard(Path(source))
             if source in self._watched_pending and state in {'done', 'failed', 'cancelled'}:
                 if state == 'done':
                     try:
