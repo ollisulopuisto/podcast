@@ -118,7 +118,7 @@ def test_external_uv_environment_is_replaced_for_every_uv_command(tmp_path, monk
 
     assert module.main([str(audio)], run=run, system="Linux", work_root=tmp_path) == 0
     for argv, kwargs in calls:
-        if "uv" in argv:
+        if any(Path(arg).name == "uv" for arg in argv):
             assert Path(kwargs["env"]["UV_PROJECT_ENVIRONMENT"]).is_relative_to(tmp_path)
             assert kwargs["env"]["UV_PROJECT_ENVIRONMENT"].endswith("kuulas/.venv")
             assert not {"VIRTUAL_ENV", "PYTHONPATH", "PYTHONHOME", "PIP_TARGET", "UV_INDEX_URL"} & kwargs["env"].keys()
@@ -210,3 +210,90 @@ def test_pip_config_cannot_redirect_bootstrap_install(tmp_path, monkeypatch):
     assert module.main([], run=run, system="Linux", work_root=tmp_path) == 0
     pip_call = next(kwargs for argv, kwargs in calls if "pip" in argv)
     assert pip_call["env"]["PIP_CONFIG_FILE"] == module.os.devnull
+
+
+def test_colab_without_ensurepip_never_calls_stdlib_venv(tmp_path):
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        if "venv" in argv:
+            raise subprocess.CalledProcessError(1, argv, stderr="ensurepip is not available")
+        return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
+
+    assert module.main([], run=run, system="Linux", work_root=tmp_path) == 0
+    assert not any("venv" in argv for argv, _ in calls)
+    argv, kwargs = next((argv, kw) for argv, kw in calls if "pip" in argv)
+    assert "--target" in argv and "--isolated" in argv
+    assert "uv==" + module.UV_VERSION in argv
+    assert Path(argv[argv.index("--target") + 1]).is_relative_to(tmp_path)
+    assert kwargs["capture_output"] and kwargs["text"]
+    assert not list(tmp_path.iterdir())
+
+
+def test_failed_bootstrap_reports_stderr_and_venv_repair_then_stops(tmp_path, capsys):
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        if "pip" in argv:
+            raise subprocess.CalledProcessError(1, argv, stderr="ensurepip subprocess exited 1")
+        return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
+
+    assert module.main([], run=run, system="Linux", work_root=tmp_path) == 1
+    output = capsys.readouterr().out
+    assert "FAIL install" in output
+    assert "ensurepip subprocess exited 1" in output
+    assert "python3-venv" in output
+    assert "sudo apt-get install -y python3-venv" in output
+    assert not any("sync" in argv or "scripts/cuda13_smoke.py" in argv for argv in calls)
+    assert not list(tmp_path.iterdir())
+
+
+def test_transcription_child_gets_project_cuda12_libraries_only(tmp_path, monkeypatch):
+    audio = tmp_path / "speech.wav"
+    audio.write_bytes(b"mock path")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/existing/libs")
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        if "-c" in argv:
+            project = Path(kwargs["cwd"]) / ".venv" / "lib" / "python3.13" / "site-packages"
+            return SimpleNamespace(stdout=str(project / "nvidia/cublas/lib") + "\n")
+        return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
+
+    assert module.main([str(audio)], run=run, system="Linux", work_root=tmp_path) == 0
+    smoke = [(argv, kwargs) for argv, kwargs in calls if "scripts/cuda13_smoke.py" in argv]
+    assert smoke[0][1]["env"]["LD_LIBRARY_PATH"] == "/existing/libs"
+    path = smoke[1][1]["env"]["LD_LIBRARY_PATH"]
+    first, tail = path.split(module.os.pathsep, 1)
+    assert Path(first).is_relative_to(tmp_path)
+    assert first.endswith("site-packages/nvidia/cublas/lib")
+    assert tail == "/existing/libs"
+    assert smoke[0][1]["env"] is not smoke[1][1]["env"]
+
+
+@pytest.mark.parametrize("words, status", [([], 1), ([{"w": "hello", "s": 0, "e": 1}], 0)])
+def test_optional_kuulas_alignment_stage_reports_real_word_result(tmp_path, capsys, words, status):
+    import json
+
+    audio = tmp_path / "speech.wav"
+    audio.write_bytes(b"mock path")
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        if "-c" in argv and "kuulas.local_whisper" in argv[argv.index("-c") + 1]:
+            return SimpleNamespace(stdout=json.dumps({"words": words, "elapsed": 0.1}))
+        return SimpleNamespace(stdout="GPU-good, T4, 600.1, 7.5\n")
+
+    assert module.main(["--kuulas-path", str(audio)], run=run, system="Linux", work_root=tmp_path) == status
+    output = capsys.readouterr().out
+    assert ("PASS kuulas-align" if status == 0 else "FAIL kuulas-align") in output
+    if status == 0:
+        assert "hello" in output and "1 words" in output
+    check = next(i for i, (argv, _) in enumerate(calls) if "--check" in argv)
+    align = next(i for i, (argv, _) in enumerate(calls) if "-c" in argv and "kuulas.local_whisper" in argv[argv.index("-c") + 1])
+    assert align > check
+    assert str(audio) == calls[align][0][-1]
