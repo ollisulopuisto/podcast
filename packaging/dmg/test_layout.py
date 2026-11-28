@@ -66,7 +66,7 @@ class Contract(unittest.TestCase):
                             str(Path(td) / "not-applications")
                         )
                     return plistlib.dumps(
-                        {"system-entities": [{"mount-point": str(mount)}]}
+                        {"system-entities": [{"mount-point": str(mount), "dev-entry": "/dev/disk42s1"}]}
                     )
                 elif args[0] == "osascript":
                     if fail:
