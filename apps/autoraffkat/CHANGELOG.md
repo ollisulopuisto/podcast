@@ -7,6 +7,12 @@ and this project adheres to Calendar Versioning (CalVer).
 
 ## [Unreleased]
 
+## [2026.11.28.1] - 2026-11-28
+
+### Fixed
+- Release version includes the shared DMG detach-device fix (#277). No additional runtime changes in this version bump.
+- Julkaisuversio sisältää yhteisen DMG-levykuvan irrotuskorjauksen (#277). Versionosto ei muuta sovelluksen toimintaa.
+
 ## [2026.11.27.1] - 2026-11-27
 
 ### Changed
