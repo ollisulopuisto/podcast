@@ -1,5 +1,9 @@
 # Work log
 
+## 2026-11-28: Autoraffkat release version 2026.11.28.1
+
+Owner: Instinct. User requested bump PR after merged277, maincc77cbb. Manifest, runtime, bundle spec and lock agree. No runtime/workflow change. Main/open/recent PRs and branches checked, no competing bump. Own review traced version into app/About, spec and tag/build consumer. No tag, Mac build, release or merge by this PR.
+
 ## 2026-11-27: Autoraffkat release version 2026.11.27.1
 
 Owner: Instinct. User requested a bump PR so the next DMG includes merged #268. Manifest, runtime version, bundle spec and lock agree. No new runtime behavior. Repo default says version bumps belong to the integrator; this task explicitly requests the bump. Main cfd413b, open/recent PRs and branches checked, no duplicate open bump. Ruff clean; 57 version/workspace contract tests pass. Full root suite collection attempted but lacks numpy in the dev-only environment; not claimed passed. No Mac build, tag, release or merge.
