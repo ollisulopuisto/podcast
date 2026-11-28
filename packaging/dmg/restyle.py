@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -57,6 +58,26 @@ def run(*args: str) -> bytes:
     return subprocess.check_output(command, stderr=subprocess.STDOUT)
 
 
+def detach_image(device: str) -> None:
+    """Detach only the device returned by our attach, never a reused mount path."""
+    if not re.fullmatch(r"/dev/disk[0-9]+", device):
+        raise RuntimeError("Expected an attached whole-disk device")
+    try:
+        run("hdiutil", "detach", device)
+    except subprocess.CalledProcessError:
+        # Finder/macOS may have already detached it. A failed path lookup alone
+        # proves nothing: independently confirm the exact device is absent.
+        info = plistlib.loads(run("hdiutil", "info", "-plist"))
+        if not isinstance(info, dict) or not isinstance(info.get("images"), list):
+            raise RuntimeError("Cannot verify detached DMG device") from None
+        for image in info["images"]:
+            for entity in image.get("system-entities", []):
+                entry = entity.get("dev-entry", "")
+                if entry == device or entry.startswith(device + "s"):
+                    raise
+        print(f"DMG device already detached: {device}")
+
+
 def restyle(image: Path, app_name: str, background: Path) -> None:
     if sys.platform != "darwin":
         raise RuntimeError("Finder DMG styling requires macOS; no image was changed")
@@ -77,6 +98,7 @@ def restyle(image: Path, app_name: str, background: Path) -> None:
             ).decode()
         )
         attached = False
+        device = None
         try:
             result = plistlib.loads(
                 run(
@@ -92,11 +114,18 @@ def restyle(image: Path, app_name: str, background: Path) -> None:
                 )
             )
             attached = True
-            if not any(
-                e.get("mount-point") == str(mounted)
-                for e in result.get("system-entities", [])
-            ):
+            entities = result.get("system-entities", [])
+            volume = next(
+                (e for e in entities if e.get("mount-point") == str(mounted)), None
+            )
+            if not volume:
                 raise RuntimeError("hdiutil did not mount the requested image")
+            match = re.fullmatch(
+                r"(/dev/disk[0-9]+)(?:s[0-9]+)*", volume.get("dev-entry", "")
+            )
+            if not match:
+                raise RuntimeError("hdiutil did not identify the mounted disk device")
+            device = match.group(1)
             if not (mounted / app_name).is_dir():
                 raise RuntimeError(f"Mounted image is missing {app_name}")
             applications = mounted / "Applications"
@@ -131,7 +160,7 @@ def restyle(image: Path, app_name: str, background: Path) -> None:
             if not ds_store.is_file() or ds_store.stat().st_size == 0:
                 raise RuntimeError("Finder did not save the layout")
             run("sync")
-            run("hdiutil", "detach", str(mounted))
+            detach_image(device)
             attached = False
             final = work / "styled.dmg"
             print(
@@ -152,7 +181,10 @@ def restyle(image: Path, app_name: str, background: Path) -> None:
         finally:
             if attached:
                 # Do not force-detach a possibly busy disk. Failure is visible.
-                run("hdiutil", "detach", str(mounted))
+                if device is not None:
+                    detach_image(device)
+                else:
+                    run("hdiutil", "detach", str(mounted))
     print(f"DMG welcome layout saved: {image.name}; sign/notarize only after this step")
     if (
         os.environ.get("DMG_WELCOME_CAPTURE_LOG") == "1"
